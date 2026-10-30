@@ -30,6 +30,15 @@ class RAGVectorStore:
             metadatas=metadatas
         )
 
+    def delete_by_document_id(self, document_id: str) -> int:
+        found = self.collection.get(where={"document_id": document_id}, include=[])
+        ids = found.get("ids", []) if found else []
+        if not ids:
+            return 0
+
+        self.collection.delete(ids=ids)
+        return len(ids)
+
     def query_context(
         self, 
         query_text: str, 

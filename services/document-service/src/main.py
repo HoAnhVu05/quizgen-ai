@@ -224,9 +224,23 @@ def get_document_chunks(document_id: str, limit: int = 20):
 
 
 @app.delete("/documents/{document_id}")
-def delete_document(document_id: str):
+async def delete_document(document_id: str):
     if document_id not in DOCUMENTS_DB:
         raise HTTPException(status_code=404, detail="Không tìm thấy tài liệu.")
+
+    deleted_vectors = 0
+    rag_delete_warning = None
+    async with httpx.AsyncClient(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
+        try:
+            rag_response = await client.delete(f"{RAG_SERVICE_URL}/documents/{document_id}")
+            if rag_response.status_code == 200:
+                deleted_vectors = rag_response.json().get("deleted_chunks_count", 0)
+            else:
+                rag_delete_warning = (
+                    f"RAG service trả về {rag_response.status_code}, vector có thể chưa được xóa."
+                )
+        except Exception as exc:
+            rag_delete_warning = f"Không thể kết nối RAG service để xóa vector: {str(exc)}"
 
     record = DOCUMENTS_DB.pop(document_id)
     storage_path = record.get("storage_path")
@@ -236,4 +250,6 @@ def delete_document(document_id: str):
     return {
         "message": "Đã xóa tài liệu khỏi Document Service.",
         "documentId": document_id,
+        "deletedVectors": deleted_vectors,
+        "warning": rag_delete_warning,
     }

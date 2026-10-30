@@ -47,3 +47,16 @@ def query_context(req: QueryContextRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi truy vấn RAG: {str(e)}")
+
+
+@app.delete("/documents/{document_id}")
+def delete_document_vectors(document_id: str):
+    try:
+        deleted_count = vector_store.delete_by_document_id(document_id)
+        return {
+            "status": "success",
+            "document_id": document_id,
+            "deleted_chunks_count": deleted_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi xóa vectors theo tài liệu: {str(e)}")
