@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   UploadCloud,
   FileText,
@@ -27,118 +27,170 @@ interface TextbookUploadScreenProps {
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
 }
 
-const INITIAL_TEXTBOOKS: TextbookFile[] = [
-  {
-    id: 'tb-1',
-    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    size: '14.2 MB',
-    totalPages: 320,
-    chaptersCount: 12,
-    status: 'ready',
-    progress: 100,
-    uploadedAt: '28/10/2026',
-    chunksPreview: [
-      '[Trang 12] Chương 1: Giới thiệu tổng quan kinh tế học vi mô...',
-      '[Trang 42] Chương 3: Quy luật cầu và độ co giãn giá cả...',
-      '[Trang 78] Chương 5: Hàm sản xuất Cobb-Douglas và chi phí biên...',
-    ]
-  },
-  {
-    id: 'tb-2',
-    name: 'NguyenLy_KeToan_TaiChinh.docx',
-    size: '8.7 MB',
-    totalPages: 185,
-    chaptersCount: 8,
-    status: 'ready',
-    progress: 100,
-    uploadedAt: '27/10/2026',
-    chunksPreview: [
-      '[Trang 5] Chương 1: Phương trình kế toán cơ bản Tài sản = Nợ + Vốn chủ sở hữu...',
-      '[Trang 34] Chương 2: Ghi sổ kép và hệ thống tài khoản kế toán doanh nghiệp...'
-    ]
-  },
-  {
-    id: 'tb-3',
-    name: 'Marketing_CanBan_Chuong4_8.pdf',
-    size: '22.4 MB',
-    totalPages: 110,
-    chaptersCount: 5,
-    status: 'embedding',
-    progress: 68,
-    uploadedAt: 'Hôm nay',
-    chunksPreview: [
-      '[Trang 10] Chương 4: Phân đoạn thị trường và định vị thương hiệu STP...'
-    ]
-  },
-  {
-    id: 'tb-4',
-    name: 'PhapLuat_DaiCuong_K19.pdf',
-    size: '19.1 MB',
-    totalPages: 240,
-    chaptersCount: 9,
-    status: 'extracting',
-    progress: 32,
-    uploadedAt: 'Hôm nay',
-  },
-];
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const MAX_UPLOAD_SIZE_MB = 25;
+
+const formatUploadedAt = (input?: string): string => {
+  if (!input) {
+    return 'N/A';
+  }
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) {
+    return input;
+  }
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const normalizeTextbook = (item: any): TextbookFile => ({
+  id: String(item.id ?? ''),
+  name: String(item.name ?? 'Unknown'),
+  size: String(item.size ?? 'N/A'),
+  totalPages: Number(item.totalPages ?? 0),
+  chaptersCount: Number(item.chaptersCount ?? 0),
+  status: (item.status ?? 'error') as TextbookFile['status'],
+  progress: Number(item.progress ?? 0),
+  uploadedAt: formatUploadedAt(item.uploadedAt),
+});
+
+const parseErrorMessage = async (res: Response): Promise<string> => {
+  try {
+    const payload = await res.json();
+    if (typeof payload?.detail === 'string') {
+      return payload.detail;
+    }
+    if (typeof payload?.message === 'string') {
+      return payload.message;
+    }
+  } catch {
+    // Ignore JSON parse error, fallback to generic text.
+  }
+  return `Yêu cầu thất bại (${res.status})`;
+};
 
 export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNavigate, onShowToast }) => {
-  const [textbooks, setTextbooks] = useState<TextbookFile[]>(INITIAL_TEXTBOOKS);
+  const [textbooks, setTextbooks] = useState<TextbookFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectingBook, setInspectingBook] = useState<TextbookFile | null>(null);
+  const [inspectingChunks, setInspectingChunks] = useState<string[]>([]);
+  const [isFetchingChunks, setIsFetchingChunks] = useState(false);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // File Upload Handler Simulation
-  const handleUploadFiles = (fileName: string, fileSize: string) => {
-    const newBook: TextbookFile = {
-      id: `tb-${Date.now()}`,
-      name: fileName,
-      size: fileSize,
-      totalPages: Math.floor(Math.random() * 150) + 80,
-      chaptersCount: Math.floor(Math.random() * 6) + 4,
-      status: 'extracting',
-      progress: 25,
-      uploadedAt: 'Vừa xong',
-      chunksPreview: [
-        '[Trang 1] Mục lục và giới thiệu đề cương môn học...',
-        '[Trang 25] Chương 1: Cơ sở lý thuyết nền tảng và phương pháp luận...'
-      ]
-    };
+  const fetchDocuments = useCallback(async (silent = false) => {
+    if (!silent) {
+      setIsLoadingDocuments(true);
+    }
+    try {
+      const res = await fetch(`${API_BASE}/documents/documents`);
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res));
+      }
+      const payload = await res.json();
+      const list = Array.isArray(payload) ? payload.map(normalizeTextbook) : [];
+      setTextbooks(list);
+    } catch (error) {
+      if (!silent) {
+        const msg = error instanceof Error ? error.message : 'Không thể tải danh sách tài liệu.';
+        onShowToast('error', 'Không thể kết nối Document Service', msg);
+      }
+    } finally {
+      if (!silent) {
+        setIsLoadingDocuments(false);
+      }
+    }
+  }, [onShowToast]);
 
-    setTextbooks((prev) => [newBook, ...prev]);
-    onShowToast('info', 'Đã tải lên tệp', `Bắt đầu bóc tách văn bản cho ${fileName}`);
-
-    // Simulate progress
-    setTimeout(() => {
-      setTextbooks((prev) =>
-        prev.map((b) => (b.id === newBook.id ? { ...b, status: 'embedding', progress: 75 } : b))
-      );
-      onShowToast('info', 'Đang tạo Embeddings', 'RAG Engine đang tính toán vector cho tài liệu');
-    }, 1500);
-
-    setTimeout(() => {
-      setTextbooks((prev) =>
-        prev.map((b) => (b.id === newBook.id ? { ...b, status: 'ready', progress: 100 } : b))
-      );
-      onShowToast('success', 'Hoàn tất xử lý!', `${fileName} đã sẵn sàng để sinh câu hỏi AI`);
+  useEffect(() => {
+    fetchDocuments();
+    const timer = window.setInterval(() => {
+      fetchDocuments(true);
     }, 3000);
+    return () => window.clearInterval(timer);
+  }, [fetchDocuments]);
+
+  const handleUploadFile = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch(`${API_BASE}/documents/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res));
+      }
+
+      await fetchDocuments(true);
+      onShowToast('info', 'Đã tải lên tệp', `Đang xử lý tài liệu ${file.name} trong nền.`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Tải lên thất bại.';
+      onShowToast('error', 'Tải lên thất bại', msg);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const fetchChunksForDocument = async (book: TextbookFile) => {
+    setInspectingBook(book);
+    setInspectingChunks([]);
+    setIsFetchingChunks(true);
+    try {
+      const res = await fetch(`${API_BASE}/rag/documents/${book.id}/chunks?limit=20`);
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res));
+      }
+
+      const payload = await res.json();
+      const chunks = Array.isArray(payload?.chunks) ? payload.chunks : [];
+      const previews = chunks.map((chunk: any) => {
+        const pageNumber = chunk?.metadata?.page_number ?? chunk?.pageNumber ?? '?';
+        const chapter = chunk?.metadata?.chapter ?? chunk?.chapter ?? 'Không rõ chương';
+        const text = chunk?.text ?? chunk?.textSnippet ?? '';
+        return `[Trang ${pageNumber}] ${chapter}: ${text}`;
+      });
+      setInspectingChunks(previews);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Không lấy được chunk preview.';
+      onShowToast('warning', 'Không thể tải chunk từ RAG', msg);
+    } finally {
+      setIsFetchingChunks(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      handleUploadFiles(file.name, `${(file.size / (1024 * 1024)).toFixed(1)} MB`);
-    } else {
-      handleUploadFiles('GiaoTrinh_Moi_2026.pdf', '12.8 MB');
+      void handleUploadFile(e.dataTransfer.files[0]);
     }
   };
 
-  const handleDelete = (id: string, name: string) => {
-    setTextbooks((prev) => prev.filter((b) => b.id !== id));
-    onShowToast('warning', 'Đã xóa tài liệu', `Đã loại bỏ ${name} khỏi kho RAG`);
+  const handleDelete = async (id: string, name: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/documents/documents/${id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res));
+      }
+
+      await fetchDocuments(true);
+      onShowToast('warning', 'Đã xóa tài liệu', `Đã loại bỏ ${name} khỏi kho RAG`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Xóa tài liệu thất bại.';
+      onShowToast('error', 'Không thể xóa tài liệu', msg);
+    }
   };
 
   const filteredBooks = textbooks.filter((b) =>
@@ -168,19 +220,20 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
         <button
           onClick={() => fileInputRef.current?.click()}
+          disabled={isUploading}
           className="flex items-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-600/25 transition-all hover:scale-[1.02]"
         >
           <UploadCloud className="w-4 h-4" />
-          <span>Tải tệp từ máy tính</span>
+          <span>{isUploading ? 'Đang tải lên...' : 'Tải tệp từ máy tính'}</span>
         </button>
         <input
           type="file"
           ref={fileInputRef}
           onChange={(e) => {
             if (e.target.files && e.target.files[0]) {
-              const file = e.target.files[0];
-              handleUploadFiles(file.name, `${(file.size / (1024 * 1024)).toFixed(1)} MB`);
+              void handleUploadFile(e.target.files[0]);
             }
+            e.currentTarget.value = '';
           }}
           className="hidden"
           accept=".pdf,.docx"
@@ -218,7 +271,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
           </h3>
           <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
             Hỗ trợ chuẩn định dạng <span className="text-blue-300 font-semibold font-mono">PDF (.pdf)</span> hoặc{' '}
-            <span className="text-blue-300 font-semibold font-mono">Word (.docx)</span>. Giới hạn 100MB/tệp.
+            <span className="text-blue-300 font-semibold font-mono">Word (.docx)</span>. Giới hạn {MAX_UPLOAD_SIZE_MB}MB/tệp.
           </p>
 
           <div className="mt-5 flex items-center space-x-3">
@@ -268,6 +321,20 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.04] text-slate-300">
+              {isLoadingDocuments && (
+                <tr>
+                  <td colSpan={5} className="py-8 px-6 text-center text-slate-400">
+                    Đang tải danh sách tài liệu từ Document Service...
+                  </td>
+                </tr>
+              )}
+              {!isLoadingDocuments && filteredBooks.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 px-6 text-center text-slate-500">
+                    Chưa có tài liệu nào. Hãy tải tệp PDF/DOCX để bắt đầu.
+                  </td>
+                </tr>
+              )}
               {filteredBooks.map((book) => {
                 return (
                   <tr key={book.id} className="hover:bg-white/[0.02] transition-colors">
@@ -297,6 +364,23 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
                     {/* Pipeline Progress */}
                     <td className="py-4 px-6 min-w-[240px]">
+                      {book.status === 'uploading' && (
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-[10px] text-slate-300 font-medium">
+                            <span className="flex items-center gap-1.5 text-sky-300">
+                              <UploadCloud className="w-3 h-3 text-sky-400 animate-pulse" /> Đang nhận tệp...
+                            </span>
+                            <span className="font-mono text-sky-400">{book.progress}%</span>
+                          </div>
+                          <div className="w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-sky-500 to-blue-500 h-full rounded-full transition-all duration-300 shadow-glow-sm"
+                              style={{ width: `${book.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
                       {book.status === 'ready' && (
                         <div>
                           <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/25">
@@ -338,12 +422,22 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
                           </div>
                         </div>
                       )}
+
+                      {book.status === 'error' && (
+                        <div>
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-rose-300 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/25">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-400" /> Xử lý lỗi
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Actions */}
                     <td className="py-4 px-6 text-right space-x-2">
                       <button
-                        onClick={() => setInspectingBook(book)}
+                        onClick={() => {
+                          void fetchChunksForDocument(book);
+                        }}
                         className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-white/[0.06]"
                         title="Khám phá Chunks RAG"
                       >
@@ -410,8 +504,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
               <h4 className="text-[11px] font-bold uppercase text-slate-400 tracking-wider">
                 Mẫu đoạn trích xuất (Semantic Chunks Preview):
               </h4>
-              {inspectingBook.chunksPreview && inspectingBook.chunksPreview.length > 0 ? (
-                inspectingBook.chunksPreview.map((chunk, idx) => (
+              {isFetchingChunks ? (
+                <div className="p-6 text-center text-slate-500 text-xs">
+                  Đang tải chunks từ RAG service...
+                </div>
+              ) : inspectingChunks.length > 0 ? (
+                inspectingChunks.map((chunk, idx) => (
                   <div key={idx} className="p-3.5 bg-white/[0.03] border border-white/[0.06] rounded-xl text-xs text-slate-300 font-mono leading-relaxed">
                     {chunk}
                   </div>

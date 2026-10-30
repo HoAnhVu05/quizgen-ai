@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Sparkles,
   BookOpen,
@@ -28,10 +28,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   onGenerateSuccess,
   onShowToast,
 }) => {
-  const [selectedBook, setSelectedBook] = useState('GiaoTrinh_KinhTeViMo_2025.pdf');
-  const [selectedChapters, setSelectedChapters] = useState<string[]>([
-    'Chương 3: Cung - Cầu và Giá cả thị trường',
-  ]);
+  const [selectedBook, setSelectedBook] = useState('');
+  const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [bloomDistribution, setBloomDistribution] = useState({
     nhanBiet: 4,
     thongHieu: 4,
@@ -41,6 +39,101 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
   const [activePreset, setActivePreset] = useState<string>('giuaKy');
+  const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
+  const [chaptersByDocument, setChaptersByDocument] = useState<Record<string, string[]>>({});
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
+
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+  const parseErrorMessage = async (res: Response): Promise<string> => {
+    try {
+      const payload = await res.json();
+      if (typeof payload?.detail === 'string') {
+        return payload.detail;
+      }
+      if (typeof payload?.message === 'string') {
+        return payload.message;
+      }
+    } catch {
+      // Ignore JSON parse failure.
+    }
+    return `Yêu cầu thất bại (${res.status})`;
+  };
+
+  const fetchDocuments = useCallback(async () => {
+    setIsLoadingDocuments(true);
+    try {
+      const res = await fetch(`${API_BASE}/documents/documents`);
+      if (!res.ok) {
+        throw new Error(await parseErrorMessage(res));
+      }
+      const payload = await res.json();
+      const readyDocs = Array.isArray(payload)
+        ? payload
+            .filter((item: any) => item?.status === 'ready')
+            .map((item: any) => ({
+              id: String(item.id),
+              name: String(item.name),
+              status: String(item.status),
+              totalPages: Number(item.totalPages ?? 0),
+              chaptersCount: Number(item.chaptersCount ?? 0),
+            }))
+        : [];
+
+      setDocuments(readyDocs);
+      if (readyDocs.length > 0) {
+        setSelectedBook((prev) => prev || readyDocs[0].id);
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Không tải được danh sách giáo trình.';
+      onShowToast('error', 'Không thể tải dữ liệu tài liệu', msg);
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  }, [onShowToast]);
+
+  useEffect(() => {
+    void fetchDocuments();
+  }, [fetchDocuments]);
+
+  const selectedDocument = useMemo(
+    () => documents.find((doc) => doc.id === selectedBook) || null,
+    [documents, selectedBook]
+  );
+
+  const chaptersList = selectedBook ? chaptersByDocument[selectedBook] || [] : [];
+
+  useEffect(() => {
+    const loadChapters = async () => {
+      if (!selectedBook) {
+        setSelectedChapters([]);
+        return;
+      }
+
+      if (chaptersByDocument[selectedBook]) {
+        const existing = chaptersByDocument[selectedBook];
+        setSelectedChapters((prev) => prev.filter((c) => existing.includes(c)));
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        if (!res.ok) {
+          throw new Error(await parseErrorMessage(res));
+        }
+        const detail = await res.json();
+        const chapters = Array.isArray(detail?.chapters) ? detail.chapters.filter(Boolean) : [];
+        setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
+        setSelectedChapters(chapters.slice(0, Math.min(2, chapters.length)));
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Không tải được danh sách chương.';
+        onShowToast('warning', 'Không tải được chương mục', msg);
+        setSelectedChapters([]);
+      }
+    };
+
+    void loadChapters();
+  }, [selectedBook, chaptersByDocument, onShowToast]);
 
   const totalQuestions =
     bloomDistribution.nhanBiet +
@@ -62,14 +155,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       onShowToast('info', 'Áp dụng khuôn mẫu', 'Kiểm tra 15 phút: 70% Nhận biết, 30% Thông hiểu');
     }
   };
-
-  const chaptersList = [
-    'Chương 1: Khái quát về kinh tế học vi mô',
-    'Chương 2: Lý thuyết hành vi người tiêu dùng',
-    'Chương 3: Cung - Cầu và Giá cả thị trường',
-    'Chương 4: Độ co giãn của cung và cầu',
-    'Chương 5: Lý thuyết sản xuất và chi phí',
-  ];
 
   const handleToggleChapter = (ch: string) => {
     if (selectedChapters.includes(ch)) {
@@ -174,12 +259,17 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 onChange={(e) => setSelectedBook(e.target.value)}
                 className="w-full p-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs font-medium text-slate-200 focus:outline-none focus:border-blue-500"
               >
-                <option value="GiaoTrinh_KinhTeViMo_2025.pdf" className="bg-[#111827]">
-                  GiaoTrinh_KinhTeViMo_2025.pdf (12 chương - 320 trang)
-                </option>
-                <option value="NguyenLy_KeToan_TaiChinh.docx" className="bg-[#111827]">
-                  NguyenLy_KeToan_TaiChinh.docx (8 chương - 185 trang)
-                </option>
+                {isLoadingDocuments && (
+                  <option value="" className="bg-[#111827]">Đang tải danh sách giáo trình...</option>
+                )}
+                {!isLoadingDocuments && documents.length === 0 && (
+                  <option value="" className="bg-[#111827]">Chưa có giáo trình sẵn sàng</option>
+                )}
+                {documents.map((doc) => (
+                  <option key={doc.id} value={doc.id} className="bg-[#111827]">
+                    {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -189,6 +279,11 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 Phạm vi chương mục kiến thức cần lấy câu hỏi:
               </label>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {chaptersList.length === 0 && (
+                  <div className="p-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-xs text-slate-400">
+                    Tài liệu này chưa có danh sách chương. Hãy đảm bảo tài liệu đã ở trạng thái sẵn sàng.
+                  </div>
+                )}
                 {chaptersList.map((ch) => {
                   const isChecked = selectedChapters.includes(ch);
                   return (
@@ -354,6 +449,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 <span className="font-semibold text-slate-200">4 lựa chọn (A, B, C, D)</span>
               </div>
               <div className="flex justify-between text-slate-400">
+                <span>Giáo trình nguồn:</span>
+                <span className="font-semibold text-slate-200 truncate max-w-[170px]" title={selectedDocument?.name || ''}>
+                  {selectedDocument?.name || 'Chưa chọn'}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400">
                 <span>Minh chứng RAG:</span>
                 <span className="font-semibold text-emerald-400">Bắt buộc trích dẫn</span>
               </div>
@@ -405,9 +506,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             ) : (
               <button
                 onClick={handleStartGenerate}
-                disabled={totalQuestions === 0 || selectedChapters.length === 0}
+                disabled={totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
                 className={`w-full py-3.5 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg ${
-                  totalQuestions === 0 || selectedChapters.length === 0
+                  totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
                     ? 'bg-white/[0.05] text-slate-500 cursor-not-allowed border border-white/[0.05]'
                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30 hover:scale-[1.01]'
                 }`}
