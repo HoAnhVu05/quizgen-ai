@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardScreen } from './components/DashboardScreen';
 import { TextbookUploadScreen } from './components/TextbookUploadScreen';
@@ -73,23 +73,23 @@ export const App: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const handleShowToast = (
+  const handleShowToast = useCallback((
     type: 'success' | 'info' | 'warning' | 'error',
     title: string,
     message: string
   ) => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newToast: ToastMessage = { id, type, title, message };
-    setToasts((prev) => [newToast, ...prev]);
+    setToasts((prev) => [newToast, ...prev.slice(0, 3)]); // Giữ tối đa 4 toast mới nhất
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
-  };
+  }, []);
 
-  const handleDismissToast = (id: string) => {
+  const handleDismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  }, []);
 
   const handleUpdateQuestion = (updated: Question) => {
     setQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
