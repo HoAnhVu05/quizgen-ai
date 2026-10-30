@@ -36,6 +36,10 @@ services:
     environment:
       - PORT=8001
       - SECRET_KEY=quizgen-super-secret-academic-key-2026
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - quizgen-network
 
@@ -50,6 +54,10 @@ services:
     environment:
       - PORT=8002
       - RAG_SERVICE_URL=http://rag-service:8003
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - quizgen-network
 
@@ -63,8 +71,12 @@ services:
       - "8003:8003"
     environment:
       - PORT=8003
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
     volumes:
       - chroma_data:/app/data/chroma
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - quizgen-network
 
@@ -80,6 +92,10 @@ services:
       - PORT=8004
       - RAG_SERVICE_URL=http://rag-service:8003
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - quizgen-network
 
@@ -93,6 +109,10 @@ services:
       - "8005:8005"
     environment:
       - PORT=8005
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - quizgen-network
 
@@ -105,9 +125,38 @@ services:
     networks:
       - quizgen-network
 
+  # 8. POSTGRESQL (Relational Database with Multi-Service Schemas)
+  postgres:
+    image: postgres:16-alpine
+    container_name: quizgen-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=quizgen
+      - POSTGRES_PASSWORD=quizgen_secure_pass_2026
+      - POSTGRES_DB=quizgen_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/00_init.sql
+      - ./database/migrations/01_auth_service.sql:/docker-entrypoint-initdb.d/01_auth.sql
+      - ./database/migrations/02_document_service.sql:/docker-entrypoint-initdb.d/02_document.sql
+      - ./database/migrations/03_rag_service.sql:/docker-entrypoint-initdb.d/03_rag.sql
+      - ./database/migrations/04_ai_service.sql:/docker-entrypoint-initdb.d/04_ai.sql
+      - ./database/migrations/05_exam_service.sql:/docker-entrypoint-initdb.d/05_exam.sql
+      - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/06_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quizgen -d quizgen_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quizgen-network
+
 networks:
   quizgen-network:
     driver: bridge
 
 volumes:
   chroma_data:
+  postgres_data:

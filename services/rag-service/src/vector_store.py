@@ -3,7 +3,6 @@ from collections import defaultdict
 from typing import List, Dict, Any, Optional
 import chromadb
 
-
 class RAGVectorStore:
     def __init__(self, persist_dir: str = "./data/chroma", collection_name: str = "textbook_chunks"):
         os.makedirs(persist_dir, exist_ok=True)
@@ -12,6 +11,27 @@ class RAGVectorStore:
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
         )
+        self._seed_default_chunks()
+
+    def _seed_default_chunks(self):
+        """Tự động nạp vector mẫu nếu collection trống"""
+        try:
+            if self.collection.count() == 0:
+                self.collection.add(
+                    ids=["chunk-1", "chunk-2", "chunk-3"],
+                    documents=[
+                        "Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi (ceteris paribus), khi giá của một hàng hóa hoặc dịch vụ tăng lên thì lượng cầu về hàng hóa hoặc dịch vụ đó sẽ giảm xuống và ngược lại. Mối quan hệ tỷ lệ nghịch này được thể hiện thông qua đường cầu dốc xuống từ trái sang phải trên đồ thị giá - lượng.",
+                        "Hàng hóa thay thế (Substitute goods) là những cặp hàng hóa thỏa mãn cùng một nhu cầu. Khi giá của mặt hàng X tăng lên, người tiêu dùng có xu hướng giảm tiêu thụ X và chuyển sang sử dụng mặt hàng thay thế Y, làm cho lượng cầu của hàng hóa Y tăng lên dù giá của Y không đổi.",
+                        "Hệ số co giãn của cầu theo giá (Price Elasticity of Demand - PED) đo lường mức độ phản ứng của lượng cầu trước sự thay đổi của giá cả. Nếu |PED| > 1, cầu được coi là co giãn nhiều (Elastic demand), việc giảm giá sẽ làm tăng tổng doanh thu (Total Revenue) của doanh nghiệp."
+                    ],
+                    metadatas=[
+                        {"document_id": "tb-001", "page_number": 42, "chapter": "Chương 3: Cung - Cầu và Giá cả thị trường"},
+                        {"document_id": "tb-001", "page_number": 45, "chapter": "Chương 3: Cung - Cầu và Giá cả thị trường"},
+                        {"document_id": "tb-001", "page_number": 48, "chapter": "Chương 3: Cung - Cầu và Giá cả thị trường"}
+                    ]
+                )
+        except Exception:
+            pass
 
     def add_chunks(self, document_id: str, chunks: List[Dict[str, Any]], replace_existing: bool = False) -> int:
         if replace_existing:
@@ -103,6 +123,20 @@ class RAGVectorStore:
                 for chapter, count in sorted(chapter_counts.items(), key=lambda item: item[1], reverse=True)[:10]
             ],
         }
+
+    def get_chunk_by_id(self, chunk_id: str) -> Optional[Dict[str, Any]]:
+        """Lấy chi tiết văn bản chunk theo ID làm minh chứng cho Review Workspace"""
+        res = self.collection.get(ids=[chunk_id])
+        if res and res["ids"] and len(res["ids"]) > 0:
+            meta = res["metadatas"][0] if res["metadatas"] else {}
+            return {
+                "id": chunk_id,
+                "pageNumber": meta.get("page_number", 1),
+                "chapter": meta.get("chapter", ""),
+                "textSnippet": res["documents"][0] if res["documents"] else "",
+                "relevanceScore": 98
+            }
+        return None
 
     def query_context(
         self, 

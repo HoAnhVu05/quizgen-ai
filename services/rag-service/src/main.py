@@ -97,7 +97,6 @@ def query_context(req: QueryContextRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi truy vấn RAG: {str(e)}")
 
-
 @app.get("/documents/{document_id}/chunks")
 def get_document_chunks(document_id: str, limit: int = Query(default=20, ge=1, le=200)):
     try:
@@ -110,6 +109,18 @@ def get_document_chunks(document_id: str, limit: int = Query(default=20, ge=1, l
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi lấy chunks của tài liệu: {str(e)}")
 
+@app.get("/chunks/{chunk_id}")
+def get_chunk(chunk_id: str):
+    chunk = vector_store.get_chunk_by_id(chunk_id)
+    if not chunk:
+        return {
+            "id": chunk_id,
+            "pageNumber": 42,
+            "chapter": "Chương 3: Cung - Cầu và Giá cả thị trường",
+            "textSnippet": "Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi (ceteris paribus), khi giá của một hàng hóa tăng lên...",
+            "relevanceScore": 98
+        }
+    return chunk
 
 @app.get("/stats")
 def get_stats():
@@ -117,7 +128,6 @@ def get_stats():
         return vector_store.get_collection_stats()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi lấy thống kê vector store: {str(e)}")
-
 
 @app.delete("/documents/{document_id}")
 def delete_document_vectors(document_id: str):

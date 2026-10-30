@@ -1,5 +1,5 @@
 import httpx
-from fastapi import FastAPI, Request, Response, HTTPException, Depends
+from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 
@@ -17,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Helper function to proxy requests to downstream microservices
 async def proxy_request(service_url: str, path: str, request: Request) -> Response:
     client = httpx.AsyncClient(base_url=service_url, timeout=60.0)
     url = httpx.URL(path=path, query=request.url.query.encode("utf-8"))
@@ -61,23 +60,29 @@ def health_check():
         ]
     }
 
-# Routes proxying to respective microservices
-@app.api_route("/api/v1/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+# Proxy routes
+METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+
+@app.api_route("/api/v1/auth/{path:path}", methods=METHODS)
 async def auth_proxy(path: str, request: Request):
     return await proxy_request(settings.AUTH_SERVICE_URL, f"/{path}", request)
 
-@app.api_route("/api/v1/documents/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@app.api_route("/api/v1/documents/{path:path}", methods=METHODS)
 async def document_proxy(path: str, request: Request):
     return await proxy_request(settings.DOCUMENT_SERVICE_URL, f"/{path}", request)
 
-@app.api_route("/api/v1/rag/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@app.api_route("/api/v1/rag/{path:path}", methods=METHODS)
 async def rag_proxy(path: str, request: Request):
     return await proxy_request(settings.RAG_SERVICE_URL, f"/{path}", request)
 
-@app.api_route("/api/v1/ai/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@app.api_route("/api/v1/ai/{path:path}", methods=METHODS)
 async def ai_proxy(path: str, request: Request):
     return await proxy_request(settings.AI_SERVICE_URL, f"/{path}", request)
 
-@app.api_route("/api/v1/exams/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@app.api_route("/api/v1/exams/{path:path}", methods=METHODS)
 async def exam_proxy(path: str, request: Request):
     return await proxy_request(settings.EXAM_SERVICE_URL, f"/{path}", request)
+
+@app.api_route("/api/v1/questions/{path:path}", methods=METHODS)
+async def questions_proxy(path: str, request: Request):
+    return await proxy_request(settings.EXAM_SERVICE_URL, f"/questions/{path}", request)
