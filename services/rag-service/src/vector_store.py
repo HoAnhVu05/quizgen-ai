@@ -73,6 +73,11 @@ class RAGVectorStore:
         self.collection.delete(ids=ids)
         return len(ids)
 
+    def count_by_document_id(self, document_id: str) -> int:
+        found = self.collection.get(where={"document_id": document_id}, include=[])
+        ids = found.get("ids", []) if found else []
+        return len(ids)
+
     def get_chunks_by_document(self, document_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         if limit < 1:
             return []
