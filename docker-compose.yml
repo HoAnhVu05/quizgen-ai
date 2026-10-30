@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # 1. API GATEWAY (Reverse Proxy & Central Routing)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: quizgen-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - GATEWAY_PORT=8000
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - DOCUMENT_SERVICE_URL=http://document-service:8002
+      - RAG_SERVICE_URL=http://rag-service:8003
+      - AI_SERVICE_URL=http://ai-service:8004
+      - EXAM_SERVICE_URL=http://exam-service:8005
+    depends_on:
+      - auth-service
+      - document-service
+      - rag-service
+      - ai-service
+      - exam-service
+    networks:
+      - quizgen-network
+
+  # 2. AUTH SERVICE (University Lecturers, JWT, RBAC)
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: quizgen-auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - SECRET_KEY=quizgen-super-secret-academic-key-2026
+    networks:
+      - quizgen-network
+
+  # 3. DOCUMENT SERVICE (PDF/Docx Parsing, Chunking)
+  document-service:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: quizgen-document-service
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - RAG_SERVICE_URL=http://rag-service:8003
+    networks:
+      - quizgen-network
+
+  # 4. RAG VECTOR SERVICE (ChromaDB, Embeddings, Context Retriever)
+  rag-service:
+    build:
+      context: ./services/rag-service
+      dockerfile: Dockerfile
+    container_name: quizgen-rag-service
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+    volumes:
+      - chroma_data:/app/data/chroma
+    networks:
+      - quizgen-network
+
+  # 5. AI GENERATION SERVICE (LLM Orchestration & Bloom Taxonomy)
+  ai-service:
+    build:
+      context: ./services/ai-service
+      dockerfile: Dockerfile
+    container_name: quizgen-ai-service
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - RAG_SERVICE_URL=http://rag-service:8003
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    networks:
+      - quizgen-network
+
+  # 6. EXAM & BANK SERVICE (Exporters: Word .docx, PDF, Canvas QTI)
+  exam-service:
+    build:
+      context: ./services/exam-service
+      dockerfile: Dockerfile
+    container_name: quizgen-exam-service
+    ports:
+      - "8005:8005"
+    environment:
+      - PORT=8005
+    networks:
+      - quizgen-network
+
+  # 7. REDIS (Cache & Asynchronous Event Broker)
+  redis:
+    image: redis:7-alpine
+    container_name: quizgen-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - quizgen-network
+
+networks:
+  quizgen-network:
+    driver: bridge
+
+volumes:
+  chroma_data:
