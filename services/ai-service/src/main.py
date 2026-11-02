@@ -9,6 +9,7 @@ import httpx
 from .database import engine, Base, get_db, SessionLocal
 from .models import AIGenerationJobDB, BloomPresetDB, GenerateRequest
 from .generator import QuestionGenerator
+from .cache import cache
 
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
@@ -46,6 +47,16 @@ def get_presets(db: Session = Depends(get_db)):
 @app.post("/generate")
 @app.post("/generate-questions")
 async def generate_questions(req: GenerateRequest, db: Session = Depends(get_db)):
+    user_id = "lec-001"
+
+    # Kiểm tra Rate Limit qua Redis (Section 5 Spec: 5 lượt/phút)
+    allowed, remaining = cache.check_ai_rate_limit(user_id=user_id, limit=5, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Bạn đã vượt quá giới hạn 5 yêu cầu sinh đề / phút. Vui lòng thử lại sau giây lát."
+        )
+
     document_id = req.get_document_id()
     bloom_matrix = req.get_bloom_matrix()
     total_req = sum(bloom_matrix.values())

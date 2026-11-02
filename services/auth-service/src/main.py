@@ -1,4 +1,5 @@
 import os
+import hashlib
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -8,7 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from .database import engine, Base, get_db
-from .models import UserDB, LecturerCreate, LecturerResponse, TokenResponse
+from .models import UserDB, UserTokenDB, LecturerCreate, LecturerResponse, TokenResponse
+from .cache import cache
 
 app = FastAPI(title="QuizGen AI - Auth Service", version="1.0.0")
 
@@ -99,8 +101,25 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         "user": user
     }
 
+@app.post("/logout")
+def logout(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    # Thu hồi token và lưu vào Redis JWT Blacklist (Section 5 Spec)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    cache.revoke_token(token_hash, ttl=ACCESS_TOKEN_EXPIRE_MINUTES * 60)
+    
+    token_record = db.execute(select(UserTokenDB).filter_by(token_hash=token_hash)).scalar_one_or_none()
+    if token_record:
+        token_record.revoked = True
+        db.commit()
+    return {"status": "success", "message": "Đăng xuất thành công, token đã bị thu hồi."}
+
 @app.get("/me", response_model=LecturerResponse)
 def get_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    # 1. Kiểm tra Redis Blacklist (Section 5 Spec)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    if cache.is_token_revoked(token_hash):
+        raise HTTPException(status_code=401, detail="Phiên làm việc đã kết thúc (Token đã bị thu hồi).")
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
@@ -110,5 +129,7 @@ def get_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=401, detail="Không tìm thấy người dùng.")
         return user
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=401, detail="Xác thực không hợp lệ.")

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from .database import Base, engine, get_db
 from .models import RetrievalLogDB, VectorIndexDB
 from .vector_store import RAGVectorStore
+from .cache import cache
 
 app = FastAPI(
     title="QuizGen AI - RAG Vector Service",
@@ -161,13 +162,29 @@ def index_chunks(req: IndexChunksRequest, db: Session = Depends(get_db)):
 def query_context(req: QueryContextRequest, db: Session = Depends(get_db)):
     """
     Truy vấn tương đồng ngữ nghĩa phục vụ sinh câu hỏi hoặc đối soát:
-    1. Tìm kiếm Top-K vector gần nhất trong ChromaDB theo cosine distance
-    2. Ghi nhận log truy vấn và độ trễ vào PostgreSQL rag.retrieval_logs
-    3. Trả về contexts kèm relevanceScore (%) và số trang
+    1. Kiểm tra Redis RAG Cache (Section 5 Spec)
+    2. Tìm kiếm Top-K vector gần nhất trong ChromaDB theo cosine distance
+    3. Ghi nhận log truy vấn và độ trễ vào PostgreSQL rag.retrieval_logs
+    4. Trả về contexts kèm relevanceScore (%) và số trang
     """
     start_time = time.perf_counter()
     top_k = min(req.get_top_k(), MAX_TOP_K)
     doc_id = req.get_document_id()
+
+    # 1. Kiểm tra Redis RAG Cache (Section 5 Spec)
+    cache_target = req.chapter if req.chapter else (req.chapters[0] if req.chapters else req.query)
+    if doc_id:
+        cached_chunks = cache.get_cached_rag_chunks(doc_id, cache_target)
+        if cached_chunks:
+            return {
+                "query": req.query,
+                "requested_top_k": req.get_top_k(),
+                "applied_top_k": top_k,
+                "total_retrieved": len(cached_chunks),
+                "latency_ms": 1,
+                "chunks": cached_chunks[:top_k],
+                "cached": True
+            }
 
     try:
         contexts = vector_store.query_context(
@@ -177,6 +194,9 @@ def query_context(req: QueryContextRequest, db: Session = Depends(get_db)):
             chapters=req.chapters,
             top_k=top_k,
         )
+        # Lưu vào cache nếu có doc_id
+        if doc_id and contexts:
+            cache.cache_rag_chunks(doc_id, cache_target, contexts, ttl=21600)
 
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         top_score = contexts[0].get("relevanceScore") if contexts else None
