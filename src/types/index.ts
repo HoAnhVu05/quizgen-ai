@@ -1,4 +1,5 @@
 export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank';
+export type AuthScreenId = 'login' | 'register';
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';
 export type QuestionStatus = 'pending' | 'approved' | 'rejected';
