@@ -1,0 +1,163 @@
+version: '3.8'
+
+services:
+  # 1. API GATEWAY (Reverse Proxy & Central Routing)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: quizgen-api-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - GATEWAY_PORT=8000
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - DOCUMENT_SERVICE_URL=http://document-service:8002
+      - RAG_SERVICE_URL=http://rag-service:8003
+      - AI_SERVICE_URL=http://ai-service:8004
+      - EXAM_SERVICE_URL=http://exam-service:8005
+    depends_on:
+      - auth-service
+      - document-service
+      - rag-service
+      - ai-service
+      - exam-service
+    networks:
+      - quizgen-network
+
+  # 2. AUTH SERVICE (University Lecturers, JWT, RBAC)
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: quizgen-auth-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - SECRET_KEY=quizgen-super-secret-academic-key-2026
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - quizgen-network
+
+  # 3. DOCUMENT SERVICE (PDF/Docx Parsing, Chunking)
+  document-service:
+    build:
+      context: ./services/document-service
+      dockerfile: Dockerfile
+    container_name: quizgen-document-service
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+      - RAG_SERVICE_URL=http://rag-service:8003
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - quizgen-network
+
+  # 4. RAG VECTOR SERVICE (ChromaDB, Embeddings, Context Retriever)
+  rag-service:
+    build:
+      context: ./services/rag-service
+      dockerfile: Dockerfile
+    container_name: quizgen-rag-service
+    ports:
+      - "8003:8003"
+    environment:
+      - PORT=8003
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    volumes:
+      - chroma_data:/app/data/chroma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - quizgen-network
+
+  # 5. AI GENERATION SERVICE (LLM Orchestration & Bloom Taxonomy)
+  ai-service:
+    build:
+      context: ./services/ai-service
+      dockerfile: Dockerfile
+    container_name: quizgen-ai-service
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004
+      - RAG_SERVICE_URL=http://rag-service:8003
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - quizgen-network
+
+  # 6. EXAM & BANK SERVICE (Exporters: Word .docx, PDF, Canvas QTI)
+  exam-service:
+    build:
+      context: ./services/exam-service
+      dockerfile: Dockerfile
+    container_name: quizgen-exam-service
+    ports:
+      - "8005:8005"
+    environment:
+      - PORT=8005
+      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - quizgen-network
+
+  # 7. REDIS (Cache & Asynchronous Event Broker)
+  redis:
+    image: redis:7-alpine
+    container_name: quizgen-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - quizgen-network
+
+  # 8. POSTGRESQL (Relational Database with Multi-Service Schemas)
+  postgres:
+    image: postgres:16-alpine
+    container_name: quizgen-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=quizgen
+      - POSTGRES_PASSWORD=quizgen_secure_pass_2026
+      - POSTGRES_DB=quizgen_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/00_init.sql
+      - ./database/migrations/01_auth_service.sql:/docker-entrypoint-initdb.d/01_auth.sql
+      - ./database/migrations/02_document_service.sql:/docker-entrypoint-initdb.d/02_document.sql
+      - ./database/migrations/03_rag_service.sql:/docker-entrypoint-initdb.d/03_rag.sql
+      - ./database/migrations/04_ai_service.sql:/docker-entrypoint-initdb.d/04_ai.sql
+      - ./database/migrations/05_exam_service.sql:/docker-entrypoint-initdb.d/05_exam.sql
+      - ./database/migrations/06_comprehensive_academic_extensions.sql:/docker-entrypoint-initdb.d/06_extensions.sql
+      - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/07_seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quizgen -d quizgen_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quizgen-network
+
+networks:
+  quizgen-network:
+    driver: bridge
+
+volumes:
+  chroma_data:
+  postgres_data:

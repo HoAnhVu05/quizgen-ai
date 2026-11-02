@@ -1,50 +1,82 @@
+# QuizGen AI - Academic SaaS Platform (Microservices Architecture)
 
-# QuizGen AI
+Hệ thống Web App (SaaS) chuyên sâu hỗ trợ Giảng viên Đại học tự động hóa tạo đề thi trắc nghiệm từ tài liệu giáo trình (PDF/Word), sử dụng **LLM + RAG** và chuẩn hóa theo **Thang đo nhận thức Bloom**.
 
-## 1. Giới thiệu
-QuizGen AI là dự án hỗ trợ giảng viên tạo câu hỏi trắc nghiệm từ tài liệu học tập bằng AI.
+---
 
-## 2. Mục tiêu MVP
-- Tải lên tài liệu PDF hoặc Word.
-- Trích xuất nội dung văn bản từ tài liệu.
-- Sử dụng AI để tạo câu hỏi trắc nghiệm và đáp án.
-- Cho phép người dùng xem lại, chỉnh sửa câu hỏi.
-- Lưu và truy xuất bộ câu hỏi đã tạo.
+## 🏛️ Sơ đồ Kiến trúc Microservices (Architecture Diagram)
 
-## 3. Công nghệ dự kiến
-- Frontend: React + Vite
-- Backend: Python + FastAPI
-- Database: PostgreSQL
-- Xử lý PDF: PyMuPDF
-- Xử lý Word: python-docx
-- AI: Một API mô hình ngôn ngữ phù hợp
+```
+                       +-----------------------------+
+                       |   Client Web (React UI)     |
+                       |  (Vite + Tailwind + Lucide) |
+                       +--------------+--------------+
+                                      |
+                                      | HTTP / REST
+                                      v
+                     +--------------------------------+
+                     |    API Gateway (Port 8000)     |
+                     |  Reverse Proxy & Auth Router   |
+                     +---+-------+--------+-------+---+
+                         |       |        |       |
+         +---------------+       |        |       +---------------+
+         |                       |        |                       |
+         v                       v        v                       v
++------------------+ +---------------+ +-------------+ +------------------+
+|  Auth Service    | |Document Svc   | | AI Service  | | Exam Service     |
+|   (Port 8001)    | | (Port 8002)   | | (Port 8004) | | (Port 8005)      |
+| Giảng viên & JWT | | PDF/Docx OCR  | | Bloom LLM   | | Word/PDF/QTI XML |
++------------------+ +-------+-------+ +------+------+ +------------------+
+                             |                |
+                             | Chunks         | Retrieval Context
+                             +-------> + <----+
+                                       |
+                                       v
+                             +-------------------+
+                             |    RAG Service    |
+                             |   (Port 8003)     |
+                             | ChromaDB / Vector |
+                             +-------------------+
+```
 
-Các công nghệ trên là đề xuất ban đầu, cần được nhóm xác nhận trước khi triển khai chính thức.
+---
 
-## 4. Quy tắc GitHub
-- `main`: phiên bản ổn định của dự án.
-- `develop`: nhánh tích hợp công việc của nhóm.
-- Mỗi thành viên tạo nhánh riêng từ `develop` cho từng công việc, ví dụ: `feature/upload-document`.
-- Commit cần có nội dung rõ ràng, ví dụ: `feat: add document upload`.
-- Sau khi hoàn thành, tạo Pull Request từ nhánh công việc vào `develop`.
-- Không tự ý đưa code chưa kiểm tra vào `main`.
-- Không đưa API key, mật khẩu hoặc thông tin đăng nhập vào GitHub.
-- Khi hoàn thành task Jira, cập nhật trạng thái và đính kèm link PR, commit hoặc tài liệu minh chứng.
+## 📦 Danh mục các dịch vụ độc lập (Services Breakdown)
 
-## 5. Tiêu chí nghiệm thu MVP
-- Người dùng có thể tải lên tài liệu PDF hoặc Word hợp lệ.
-- Hệ thống trích xuất được nội dung tài liệu.
-- Hệ thống tạo được câu hỏi trắc nghiệm và đáp án từ nội dung đầu vào.
-- Người dùng có thể xem và chỉnh sửa câu hỏi được tạo.
-- Bộ câu hỏi có thể được lưu và truy xuất.
-- Có kiểm thử cho các luồng chính và các trường hợp lỗi cơ bản.
+| Dịch vụ | Cổng | Công nghệ | Nhiệm vụ chính |
+| :--- | :---: | :--- | :--- |
+| **`api-gateway`** | `8000` | FastAPI, HTTPX | Điểm đón duy nhất (Single Entrypoint), định tuyến proxy ngược, CORS, Rate Limit |
+| **`auth-service`** | `8001` | FastAPI, JWT, Bcrypt | Quản lý tài khoản Giảng viên, Khoa/Bộ môn, cấp phát & xác thực Bearer Token |
+| **`document-service`** | `8002` | PyPDF, Python-docx | Upload giáo trình, bóc tách cấu trúc chương mục, chunking ngữ nghĩa |
+| **`rag-service`** | `8003` | ChromaDB, Embeddings | Lưu trữ Vector DB, tính khoảng cách ngữ nghĩa (Cosine), truy hồi Top-K minh chứng |
+| **`ai-service`** | `8004` | Gemini 1.5, Pydantic | Xử lý Prompt theo Thang đo Bloom (Nhận biết, Thông hiểu, Vận dụng), Output JSON |
+| **`exam-service`** | `8005` | Python-docx, QTI XML | Ngân hàng đề, xáo trộn mã đề (101-104), xuất Word chuẩn ĐH, Canvas/Moodle QTI |
+| **`client-web`** | `3000` | React, Tailwind, Lucide | Giao diện người dùng: Dashboard, Upload, Cấu hình AI, Split-View RAG, Ngân hàng đề |
 
-## 6. Kế hoạch triển khai
-1. Chốt phạm vi MVP và xác thực kỹ thuật.
-2. Thiết kế giao diện, API và cơ sở dữ liệu.
-3. Phát triển các chức năng chính.
-4. Tích hợp frontend, backend và AI.
-5. Kiểm thử, sửa lỗi, triển khai và hoàn thiện tài liệu.
+---
 
-## 7. Trạng thái hiện tại
-Dự án đang ở giai đoạn chuẩn bị. Phạm vi MVP, kiến trúc và công nghệ cần được nhóm thống nhất trước khi triển khai đầy đủ.
+## 🚀 Hướng dẫn Triển khai & Khởi chạy
+
+### 1. Khởi chạy toàn bộ hệ thống bằng Docker Compose (Khuyên dùng)
+```bash
+# 1. Sao chép biến môi trường
+cp .env.example .env
+
+# 2. Khởi động đồng thời tất cả các microservices
+docker-compose up --build
+```
+
+### 2. Khởi chạy giao diện Frontend (Client Web)
+```bash
+npm install
+npm run dev
+```
+Truy cập giao diện tại: `http://localhost:3000`
+
+### 3. Kiểm tra Health Check các Microservices
+* API Gateway: `GET http://localhost:8000/health`
+* Auth Service: `GET http://localhost:8001/health`
+* Document Service: `GET http://localhost:8002/health`
+* RAG Vector Service: `GET http://localhost:8003/health`
+* AI Generation Service: `GET http://localhost:8004/health`
+* Exam Export Service: `GET http://localhost:8005/health`
