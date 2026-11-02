@@ -244,6 +244,108 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
   return (
     <div className="flex-1 p-8 overflow-y-auto space-y-8 bg-[#0b0f19] text-slate-100 relative">
+
+      {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
+      {isGenerating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-2xl bg-black/80">
+          {/* Ambient glows */}
+          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
+          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
+
+          <div className="relative glass-panel rounded-3xl p-10 max-w-md w-full mx-6 border border-white/[0.12] shadow-2xl overflow-hidden">
+            {/* Shimmer wave bar at top */}
+            <div className="absolute top-0 left-0 right-0 h-1 shimmer-bar" />
+
+            {/* Brain / Sparkle icon */}
+            <div className="flex justify-center mb-6">
+              <div className="relative">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-md">
+                  <Sparkles className="w-10 h-10 text-white animate-spin" style={{ animationDuration: '3s' }} />
+                </div>
+                <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl animate-pulse" />
+              </div>
+            </div>
+
+            <h2 className="text-center text-xl font-extrabold text-white mb-2 tracking-tight">
+              AI đang biên soạn đề thi
+            </h2>
+            <p className="text-center text-xs text-slate-400 mb-8">
+              Mô hình LLM đang truy xuất ngữ cảnh RAG & sinh câu hỏi theo Thang đo Bloom
+            </p>
+
+            {/* 3-step sequential status tracker */}
+            <div className="space-y-3">
+              {[
+                { step: 1, label: 'Đang truy xuất ngữ cảnh RAG từ tài liệu...' },
+                { step: 2, label: 'LLM đang tổng hợp và sinh câu hỏi theo Thang đo Bloom...' },
+                { step: 3, label: 'Kiểm tra minh chứng trích dẫn và tạo phương án nhiễu...' },
+              ].map(({ step, label }) => {
+                const currentStepNum =
+                  generationStep.includes('RAG') ? 1
+                  : generationStep.includes('LLM') ? 2
+                  : generationStep.includes('Kiểm tra') ? 3
+                  : 0;
+                const isDone = step < currentStepNum;
+                const isActive = step === currentStepNum;
+
+                return (
+                  <div
+                    key={step}
+                    className={`flex items-center space-x-3 p-3 rounded-xl border transition-all duration-500 ${
+                      isDone
+                        ? 'bg-emerald-500/10 border-emerald-500/25 opacity-60'
+                        : isActive
+                        ? 'bg-blue-500/10 border-blue-500/30'
+                        : 'bg-white/[0.02] border-white/[0.06] opacity-40'
+                    }`}
+                  >
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold border transition-all ${
+                      isDone
+                        ? 'bg-emerald-500 border-emerald-400 text-white'
+                        : isActive
+                        ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
+                        : 'bg-white/[0.05] border-white/[0.1] text-slate-500'
+                    }`}>
+                      {isDone ? '✓' : step}
+                    </div>
+                    <span className={`text-xs font-medium leading-snug ${
+                      isActive ? 'text-blue-200' : isDone ? 'text-emerald-300' : 'text-slate-500'
+                    }`}>
+                      {label}
+                    </span>
+                    {isActive && (
+                      <div className="ml-auto flex space-x-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Progress bar */}
+            <div className="mt-6 w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000"
+                style={{
+                  width: generationStep.includes('RAG') ? '33%'
+                    : generationStep.includes('LLM') ? '66%'
+                    : generationStep.includes('Kiểm tra') ? '90%'
+                    : '10%'
+                }}
+              />
+            </div>
+
+            <p className="text-center text-[11px] text-slate-500 font-mono mt-3">
+              Xử lý {totalQuestions} câu hỏi từ {selectedChapters.length} chương mục...
+            </p>
+          </div>
+        </div>
+      )}
+
+
       {/* Background Glow */}
       <div className="absolute top-20 right-1/4 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 

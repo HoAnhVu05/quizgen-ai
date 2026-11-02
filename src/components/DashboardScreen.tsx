@@ -248,47 +248,44 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         </div>
 
-        {/* Telemetry & Vector Health */}
+        {/* System Architecture Health (1 Col) */}
         <div className="glass-card p-6 rounded-2xl flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
               <div className="flex items-center space-x-2">
                 <Cpu className="w-4 h-4 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">ChromaDB Vectors</h3>
+                <h3 className="text-base font-bold text-white">Kiến trúc Vi dịch vụ</h3>
               </div>
               <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                12,450 Chunks
+                4/4 Online
               </span>
             </div>
 
-            <div className="mt-5 space-y-4">
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div className="flex justify-between text-xs text-slate-300 mb-1.5 font-medium">
-                  <span>Cosine Similarity Threshold</span>
-                  <span className="font-mono text-emerald-400 font-bold">&gt; 0.88</span>
+            <div className="mt-4 space-y-3">
+              {[
+                { name: 'Document Parser', status: 'Sẵn sàng', latency: null, color: 'emerald' },
+                { name: 'ChromaDB Vector Store', status: 'Hoạt động', latency: null, color: 'emerald' },
+                { name: 'Gemini Pro 1.5 LLM', status: 'Độ trễ 1.2s', latency: '1.2s', color: 'amber' },
+                { name: 'MathJax / KaTeX', status: 'Hoạt động', latency: null, color: 'emerald' },
+              ].map((svc) => (
+                <div key={svc.name} className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.05]">
+                  <span className="text-xs text-slate-300 font-medium">{svc.name}</span>
+                  <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold font-mono ${
+                    svc.color === 'emerald' ? 'text-emerald-400' : 'text-amber-400'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                      svc.color === 'emerald' ? 'bg-emerald-400' : 'bg-amber-400'
+                    }`} />
+                    {svc.status}
+                  </span>
                 </div>
-                <div className="w-full bg-white/[0.05] h-2 rounded-full overflow-hidden">
-                  <div className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full w-[88%]" />
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                <div className="flex justify-between text-xs text-slate-300 mb-1.5 font-medium">
-                  <span>Tốc độ Embedding RAG</span>
-                  <span className="font-mono text-blue-400 font-bold">140ms / query</span>
-                </div>
-                <div className="w-full bg-white/[0.05] h-2 rounded-full overflow-hidden">
-                  <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full w-[94%]" />
-                </div>
-              </div>
+              ))}
             </div>
           </div>
 
-          <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
-            <span>Mô hình: Gemini 1.5 Pro</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Sẵn sàng
-            </span>
+          <div className="pt-4 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400 mt-4">
+            <span>RAG Chunks tổng</span>
+            <span className="font-mono text-blue-400 font-semibold">12,450 vectors</span>
           </div>
         </div>
       </div>

@@ -284,7 +284,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
       {/* 3. Floating Action Bar (Dynamic Glass Dock) */}
       {selectedIds.length > 0 && (
-        <div className="fixed bottom-6 left-80 right-8 glass-panel text-white p-4 rounded-2xl shadow-2xl border border-white/15 flex flex-col md:flex-row items-center justify-between gap-4 z-40 animate-slideUp">
+        <div className="fixed bottom-6 left-72 right-8 glass-panel text-white p-4 rounded-2xl shadow-2xl border border-white/15 flex flex-col md:flex-row items-center justify-between gap-4 z-40 animate-slideUp">
           <div className="flex items-center space-x-4">
             <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white text-base shadow-glow-sm">
               {selectedIds.length}

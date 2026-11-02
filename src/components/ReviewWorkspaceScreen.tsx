@@ -108,6 +108,10 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
           onUpdateQuestion({ ...activeQuestion, status: 'rejected' });
           onShowToast('warning', 'Đã loại bỏ', `Đã từ chối câu hỏi`);
         }
+      } else if (e.key === 'e' || e.key === 'E') {
+        if (activeQuestion) {
+          setEditingQuestionId((prev) => (prev === activeQuestion.id ? null : activeQuestion.id));
+        }
       }
     };
 
@@ -517,6 +521,28 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
             })}
           </div>
         </div>
+      </div>
+
+      {/* ===== KEYBOARD SHORTCUTS DOCK (Floating) ===== */}
+      <div className="fixed bottom-5 left-[calc(288px+50%)] -translate-x-1/2 z-40 dock-glass rounded-2xl px-5 py-3 flex items-center space-x-6 shadow-2xl animate-slideUp">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Phím tắt nhanh</span>
+        <div className="h-4 w-px bg-white/10" />
+        {[
+          { key: 'A', label: 'Phê duyệt', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
+          { key: 'R', label: 'Từ chối', color: 'text-rose-400 bg-rose-500/10 border-rose-500/30' },
+          { key: 'E', label: 'Chỉnh sửa', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+        ].map(({ key, label, color }) => (
+          <div key={key} className="flex items-center space-x-2">
+            <kbd className={`px-2 py-0.5 text-[11px] font-bold rounded-lg border font-mono ${color}`}>
+              {key}
+            </kbd>
+            <span className="text-[11px] text-slate-400 font-medium">{label}</span>
+          </div>
+        ))}
+        <div className="h-4 w-px bg-white/10" />
+        <span className="text-[10px] text-slate-500 font-mono">
+          {approvedCount}/{totalCount} đã duyệt
+        </span>
       </div>
     </div>
   );

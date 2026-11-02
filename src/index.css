@@ -103,3 +103,60 @@
 .animate-pulse-subtle {
   animation: pulseSubtle 3s ease-in-out infinite;
 }
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Shadow glow utilities (supplement Tailwind extend) */
+.shadow-glow-emerald {
+  box-shadow: 0 0 20px -5px rgba(16, 185, 129, 0.4);
+}
+
+/* Floating dock backdrop */
+.dock-glass {
+  background: rgba(10, 15, 30, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Generation overlay shimmer */
+.shimmer-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(59, 130, 246, 0) 0%,
+    rgba(99, 102, 241, 0.6) 40%,
+    rgba(139, 92, 246, 0.6) 60%,
+    rgba(59, 130, 246, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.8s ease-in-out infinite;
+}
+
