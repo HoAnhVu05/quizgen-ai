@@ -168,3 +168,118 @@ VALUES
         'lec-001'
     )
 ON CONFLICT (id) DO NOTHING;
+
+-- --------------------------------------------------------------------
+-- 5. Dữ liệu Danh mục Trường & Khoa (Universities & Faculties)
+-- --------------------------------------------------------------------
+INSERT INTO auth.universities (id, code, name, city, website)
+VALUES 
+    ('uni-vnu', 'VNU', 'Đại học Quốc gia', 'Hà Nội', 'https://vnu.edu.vn'),
+    ('uni-hust', 'HUST', 'Đại học Bách Khoa', 'Hà Nội', 'https://hust.edu.vn')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO auth.faculties (id, university_id, code, name, dean_name)
+VALUES 
+    ('fac-fba', 'uni-vnu', 'FBA', 'Khoa Kinh tế & Quản trị', 'PGS.TS. Trần Văn Nam'),
+    ('fac-fit', 'uni-vnu', 'FIT', 'Khoa Công nghệ Thông tin', 'GS.TS. Lê Hoài An')
+ON CONFLICT (id) DO NOTHING;
+
+-- --------------------------------------------------------------------
+-- 6. Danh mục Môn học & Học phần (Subjects)
+-- --------------------------------------------------------------------
+INSERT INTO exams.subjects (id, code, name, credits, faculty_id, description)
+VALUES 
+    ('sub-microecon', 'ECO101', 'Kinh tế vi mô', 3, 'fac-fba', 'Nghiên cứu hành vi của các tác nhân kinh tế đơn lẻ: người tiêu dùng, doanh nghiệp và sự hình thành giá cả thị trường.'),
+    ('sub-macroecon', 'ECO102', 'Kinh tế vĩ mô', 3, 'fac-fba', 'Nghiên cứu tổng thể nền kinh tế: GDP, lạm phát, thất nghiệp, chính sách tài khóa và tiền tệ.'),
+    ('sub-accfin', 'ACC201', 'Nguyên lý Kế toán & Tài chính', 3, 'fac-fba', 'Hệ thống tài khoản kế toán, ghi sổ kép, báo cáo tài chính doanh nghiệp.')
+ON CONFLICT (id) DO NOTHING;
+
+-- Chuẩn đầu ra CLO mẫu
+INSERT INTO exams.learning_outcomes (id, subject_id, code, description, bloom_target)
+VALUES 
+    ('clo-eco101-1', 'sub-microecon', 'CLO1', 'Hiểu và giải thích được quy luật cung cầu và sự co giãn giá', 'Thông hiểu'),
+    ('clo-eco101-2', 'sub-microecon', 'CLO2', 'Vận dụng mô hình tối đa hóa lợi nhuận của doanh nghiệp vào bài toán thực tiễn', 'Vận dụng')
+ON CONFLICT (id) DO NOTHING;
+
+-- --------------------------------------------------------------------
+-- 7. Đề thi mẫu & Các mã đề đảo (Exams & Exam Variants)
+-- --------------------------------------------------------------------
+INSERT INTO exams.exams (
+    id, user_id, title, subject, faculty, university, duration_minutes, exam_codes, selected_question_ids, format
+)
+VALUES 
+    (
+        'exam-2026-001',
+        'lec-001',
+        'ĐỀ THI KẾT THÚC HỌC PHẦN - HỌC KỲ II',
+        'Kinh tế vi mô',
+        'Khoa Kinh tế & Quản trị',
+        'ĐẠI HỌC QUỐC GIA',
+        60,
+        '["101", "102", "103", "104"]'::jsonb,
+        '["q-1", "q-2", "q-3"]'::jsonb,
+        'docx'
+    )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO exams.exam_variants (id, exam_id, exam_code, question_sequence, answer_keys, file_path)
+VALUES 
+    (
+        'var-001-101',
+        'exam-2026-001',
+        '101',
+        '["q-1", "q-2", "q-3"]'::jsonb,
+        '{"1": "A", "2": "C", "3": "B"}'::jsonb,
+        '/storage/exams/DeThi_101.docx'
+    ),
+    (
+        'var-001-102',
+        'exam-2026-001',
+        '102',
+        '["q-3", "q-1", "q-2"]'::jsonb,
+        '{"1": "B", "2": "A", "3": "C"}'::jsonb,
+        '/storage/exams/DeThi_102.docx'
+    )
+ON CONFLICT (id) DO NOTHING;
+
+-- --------------------------------------------------------------------
+-- 8. Nhật ký khảo thí Dashboard Timeline (System Activities)
+-- --------------------------------------------------------------------
+INSERT INTO exams.system_activities (id, user_id, action_type, title, detail, icon_name, badge_color)
+VALUES 
+    (
+        'act-001',
+        'lec-001',
+        'export_exam',
+        'Xuất đề thi kết thúc học phần',
+        'Kinh tế vĩ mô - Giữa kỳ (40 câu - 4 mã đề 101, 102, 103, 104) ra tệp Word .docx',
+        'FileText',
+        'text-indigo-400 bg-indigo-500/10 border-indigo-500/20'
+    ),
+    (
+        'act-002',
+        'lec-001',
+        'approve_question',
+        'Phê duyệt câu hỏi tự động RAG',
+        'Đã thẩm định 12 câu hỏi trắc nghiệm Chương 3: Cung - Cầu',
+        'CheckCircle2',
+        'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+    ),
+    (
+        'act-003',
+        'lec-001',
+        'extract_textbook',
+        'Hoàn tất trích xuất ngữ nghĩa',
+        'Giáo trình Quản trị học hiện đại.pdf (240 trang, 68 chunks vector hóa)',
+        'Layers',
+        'text-blue-400 bg-blue-500/10 border-blue-500/20'
+    )
+ON CONFLICT (id) DO NOTHING;
+
+-- --------------------------------------------------------------------
+-- 9. Hạn ngạch RAG Token Quota cho Dashboard (Usage Quotas)
+-- --------------------------------------------------------------------
+INSERT INTO rag.usage_quotas (id, user_id, institution_id, max_tokens, used_tokens, total_embeddings_count)
+VALUES 
+    ('quota-lec-001', 'lec-001', 'uni-vnu', 1000000, 420000, 12450)
+ON CONFLICT (user_id) DO NOTHING;

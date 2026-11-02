@@ -2,7 +2,7 @@ import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Integer, Text, DateTime, Boolean, JSON
+from sqlalchemy import Column, String, Integer, Text, DateTime, Boolean, JSON, ForeignKey
 from .database import Base, DATABASE_URL
 
 SCHEMA_NAME = "ai" if DATABASE_URL.startswith("postgresql") else None
@@ -29,6 +29,20 @@ class AIGenerationJobDB(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     completed_at = Column(DateTime, nullable=True)
+
+
+class AIJobQuestionDB(Base):
+    __tablename__ = "job_questions"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    job_id = Column(
+        String(50), 
+        ForeignKey(f"{SCHEMA_NAME}.generation_jobs.id" if SCHEMA_NAME else "generation_jobs.id", ondelete="CASCADE"),
+        primary_key=True
+    )
+    question_id = Column(String(50), primary_key=True)
+    bloom_level = Column(String(30), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class BloomPresetDB(Base):

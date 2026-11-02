@@ -86,3 +86,15 @@ async def exam_proxy(path: str, request: Request):
 @app.api_route("/api/v1/questions/{path:path}", methods=METHODS)
 async def questions_proxy(path: str, request: Request):
     return await proxy_request(settings.EXAM_SERVICE_URL, f"/questions/{path}", request)
+
+@app.api_route("/api/v1/analytics/{path:path}", methods=METHODS)
+async def analytics_proxy(path: str, request: Request):
+    return await proxy_request(settings.EXAM_SERVICE_URL, f"/analytics/{path}", request)
+
+@app.api_route("/api/v1/subjects/{path:path}", methods=METHODS)
+async def subjects_proxy(path: str, request: Request):
+    return await proxy_request(settings.EXAM_SERVICE_URL, f"/subjects/{path}", request)
+
+@app.api_route("/api/v1/activities/{path:path}", methods=METHODS)
+async def activities_proxy(path: str, request: Request):
+    return await proxy_request(settings.EXAM_SERVICE_URL, f"/activities/{path}", request)

@@ -144,7 +144,8 @@ services:
       - ./database/migrations/03_rag_service.sql:/docker-entrypoint-initdb.d/03_rag.sql
       - ./database/migrations/04_ai_service.sql:/docker-entrypoint-initdb.d/04_ai.sql
       - ./database/migrations/05_exam_service.sql:/docker-entrypoint-initdb.d/05_exam.sql
-      - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/06_seed.sql
+      - ./database/migrations/06_comprehensive_academic_extensions.sql:/docker-entrypoint-initdb.d/06_extensions.sql
+      - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/07_seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quizgen -d quizgen_db"]
       interval: 5s
