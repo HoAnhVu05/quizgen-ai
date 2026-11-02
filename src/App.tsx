@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardScreen } from './components/DashboardScreen';
 import { TextbookUploadScreen } from './components/TextbookUploadScreen';
@@ -91,17 +91,66 @@ export const App: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const handleUpdateQuestion = (updated: Question) => {
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+  // Đồng bộ câu hỏi từ Backend Database nếu có sẵn
+  useEffect(() => {
+    const fetchQuestions = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/questions`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setQuestions(data);
+          }
+        }
+      } catch (err) {
+        // Fallback tự nhiên về INITIAL_QUESTIONS
+      }
+    };
+    fetchQuestions();
+  }, [API_BASE]);
+
+  const handleUpdateQuestion = async (updated: Question) => {
     setQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+    try {
+      await fetch(`${API_BASE}/questions/${updated.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionText: updated.question,
+          options: updated.options,
+          correctAnswerId: updated.correctAnswerId,
+          explanation: updated.explanation,
+          bloomLevel: updated.bloomLevel,
+          confidenceScore: updated.confidenceScore,
+        }),
+      });
+    } catch (err) {
+      // Local state đã cập nhật
+    }
   };
 
-  const handleBatchApprove = () => {
+  const handleBatchApprove = async () => {
+    const pendingIds = questions.filter((q) => q.status === 'pending').map((q) => q.id);
     setQuestions((prev) =>
       prev.map((q) => (q.status === 'pending' ? { ...q, status: 'approved' } : q))
     );
+    try {
+      await fetch(`${API_BASE}/questions/batch-approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_ids: pendingIds }),
+      });
+    } catch (err) {
+      // Local state đã cập nhật
+    }
   };
 
-  const handleGenerateSuccess = () => {
+  const handleGenerateSuccess = (newQuestions?: Question[]) => {
+    if (newQuestions && newQuestions.length > 0) {
+      setQuestions((prev) => [...newQuestions, ...prev]);
+    }
     setCurrentScreen('review');
   };
 

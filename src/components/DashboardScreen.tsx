@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   HelpCircle,
@@ -30,6 +30,35 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   pendingReviewCount,
   approvedCount,
 }) => {
+  const [metrics, setMetrics] = useState({
+    totalTextbooks: 12,
+    totalVectorizedPages: 1480,
+    totalRagChunks: 12450,
+    totalApprovedQuestions: 349,
+    totalPendingQuestions: 2,
+    totalExamsPackaged: 28,
+  });
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+        const res = await fetch(`${API_BASE}/analytics/dashboard`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.totalTextbooks !== undefined) {
+            setMetrics((prev) => ({
+              ...prev,
+              ...data,
+            }));
+          }
+        }
+      } catch (err) {
+        // Fallback ngầm định
+      }
+    };
+    fetchAnalytics();
+  }, []);
   return (
     <div className="flex-1 p-8 overflow-y-auto space-y-8 bg-[#0b0f19] text-slate-100 relative">
       {/* Background ambient mesh gradient */}
@@ -49,7 +78,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             Trung tâm Khảo thí & Tri thức AI
           </h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1">
-            Đã vector hóa <span className="text-blue-400 font-semibold font-mono">1,480 trang sách</span> giáo trình — Sẵn sàng sinh và đóng gói đề thi chuẩn sư phạm.
+            Đã vector hóa <span className="text-blue-400 font-semibold font-mono">{metrics.totalVectorizedPages.toLocaleString()} trang sách</span> giáo trình — Sẵn sàng sinh và đóng gói đề thi chuẩn sư phạm.
           </p>
         </div>
 
@@ -85,7 +114,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-white tracking-tight font-mono">12</span>
+            <span className="text-3xl font-extrabold text-white tracking-tight font-mono">{metrics.totalTextbooks}</span>
             <span className="text-xs text-slate-400 ml-2 font-medium">sách giáo khoa</span>
           </div>
           <div className="mt-3 flex items-center text-xs text-emerald-400 font-medium">
@@ -126,7 +155,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-3xl font-extrabold text-white tracking-tight font-mono">28</span>
+            <span className="text-3xl font-extrabold text-white tracking-tight font-mono">{metrics.totalExamsPackaged}</span>
             <span className="text-xs text-slate-400 ml-2 font-medium">bộ đề (Word & PDF)</span>
           </div>
           <div className="mt-3 flex items-center text-xs text-slate-400 font-medium">
