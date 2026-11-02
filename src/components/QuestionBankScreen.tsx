@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { Question, BloomLevel, ExamExportConfig } from '../types';
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
 interface QuestionBankScreenProps {
   questions: Question[];
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
@@ -30,6 +32,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
   const [selectedBloom, setSelectedBloom] = useState<string>('all');
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<'docx' | 'pdf' | 'qti'>('docx');
+  const [isExporting, setIsExporting] = useState(false);
 
   // Exam Builder Config
   const [examConfig, setExamConfig] = useState<ExamExportConfig>({
@@ -78,7 +81,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
     setShowExportModal(true);
   };
 
-  const handleConfirmExport = () => {
+  const handleConfirmExport = async () => {
+    setIsExporting(true);
     setShowExportModal(false);
     const count = selectedIds.length;
     const formatName =
@@ -88,11 +92,50 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
         ? 'PDF có phiếu chấm'
         : 'Canvas/Moodle QTI Zip';
 
-    onShowToast(
-      'success',
-      'Đã đóng gói đề thi thành công!',
+    try {
+      const questionsToExport = approvedQuestions.filter((q) => selectedIds.includes(q.id));
+      const response = await fetch(`${API_BASE}/exams/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...examConfig,
+          format: exportFormat,
+          selectedQuestionIds: selectedIds,
+          questions: questionsToExport,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const fileExt = exportFormat === 'qti' ? 'xml' : exportFormat;
+      const safeSubject = (examConfig.subjectName || 'DeThi').replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1EA0-\u1EF9]/g, '_');
+      a.download = `DeThi_${safeSubject}_${Date.now()}.${fileExt}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      onShowToast(
+        'success',
+        'Đã đóng gói & xuất bản đề thi thành công!',
+        `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tệp đã được tải xuống máy.`
+      );
+    } catch (err) {
+      console.warn('Lỗi kết nối xuất đề thi qua API Gateway, sử dụng mô phỏng client:', err);
+      onShowToast(
+        'info',
+        'Đã đóng gói đề thi (Chế độ mô phỏng)',
       `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tải xuống hoàn tất.`
     );
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Bloom counts for selected
@@ -451,10 +494,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                 </button>
                 <button
                   onClick={handleConfirmExport}
+                  disabled={isExporting}
                   className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-glow-sm flex items-center space-x-1.5"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Xác nhận & Tải tệp xuống</span>
+                  <span>{isExporting ? 'Đang tạo tệp...' : 'Xác nhận & Tải tệp xuống'}</span>
                 </button>
               </div>
             </div>

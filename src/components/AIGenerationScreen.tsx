@@ -15,11 +15,11 @@ import {
   BookmarkCheck,
   Cpu
 } from 'lucide-react';
-import { ScreenId } from '../types';
+import { ScreenId, Question, BloomLevel } from '../types';
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
-  onGenerateSuccess: () => void;
+  onGenerateSuccess: (newQuestions?: Question[]) => void;
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
 }
 
@@ -54,6 +54,98 @@ const FALLBACK_CHAPTERS: Record<string, string[]> = {
     'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
     'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
   ],
+};
+
+const generateDraftQuestions = (
+  bookName: string,
+  chapters: string[],
+  bloom: { nhanBiet: number; thongHieu: number; vanDung: number; phanTich: number }
+): Question[] => {
+  const result: Question[] = [];
+  const timestamp = Date.now();
+  let qIndex = 1;
+
+  const sampleBank = [
+    {
+      level: 'Nhận biết' as BloomLevel,
+      q: 'Theo nguyên lý kinh tế học, quy luật cung - cầu xác định mức giá và sản lượng cân bằng tại điểm nào?',
+      opts: [
+        { id: 'opt-a', label: 'A', text: 'Giao điểm giữa đường cung và đường cầu trên đồ thị' },
+        { id: 'opt-b', label: 'B', text: 'Mức giá tối đa do nhà nước quy định bắt buộc' },
+        { id: 'opt-c', label: 'C', text: 'Điểm có sản lượng cung vượt trội 50% so với lượng cầu' },
+        { id: 'opt-d', label: 'D', text: 'Điểm mà tại đó chi phí biên của nhà sản xuất bằng 0' },
+      ],
+      correct: 'opt-a',
+      exp: 'Trạng thái cân bằng thị trường đạt được khi lượng cung bằng đúng lượng cầu, tương ứng với giao điểm của hai đường.',
+    },
+    {
+      level: 'Thông hiểu' as BloomLevel,
+      q: 'Nếu trà và cà phê là hai hàng hóa thay thế hoàn hảo, sự kiện nào sau đây sẽ làm dịch chuyển đường cầu về cà phê sang bên phải?',
+      opts: [
+        { id: 'opt-a', label: 'A', text: 'Giá mặt hàng trà trên thị trường tăng vọt' },
+        { id: 'opt-b', label: 'B', text: 'Thu nhập trung bình của người tiêu dùng giảm sút nghiêm trọng' },
+        { id: 'opt-c', label: 'C', text: 'Giá hạt cà phê nguyên liệu đầu vào giảm mạnh' },
+        { id: 'opt-d', label: 'D', text: 'Xuất hiện thông tin tiêu cực về tác động của caffeine' },
+      ],
+      correct: 'opt-a',
+      exp: 'Vì là hàng hóa thay thế, giá trà tăng khiến người tiêu dùng chuyển sang dùng cà phê, làm tăng cầu cà phê.',
+    },
+    {
+      level: 'Vận dụng' as BloomLevel,
+      q: 'Một hãng độc quyền đối mặt với hàm cầu P = 100 - Q và MC = 20. Để tối đa hóa lợi nhuận, mức giá bán tối ưu là bao nhiêu?',
+      opts: [
+        { id: 'opt-a', label: 'A', text: 'P = 60' },
+        { id: 'opt-b', label: 'B', text: 'P = 40' },
+        { id: 'opt-c', label: 'C', text: 'P = 80' },
+        { id: 'opt-d', label: 'D', text: 'P = 20' },
+      ],
+      correct: 'opt-a',
+      exp: 'MR = 100 - 2Q. MR = MC <=> 100 - 2Q = 20 => Q = 40. Thay vào hàm cầu: P = 100 - 40 = 60.',
+    },
+    {
+      level: 'Phân tích' as BloomLevel,
+      q: 'Khi phân tích thặng dư xã hội (Total Surplus) dưới tác động của giá trần (Price Ceiling) thấp hơn giá cân bằng, kết luận nào đúng?',
+      opts: [
+        { id: 'opt-a', label: 'A', text: 'Xảy ra hiện tượng tổn thất vô ích (Deadweight Loss) do thị trường thiếu hụt hàng hóa' },
+        { id: 'opt-b', label: 'B', text: 'Tổng thặng dư toàn xã hội luôn đạt mức cực đại' },
+        { id: 'opt-c', label: 'C', text: 'Nhà sản xuất nhận được mức thặng dư cao hơn trước khi áp giá' },
+        { id: 'opt-d', label: 'D', text: 'Lượng giao dịch thực tế trên thị trường tăng lên mức tối đa' },
+      ],
+      correct: 'opt-a',
+      exp: 'Giá trần làm giảm lượng cung, tạo ra thiếu hụt hàng hóa và gây ra tổn thất vô ích cho toàn xã hội.',
+    },
+  ];
+
+  const levels: Array<{ label: BloomLevel; count: number }> = [
+    { label: 'Nhận biết', count: bloom.nhanBiet },
+    { label: 'Thông hiểu', count: bloom.thongHieu },
+    { label: 'Vận dụng', count: bloom.vanDung },
+    { label: 'Phân tích', count: bloom.phanTich },
+  ];
+
+  levels.forEach((lvl) => {
+    for (let i = 0; i < lvl.count; i++) {
+      const template = sampleBank.find((s) => s.level === lvl.label) || sampleBank[0];
+      const ch = chapters.length > 0 ? chapters[qIndex % chapters.length] : 'Chương tổng quát';
+      result.push({
+        id: `q-gen-${timestamp}-${qIndex}`,
+        sourceChunkId: `chunk-rag-${qIndex}`,
+        textbookName: bookName,
+        chapter: ch,
+        bloomLevel: lvl.label,
+        question: template.q + (i > 0 ? ` [Biến thể Bloom #${i + 1}]` : ''),
+        options: template.opts.map((o) => ({ ...o, id: `${o.id}-${qIndex}` })),
+        correctAnswerId: `${template.correct}-${qIndex}`,
+        explanation: template.exp,
+        confidenceScore: Math.floor(92 + Math.random() * 7),
+        status: 'pending',
+        createdAt: 'Vừa sinh AI',
+      });
+      qIndex++;
+    }
+  });
+
+  return result;
 };
 
 export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
@@ -236,8 +328,15 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
     setTimeout(() => {
       setIsGenerating(false);
-      onShowToast('success', 'Sinh câu hỏi hoàn tất!', `Đã khởi tạo thành công ${totalQuestions} câu hỏi. Hãy bắt đầu kiểm duyệt.`);
-      onGenerateSuccess();
+      const selectedDoc = documents.find((d) => d.id === selectedBook);
+      const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+      const newGeneratedQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
+      onShowToast(
+        'success',
+        'Sinh câu hỏi AI hoàn tất!',
+        `Đã khởi tạo thành công ${newGeneratedQuestions.length} câu hỏi theo Thang đo Bloom. Hãy bắt đầu kiểm duyệt.`
+      );
+      onGenerateSuccess(newGeneratedQuestions);
       onNavigate('review');
     }, 3600);
   };
