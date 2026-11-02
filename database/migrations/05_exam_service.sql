@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS exams.question_audit_logs (
 -- Chỉ mục tối ưu truy vấn (Indexes)
 CREATE INDEX IF NOT EXISTS idx_questions_document_id ON exams.questions(document_id);
 CREATE INDEX IF NOT EXISTS idx_questions_status ON exams.questions(status);
+CREATE INDEX IF NOT EXISTS idx_questions_bloom ON exams.questions(bloom_level);
 CREATE INDEX IF NOT EXISTS idx_questions_bloom_level ON exams.questions(bloom_level);
+CREATE INDEX IF NOT EXISTS idx_questions_chunk ON exams.questions(source_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_questions_created_at ON exams.questions(created_at);
 CREATE INDEX IF NOT EXISTS idx_exams_user_id ON exams.exams(user_id);
 CREATE INDEX IF NOT EXISTS idx_exams_created_at ON exams.exams(created_at);

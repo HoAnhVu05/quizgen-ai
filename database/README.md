@@ -10,17 +10,28 @@ Mỗi microservice sở hữu một schema độc lập, đảm bảo nguyên t�
 
 | Microservice | Port | Schema / Storage | Nhiệm vụ lưu trữ |
 | :--- | :---: | :--- | :--- |
-| **`auth-service`** | `8001` | Schema `auth` | Giảng viên, tài khoản đại học, mật khẩu mã hóa bcrypt, JWT tokens |
+| **`auth-service`** | `8001` | Schema `auth` | Giảng viên, tài khoản đại học, mật khẩu mã hóa bcrypt, JWT tokens, danh mục Trường & Khoa |
 | **`document-service`** | `8002` | Schema `documents` | Metadata giáo trình, tiến trình bóc tách, danh sách chương, semantic chunks |
-| **`rag-service`** | `8003` | Schema `rag` + ChromaDB | Vector embeddings (384-dim), log truy vấn độ tương đồng cosine |
-| **`ai-service`** | `8004` | Schema `ai` | Lịch sử tác vụ gọi LLM, cấu hình ma trận nhận thức Bloom (presets & jobs) |
-| **`exam-service`** | `8005` | Schema `exams` | Ngân hàng câu hỏi trắc nghiệm, trạng thái duyệt, gói đề thi hoán vị mã đề |
+| **`rag-service`** | `8003` | Schema `rag` + ChromaDB | Vector embeddings (384-dim), log truy vấn cosine, hạn ngạch token (Usage Quotas) |
+| **`ai-service`** | `8004` | Schema `ai` | Lịch sử tác vụ gọi LLM, cấu hình ma trận nhận thức Bloom (presets & jobs), bảng liên kết câu hỏi |
+| **`exam-service`** | `8005` | Schema `exams` | Ngân hàng câu hỏi, môn học, chuẩn đầu ra (CLO), gói đề thi hoán vị mã đề (101-104), nhật ký khảo thí (Activities) |
 
 ---
 
 ## 📊 2. Chi tiết Cấu trúc Bảng & Khóa (Data Dictionary)
 
 ### 2.1. Schema `auth`
+- **`auth.universities`**:
+  - `id` (VARCHAR(50), PK): vd: `'uni-vnu'`.
+  - `code` (VARCHAR(20), UNIQUE): Mã trường: `'VNU'`, `'HUST'`.
+  - `name` (VARCHAR(200)): Tên trường: `'Đại học Quốc gia'`.
+  - `city` (VARCHAR(100)), `website` (VARCHAR(255)).
+- **`auth.faculties`**:
+  - `id` (VARCHAR(50), PK): vd: `'fac-fba'`.
+  - `university_id` (VARCHAR(50), FK trỏ về `auth.universities(id)`).
+  - `code` (VARCHAR(20)): `'FBA'`, `'FIT'`.
+  - `name` (VARCHAR(200)): `'Khoa Kinh tế & Quản trị'`.
+  - `dean_name` (VARCHAR(100)): Tên trưởng khoa.
 - **`auth.users`**:
   - `id` (VARCHAR(50), PK): Định danh giảng viên (vd: `lec-001`).
   - `email` (VARCHAR(100), UNIQUE, NOT NULL): Email trường đại học.
@@ -70,6 +81,11 @@ Mỗi microservice sở hữu một schema độc lập, đảm bảo nguyên t�
   - Theo dõi số lượng vector nhúng, model embedding, số chiều (384-dim).
 - **`rag.retrieval_logs`**:
   - Nhật ký truy vấn context, phục vụ thống kê điểm tương đồng (`relevance_score`) và độ trễ (`latency_ms`).
+- **`rag.usage_quotas`**:
+  - `id` (VARCHAR(50), PK), `user_id` (VARCHAR(50), UNIQUE).
+  - `max_tokens` (BIGINT, DEFAULT 1,000,000): Hạn mức token.
+  - `used_tokens` (BIGINT, DEFAULT 420,000): Số token đã tiêu thụ.
+  - `total_embeddings_count` (INT): Tổng số vector chunks đã tính toán.
 
 ### 2.4. Schema `ai`
 - **`ai.bloom_presets`**:
@@ -85,8 +101,22 @@ Mỗi microservice sở hữu một schema độc lập, đảm bảo nguyên t�
   - `total_requested`, `total_generated` (INT).
   - `status` (VARCHAR(20)): `'queued'` | `'processing'` | `'completed'` | `'failed'`.
   - `prompt_tokens`, `completion_tokens` (INT).
+- **`ai.job_questions`**:
+  - `job_id` (VARCHAR(50), FK trỏ về `generation_jobs(id)`).
+  - `question_id` (VARCHAR(50)): Mã câu hỏi sinh ra từ job.
+  - `bloom_level` (VARCHAR(30)).
 
 ### 2.5. Schema `exams`
+- **`exams.subjects`**:
+  - `id` (VARCHAR(50), PK): vd: `'sub-microecon'`.
+  - `code` (VARCHAR(30), UNIQUE): Mã học phần (`ECO101`, `ACC201`).
+  - `name` (VARCHAR(200)): Tên môn học (`Kinh tế vi mô`).
+  - `credits` (INT, DEFAULT 3): Số tín chỉ.
+  - `description` (TEXT).
+- **`exams.learning_outcomes` (CLO)**:
+  - `id` (VARCHAR(50), PK), `subject_id` (FK), `code` (`CLO1`, `CLO2`), `description` (Mô tả chuẩn đầu ra), `bloom_target`.
+- **`exams.question_clos`**:
+  - Bảng liên kết nhiều-nhiều giữa câu hỏi và chuẩn đầu ra CLO.
 - **`exams.questions`**:
   - `id` (VARCHAR(50), PK): Mã câu hỏi (vd: `q-1`, `q-101`).
   - `document_id` (VARCHAR(50)): Liên kết tài liệu nguồn.
@@ -103,12 +133,26 @@ Mỗi microservice sở hữu một schema độc lập, đảm bảo nguyên t�
 - **`exams.exams`**:
   - `id` (VARCHAR(50), PK): Mã đề thi đã đóng gói (vd: `exam-2026-001`).
   - `user_id`: Giảng viên đóng gói.
-  - `title`: Tiêu đề đề thi.
-  - `subject`: Môn học.
+  - `title`, `subject`, `faculty`, `university`.
   - `exam_codes` (JSONB): Mảng các mã đề hoán vị (vd: `["101", "102", "103", "104"]`).
   - `selected_question_ids` (JSONB): Danh sách các ID câu hỏi được đưa vào đề.
   - `duration_minutes` (INT, DEFAULT 60): Thời gian thi.
   - `format` (VARCHAR(20), DEFAULT 'docx'): `'docx'` | `'pdf'` | `'qti'`.
+- **`exams.exam_variants`**:
+  - `id` (VARCHAR(50), PK): Mã biến thể đề (vd: `var-001-101`).
+  - `exam_id` (VARCHAR(50), FK trỏ về `exams.exams(id)`).
+  - `exam_code` (VARCHAR(10)): `'101'`, `'102'`, `'103'`, `'104'`.
+  - `question_sequence` (JSONB): Thứ tự câu hỏi xáo trộn.
+  - `answer_keys` (JSONB): Ma trận đáp án chuẩn của mã đề (`{"1": "A", "2": "C", ...}`).
+  - `file_path` (VARCHAR(500)): Đường dẫn file render.
+- **`exams.system_activities`**:
+  - `id` (VARCHAR(50), PK): Mã hoạt động (`act-001`).
+  - `user_id`: Giảng viên thực hiện.
+  - `action_type`: `'export_exam'`, `'approve_question'`, `'extract_textbook'`.
+  - `title`: Tên hành động.
+  - `detail`: Chi tiết học thuật.
+  - `icon_name`: Tên Icon Lucide (`FileText`, `CheckCircle2`, `Layers`).
+  - `badge_color`: Màu sắc hiển thị.
 - **`exams.question_audit_logs`**:
   - Ghi nhận lịch sử duyệt, sửa inline hoặc sinh lại câu hỏi của giảng viên.
 

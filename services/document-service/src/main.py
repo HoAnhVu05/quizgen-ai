@@ -14,6 +14,7 @@ from .database import engine, Base, get_db, SessionLocal
 from .models import DocumentDB, DocumentChapterDB, DocumentChunkDB
 from .parser import DocumentParser
 from .chunker import TextChunker
+from .cache import cache
 
 app = FastAPI(
     title="QuizGen AI - Document Service",
@@ -123,6 +124,7 @@ async def forward_chunks_to_rag(document_id: str, chunks: List[dict]):
                     doc.status = "ready"
                     doc.progress = 100
                     doc.error_message = None
+                    cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=doc.total_pages)
                 else:
                     doc.status = "error"
                     doc.error_message = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
@@ -187,6 +189,7 @@ async def upload_document(
     # Lưu tệp vật lý vào ổ cứng
     storage_file = STORAGE_DIR / f"{doc_id}_{filename}"
     storage_file.write_bytes(content)
+    cache.set_upload_progress(doc_id, progress=20, status="extracting", stage="parsing_file")
 
     # 1. Bóc tách văn bản từ tệp
     try:
@@ -257,6 +260,7 @@ async def upload_document(
     db.commit()
 
     # 5. Kích hoạt tác vụ nền nạp vector vào RAG Service
+    cache.set_upload_progress(doc_id, progress=50, status="embedding", stage="dispatching_to_rag", total_pages=len(pages))
     background_tasks.add_task(forward_chunks_to_rag, doc_id, chunks)
 
     return {
@@ -273,6 +277,22 @@ async def upload_document(
         }
     }
 
+
+@app.get("/progress/{document_id}")
+def get_document_progress(document_id: str, db: Session = Depends(get_db)):
+    cached = cache.get_upload_progress(document_id)
+    if cached:
+        return cached
+    doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
+    return {
+        "document_id": doc.id,
+        "progress": doc.progress,
+        "status": doc.status,
+        "stage": "completed" if doc.progress == 100 else doc.status,
+        "total_pages": doc.total_pages
+    }
 
 @app.get("/")
 def root_list_documents(db: Session = Depends(get_db)):

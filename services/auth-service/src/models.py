@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
@@ -11,6 +11,39 @@ SCHEMA_NAME = "auth" if DATABASE_URL.startswith("postgresql") else None
 # ====================================================================
 # SQLALCHEMY ORM MODELS
 # ====================================================================
+class UniversityDB(Base):
+    __tablename__ = "universities"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(50), primary_key=True)
+    code = Column(String(20), unique=True, nullable=False)
+    name = Column(String(200), nullable=False)
+    city = Column(String(100), default="Hà Nội")
+    website = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    faculties = relationship("FacultyDB", back_populates="university", cascade="all, delete-orphan")
+
+
+class FacultyDB(Base):
+    __tablename__ = "faculties"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(50), primary_key=True)
+    university_id = Column(
+        String(50), 
+        ForeignKey(f"{SCHEMA_NAME}.universities.id" if SCHEMA_NAME else "universities.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    code = Column(String(20), nullable=False)
+    name = Column(String(200), nullable=False)
+    dean_name = Column(String(100), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    university = relationship("UniversityDB", back_populates="faculties")
+
+
 class UserDB(Base):
     __tablename__ = "users"
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
@@ -53,6 +86,26 @@ class UserTokenDB(Base):
 # ====================================================================
 # PYDANTIC SCHEMAS (API REQUEST / RESPONSE)
 # ====================================================================
+class UniversityResponse(BaseModel):
+    id: str
+    code: str
+    name: str
+    city: Optional[str] = None
+    website: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class FacultyResponse(BaseModel):
+    id: str
+    universityId: str
+    code: str
+    name: str
+    deanName: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
 class LecturerBase(BaseModel):
     email: EmailStr
     full_name: str
