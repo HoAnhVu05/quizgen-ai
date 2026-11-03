@@ -1,4 +1,19 @@
 export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank';
+export type AuthScreenId = 'login' | 'register';
+
+export type UserRole = 'lecturer' | 'head_of_department' | 'admin';
+
+export interface UserProfile {
+  id: string;
+  fullName: string;
+  email: string;
+  academicTitle?: string;
+  department?: string;
+  faculty?: string;
+  university?: string;
+  role: UserRole;
+  roleLabel?: string;
+}
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';
 export type QuestionStatus = 'pending' | 'approved' | 'rejected';
