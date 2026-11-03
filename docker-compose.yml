@@ -36,10 +36,13 @@ services:
     environment:
       - PORT=8001
       - SECRET_KEY=quizgen-super-secret-academic-key-2026
-      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - DATABASE_URL=postgresql+psycopg2://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - REDIS_HOST=redis
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - quizgen-network
 
@@ -54,10 +57,13 @@ services:
     environment:
       - PORT=8002
       - RAG_SERVICE_URL=http://rag-service:8003
-      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - DATABASE_URL=postgresql+psycopg2://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - REDIS_HOST=redis
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - quizgen-network
 
@@ -71,12 +77,15 @@ services:
       - "8003:8003"
     environment:
       - PORT=8003
-      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - DATABASE_URL=postgresql+psycopg2://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - REDIS_HOST=redis
     volumes:
       - chroma_data:/app/data/chroma
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - quizgen-network
 
@@ -92,10 +101,13 @@ services:
       - PORT=8004
       - RAG_SERVICE_URL=http://rag-service:8003
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - DATABASE_URL=postgresql+psycopg2://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - REDIS_HOST=redis
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - quizgen-network
 
@@ -109,10 +121,13 @@ services:
       - "8005:8005"
     environment:
       - PORT=8005
-      - DATABASE_URL=postgresql://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - DATABASE_URL=postgresql+psycopg2://quizgen:quizgen_secure_pass_2026@postgres:5432/quizgen_db
+      - REDIS_HOST=redis
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - quizgen-network
 

@@ -6,7 +6,9 @@ import { AIGenerationScreen } from './components/AIGenerationScreen';
 import { ReviewWorkspaceScreen } from './components/ReviewWorkspaceScreen';
 import { QuestionBankScreen } from './components/QuestionBankScreen';
 import { ToastContainer } from './components/ToastContainer';
-import { ScreenId, Question, ToastMessage } from './types';
+import { LoginScreen } from './components/LoginScreen';
+import { RegisterScreen } from './components/RegisterScreen';
+import { ScreenId, AuthScreenId, Question, ToastMessage } from './types';
 
 const INITIAL_QUESTIONS: Question[] = [
   {
@@ -69,6 +71,11 @@ const INITIAL_QUESTIONS: Question[] = [
 ];
 
 export const App: React.FC = () => {
+  // ─── Auth State ───────────────────────────────────────────────────────────
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authScreen, setAuthScreen] = useState<AuthScreenId>('login');
+
+  // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -154,9 +161,49 @@ export const App: React.FC = () => {
     setCurrentScreen('review');
   };
 
+  // ─── Auth Handlers ────────────────────────────────────────────────────────
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    setCurrentScreen('dashboard');
+    handleShowToast('success', 'Đăng nhập thành công', 'Chào mừng trở lại hệ thống QuizGen AI!');
+  };
+
+  const handleRegister = () => {
+    setIsAuthenticated(true);
+    setCurrentScreen('dashboard');
+    handleShowToast('success', 'Tạo tài khoản thành công', 'Chào mừng bạn đến với QuizGen AI!');
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setAuthScreen('login');
+    setCurrentScreen('dashboard');
+  };
+
   const pendingCount = questions.filter((q) => q.status === 'pending').length;
   const approvedCount = questions.filter((q) => q.status === 'approved').length;
 
+  // ─── Auth Screens ─────────────────────────────────────────────────────────
+  if (!isAuthenticated) {
+    return (
+      <div className="font-sans select-none">
+        <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+        {authScreen === 'login' ? (
+          <LoginScreen
+            onLogin={handleLogin}
+            onNavigateRegister={() => setAuthScreen('register')}
+          />
+        ) : (
+          <RegisterScreen
+            onRegister={handleRegister}
+            onNavigateLogin={() => setAuthScreen('login')}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ─── Main App ─────────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0b0f19] font-sans relative select-none">
       {/* Toast Notification Layer */}
@@ -167,6 +214,7 @@ export const App: React.FC = () => {
         currentScreen={currentScreen}
         onNavigate={setCurrentScreen}
         pendingReviewCount={pendingCount}
+        onLogout={handleLogout}
       />
 
       {/* Main Content Area */}
@@ -216,3 +264,4 @@ export const App: React.FC = () => {
 };
 
 export default App;
+

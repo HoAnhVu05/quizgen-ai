@@ -20,12 +20,14 @@ interface SidebarProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   pendingReviewCount: number;
+  onLogout: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
   onNavigate,
-  pendingReviewCount
+  pendingReviewCount,
+  onLogout,
 }) => {
   const navItems = [
     {
@@ -191,7 +193,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <button className="text-slate-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/[0.06]">
+          <button
+            onClick={onLogout}
+            title="Đăng xuất"
+            className="text-slate-400 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/[0.08]"
+          >
             <LogOut className="w-4 h-4" />
           </button>
         </div>
