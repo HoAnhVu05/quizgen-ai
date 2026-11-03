@@ -10,6 +10,7 @@ from .database import engine, Base, get_db, SessionLocal
 from .models import AIGenerationJobDB, BloomPresetDB, GenerateRequest
 from .generator import QuestionGenerator
 from .cache import cache
+from .auth import get_current_user_id, get_optional_user_id
 
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
@@ -46,8 +47,11 @@ def get_presets(db: Session = Depends(get_db)):
 
 @app.post("/generate")
 @app.post("/generate-questions")
-async def generate_questions(req: GenerateRequest, db: Session = Depends(get_db)):
-    user_id = "lec-001"
+async def generate_questions(
+    req: GenerateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
 
     # Kiểm tra Rate Limit qua Redis (Section 5 Spec: 5 lượt/phút)
     allowed, remaining = cache.check_ai_rate_limit(user_id=user_id, limit=5, window_seconds=60)
@@ -65,7 +69,7 @@ async def generate_questions(req: GenerateRequest, db: Session = Depends(get_db)
     job_id = f"job-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     job = AIGenerationJobDB(
         id=job_id,
-        user_id="lec-001",
+        user_id=user_id,
         document_id=document_id,
         chapters=req.chapters,
         bloom_matrix=bloom_matrix,

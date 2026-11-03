@@ -2,6 +2,55 @@ import httpx
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
+import hmac
+import hashlib
+import base64
+import json
+import time
+
+def verify_and_inject_jwt(request: Request, headers: dict) -> None:
+    """
+    Xác thực JWT token từ header Authorization (Bearer <token>)
+    và tự động đính kèm thông tin định danh (x-user-id, x-user-role, x-user-email)
+    chuyển tiếp tới các microservices nội bộ.
+    """
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        return
+
+    token = None
+    if auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+    else:
+        token = auth_header.strip()
+
+    if not token:
+        return
+
+    try:
+        parts = token.split(".")
+        if len(parts) == 3:
+            header_b64, payload_b64, sig_b64 = parts
+            msg = f"{header_b64}.{payload_b64}".encode("utf-8")
+            expected_sig = hmac.new(settings.SECRET_KEY.encode("utf-8"), msg, hashlib.sha256).digest()
+            sig_pad = "=" * (-len(sig_b64) % 4)
+            actual_sig = base64.urlsafe_b64decode(sig_b64 + sig_pad)
+
+            if hmac.compare_digest(expected_sig, actual_sig):
+                payload_pad = "=" * (-len(payload_b64) % 4)
+                payload = json.loads(base64.urlsafe_b64decode(payload_b64 + payload_pad).decode("utf-8"))
+                exp = payload.get("exp")
+                if exp is None or time.time() <= exp:
+                    uid = payload.get("id") or payload.get("user_id") or payload.get("sub")
+                    if uid:
+                        headers["x-user-id"] = str(uid)
+                    if "email" in payload:
+                        headers["x-user-email"] = str(payload["email"])
+                    if "role" in payload:
+                        headers["x-user-role"] = str(payload["role"])
+    except Exception:
+        pass
+
 
 app = FastAPI(
     title="QuizGen AI - API Gateway",
@@ -24,6 +73,7 @@ async def proxy_request(service_url: str, path: str, request: Request) -> Respon
     
     headers = dict(request.headers)
     headers.pop("host", None)
+    verify_and_inject_jwt(request, headers)
     
     try:
         req = client.build_request(
