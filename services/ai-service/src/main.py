@@ -25,7 +25,7 @@ from .auth import get_current_user_id, get_optional_user_id
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
 
-RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag-service:8003")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8003")
 
 @app.on_event("startup")
 def startup_db():
