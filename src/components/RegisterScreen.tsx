@@ -47,7 +47,7 @@ interface FormErrors {
   general?: string;
 }
 
-const ACADEMIC_TITLES = ['TS.', 'ThS.', 'PGS. TS.', 'GS. TS.', 'Giảng viên', 'Chuyên viên Khảo thi'];
+const ACADEMIC_TITLES = ['ThS.', 'TS.', 'PGS.'];
 
 const UNIVERSITY_OPTIONS = [
   'Đại học Quốc gia TP.HCM (VNU-HCM)',
@@ -285,6 +285,10 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
         if (data.id) {
           newUser.id = data.id;
         }
+        if (data.access_token) {
+          localStorage.setItem('quizgen_token', data.access_token);
+          localStorage.setItem('quizgen_auth_token', data.access_token);
+        }
       } catch (netErr) {
         // Backend offline, fallback lưu cục bộ
       }
@@ -310,10 +314,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
       // Tự động thiết lập phiên đăng nhập
       localStorage.setItem('quizgen_user', JSON.stringify(newUser));
 
-      setTimeout(() => {
-        setIsLoading(false);
-        onRegister(newUser);
-      }, 700);
+      setIsLoading(false);
+      onRegister(newUser);
     } catch (err: any) {
       setIsLoading(false);
       setErrors({ general: err.message || 'Lỗi khi khởi tạo tài khoản.' });
@@ -497,23 +499,25 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
             {/* ─── 4. CƠ SỞ ĐÀO TẠO & KHOA BỘ MÔN ─────────────────────── */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase">Trường / Đơn vị ĐHQG</label>
+                <label className="text-xs font-semibold text-slate-300 uppercase">Trường đại học (University)</label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                     <School className="w-4 h-4" />
                   </div>
-                  <select
+                  <input
+                    type="text"
                     value={form.university}
                     onChange={(e) => setField('university', e.target.value)}
-                    className="w-full bg-[#131b2e] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white outline-none focus:border-blue-500/50 cursor-pointer truncate"
-                  >
-                    {UNIVERSITY_OPTIONS.map((u) => (
-                      <option key={u} value={u} className="bg-[#131b2e] text-white">
-                        {u}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Ví dụ: Đại học Quốc gia TP.HCM, ĐH Bách Khoa..."
+                    className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
+                      ${errors.university ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/10 focus:border-blue-500/50'}`}
+                  />
                 </div>
+                {errors.university && (
+                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {errors.university}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">

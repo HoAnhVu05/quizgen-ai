@@ -8,7 +8,7 @@ import { QuestionBankScreen } from './components/QuestionBankScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
-import { ScreenId, AuthScreenId, UserProfile, Question, ToastMessage } from './types';
+import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
 
 const INITIAL_QUESTIONS: Question[] = [
   {
@@ -83,7 +83,7 @@ export const App: React.FC = () => {
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return !!localStorage.getItem('quizgen_user');
+      return !!(localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_user'));
     } catch {
       return false;
     }
@@ -95,6 +95,61 @@ export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+  // ─── Khởi động: Đọc quizgen_token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
+  useEffect(() => {
+    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+    if (!token) return;
+
+    const verifySession = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/auth/me`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const profile: UserProfile = {
+            id: data.id || `usr-${Date.now()}`,
+            fullName: data.full_name || data.fullName || 'Giảng viên',
+            email: data.email,
+            academicTitle: data.academic_title || data.academicTitle || 'TS.',
+            department: data.department || data.faculty || 'Khoa Kinh tế & Quản trị',
+            faculty: data.department || data.faculty || 'Khoa Kinh tế & Quản trị',
+            university: data.university || 'Đại học Quốc gia',
+            role: (data.role as UserRole) || 'lecturer',
+            roleLabel:
+              data.role === 'head_of_department'
+                ? 'Trưởng bộ môn'
+                : data.role === 'admin'
+                ? 'Quản trị Khảo thi'
+                : 'Giảng viên',
+          };
+          setCurrentUser(profile);
+          setIsAuthenticated(true);
+          localStorage.setItem('quizgen_user', JSON.stringify(profile));
+        } else if (res.status === 401) {
+          // Token hết hạn hoặc không hợp lệ -> Thu hồi phiên
+          localStorage.removeItem('quizgen_token');
+          localStorage.removeItem('quizgen_auth_token');
+          localStorage.removeItem('quizgen_user');
+          setCurrentUser(null);
+          setIsAuthenticated(false);
+        }
+      } catch (err) {
+        // Fallback duy trì session offline nếu còn dữ liệu trong localStorage
+        console.warn('[AUTH] Không thể kết nối /auth/me, duy trì phiên từ bộ nhớ cục bộ');
+      }
+    };
+
+    verifySession();
+  }, [API_BASE]);
 
   const handleShowToast = useCallback((
     type: 'success' | 'info' | 'warning' | 'error',
@@ -113,8 +168,6 @@ export const App: React.FC = () => {
   const handleDismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
-
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
   // Đồng bộ câu hỏi từ Backend Database nếu có sẵn
   useEffect(() => {
@@ -203,22 +256,26 @@ export const App: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    // 1. Thử gọi backend logout nếu có token
-    const token = localStorage.getItem('quizgen_auth_token');
+    // 1. Gọi backend logout với token trước khi xóa token
+    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
     if (token) {
       try {
         await fetch(`${API_BASE}/auth/logout`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
         });
       } catch (e) {
-        // Fallback local cleanup
+        console.warn('[AUTH] Không thể gọi backend logout:', e);
       }
     }
 
-    // 2. Xóa phiên đăng nhập
-    localStorage.removeItem('quizgen_user');
+    // 2. Xóa toàn bộ token & phiên đăng nhập khỏi localStorage
+    localStorage.removeItem('quizgen_token');
     localStorage.removeItem('quizgen_auth_token');
+    localStorage.removeItem('quizgen_user');
     setCurrentUser(null);
     setIsAuthenticated(false);
     setAuthScreen('login');

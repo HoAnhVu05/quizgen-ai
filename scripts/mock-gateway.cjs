@@ -826,6 +826,44 @@ const server = http.createServer((req, res) => {
         university: newUser.university,
         department: newUser.department,
         role: newUser.role,
+        access_token: `mock-jwt-${newUser.id}-${Date.now()}`,
+        token_type: 'bearer',
+        is_active: true,
+        created_at: new Date().toISOString(),
+      }));
+      return;
+    }
+
+    // Auth Me (Fetch current session info via Bearer token for F5 reload)
+    if (pathname === '/api/v1/auth/me' || pathname === '/me') {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Token không hợp lệ hoặc thiếu Bearer header.' }));
+        return;
+      }
+
+      const token = authHeader.slice(7);
+      let foundUser = null;
+      for (const u of MOCK_USERS_DB.values()) {
+        if (token.includes(u.id)) {
+          foundUser = u;
+          break;
+        }
+      }
+      if (!foundUser) {
+        foundUser = Array.from(MOCK_USERS_DB.values())[0];
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        id: foundUser.id,
+        email: foundUser.email,
+        full_name: foundUser.full_name,
+        academic_title: foundUser.academic_title,
+        university: foundUser.university,
+        department: foundUser.department,
+        role: foundUser.role,
         is_active: true,
         created_at: new Date().toISOString(),
       }));

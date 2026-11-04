@@ -218,6 +218,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         if (res.ok) {
           const data = await res.json();
           if (data.access_token) {
+            localStorage.setItem('quizgen_token', data.access_token);
             localStorage.setItem('quizgen_auth_token', data.access_token);
             if (data.user) {
               authenticatedUser = {
@@ -313,16 +314,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         }
       }
 
-      // ─── Đăng nhập thành công -> Reset số lần thử và lưu Session ─────────
+      // ─── Đăng nhập thành công -> Reset số lần thử, lưu Session và chuyển màn hình trực tiếp ─
       setFailedAttempts(0);
       if (rememberMe && authenticatedUser) {
         localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
       }
 
-      setTimeout(() => {
-        setIsLoading(false);
-        if (authenticatedUser) onLogin(authenticatedUser);
-      }, 500);
+      setIsLoading(false);
+      if (authenticatedUser) {
+        onLogin(authenticatedUser);
+      }
     } catch (err: any) {
       setIsLoading(false);
       setErrors({ general: err.message || 'Lỗi không xác định khi xác thực tài khoản.' });
