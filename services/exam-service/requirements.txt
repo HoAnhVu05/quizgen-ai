@@ -6,3 +6,4 @@ fpdf2>=2.7.9
 sqlalchemy>=2.0.32
 psycopg2-binary>=2.9.9
 redis>=5.0.0
+httpx>=0.28.1
