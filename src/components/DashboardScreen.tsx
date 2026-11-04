@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   HelpCircle,
@@ -72,10 +72,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
               Học kỳ II (2025 - 2026)
             </span>
-            <span className="text-xs text-slate-400">• Cơ sở dữ liệu Khảo thí ĐHQG</span>
+            <span className="text-xs text-slate-400">• Cơ sở dữ liệu Khảo thi ĐHQG</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight mt-1.5">
-            Trung tâm Khảo thí & Tri thức AI
+            Trung tâm Khảo thi & Tri thức AI
           </h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1">
             Đã vector hóa <span className="text-blue-400 font-semibold font-mono">{metrics.totalVectorizedPages.toLocaleString()} trang sách</span> giáo trình — Sẵn sàng sinh và đóng gói đề thi chuẩn sư phạm.
@@ -324,7 +324,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         <div className="p-5 border-b border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-slate-400" />
-            <h3 className="text-base font-bold text-white">Nhật ký khảo thí gần đây</h3>
+            <h3 className="text-base font-bold text-white">Nhật ký khảo thi gần đây</h3>
           </div>
           <button className="text-xs text-blue-400 hover:text-blue-300 font-medium">
             Xem toàn bộ nhật ký

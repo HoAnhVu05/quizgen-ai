@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   LayoutDashboard,
   UploadCloud,
@@ -6,20 +6,18 @@ import {
   CheckSquare,
   Database,
   GraduationCap,
-  BookOpen,
-  Settings,
   LogOut,
-  ChevronRight,
   ShieldCheck,
   Cpu,
-  Layers
+  Award,
 } from 'lucide-react';
-import { ScreenId } from '../types';
+import { ScreenId, UserProfile, UserRole } from '../types';
 
 interface SidebarProps {
   currentScreen: ScreenId;
   onNavigate: (screen: ScreenId) => void;
   pendingReviewCount: number;
+  currentUser?: UserProfile | null;
   onLogout: () => void;
 }
 
@@ -27,6 +25,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
   onNavigate,
   pendingReviewCount,
+  currentUser,
   onLogout,
 }) => {
   const navItems = [
@@ -68,6 +67,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
   ];
 
+  const getInitials = (name?: string, title?: string) => {
+    if (title && title.includes('TS')) return 'TS';
+    if (!name) return 'GV';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const getRoleStyle = (role?: UserRole) => {
+    switch (role) {
+      case 'admin':
+        return {
+          label: 'Quản trị Khảo thi',
+          badgeClass: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+          avatarGrad: 'from-amber-500 to-orange-600',
+          icon: ShieldCheck,
+        };
+      case 'head_of_department':
+        return {
+          label: 'Trưởng bộ môn',
+          badgeClass: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+          avatarGrad: 'from-purple-500 to-indigo-600',
+          icon: Award,
+        };
+      default:
+        return {
+          label: 'Giảng viên',
+          badgeClass: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
+          avatarGrad: 'from-blue-600 to-indigo-600',
+          icon: GraduationCap,
+        };
+    }
+  };
+
+  const roleStyle = getRoleStyle(currentUser?.role);
+  const RoleIcon = roleStyle.icon;
+
+  const displayName = currentUser
+    ? `${currentUser.academicTitle ? currentUser.academicTitle + ' ' : ''}${currentUser.fullName}`
+    : 'TS. Nguyễn Văn An';
+
+  const displayDept = currentUser
+    ? `${currentUser.faculty || currentUser.department || 'Khoa CNTT'}`
+    : 'Khoa Kinh tế & Quản trị';
+
+  const initials = getInitials(currentUser?.fullName, currentUser?.academicTitle);
+
   return (
     <aside className="w-72 bg-[#090d16] text-slate-300 flex flex-col border-r border-white/[0.07] shrink-0 select-none relative z-20">
       {/* Brand Header */}
@@ -87,7 +133,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 PRO AI
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 font-medium truncate">Khảo thí Đại học Quốc gia</p>
+            <p className="text-[11px] text-slate-400 font-medium truncate">Khảo thi Đại học Quốc gia</p>
           </div>
         </div>
       </div>
@@ -177,26 +223,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Profile Footer */}
+      {/* Profile Footer with Dynamic User, Role Badge & Logout */}
       <div className="p-3.5 border-t border-white/[0.06] bg-[#070b13]">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white text-xs border border-white/20 shadow-sm">
-              TS
+            <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${roleStyle.avatarGrad} flex items-center justify-center font-bold text-white text-xs border border-white/20 shadow-md shrink-0`}>
+              {initials}
             </div>
             <div className="min-w-0">
               <div className="text-xs font-semibold text-white truncate flex items-center gap-1">
-                <span>TS. Nguyễn Văn A</span>
-                <ShieldCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span className="truncate">{displayName}</span>
+                <RoleIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               </div>
-              <div className="text-[10px] text-slate-400 truncate">Khoa Kinh tế - ĐHQG</div>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className={`px-1.5 py-0.2 text-[9px] font-semibold rounded border ${roleStyle.badgeClass}`}>
+                  {roleStyle.label}
+                </span>
+                <span className="text-[10px] text-slate-400 truncate max-w-[90px]">{displayDept}</span>
+              </div>
             </div>
           </div>
 
           <button
+            id="sidebar-logout-btn"
             onClick={onLogout}
-            title="Đăng xuất"
-            className="text-slate-400 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/[0.08]"
+            title="Đăng xuất khỏi hệ thống"
+            className="text-slate-400 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/[0.1] shrink-0 ml-1"
           >
             <LogOut className="w-4 h-4" />
           </button>
