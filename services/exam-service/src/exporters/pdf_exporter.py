@@ -21,26 +21,65 @@ class PDFExamExporter:
         """
         possible_font_paths = [
             # Linux / Docker container paths
-            ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "DejaVu"),
-            ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", "Liberation"),
+            (
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+                "DejaVu"
+            ),
+            (
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
+                "Liberation"
+            ),
             # Windows paths
-            ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf", "ArialCustom"),
-            ("C:/Windows/Fonts/tahoma.ttf", "C:/Windows/Fonts/tahomabd.ttf", "TahomaCustom"),
+            (
+                "C:/Windows/Fonts/arial.ttf",
+                "C:/Windows/Fonts/arialbd.ttf",
+                "C:/Windows/Fonts/ariali.ttf",
+                "C:/Windows/Fonts/arialbi.ttf",
+                "ArialCustom"
+            ),
+            (
+                "C:/Windows/Fonts/tahoma.ttf",
+                "C:/Windows/Fonts/tahomabd.ttf",
+                "C:/Windows/Fonts/tahoma.ttf",
+                "C:/Windows/Fonts/tahomabd.ttf",
+                "TahomaCustom"
+            ),
         ]
 
-        for reg_path, bold_path, font_family in possible_font_paths:
+        for reg_path, bold_path, italic_path, bi_path, font_family in possible_font_paths:
             if os.path.exists(reg_path):
                 try:
                     pdf.add_font(font_family, "", reg_path)
-                    if os.path.exists(bold_path):
-                        pdf.add_font(font_family, "B", bold_path)
-                    else:
-                        pdf.add_font(font_family, "B", reg_path)
+                    b_file = bold_path if os.path.exists(bold_path) else reg_path
+                    i_file = italic_path if os.path.exists(italic_path) else reg_path
+                    bi_file = bi_path if os.path.exists(bi_path) else b_file
+
+                    pdf.add_font(font_family, "B", b_file)
+                    pdf.add_font(font_family, "I", i_file)
+                    pdf.add_font(font_family, "BI", bi_file)
                     return font_family
                 except Exception:
                     continue
 
         return "Helvetica"
+
+    @classmethod
+    def _set_font_safe(cls, pdf: FPDF, font_name: str, style: str, size: float):
+        """Đặt font an toàn với cơ chế fallback tự động nếu thiếu kiểu chữ."""
+        try:
+            pdf.set_font(font_name, style, size)
+        except Exception:
+            try:
+                pdf.set_font(font_name, "", size)
+            except Exception:
+                fallback_style = style if style in ("", "B", "I") else ""
+                pdf.set_font("Helvetica", fallback_style, size)
 
     @classmethod
     def _sanitize_text(cls, text: str, font_name: str) -> str:
@@ -75,27 +114,27 @@ class PDFExamExporter:
         font_name = cls._setup_fonts(pdf)
 
         # 1. Header Đề thi
-        pdf.set_font(font_name, "B", 10)
+        cls._set_font_safe(pdf, font_name, "B", 10)
         # Cột trái
         pdf.cell(90, 5, cls._sanitize_text(university.upper(), font_name), ln=0, align="L")
         # Cột phải
         pdf.cell(85, 5, cls._sanitize_text("ĐỀ THI KẾT THÚC HỌC PHẦN", font_name), ln=1, align="R")
 
-        pdf.set_font(font_name, "", 9)
+        cls._set_font_safe(pdf, font_name, "", 9)
         pdf.cell(90, 5, cls._sanitize_text(faculty.upper(), font_name), ln=0, align="L")
         pdf.cell(85, 5, cls._sanitize_text(f"Môn thi: {subject}", font_name), ln=1, align="R")
 
         pdf.cell(90, 5, "--------------------------------", ln=0, align="L")
-        pdf.set_font(font_name, "B", 9)
+        cls._set_font_safe(pdf, font_name, "B", 9)
         pdf.cell(85, 5, cls._sanitize_text(f"Mã đề: {exam_code} | Thời gian: {duration_minutes} phút", font_name), ln=1, align="R")
 
-        pdf.set_font(font_name, "I", 8)
+        cls._set_font_safe(pdf, font_name, "I", 8)
         pdf.cell(175, 4, cls._sanitize_text("(Thí sinh không được sử dụng tài liệu)", font_name), ln=1, align="R")
 
         pdf.ln(4)
 
         # 2. Tiêu đề chính giữa
-        pdf.set_font(font_name, "B", 13)
+        cls._set_font_safe(pdf, font_name, "B", 13)
         pdf.cell(175, 8, cls._sanitize_text(exam_title.upper(), font_name), ln=1, align="C")
         pdf.line(18, pdf.get_y(), 193, pdf.get_y())
         pdf.ln(5)
@@ -108,10 +147,10 @@ class PDFExamExporter:
             correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
             
             # Ghi câu hỏi
-            pdf.set_font(font_name, "B", 10)
+            cls._set_font_safe(pdf, font_name, "B", 10)
             prefix = cls._sanitize_text(f"Câu {idx}: ", font_name)
             pdf.write(5, prefix)
-            pdf.set_font(font_name, "", 10)
+            cls._set_font_safe(pdf, font_name, "", 10)
             pdf.write(5, cls._sanitize_text(q_text, font_name))
             pdf.ln(6)
 
@@ -120,6 +159,7 @@ class PDFExamExporter:
                 opt_label = opt.get("label", "A")
                 opt_text = opt.get("text", "")
                 pdf.set_x(25)
+                cls._set_font_safe(pdf, font_name, "", 9.5)
                 pdf.cell(165, 5, cls._sanitize_text(f"{opt_label}. {opt_text}", font_name), ln=1)
 
             pdf.ln(3)
@@ -136,19 +176,19 @@ class PDFExamExporter:
         # 4. Phụ lục: Bảng đáp án chuẩn
         if include_answer_key and answer_keys:
             pdf.add_page()
-            pdf.set_font(font_name, "B", 13)
+            cls._set_font_safe(pdf, font_name, "B", 13)
             pdf.cell(175, 8, cls._sanitize_text(f"BẢNG ĐÁP ÁN CHUẨN - MÃ ĐỀ {exam_code}", font_name), ln=1, align="C")
             pdf.ln(4)
 
             # Bảng ma trận 5 cột
             col_width = 35
-            pdf.set_font(font_name, "B", 9)
+            cls._set_font_safe(pdf, font_name, "B", 9)
             pdf.set_fill_color(230, 235, 245)
             for _ in range(5):
                 pdf.cell(col_width, 7, cls._sanitize_text("Câu - ĐA", font_name), border=1, align="C", fill=True)
             pdf.ln(7)
 
-            pdf.set_font(font_name, "", 9)
+            cls._set_font_safe(pdf, font_name, "", 9)
             for i in range(0, len(answer_keys), 5):
                 chunk = answer_keys[i:i+5]
                 for item in chunk:
@@ -163,9 +203,9 @@ class PDFExamExporter:
             # Hướng dẫn giải chi tiết
             if include_explanation:
                 pdf.ln(8)
-                pdf.set_font(font_name, "B", 11)
+                cls._set_font_safe(pdf, font_name, "B", 11)
                 pdf.cell(175, 6, cls._sanitize_text("HƯỚNG DẪN GIẢI CHI TIẾT", font_name), ln=1)
-                pdf.set_font(font_name, "", 9)
+                cls._set_font_safe(pdf, font_name, "", 9)
                 for item in answer_keys:
                     if item.get("explanation"):
                         exp_str = cls._sanitize_text(f"Câu {item['idx']} (Đáp án {item['label']}): {item['explanation']}", font_name)
@@ -175,7 +215,7 @@ class PDFExamExporter:
         # 5. (Tùy chọn) Phiếu tô trắc nghiệm OMR Bubble Sheet
         if include_omr_sheet:
             pdf.add_page()
-            pdf.set_font(font_name, "B", 13)
+            cls._set_font_safe(pdf, font_name, "B", 13)
             pdf.cell(175, 8, cls._sanitize_text("PHIẾU TRẢ LỜI TRẮC NGHIỆM CHUẨN OMR", font_name), ln=1, align="C")
             pdf.ln(2)
 
@@ -183,7 +223,7 @@ class PDFExamExporter:
             pdf.rect(18, pdf.get_y(), 174, 28)
             curr_y = pdf.get_y() + 2
             pdf.set_xy(20, curr_y)
-            pdf.set_font(font_name, "", 9)
+            cls._set_font_safe(pdf, font_name, "", 9)
             pdf.cell(85, 5, cls._sanitize_text("Họ và tên thí sinh: .....................................................", font_name), ln=0)
             pdf.cell(85, 5, cls._sanitize_text("Số báo danh: .............................", font_name), ln=1)
             
@@ -198,7 +238,7 @@ class PDFExamExporter:
             pdf.set_y(curr_y + 30)
 
             # Lưới tô tròn trắc nghiệm (chia 2 cột lớn, mỗi cột 20-30 câu)
-            pdf.set_font(font_name, "B", 9)
+            cls._set_font_safe(pdf, font_name, "B", 9)
             pdf.cell(175, 6, cls._sanitize_text("PHẦN TÔ ĐÁP ÁN (Dùng bút chì 2B tô kín vòng tròn lựa chọn)", font_name), ln=1, align="C")
             pdf.ln(3)
 
@@ -208,7 +248,7 @@ class PDFExamExporter:
 
             # Cột trái (1 đến half)
             for idx in range(1, half + 1):
-                pdf.set_font(font_name, "", 8)
+                cls._set_font_safe(pdf, font_name, "", 8)
                 pdf.set_xy(25, start_y + (idx - 1) * 6)
                 pdf.cell(15, 5, f"{idx:02d}.", ln=0)
                 for opt_char in ["A", "B", "C", "D"]:
@@ -216,7 +256,7 @@ class PDFExamExporter:
 
             # Cột phải (half + 1 đến num_questions)
             for idx in range(half + 1, num_questions + 1):
-                pdf.set_font(font_name, "", 8)
+                cls._set_font_safe(pdf, font_name, "", 8)
                 pdf.set_xy(110, start_y + (idx - half - 1) * 6)
                 pdf.cell(15, 5, f"{idx:02d}.", ln=0)
                 for opt_char in ["A", "B", "C", "D"]:
