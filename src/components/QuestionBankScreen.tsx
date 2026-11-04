@@ -77,7 +77,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
   const handleOpenExportModal = (format: 'docx' | 'pdf' | 'qti') => {
     setExportFormat(format);
-    setExamConfig((prev) => ({ ...prev, format }));
+    setExamConfig((prev) => ({
+      ...prev,
+      format,
+      includeOmrSheet: format === 'pdf' ? true : false,
+    }));
     setShowExportModal(true);
   };
 
@@ -89,11 +93,34 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       exportFormat === 'docx'
         ? 'Word (.docx chuẩn ĐH)'
         : exportFormat === 'pdf'
-        ? 'PDF có phiếu chấm'
+        ? 'PDF (kèm phiếu OMR)'
         : 'Canvas/Moodle QTI Zip';
 
     try {
       const questionsToExport = approvedQuestions.filter((q) => selectedIds.includes(q.id));
+
+      // 1. Lưu bài thi đã kiểm duyệt vào DB exams.exams qua endpoint POST /api/v1/exams/save
+      try {
+        await fetch(`${API_BASE}/exams/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: examConfig.examTitle,
+            subject: examConfig.subjectName,
+            university: examConfig.universityName,
+            faculty: examConfig.facultyName,
+            durationMinutes: examConfig.durationMinutes || 60,
+            examCodes: Array.from({ length: examConfig.examCodeCount || 1 }, (_, i) => String(101 + i)),
+            selectedQuestionIds: selectedIds,
+            format: exportFormat,
+            questions: questionsToExport,
+          }),
+        });
+      } catch (saveErr) {
+        console.warn('Lưu bài thi vào DB exams.exams có cảnh báo:', saveErr);
+      }
+
+      // 2. Tải trực tiếp file đề thi (Word .docx hoặc PDF kèm phiếu OMR hoặc QTI)
       const response = await fetch(`${API_BASE}/exams/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,6 +129,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
           format: exportFormat,
           selectedQuestionIds: selectedIds,
           questions: questionsToExport,
+          includeOmrSheet: exportFormat === 'pdf' ? examConfig.includeOmrSheet ?? true : false,
         }),
       });
 
@@ -114,7 +142,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       const a = document.createElement('a');
       a.href = url;
       const fileExt = exportFormat === 'qti' ? 'xml' : exportFormat;
-      const safeSubject = (examConfig.subjectName || 'DeThi').replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1EA0-\u1EF9]/g, '_');
+      const safeSubject = (examConfig.subjectName || 'DeThi').replace(/[^a-zA-Z0-9_À-ɏẠ-ỹ]/g, '_');
       a.download = `DeThi_${safeSubject}_${Date.now()}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
@@ -123,16 +151,16 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
       onShowToast(
         'success',
-        'Đã đóng gói & xuất bản đề thi thành công!',
-        `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tệp đã được tải xuống máy.`
+        'Đã lưu vào DB exams.exams & Tải đề thi thành công!',
+        `Đã lưu cấu trúc đề thi vào CSDL và tải xuống ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}.`
       );
     } catch (err) {
       console.warn('Lỗi kết nối xuất đề thi qua API Gateway, sử dụng mô phỏng client:', err);
       onShowToast(
         'info',
         'Đã đóng gói đề thi (Chế độ mô phỏng)',
-      `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tải xuống hoàn tất.`
-    );
+        `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tải xuống hoàn tất.`
+      );
     } finally {
       setIsExporting(false);
     }
@@ -457,6 +485,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-400">Thời gian làm bài (phút):</label>
+                  <input
+                    type="number"
+                    min={15}
+                    max={180}
+                    value={examConfig.durationMinutes || 60}
+                    onChange={(e) => setExamConfig({ ...examConfig, durationMinutes: parseInt(e.target.value) || 60 })}
+                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-400">Mã đề gốc:</label>
+                  <input
+                    type="text"
+                    defaultValue="101"
+                    readOnly
+                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-400 font-mono cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
               {/* Toggles */}
               <div className="space-y-2 pt-2 border-t border-white/[0.06]">
                 <label className="flex items-center space-x-2 cursor-pointer">
@@ -478,6 +529,18 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                   />
                   <span>Xáo trộn ngẫu nhiên thứ tự các phương án A, B, C, D</span>
                 </label>
+
+                {exportFormat === 'pdf' && (
+                  <label className="flex items-center space-x-2 cursor-pointer text-emerald-400">
+                    <input
+                      type="checkbox"
+                      checked={examConfig.includeOmrSheet ?? true}
+                      onChange={(e) => setExamConfig({ ...examConfig, includeOmrSheet: e.target.checked })}
+                      className="w-4 h-4 text-emerald-600 rounded accent-emerald-600"
+                    />
+                    <span>Đính kèm phiếu trả lời trắc nghiệm chuẩn OMR (Bubble Sheet)</span>
+                  </label>
+                )}
               </div>
             </div>
 

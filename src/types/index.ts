@@ -63,5 +63,6 @@ export interface ExamExportConfig {
   shuffleOptions: boolean;
   includeAnswerKey: boolean;
   includeExplanation: boolean;
+  includeOmrSheet?: boolean;
   format: 'docx' | 'pdf' | 'qti';
 }

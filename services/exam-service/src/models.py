@@ -419,29 +419,64 @@ class CreateExamRecordRequest(BaseModel):
     id: Optional[str] = None
     user_id: Optional[str] = "lec-001"
     userId: Optional[str] = None
-    title: str
-    subject: str
+    title: Optional[str] = None
+    examTitle: Optional[str] = None
+    exam_title: Optional[str] = None
+    subject: Optional[str] = None
+    subjectName: Optional[str] = None
     faculty: Optional[str] = "Khoa Kinh tế & Quản trị"
+    facultyName: Optional[str] = None
+    department: Optional[str] = None
     university: Optional[str] = "ĐẠI HỌC QUỐC GIA"
+    universityName: Optional[str] = None
+    schoolName: Optional[str] = None
+    school: Optional[str] = None
     duration_minutes: Optional[int] = 60
     durationMinutes: Optional[int] = None
+    duration: Optional[int] = None
     exam_codes: Optional[List[str]] = None
     examCodes: Optional[List[str]] = None
+    examCodeCount: Optional[int] = None
     selected_question_ids: Optional[List[str]] = None
     selectedQuestionIds: Optional[List[str]] = None
+    questionIds: Optional[List[str]] = None
+    questions: Optional[List[Dict[str, Any]]] = None
     format: Optional[str] = "docx"
+    variants: Optional[List[Dict[str, Any]]] = None
 
     def get_user_id(self) -> str:
         return self.userId or self.user_id or "lec-001"
 
+    def get_title(self) -> str:
+        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+
+    def get_subject(self) -> str:
+        return self.subjectName or self.subject or "Kinh tế vi mô"
+
+    def get_faculty(self) -> str:
+        return self.facultyName or self.faculty or self.department or "Khoa Kinh tế & Quản trị"
+
+    def get_university(self) -> str:
+        return self.universityName or self.university or self.schoolName or self.school or "ĐẠI HỌC QUỐC GIA"
+
     def get_duration(self) -> int:
-        return self.durationMinutes or self.duration_minutes or 60
+        return self.durationMinutes or self.duration_minutes or self.duration or 60
 
     def get_exam_codes(self) -> List[str]:
-        return self.examCodes or self.exam_codes or ["101"]
+        if self.examCodes:
+            return self.examCodes
+        if self.exam_codes:
+            return self.exam_codes
+        count = self.examCodeCount or 1
+        return [str(101 + i) for i in range(count)]
 
     def get_question_ids(self) -> List[str]:
-        return self.selectedQuestionIds or self.selected_question_ids or []
+        ids = self.selectedQuestionIds or self.selected_question_ids or self.questionIds
+        if ids:
+            return ids
+        if self.questions:
+            return [q.get("id") for q in self.questions if q.get("id")]
+        return []
 
 
 class SubjectResponse(BaseModel):
