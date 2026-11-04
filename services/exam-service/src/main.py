@@ -292,8 +292,8 @@ def export_word(req: ExportDocxRequest, db: Session = Depends(get_db)):
         university=req.get_university(),
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
-        include_answer_key=req.includeAnswerKey,
-        include_explanation=req.includeExplanation
+        include_answer_key=req.get_include_answer_key(),
+        include_explanation=req.get_include_explanation()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
@@ -317,8 +317,9 @@ def export_pdf(req: ExportPdfRequest, db: Session = Depends(get_db)):
         university=req.get_university(),
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
-        include_answer_key=req.includeAnswerKey,
-        include_omr_sheet=req.includeOmrSheet
+        include_answer_key=req.get_include_answer_key(),
+        include_explanation=req.get_include_explanation(),
+        include_omr_sheet=req.get_include_omr_sheet()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -370,51 +371,67 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
     except Exception:
         pass
 
+    university_name = req.get_university()
+    faculty_name = req.get_faculty()
+    exam_title = req.get_title()
+    subject_name = req.get_subject()
+    exam_code = req.get_code()
+    duration_minutes = req.get_duration()
+    include_answer_key = req.get_include_answer_key()
+    include_explanation = req.get_include_explanation()
+    include_omr = req.get_include_omr_sheet()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     if export_fmt == "pdf":
         pdf_bytes = PDFExamExporter.generate_pdf(
-            exam_title=req.examTitle or "ĐỀ THI KẾT THÚC HỌC PHẦN",
-            subject=req.subjectName or "Kinh tế vi mô",
-            exam_code="101",
+            exam_title=exam_title,
+            subject=subject_name,
+            exam_code=exam_code,
             questions=questions,
-            university=req.universityName or "ĐẠI HỌC QUỐC GIA",
-            faculty=req.facultyName or "Khoa Kinh tế & Quản trị",
-            duration_minutes=req.durationMinutes or 60,
-            include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
-            include_omr_sheet=req.includeOmrSheet if req.includeOmrSheet is not None else False
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
         )
+        filename = f"De_Thi_{exam_code}_{timestamp}.pdf"
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="De_Thi_101.pdf"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     elif export_fmt == "qti":
         xml_content = QTIExporter.export_canvas_moodle_xml(
-            title=req.examTitle or "Quiz Canvas LMS",
+            title=exam_title,
             questions=questions
         )
+        filename = f"exam_qti_{exam_code}_{timestamp}.xml"
         return Response(
             content=xml_content,
             media_type="application/xml",
-            headers={"Content-Disposition": f'attachment; filename="exam_qti.xml"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     else:
         docx_bytes = WordExamExporter.generate_docx(
-            exam_title=req.examTitle or "ĐỀ THI KẾT THÚC HỌC PHẦN",
-            subject=req.subjectName or "Kinh tế vi mô",
-            exam_code="101",
+            exam_title=exam_title,
+            subject=subject_name,
+            exam_code=exam_code,
             questions=questions,
-            university=req.universityName or "ĐẠI HỌC QUỐC GIA",
-            faculty=req.facultyName or "Khoa Kinh tế & Quản trị",
-            duration_minutes=req.durationMinutes or 60,
-            include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
-            include_explanation=req.includeExplanation if req.includeExplanation is not None else False
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation
         )
+        filename = f"De_Thi_{exam_code}_{timestamp}.docx"
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="De_Thi_101.docx"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
 # ====================================================================

@@ -227,93 +227,186 @@ class GenerateVariantsRequest(BaseModel):
 class ExportDocxRequest(BaseModel):
     exam_title: Optional[str] = None
     examTitle: Optional[str] = None
+    title: Optional[str] = None
     subject: Optional[str] = None
     subjectName: Optional[str] = None
     faculty: Optional[str] = None
     facultyName: Optional[str] = None
+    department: Optional[str] = None
     university: Optional[str] = None
     universityName: Optional[str] = None
+    schoolName: Optional[str] = None
+    school: Optional[str] = None
     exam_code: Optional[str] = None
     examCode: Optional[str] = None
+    code: Optional[str] = None
     duration_minutes: Optional[int] = None
     durationMinutes: Optional[int] = None
+    duration: Optional[int] = None
     questions: Optional[List[Dict[str, Any]]] = None
     selectedQuestionIds: Optional[List[str]] = None
     includeAnswerKey: bool = True
+    include_answer_key: Optional[bool] = None
     includeExplanation: bool = False
+    include_explanation: Optional[bool] = None
 
     def get_title(self) -> str:
-        return self.examTitle or self.exam_title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
 
     def get_subject(self) -> str:
         return self.subjectName or self.subject or "Kinh tế vi mô"
 
     def get_faculty(self) -> str:
-        return self.facultyName or self.faculty or "Khoa Kinh tế & Quản trị"
+        return self.facultyName or self.faculty or self.department or "Khoa Kinh tế & Quản trị"
 
     def get_university(self) -> str:
-        return self.universityName or self.university or "ĐẠI HỌC QUỐC GIA"
+        return self.universityName or self.university or self.schoolName or self.school or "ĐẠI HỌC QUỐC GIA"
 
     def get_code(self) -> str:
-        return str(self.examCode or self.exam_code or "101")
+        return str(self.examCode or self.exam_code or self.code or "101")
 
     def get_duration(self) -> int:
-        return self.durationMinutes or self.duration_minutes or 60
+        return self.durationMinutes or self.duration_minutes or self.duration or 60
+
+    def get_include_answer_key(self) -> bool:
+        if self.include_answer_key is not None:
+            return self.include_answer_key
+        return self.includeAnswerKey
+
+    def get_include_explanation(self) -> bool:
+        if self.include_explanation is not None:
+            return self.include_explanation
+        return self.includeExplanation
 
 
 class ExportPdfRequest(BaseModel):
     exam_title: Optional[str] = None
     examTitle: Optional[str] = None
+    title: Optional[str] = None
     subject: Optional[str] = None
     subjectName: Optional[str] = None
     faculty: Optional[str] = None
     facultyName: Optional[str] = None
+    department: Optional[str] = None
     university: Optional[str] = None
     universityName: Optional[str] = None
+    schoolName: Optional[str] = None
+    school: Optional[str] = None
     exam_code: Optional[str] = None
     examCode: Optional[str] = None
+    code: Optional[str] = None
     duration_minutes: Optional[int] = None
     durationMinutes: Optional[int] = None
+    duration: Optional[int] = None
     questions: Optional[List[Dict[str, Any]]] = None
     selectedQuestionIds: Optional[List[str]] = None
     includeAnswerKey: bool = True
+    include_answer_key: Optional[bool] = None
     includeExplanation: bool = False
+    include_explanation: Optional[bool] = None
     includeOmrSheet: bool = False
+    include_omr_sheet: Optional[bool] = None
 
     def get_title(self) -> str:
-        return self.examTitle or self.exam_title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
 
     def get_subject(self) -> str:
         return self.subjectName or self.subject or "Kinh tế vi mô"
 
     def get_faculty(self) -> str:
-        return self.facultyName or self.faculty or "Khoa Kinh tế & Quản trị"
+        return self.facultyName or self.faculty or self.department or "Khoa Kinh tế & Quản trị"
 
     def get_university(self) -> str:
-        return self.universityName or self.university or "ĐẠI HỌC QUỐC GIA"
+        return self.universityName or self.university or self.schoolName or self.school or "ĐẠI HỌC QUỐC GIA"
 
     def get_code(self) -> str:
-        return str(self.examCode or self.exam_code or "101")
+        return str(self.examCode or self.exam_code or self.code or "101")
 
     def get_duration(self) -> int:
-        return self.durationMinutes or self.duration_minutes or 60
+        return self.durationMinutes or self.duration_minutes or self.duration or 60
+
+    def get_include_answer_key(self) -> bool:
+        if self.include_answer_key is not None:
+            return self.include_answer_key
+        return self.includeAnswerKey
+
+    def get_include_explanation(self) -> bool:
+        if self.include_explanation is not None:
+            return self.include_explanation
+        return self.includeExplanation
+
+    def get_include_omr_sheet(self) -> bool:
+        if self.include_omr_sheet is not None:
+            return self.include_omr_sheet
+        return self.includeOmrSheet
 
 
 class UnifiedExportRequest(BaseModel):
     selectedQuestionIds: Optional[List[str]] = None
-    universityName: Optional[str] = "ĐẠI HỌC QUỐC GIA"
-    facultyName: Optional[str] = "Khoa Kinh tế & Quản trị"
-    examTitle: Optional[str] = "ĐỀ THI KẾT THÚC HỌC PHẦN"
-    subjectName: Optional[str] = "Kinh tế vi mô"
-    durationMinutes: Optional[int] = 60
+    selected_question_ids: Optional[List[str]] = None
+    universityName: Optional[str] = None
+    university: Optional[str] = None
+    schoolName: Optional[str] = None
+    school: Optional[str] = None
+    facultyName: Optional[str] = None
+    faculty: Optional[str] = None
+    department: Optional[str] = None
+    examTitle: Optional[str] = None
+    exam_title: Optional[str] = None
+    title: Optional[str] = None
+    subjectName: Optional[str] = None
+    subject: Optional[str] = None
+    examCode: Optional[str] = None
+    exam_code: Optional[str] = None
+    code: Optional[str] = None
+    durationMinutes: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    duration: Optional[int] = None
     examCodeCount: Optional[int] = 4
+    exam_code_count: Optional[int] = None
     shuffleQuestions: Optional[bool] = True
     shuffleOptions: Optional[bool] = True
     includeAnswerKey: Optional[bool] = True
+    include_answer_key: Optional[bool] = None
     includeExplanation: Optional[bool] = False
+    include_explanation: Optional[bool] = None
     includeOmrSheet: Optional[bool] = False
+    include_omr_sheet: Optional[bool] = None
     format: Optional[str] = "docx" # docx | pdf | qti
     questions: Optional[List[Dict[str, Any]]] = None
+
+    def get_university(self) -> str:
+        return self.universityName or self.university or self.schoolName or self.school or "ĐẠI HỌC QUỐC GIA"
+
+    def get_faculty(self) -> str:
+        return self.facultyName or self.faculty or self.department or "Khoa Kinh tế & Quản trị"
+
+    def get_title(self) -> str:
+        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+
+    def get_subject(self) -> str:
+        return self.subjectName or self.subject or "Kinh tế vi mô"
+
+    def get_code(self) -> str:
+        return str(self.examCode or self.exam_code or self.code or "101")
+
+    def get_duration(self) -> int:
+        return self.durationMinutes or self.duration_minutes or self.duration or 60
+
+    def get_include_answer_key(self) -> bool:
+        if self.include_answer_key is not None:
+            return self.include_answer_key
+        return self.includeAnswerKey if self.includeAnswerKey is not None else True
+
+    def get_include_explanation(self) -> bool:
+        if self.include_explanation is not None:
+            return self.include_explanation
+        return self.includeExplanation if self.includeExplanation is not None else False
+
+    def get_include_omr_sheet(self) -> bool:
+        if self.include_omr_sheet is not None:
+            return self.include_omr_sheet
+        return self.includeOmrSheet if self.includeOmrSheet is not None else False
 
 
 class ExportQtiRequest(BaseModel):
