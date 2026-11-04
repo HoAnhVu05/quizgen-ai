@@ -116,22 +116,25 @@ class RAGVectorStore:
         if not prepared:
             return 0
 
-        ids = [c["chunk_id"] for c in prepared]
-        documents = [c["text"] for c in prepared]
-        metadatas = [
-            {
-                "document_id": document_id,
-                "page_number": c["page_number"],
-                "chapter": c["chapter"]
-            }
-            for c in prepared
-        ]
-
-        self.collection.upsert(
-            ids=ids,
-            documents=documents,
-            metadatas=metadatas
-        )
+        # Batch upsert theo lô (Batch size = 100) để tối ưu bộ nhớ RAM và bảo đảm an toàn giao dịch
+        batch_size = 100
+        for i in range(0, len(prepared), batch_size):
+            batch_slice = prepared[i:i + batch_size]
+            b_ids = [c["chunk_id"] for c in batch_slice]
+            b_docs = [c["text"] for c in batch_slice]
+            b_metas = [
+                {
+                    "document_id": document_id,
+                    "page_number": c["page_number"],
+                    "chapter": c["chapter"]
+                }
+                for c in batch_slice
+            ]
+            self.collection.upsert(
+                ids=b_ids,
+                documents=b_docs,
+                metadatas=b_metas
+            )
 
         # Làm sạch cache cũ liên quan đến document này
         cache.clear_document_cache(document_id)

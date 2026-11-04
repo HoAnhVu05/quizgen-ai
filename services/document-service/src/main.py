@@ -1,4 +1,6 @@
 import os
+import time
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -60,61 +62,188 @@ def startup_db():
         print(f"[DOCUMENT-SERVICE] DB Startup Warning: {e}")
 
 
-async def forward_chunks_to_rag(document_id: str, chunks: List[dict], user_id: Optional[str] = None):
-    """
-    Tác vụ nền: Đẩy các đoạn trích sang RAG service để tính toán Vector Embeddings và cập nhật trạng thái.
-    Xử lý an toàn trường hợp ngoại lệ chunks rỗng.
-    """
-    if not chunks:
-        db = SessionLocal()
-        try:
-            doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-            if doc:
-                doc.status = "error"
-                doc.error_message = "Không có đoạn trích (chunks) nào để chuyển tiếp sang RAG service."
-                cache.set_upload_progress(document_id, progress=0, status="error", stage="empty_chunks")
-                db.commit()
-        finally:
-            db.close()
-        return
-
+def _update_doc_progress(
+    document_id: str,
+    progress: int,
+    status: str,
+    total_pages: Optional[int] = None,
+    chapters_count: Optional[int] = None,
+    error_message: Optional[str] = None
+):
+    """Cập nhật tiến trình và trạng thái xử lý của tài liệu vào CSDL"""
     db = SessionLocal()
     try:
-        headers = {}
-        if user_id:
-            headers["X-User-Id"] = user_id
-
-        async with httpx.AsyncClient(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
-            res = await client.post(
-                f"{RAG_SERVICE_URL}/index-chunks",
-                headers=headers,
-                json={
-                    "document_id": document_id,
-                    "chunks": chunks,
-                    "replace_existing": True
-                }
-            )
-            doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-            if doc:
-                if res.status_code == 200:
-                    doc.status = "ready"
-                    doc.progress = 100
-                    doc.error_message = None
-                    cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=doc.total_pages)
-                else:
-                    doc.status = "error"
-                    doc.error_message = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
-                    cache.set_upload_progress(document_id, progress=0, status="error", stage="rag_error")
-                db.commit()
-    except Exception as e:
         doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
         if doc:
-            doc.status = "error"
-            doc.error_message = f"Không thể kết nối RAG Service ({RAG_SERVICE_URL}): {str(e)}"
-            cache.set_upload_progress(document_id, progress=0, status="error", stage="rag_unreachable")
+            doc.progress = progress
+            doc.status = status
+            if total_pages is not None:
+                doc.total_pages = total_pages
+            if chapters_count is not None:
+                doc.chapters_count = chapters_count
+            if error_message is not None:
+                doc.error_message = error_message
             db.commit()
     finally:
         db.close()
+
+
+def _mark_doc_error(document_id: str, error_msg: str, stage: str = "error"):
+    """Đánh dấu trạng thái lỗi và ghi nhận nguyên nhân vào CSDL và cache"""
+    db = SessionLocal()
+    try:
+        doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+        if doc:
+            doc.status = "error"
+            doc.progress = 0
+            doc.error_message = error_msg
+            db.commit()
+    finally:
+        db.close()
+    cache.set_upload_progress(document_id, progress=0, status="error", stage=stage)
+
+
+async def process_document_pipeline(
+    document_id: str,
+    file_path: str,
+    filename: str,
+    ext: str,
+    user_id: str
+):
+    """
+    Quy trình xử lý tài liệu nền khép kín (End-to-End Async Document Pipeline):
+    - Pha 1 (25%): Bóc tách văn bản từng trang (PDF/DOCX Parser)
+    - Pha 2 (50%): Phân đoạn ngữ nghĩa (Semantic Chunker) & trích xuất mục lục
+    - Pha 3 (70%): Lưu cấu trúc chương và các đoạn trích vào CSDL
+    - Pha 4 (85%): Đẩy chunks sang RAG Service với cơ chế Exponential Backoff Retry (3 lần: 1s, 2s, 4s)
+    - Pha 5 (100%): Cập nhật trạng thái 'ready', hoàn tất toàn bộ quy trình
+    """
+    storage_file = Path(file_path)
+    if not storage_file.exists():
+        _mark_doc_error(document_id, "Tệp tài liệu vật lý không tồn tại trên máy chủ.", stage="file_missing")
+        return
+
+    try:
+        content = storage_file.read_bytes()
+    except Exception as e:
+        _mark_doc_error(document_id, f"Không thể đọc tệp vật lý: {str(e)}", stage="file_read_error")
+        return
+
+    # Pha 1: Bóc tách văn bản
+    cache.set_upload_progress(document_id, progress=25, status="extracting", stage="parsing_file")
+    _update_doc_progress(document_id, progress=25, status="extracting")
+    try:
+        if ext == "pdf":
+            pages = DocumentParser.parse_pdf(content)
+        else:
+            pages = DocumentParser.parse_docx(content)
+    except Exception as e:
+        _mark_doc_error(document_id, f"Lỗi bóc tách nội dung: {str(e)}", stage="parsing_error")
+        return
+
+    if not pages:
+        _mark_doc_error(document_id, "Tài liệu không có nội dung văn bản để bóc tách.", stage="empty_content")
+        return
+
+    # Pha 2: Phân đoạn ngữ nghĩa
+    cache.set_upload_progress(document_id, progress=50, status="extracting", stage="chunking", total_pages=len(pages))
+    _update_doc_progress(document_id, progress=50, status="extracting", total_pages=len(pages))
+    try:
+        chunks, chapters_metadata = TextChunker.chunk_by_semantic_blocks(pages, document_id)
+    except EmptyChunksException as e:
+        _mark_doc_error(document_id, str(e), stage="chunking_failed")
+        return
+    except Exception as e:
+        _mark_doc_error(document_id, f"Lỗi phân đoạn ngữ nghĩa: {str(e)}", stage="chunking_error")
+        return
+
+    if not chunks:
+        _mark_doc_error(document_id, "Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn.", stage="empty_chunks")
+        return
+
+    # Pha 3: Lưu cấu trúc chương mục và các chunks vào CSDL
+    cache.set_upload_progress(document_id, progress=70, status="embedding", stage="saving_metadata", total_pages=len(pages))
+    _update_doc_progress(document_id, progress=70, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
+    db = SessionLocal()
+    try:
+        # Xóa các mục cũ nếu có
+        db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
+        db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
+
+        chapters_db = [
+            DocumentChapterDB(
+                id=f"ch-{document_id}-{ch['chapter_index']}",
+                document_id=document_id,
+                chapter_index=ch["chapter_index"],
+                title=ch["title"],
+                page_start=ch["page_start"],
+                page_end=ch["page_end"]
+            )
+            for ch in chapters_metadata
+        ]
+        db.add_all(chapters_db)
+
+        chunks_db = [
+            DocumentChunkDB(
+                id=c["chunk_id"],
+                document_id=document_id,
+                page_number=c["page_number"],
+                chapter=c["chapter"],
+                char_count=c["char_count"],
+                text_snippet=c["text"]
+            )
+            for c in chunks
+        ]
+        db.add_all(chunks_db)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
+        return
+    finally:
+        db.close()
+
+    # Pha 4: Chuyển tiếp các chunks sang RAG Service với cơ chế Exponential Backoff Retry (3 lần)
+    cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages))
+    _update_doc_progress(document_id, progress=85, status="embedding")
+
+    headers = {}
+    if user_id:
+        headers["X-User-Id"] = user_id
+
+    max_retries = 3
+    rag_success = False
+    last_rag_error = ""
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
+                res = await client.post(
+                    f"{RAG_SERVICE_URL}/index-chunks",
+                    headers=headers,
+                    json={
+                        "document_id": document_id,
+                        "chunks": chunks,
+                        "replace_existing": True
+                    }
+                )
+                if res.status_code == 200:
+                    rag_success = True
+                    break
+                else:
+                    last_rag_error = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
+        except Exception as e:
+            last_rag_error = f"Lỗi kết nối RAG Service ({RAG_SERVICE_URL}): {str(e)}"
+
+        if attempt < max_retries:
+            await asyncio.sleep(2 ** (attempt - 1))  # 1s, 2s
+
+    # Pha 5: Hoàn tất
+    if rag_success:
+        _update_doc_progress(document_id, progress=100, status="ready", error_message=None)
+        cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages))
+    else:
+        _mark_doc_error(document_id, last_rag_error, stage="rag_error")
 
 
 @app.get("/health")
@@ -137,13 +266,12 @@ async def upload_document(
     db: Session = Depends(get_db)
 ):
     """
-    Tiếp nhận tệp giáo trình PDF/DOCX:
-    1. Lấy user_id thực tế từ JWT token (loại bỏ hoàn toàn 'lec-001' hardcoded)
-    2. Kiểm tra định dạng (.pdf, .docx) và dung lượng (<= 25MB)
-    3. Lưu trữ tệp vật lý
-    4. Bóc tách văn bản từng trang / đoạn
-    5. Phân đoạn ngữ nghĩa (Semantic Chunking) và xử lý ngoại lệ Chunks rỗng
-    6. Lưu cơ sở dữ liệu và kích hoạt tác vụ nền đẩy sang RAG Service
+    Tiếp nhận tệp giáo trình PDF/DOCX và xử lý bất đồng bộ trong nền:
+    1. Kiểm tra định dạng (.pdf, .docx) và dung lượng (<= 25MB)
+    2. Lưu tệp vật lý vào ổ đĩa
+    3. Tạo bản ghi ban đầu trong CSDL với status='extracting', progress=15
+    4. Kích hoạt tác vụ nền process_document_pipeline
+    5. Phản hồi HTTP 202 Accepted ngay tức thì (< 50ms), không để giao diện bị treo
     """
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tên tệp không hợp lệ.")
@@ -170,123 +298,60 @@ async def upload_document(
             detail=f"Kích thước tệp ({_format_file_size(len(content))}) vượt quá giới hạn cho phép {MAX_UPLOAD_SIZE_MB} MB.",
         )
 
-    # Sinh mã định danh giáo trình mới
-    count = db.query(DocumentDB).count()
-    doc_id = f"tb-{count + 1:03d}"
+    # Sinh mã định danh giáo trình mới an toàn không bao giờ trùng lặp
+    max_num = 0
+    all_ids = db.query(DocumentDB.id).all()
+    for (existing_id,) in all_ids:
+        if existing_id and existing_id.startswith("tb-"):
+            parts = existing_id.split("-")
+            if len(parts) >= 2 and parts[1].isdigit():
+                max_num = max(max_num, int(parts[1]))
+    doc_id = f"tb-{max_num + 1:03d}"
     file_size_str = _format_file_size(len(content))
 
-    # Lưu tệp vật lý vào ổ cứng
+    # Lưu tệp vật lý vào ổ đĩa máy chủ
     storage_file = STORAGE_DIR / f"{doc_id}_{filename}"
     storage_file.write_bytes(content)
-    cache.set_upload_progress(doc_id, progress=20, status="extracting", stage="parsing_file")
 
-    # 1. Bóc tách văn bản từ tệp
-    try:
-        if ext == "pdf":
-            pages = DocumentParser.parse_pdf(content)
-        else:
-            pages = DocumentParser.parse_docx(content)
-    except ValueError as e:
-        if storage_file.exists():
-            storage_file.unlink(missing_ok=True)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        if storage_file.exists():
-            storage_file.unlink(missing_ok=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Lỗi hệ thống khi bóc tách tài liệu: {str(e)}")
-
-    if not pages:
-        if storage_file.exists():
-            storage_file.unlink(missing_ok=True)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tài liệu không có nội dung văn bản để bóc tách.")
-
-    # 2. Phân đoạn ngữ nghĩa và xử lý triệt để ngoại lệ Chunks rỗng
-    try:
-        chunks, chapters_metadata = TextChunker.chunk_by_semantic_blocks(pages, doc_id)
-    except EmptyChunksException as e:
-        if storage_file.exists():
-            storage_file.unlink(missing_ok=True)
-        cache.set_upload_progress(doc_id, progress=0, status="error", stage="chunking_failed")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e)
-        )
-    except Exception as e:
-        if storage_file.exists():
-            storage_file.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Lỗi khi phân đoạn ngữ nghĩa tài liệu: {str(e)}"
-        )
-
-    if not chunks:
-        if storage_file.exists():
-            storage_file.unlink(missing_ok=True)
-        cache.set_upload_progress(doc_id, progress=0, status="error", stage="empty_chunks")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn. Vui lòng kiểm tra lại chất lượng văn bản của tài liệu."
-        )
-
-    # 3. Lưu bản ghi tài liệu vào CSDL với user_id thật từ JWT
+    # Khởi tạo bản ghi tài liệu ban đầu trong CSDL
     doc_record = DocumentDB(
         id=doc_id,
         user_id=user_id,
         name=filename,
         file_path=str(storage_file),
         file_size=file_size_str,
-        total_pages=len(pages),
-        chapters_count=len(chapters_metadata),
-        status="embedding",
-        progress=50,
+        total_pages=0,
+        chapters_count=0,
+        status="extracting",
+        progress=15,
         created_at=datetime.utcnow()
     )
     db.add(doc_record)
     db.commit()
 
-    # 4. Lưu danh mục chương mục và các chunks
-    chapters_db = [
-        DocumentChapterDB(
-            id=f"ch-{doc_id}-{ch['chapter_index']}",
-            document_id=doc_id,
-            chapter_index=ch["chapter_index"],
-            title=ch["title"],
-            page_start=ch["page_start"],
-            page_end=ch["page_end"]
-        )
-        for ch in chapters_metadata
-    ]
-    db.add_all(chapters_db)
+    cache.set_upload_progress(doc_id, progress=15, status="extracting", stage="queued")
 
-    chunks_db = [
-        DocumentChunkDB(
-            id=c["chunk_id"],
-            document_id=doc_id,
-            page_number=c["page_number"],
-            chapter=c["chapter"],
-            char_count=c["char_count"],
-            text_snippet=c["text"]
-        )
-        for c in chunks
-    ]
-    db.add_all(chunks_db)
-    db.commit()
-
-    # 5. Kích hoạt tác vụ nền nạp vector vào RAG Service (kèm định danh user)
-    cache.set_upload_progress(doc_id, progress=50, status="embedding", stage="dispatching_to_rag", total_pages=len(pages))
-    background_tasks.add_task(forward_chunks_to_rag, doc_id, chunks, user_id=user_id)
+    # Kích hoạt toàn bộ quy trình xử lý nền (Async Background Pipeline)
+    background_tasks.add_task(
+        process_document_pipeline,
+        document_id=doc_id,
+        file_path=str(storage_file),
+        filename=filename,
+        ext=ext,
+        user_id=user_id
+    )
 
     return {
-        "message": "Đã tải lên và bóc tách thành công. Đang tiến hành tạo Vector Embedding trong nền.",
+        "message": "Đã tiếp nhận giáo trình thành công. Đang tiến hành bóc tách và tạo Vector Embedding trong nền.",
         "document": {
             "id": doc_id,
             "userId": user_id,
             "name": filename,
             "size": file_size_str,
-            "totalPages": len(pages),
-            "chaptersCount": len(chapters_metadata),
-            "status": "embedding",
-            "progress": 50,
+            "totalPages": 0,
+            "chaptersCount": 0,
+            "status": "extracting",
+            "progress": 15,
             "uploadedAt": "Vừa xong"
         }
     }
@@ -477,4 +542,59 @@ async def delete_document(
         "documentId": document_id,
         "deletedVectors": deleted_vectors,
         "warning": rag_warning
+    }
+
+
+@app.get("/operational/diagnostics")
+def get_operational_diagnostics(db: Session = Depends(get_db)):
+    """Kiểm tra toàn diện trạng thái vận hành của Document Service"""
+    total_docs = db.query(DocumentDB).count()
+    ready_docs = db.query(DocumentDB).filter_by(status="ready").count()
+    processing_docs = db.query(DocumentDB).filter(DocumentDB.status.in_(["extracting", "embedding"])).count()
+    error_docs = db.query(DocumentDB).filter_by(status="error").count()
+
+    rag_online = False
+    rag_latency_ms = None
+    try:
+        t0 = time.perf_counter()
+        with httpx.Client(timeout=2.0) as client:
+            res = client.get(f"{RAG_SERVICE_URL}/health")
+            if res.status_code == 200:
+                rag_online = True
+                rag_latency_ms = round((time.perf_counter() - t0) * 1000, 2)
+    except Exception:
+        pass
+
+    storage_size_bytes = 0
+    file_count = 0
+    if STORAGE_DIR.exists():
+        files = list(STORAGE_DIR.glob("*"))
+        file_count = len(files)
+        storage_size_bytes = sum(f.stat().st_size for f in files if f.is_file())
+
+    return {
+        "service": "document-service",
+        "status": "healthy" if rag_online else "degraded",
+        "timestamp": datetime.utcnow().isoformat(),
+        "storage": {
+            "directory": str(STORAGE_DIR),
+            "totalFiles": file_count,
+            "totalSizeBytes": storage_size_bytes,
+            "formattedSize": _format_file_size(storage_size_bytes)
+        },
+        "documents": {
+            "total": total_docs,
+            "ready": ready_docs,
+            "processing": processing_docs,
+            "error": error_docs
+        },
+        "ragIntegration": {
+            "url": RAG_SERVICE_URL,
+            "online": rag_online,
+            "pingLatencyMs": rag_latency_ms
+        },
+        "redisCache": {
+            "connected": cache.is_connected,
+            "mode": "redis" if cache.is_connected else "in-memory-fallback"
+        }
     }

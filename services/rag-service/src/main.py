@@ -419,3 +419,33 @@ def get_stats(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Lỗi khi lấy thống kê vector store: {str(e)}")
+
+
+@app.get("/operational/diagnostics")
+def get_operational_diagnostics():
+    """Kiểm tra toàn diện trạng thái vận hành của RAG Service"""
+    stats = vector_store.get_collection_stats()
+    metrics = vector_store.get_last_query_metrics()
+    return {
+        "service": "rag-service",
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "vectorStore": {
+            "collectionName": COLLECTION_NAME,
+            "persistDir": PERSIST_DIR,
+            "totalChunks": stats.get("total_chunks", 0),
+            "totalDocuments": stats.get("total_documents", 0),
+            "topChaptersCount": len(stats.get("top_chapters", []))
+        },
+        "embeddingEngine": {
+            "modelName": "all-MiniLM-L6-v2",
+            "persistentSessionActive": vector_store._embedding_model is not None,
+            "queryCacheSize": len(vector_store._query_cache),
+            "maxCacheSize": vector_store._max_cache_size
+        },
+        "recentPerformance": metrics,
+        "redisCache": {
+            "connected": cache.is_connected,
+            "mode": "redis" if cache.is_connected else "in-memory-fallback"
+        }
+    }
