@@ -11,14 +11,17 @@ class QuestionGenerator:
         # Hỗ trợ lấy API Key từ biến môi trường
         self.api_key = os.getenv("GEMINI_API_KEY", "")
         self.model = None
+        self.model_name = "gemini-2.5-flash"
         if self.api_key:
-            try:
-                genai.configure(api_key=self.api_key)
-                # Dùng gemini-1.5-flash để tốc độ sinh nhanh và tối ưu JSON output
-                self.model = genai.GenerativeModel("gemini-1.5-flash")
-            except Exception as e:
-                print(f"[AI-SERVICE] Cảnh báo cấu hình Gemini: {e}")
-                self.model = None
+            for candidate in ["gemini-2.5-flash", "gemini-flash-latest", "gemini-1.5-flash"]:
+                try:
+                    genai.configure(api_key=self.api_key)
+                    self.model = genai.GenerativeModel(candidate)
+                    self.model_name = candidate
+                    break
+                except Exception as e:
+                    print(f"[AI-SERVICE] Thử nghiệm model {candidate} không thành công: {e}")
+                    self.model = None
 
     async def generate_questions_from_context(
         self,

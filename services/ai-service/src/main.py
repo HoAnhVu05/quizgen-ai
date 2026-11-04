@@ -51,7 +51,7 @@ def health():
     return {
         "status": "healthy",
         "service": "ai-service",
-        "llm_engine": "gemini-1.5-flash",
+        "llm_engine": getattr(generator, "model_name", "gemini-2.5-flash"),
         "has_api_key": bool(os.getenv("GEMINI_API_KEY"))
     }
 
