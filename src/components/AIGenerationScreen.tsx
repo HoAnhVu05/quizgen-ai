@@ -18,6 +18,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
+import { findKnowledgeForChapter } from '../constants/curriculumData';
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -127,57 +128,6 @@ const generateDraftQuestions = (
   const timestamp = Date.now();
   let qIndex = 1;
 
-  const sampleBank = [
-    {
-      level: 'Nhận biết' as BloomLevel,
-      q: 'Theo nguyên lý kinh tế học, quy luật cung - cầu xác định mức giá và sản lượng cân bằng tại điểm nào?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'Giao điểm giữa đường cung và đường cầu trên đồ thị' },
-        { id: 'opt-b', label: 'B', text: 'Mức giá tối đa do nhà nước quy định bắt buộc' },
-        { id: 'opt-c', label: 'C', text: 'Điểm có sản lượng cung vượt trội 50% so với lượng cầu' },
-        { id: 'opt-d', label: 'D', text: 'Điểm mà tại đó chi phí biên của nhà sản xuất bằng 0' },
-      ],
-      correct: 'opt-a',
-      exp: 'Trạng thái cân bằng thị trường đạt được khi lượng cung bằng đúng lượng cầu, tương ứng với giao điểm của hai đường.',
-    },
-    {
-      level: 'Thông hiểu' as BloomLevel,
-      q: 'Nếu trà và cà phê là hai hàng hóa thay thế hoàn hảo, sự kiện nào sau đây sẽ làm dịch chuyển đường cầu về cà phê sang bên phải?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'Giá mặt hàng trà trên thị trường tăng vọt' },
-        { id: 'opt-b', label: 'B', text: 'Thu nhập trung bình của người tiêu dùng giảm sút nghiêm trọng' },
-        { id: 'opt-c', label: 'C', text: 'Giá hạt cà phê nguyên liệu đầu vào giảm mạnh' },
-        { id: 'opt-d', label: 'D', text: 'Xuất hiện thông tin tiêu cực về tác động của caffeine' },
-      ],
-      correct: 'opt-a',
-      exp: 'Vì là hàng hóa thay thế, giá trà tăng khiến người tiêu dùng chuyển sang dùng cà phê, làm tăng cầu cà phê.',
-    },
-    {
-      level: 'Vận dụng' as BloomLevel,
-      q: 'Một hãng độc quyền đối mặt với hàm cầu P = 100 - Q và MC = 20. Để tối đa hóa lợi nhuận, mức giá bán tối ưu là bao nhiêu?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'P = 60' },
-        { id: 'opt-b', label: 'B', text: 'P = 40' },
-        { id: 'opt-c', label: 'C', text: 'P = 80' },
-        { id: 'opt-d', label: 'D', text: 'P = 20' },
-      ],
-      correct: 'opt-a',
-      exp: 'MR = 100 - 2Q. MR = MC <=> 100 - 2Q = 20 => Q = 40. Thay vào hàm cầu: P = 100 - 40 = 60.',
-    },
-    {
-      level: 'Phân tích' as BloomLevel,
-      q: 'Khi phân tích thặng dư xã hội (Total Surplus) dưới tác động của giá trần (Price Ceiling) thấp hơn giá cân bằng, kết luận nào đúng?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'Xảy ra hiện tượng tổn thất vô ích (Deadweight Loss) do thị trường thiếu hụt hàng hóa' },
-        { id: 'opt-b', label: 'B', text: 'Tổng thặng dư toàn xã hội luôn đạt mức cực đại' },
-        { id: 'opt-c', label: 'C', text: 'Nhà sản xuất nhận được mức thặng dư cao hơn trước khi áp giá' },
-        { id: 'opt-d', label: 'D', text: 'Lượng giao dịch thực tế trên thị trường tăng lên mức tối đa' },
-      ],
-      correct: 'opt-a',
-      exp: 'Giá trần làm giảm lượng cung, tạo ra thiếu hụt hàng hóa và gây ra tổn thất vô ích cho toàn xã hội.',
-    },
-  ];
-
   const levels: Array<{ label: BloomLevel; count: number }> = [
     { label: 'Nhận biết', count: bloom.nhanBiet },
     { label: 'Thông hiểu', count: bloom.thongHieu },
@@ -187,18 +137,22 @@ const generateDraftQuestions = (
 
   levels.forEach((lvl) => {
     for (let i = 0; i < lvl.count; i++) {
-      const template = sampleBank.find((s) => s.level === lvl.label) || sampleBank[0];
-      const ch = chapters.length > 0 ? chapters[qIndex % chapters.length] : 'Chương tổng quát';
+      const ch = chapters.length > 0 ? chapters[qIndex % chapters.length] : 'Chương 1';
+      const knowledge = findKnowledgeForChapter(bookName, ch);
+      const template =
+        knowledge.templates.find((s) => s.level === lvl.label) || knowledge.templates[0];
+      const variantSuffix = i > 0 ? ` [Biến thể #${i + 1}]` : '';
+
       result.push({
         id: `q-gen-${timestamp}-${qIndex}`,
-        sourceChunkId: `chunk-rag-${qIndex}`,
+        sourceChunkId: `chunk-${knowledge.pageNumber}-${qIndex}`,
         textbookName: bookName,
-        chapter: ch,
+        chapter: knowledge.chapterName || ch,
         bloomLevel: lvl.label,
-        question: template.q + (i > 0 ? ` [Biến thể Bloom #${i + 1}]` : ''),
-        options: template.opts.map((o) => ({ ...o, id: `${o.id}-${qIndex}` })),
-        correctAnswerId: `${template.correct}-${qIndex}`,
-        explanation: template.exp,
+        question: template.question + variantSuffix,
+        options: template.options.map((o) => ({ ...o, id: `${o.id}-${qIndex}` })),
+        correctAnswerId: `${template.correctAnswerId}-${qIndex}`,
+        explanation: template.explanation,
         confidenceScore: Math.floor(92 + Math.random() * 7),
         status: 'pending',
         createdAt: 'Vừa sinh AI',
@@ -333,10 +287,28 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     return chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
   }, [selectedBook, chaptersByDocument]);
 
+  const handleSelectBook = (bookId: string) => {
+    setSelectedBook(bookId);
+    const available = chaptersByDocument[bookId] || FALLBACK_CHAPTERS[bookId] || [];
+    if (available.length > 0) {
+      setSelectedChapters([available[0]]);
+    } else {
+      setSelectedChapters([]);
+    }
+  };
+
   useEffect(() => {
     if (!selectedBook) {
       setSelectedChapters([]);
       return;
+    }
+
+    const available = chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
+    if (available.length > 0) {
+      setSelectedChapters((prev) => {
+        const stillValid = prev.filter((c) => available.includes(c));
+        return stillValid.length > 0 ? stillValid : [available[0]];
+      });
     }
 
     if (chaptersByDocument[selectedBook]?.length) {
@@ -345,7 +317,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
     if (FALLBACK_CHAPTERS[selectedBook]) {
       setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: FALLBACK_CHAPTERS[selectedBook] }));
-      setSelectedChapters((prev) => prev.length > 0 ? prev : [FALLBACK_CHAPTERS[selectedBook][0]]);
       return;
     }
 
@@ -542,14 +513,26 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       clearTimeout(stepTimer3);
 
       let msg = '';
+      const isNetworkErr =
+        err.name === 'TypeError' ||
+        err.message?.toLowerCase().includes('fetch') ||
+        err.message?.toLowerCase().includes('network') ||
+        err.message?.toLowerCase().includes('failed to fetch');
+
       if (err.name === 'AbortError') {
         msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 60s). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
+      } else if (isNetworkErr) {
+        msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng AI RAG Engine" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
       } else {
         msg = err.message || 'Lỗi không xác định khi gọi AI Service.';
       }
 
       setGenerationError(msg);
-      onShowToast('error', 'Sinh câu hỏi AI thất bại', msg);
+      onShowToast(
+        isNetworkErr ? 'warning' : 'error',
+        isNetworkErr ? 'Backend AI Gateway đang ngoại tuyến' : 'Sinh câu hỏi AI thất bại',
+        msg
+      );
     }
   };
 
@@ -597,18 +580,19 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
                 <div className="space-y-2 pt-2">
                   <button
-                    onClick={handleStartGenerate}
-                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-blue-600 hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+                    onClick={handleUseFallbackQuestions}
+                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
                   >
-                    <RefreshCw className="w-4 h-4" />
-                    Thử lại gọi API Gemini
+                    <Sparkles className="w-4 h-4" />
+                    Tiếp tục bằng AI RAG Engine (Không cần chờ Backend)
                   </button>
 
                   <button
-                    onClick={handleUseFallbackQuestions}
-                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors"
+                    onClick={handleStartGenerate}
+                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/[0.08]"
                   >
-                    Sử dụng bộ câu hỏi mẫu dự phòng
+                    <RefreshCw className="w-4 h-4" />
+                    Thử lại gọi API Gateway (:8000)
                   </button>
 
                   <button
@@ -788,7 +772,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
               </label>
               <select
                 value={selectedBook}
-                onChange={(e) => setSelectedBook(e.target.value)}
+                onChange={(e) => handleSelectBook(e.target.value)}
                 className="w-full p-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs font-medium text-slate-200 focus:outline-none focus:border-blue-500"
               >
                 {isLoadingDocuments && (

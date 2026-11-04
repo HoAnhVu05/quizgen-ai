@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardScreen } from './components/DashboardScreen';
 import { TextbookUploadScreen } from './components/TextbookUploadScreen';
@@ -15,7 +15,7 @@ const INITIAL_QUESTIONS: Question[] = [
     id: 'q-1',
     sourceChunkId: 'chunk-1',
     textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    chapter: 'Chương 3: Cung - Cầu và Giá cả thị trường',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
     bloomLevel: 'Nhận biết',
     question: 'Theo quy luật cầu, trong điều kiện các yếu tố khác không đổi, phát biểu nào sau đây là chính xác?',
     options: [
@@ -34,7 +34,7 @@ const INITIAL_QUESTIONS: Question[] = [
     id: 'q-2',
     sourceChunkId: 'chunk-2',
     textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    chapter: 'Chương 3: Cung - Cầu và Giá cả thị trường',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
     bloomLevel: 'Thông hiểu',
     question: 'Nếu trà và cà phê là hai hàng hóa thay thế cho nhau, điều gì sẽ xảy ra khi giá cà phê trên thị trường tăng vọt?',
     options: [
@@ -53,7 +53,7 @@ const INITIAL_QUESTIONS: Question[] = [
     id: 'q-3',
     sourceChunkId: 'chunk-3',
     textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    chapter: 'Chương 3: Cung - Cầu và Giá cả thị trường',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
     bloomLevel: 'Vận dụng',
     question: 'Một doanh nghiệp bán sản phẩm có hệ số co giãn của cầu theo giá là |PED| = 1.8. Để tối đa hóa tổng doanh thu, doanh nghiệp này nên áp dụng chiến lược giá nào?',
     options: [

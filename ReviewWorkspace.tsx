@@ -295,7 +295,7 @@ export const ReviewWorkspace: React.FC = () => {
 
                 {/* Highlighted text block */}
                 <div className="p-4 bg-amber-50/60 border-l-4 border-amber-400 rounded-r-lg text-slate-800 text-sm leading-relaxed shadow-sm">
-                  <p className="font-serif italic text-slate-700">
+                  <p className="font-sans italic text-slate-700 leading-relaxed text-sm">
                     "{activeChunk.textSnippet}"
                   </p>
                 </div>
