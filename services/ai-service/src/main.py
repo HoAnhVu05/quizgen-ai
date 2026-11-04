@@ -6,6 +6,16 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 import httpx
 
+# Load .env file (both local and root directory)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.env"))
+    if os.path.exists(root_env):
+        load_dotenv(root_env)
+except Exception:
+    pass
+
 from .database import engine, Base, get_db, SessionLocal
 from .models import AIGenerationJobDB, BloomPresetDB, GenerateRequest
 from .generator import QuestionGenerator
