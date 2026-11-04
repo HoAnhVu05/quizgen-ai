@@ -26,6 +26,8 @@ from .models import (
     ExportPdfRequest,
     UnifiedExportRequest,
     ExportQtiRequest,
+    ExportOmrRequest,
+    ExportBundleRequest,
     CreateExamRecordRequest,
     SubjectResponse,
     ActivityResponse
@@ -33,6 +35,7 @@ from .models import (
 from .exporters.word_exporter import WordExamExporter
 from .exporters.pdf_exporter import PDFExamExporter
 from .exporters.qti_exporter import QTIExporter
+from .exporters.bundle_exporter import ExamBundleExporter
 from .shuffler import ExamShuffler
 from .cache import RedisCacheClient
 
@@ -334,20 +337,86 @@ def export_pdf(req: ExportPdfRequest, db: Session = Depends(get_db)):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+@app.post("/export/omr")
+@app.post("/exams/export/omr")
+@app.post("/api/v1/exams/export/omr")
+def export_omr_sheet(req: ExportOmrRequest):
+    """Xuất riêng Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn thi đại học (PDF vector)."""
+    pdf_bytes = PDFExamExporter.generate_omr_50_pdf(
+        university=req.get_university(),
+        faculty=req.get_faculty(),
+        subject=req.get_subject(),
+        exam_code=req.get_code()
+    )
+    filename = f"Phieu_Tra_Loi_OMR_50_Cau_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.post("/export/bundle")
+@app.post("/exams/bundle")
+@app.post("/exams/export/bundle")
+@app.post("/api/v1/exams/export/bundle")
+def export_exam_bundle(req: ExportBundleRequest, db: Session = Depends(get_db)):
+    """Đóng gói toàn bộ tài nguyên khảo thí (PDF, DOCX, OMR 50 câu, Ma trận đáp án, LMS QTI 2.1) thành file ZIP."""
+    questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Danh sách câu hỏi không được rỗng.")
+
+    zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+        exam_title=req.get_title(),
+        subject=req.get_subject(),
+        questions=questions,
+        university=req.get_university(),
+        faculty=req.get_faculty(),
+        duration_minutes=req.get_duration(),
+        exam_code_count=req.get_exam_code_count(),
+        base_exam_code=req.get_base_code(),
+        shuffle_questions=req.shuffleQuestions if req.shuffleQuestions is not None else True,
+        shuffle_options=req.shuffleOptions if req.shuffleOptions is not None else True,
+        include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
+        include_explanation=req.includeExplanation if req.includeExplanation is not None else True,
+        include_omr_sheet=req.includeOmrSheet if req.includeOmrSheet is not None else True
+    )
+
+    filename = f"Bo_De_Thi_Khao_Thi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
 @app.post("/export/qti")
+@app.post("/exams/export/qti")
+@app.post("/api/v1/exams/export/qti")
 def export_qti(req: ExportQtiRequest, db: Session = Depends(get_db)):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
     if not questions:
         raise HTTPException(status_code=400, detail="Danh sách câu hỏi không được rỗng.")
 
-    xml_content = QTIExporter.export_canvas_moodle_xml(title=req.title, questions=questions)
-    filename = f"quiz_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    qti_format = (req.format or "zip").lower()
 
-    return Response(
-        content=xml_content,
-        media_type="application/xml",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
+    if qti_format in ("zip", "package", "bundle"):
+        # Xuất gói IMS QTI 2.1 Content Package chuẩn LMS
+        zip_bytes = QTIExporter.export_qti21_package_zip(title=req.title, questions=questions)
+        filename = f"Goi_LMS_QTI_2.1_{timestamp}.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    else:
+        # Xuất file Moodle XML trực tiếp
+        xml_content = QTIExporter.export_canvas_moodle_xml(title=req.title, questions=questions)
+        filename = f"quiz_export_{timestamp}.xml"
+        return Response(
+            content=xml_content,
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 @app.post("/export/unified")
 @app.post("/export")
@@ -388,7 +457,30 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    if export_fmt == "pdf":
+    if export_fmt in ("zip", "bundle"):
+        zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+            exam_title=exam_title,
+            subject=subject_name,
+            questions=questions,
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            exam_code_count=req.get_exam_code_count(),
+            base_exam_code=req.get_base_code(),
+            shuffle_questions=req.shuffleQuestions if req.shuffleQuestions is not None else True,
+            shuffle_options=req.shuffleOptions if req.shuffleOptions is not None else True,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
+        )
+        filename = f"Bo_De_Thi_{exam_code}_{timestamp}.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    elif export_fmt == "pdf":
         pdf_bytes = PDFExamExporter.generate_pdf(
             exam_title=exam_title,
             subject=subject_name,
@@ -409,14 +501,15 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
         )
 
     elif export_fmt == "qti":
-        xml_content = QTIExporter.export_canvas_moodle_xml(
+        # Mặc định export QTI trả về gói IMS Content Package ZIP
+        zip_bytes = QTIExporter.export_qti21_package_zip(
             title=exam_title,
             questions=questions
         )
-        filename = f"exam_qti_{exam_code}_{timestamp}.xml"
+        filename = f"Goi_LMS_QTI_2.1_{exam_code}_{timestamp}.zip"
         return Response(
-            content=xml_content,
-            media_type="application/xml",
+            content=zip_bytes,
+            media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 

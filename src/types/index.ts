@@ -64,5 +64,6 @@ export interface ExamExportConfig {
   includeAnswerKey: boolean;
   includeExplanation: boolean;
   includeOmrSheet?: boolean;
-  format: 'docx' | 'pdf' | 'qti';
+  baseExamCode?: number;
+  format: 'docx' | 'pdf' | 'qti' | 'zip';
 }

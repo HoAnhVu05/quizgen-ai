@@ -372,7 +372,9 @@ class UnifiedExportRequest(BaseModel):
     include_explanation: Optional[bool] = None
     includeOmrSheet: Optional[bool] = False
     include_omr_sheet: Optional[bool] = None
-    format: Optional[str] = "docx" # docx | pdf | qti
+    format: Optional[str] = "docx" # docx | pdf | qti | zip | bundle
+    baseExamCode: Optional[int] = 101
+    base_exam_code: Optional[int] = None
     questions: Optional[List[Dict[str, Any]]] = None
 
     def get_university(self) -> str:
@@ -389,6 +391,17 @@ class UnifiedExportRequest(BaseModel):
 
     def get_code(self) -> str:
         return str(self.examCode or self.exam_code or self.code or "101")
+
+    def get_base_code(self) -> int:
+        if self.base_exam_code is not None:
+            return self.base_exam_code
+        if self.baseExamCode is not None:
+            return self.baseExamCode
+        code_str = self.get_code()
+        return int(code_str) if code_str.isdigit() else 101
+
+    def get_exam_code_count(self) -> int:
+        return self.exam_code_count or self.examCodeCount or 4
 
     def get_duration(self) -> int:
         return self.durationMinutes or self.duration_minutes or self.duration or 60
@@ -409,8 +422,80 @@ class UnifiedExportRequest(BaseModel):
         return self.includeOmrSheet if self.includeOmrSheet is not None else False
 
 
+class ExportOmrRequest(BaseModel):
+    universityName: Optional[str] = None
+    university: Optional[str] = None
+    facultyName: Optional[str] = None
+    faculty: Optional[str] = None
+    subjectName: Optional[str] = None
+    subject: Optional[str] = None
+    examCode: Optional[str] = None
+    exam_code: Optional[str] = None
+
+    def get_university(self) -> str:
+        return self.universityName or self.university or "ĐẠI HỌC QUỐC GIA"
+
+    def get_faculty(self) -> str:
+        return self.facultyName or self.faculty or "Khoa Kinh tế & Quản trị"
+
+    def get_subject(self) -> str:
+        return self.subjectName or self.subject or "Kinh tế vi mô"
+
+    def get_code(self) -> str:
+        return str(self.examCode or self.exam_code or "101")
+
+
+class ExportBundleRequest(BaseModel):
+    selectedQuestionIds: Optional[List[str]] = None
+    selected_question_ids: Optional[List[str]] = None
+    universityName: Optional[str] = None
+    university: Optional[str] = None
+    facultyName: Optional[str] = None
+    faculty: Optional[str] = None
+    examTitle: Optional[str] = None
+    exam_title: Optional[str] = None
+    title: Optional[str] = None
+    subjectName: Optional[str] = None
+    subject: Optional[str] = None
+    durationMinutes: Optional[int] = None
+    duration_minutes: Optional[int] = None
+    duration: Optional[int] = None
+    examCodeCount: Optional[int] = 4
+    exam_code_count: Optional[int] = None
+    baseExamCode: Optional[int] = 101
+    base_exam_code: Optional[int] = None
+    shuffleQuestions: Optional[bool] = True
+    shuffleOptions: Optional[bool] = True
+    includeAnswerKey: Optional[bool] = True
+    includeExplanation: Optional[bool] = True
+    includeOmrSheet: Optional[bool] = True
+    questions: Optional[List[Dict[str, Any]]] = None
+
+    def get_university(self) -> str:
+        return self.universityName or self.university or "ĐẠI HỌC QUỐC GIA"
+
+    def get_faculty(self) -> str:
+        return self.facultyName or self.faculty or "Khoa Kinh tế & Quản trị"
+
+    def get_title(self) -> str:
+        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+
+    def get_subject(self) -> str:
+        return self.subjectName or self.subject or "Kinh tế vi mô"
+
+    def get_duration(self) -> int:
+        return self.durationMinutes or self.duration_minutes or self.duration or 60
+
+    def get_exam_code_count(self) -> int:
+        return self.exam_code_count or self.examCodeCount or 4
+
+    def get_base_code(self) -> int:
+        return self.base_exam_code or self.baseExamCode or 101
+
+
 class ExportQtiRequest(BaseModel):
     title: str = "Quiz Canvas LMS"
+    format: Optional[str] = "zip" # zip (IMS QTI 2.1 Content Package) hoặc xml (Moodle XML)
     questions: Optional[List[Dict[str, Any]]] = None
     selectedQuestionIds: Optional[List[str]] = None
 
