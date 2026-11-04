@@ -4,6 +4,60 @@ const url = require('url');
 const PORT = 8000;
 
 // ============================================================================
+// ACADEMIC USER DATABASE (Strict Authentication & In-Memory Store)
+// ============================================================================
+const MOCK_USERS_DB = new Map([
+  [
+    'lecturer@vnu.edu.vn',
+    {
+      id: 'lec-001',
+      email: 'lecturer@vnu.edu.vn',
+      password: 'academic123',
+      full_name: 'TS. Nguyễn Văn Hùng',
+      fullName: 'TS. Nguyễn Văn Hùng',
+      academic_title: 'TS.',
+      academicTitle: 'TS.',
+      university: 'Đại học Quốc gia',
+      department: 'Khoa Kinh tế & Quản trị',
+      role: 'lecturer',
+      roleLabel: 'Giảng viên',
+    },
+  ],
+  [
+    'truongbomon@vnu.edu.vn',
+    {
+      id: 'head-001',
+      email: 'truongbomon@vnu.edu.vn',
+      password: 'academic123',
+      full_name: 'PGS. TS. Trần Thị Mai',
+      fullName: 'PGS. TS. Trần Thị Mai',
+      academic_title: 'PGS. TS.',
+      academicTitle: 'PGS. TS.',
+      university: 'Đại học Quốc gia',
+      department: 'Bộ môn Hệ thống Thông tin',
+      role: 'head_of_department',
+      roleLabel: 'Trưởng bộ môn',
+    },
+  ],
+  [
+    'admin.khaothi@vnu.edu.vn',
+    {
+      id: 'admin-001',
+      email: 'admin.khaothi@vnu.edu.vn',
+      password: 'admin123',
+      full_name: 'ThS. Lê Hoàng Nam',
+      fullName: 'ThS. Lê Hoàng Nam',
+      academic_title: 'ThS.',
+      academicTitle: 'ThS.',
+      university: 'Đại học Quốc gia',
+      department: 'Phòng Khảo thi & Đảm bảo Chất lượng',
+      role: 'admin',
+      roleLabel: 'Quản trị Khảo thi',
+    },
+  ],
+]);
+
+// ============================================================================
 // ACADEMIC CURRICULUM DATABASE (Kinh tế Vi mô & Trí tuệ Nhân tạo)
 // ============================================================================
 const CURRICULUM_DATABASE = {
@@ -664,20 +718,124 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Auth Login
+    // Auth Login (Strict Credential Verification)
     if (pathname === '/api/v1/auth/login') {
+      let username = '';
+      let password = '';
+
+      if (jsonBody && (jsonBody.username || jsonBody.email)) {
+        username = (jsonBody.username || jsonBody.email).trim();
+        password = jsonBody.password || '';
+      } else if (body) {
+        // Parse URL-encoded form data (OAuth2PasswordRequestForm)
+        const params = new URLSearchParams(body);
+        username = (params.get('username') || params.get('email') || '').trim();
+        password = params.get('password') || '';
+      }
+
+      if (!username || !password) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Vui lòng nhập đầy đủ email và mật khẩu.' }));
+        return;
+      }
+
+      const user = MOCK_USERS_DB.get(username.toLowerCase());
+      if (!user) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Tài khoản email này chưa được đăng ký trong hệ thống Khảo thí ĐHQG.' }));
+        return;
+      }
+
+      if (user.password !== password) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu học thuật không chính xác.' }));
+        return;
+      }
+
+      // Đăng nhập thành công -> Trả về JWT Token và User Profile
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        access_token: 'mock-jwt-academic-token-2026',
+        access_token: `mock-jwt-${user.id}-${Date.now()}`,
         token_type: 'bearer',
+        expires_in: 86400,
         user: {
-          id: 'usr-lec-001',
-          full_name: 'TS. Nguyễn Văn Hùng',
-          email: 'lecturer@vnu.edu.vn',
-          role: 'lecturer',
-          department: 'Khoa Kinh tế Quốc tế',
+          id: user.id,
+          full_name: user.full_name,
+          email: user.email,
+          academic_title: user.academic_title,
+          university: user.university,
+          department: user.department,
+          role: user.role,
+          role_label: user.roleLabel,
         },
       }));
+      return;
+    }
+
+    // Auth Register (Strict Registration & Duplicate Prevention)
+    if (pathname === '/api/v1/auth/register') {
+      const email = (jsonBody.email || '').trim().toLowerCase();
+      const password = jsonBody.password || '';
+      const fullName = (jsonBody.full_name || jsonBody.fullName || '').trim();
+      const academicTitle = jsonBody.academic_title || jsonBody.academicTitle || 'TS.';
+      const university = jsonBody.university || 'Đại học Quốc gia';
+      const department = jsonBody.department || jsonBody.faculty || 'Khoa Kinh tế & Quản trị';
+      const role = jsonBody.role || 'lecturer';
+
+      if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Định dạng email học thuật không hợp lệ.' }));
+        return;
+      }
+
+      if (MOCK_USERS_DB.has(email)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Tài khoản email trường này đã được đăng ký.' }));
+        return;
+      }
+
+      if (password.length < 8) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu phải có tối thiểu 8 ký tự theo chuẩn an toàn.' }));
+        return;
+      }
+
+      const newId = `lec-${String(MOCK_USERS_DB.size + 1).padStart(3, '0')}`;
+      const newUser = {
+        id: newId,
+        email: email,
+        password: password,
+        full_name: fullName,
+        fullName: fullName,
+        academic_title: academicTitle,
+        academicTitle: academicTitle,
+        university: university,
+        department: department,
+        role: role,
+        roleLabel: role === 'head_of_department' ? 'Trưởng bộ môn' : role === 'admin' ? 'Quản trị Khảo thi' : 'Giảng viên',
+      };
+
+      MOCK_USERS_DB.set(email, newUser);
+
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        id: newUser.id,
+        email: newUser.email,
+        full_name: newUser.full_name,
+        academic_title: newUser.academic_title,
+        university: newUser.university,
+        department: newUser.department,
+        role: newUser.role,
+        is_active: true,
+        created_at: new Date().toISOString(),
+      }));
+      return;
+    }
+
+    // Auth Logout
+    if (pathname === '/api/v1/auth/logout') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', message: 'Đăng xuất thành công, token đã bị thu hồi.' }));
       return;
     }
 
