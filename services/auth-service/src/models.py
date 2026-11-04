@@ -98,10 +98,10 @@ class UniversityResponse(BaseModel):
 
 class FacultyResponse(BaseModel):
     id: str
-    universityId: str
+    university_id: Optional[str] = None
     code: str
     name: str
-    deanName: Optional[str] = None
+    dean_name: Optional[str] = None
 
     class Config:
         from_attributes = True
