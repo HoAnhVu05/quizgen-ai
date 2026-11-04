@@ -10,6 +10,7 @@ export default {
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
+        serif: ['"Plus Jakarta Sans"', 'Georgia', 'serif'],
       },
       colors: {
         brand: {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   HelpCircle,
@@ -72,10 +72,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
               Học kỳ II (2025 - 2026)
             </span>
-            <span className="text-xs text-slate-400">• Cơ sở dữ liệu Khảo thí ĐHQG</span>
+            <span className="text-xs text-slate-400">• Cơ sở dữ liệu Khảo thi ĐHQG</span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight mt-1.5">
-            Trung tâm Khảo thí & Tri thức AI
+            Trung tâm Khảo thi & Tri thức AI
           </h1>
           <p className="text-xs md:text-sm text-slate-400 mt-1">
             Đã vector hóa <span className="text-blue-400 font-semibold font-mono">{metrics.totalVectorizedPages.toLocaleString()} trang sách</span> giáo trình — Sẵn sàng sinh và đóng gói đề thi chuẩn sư phạm.
@@ -206,7 +206,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               </p>
             </div>
             <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.08]">
-              Tổng 351 câu hỏi
+              Tổng {((metrics as any).bloomDistribution?.nhanBiet?.count ?? 142) + ((metrics as any).bloomDistribution?.thongHieu?.count ?? 120) + ((metrics as any).bloomDistribution?.vanDung?.count ?? 65) + ((metrics as any).bloomDistribution?.phanTich?.count ?? 24)} câu hỏi
             </span>
           </div>
 
@@ -272,7 +272,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <div className="p-4 rounded-xl bg-gradient-to-r from-blue-900/30 via-indigo-900/20 to-transparent border border-blue-500/20 flex items-start space-x-3">
             <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
             <p className="text-xs text-blue-200 leading-relaxed">
-              <strong>Khuyến nghị Sư phạm AI:</strong> Ma trận hiện tại có tỷ lệ lý tưởng cho kỳ thi đánh giá tiến trình giữa kỳ (74% nhận thức cơ bản). Khuyến nghị sinh bổ sung <span className="text-sky-300 underline font-semibold">15 câu hỏi Vận dụng & Tình huống thực tiễn</span> để phục vụ kỳ thi tuyển chọn chất lượng cao.
+              <strong>Khuyến nghị Sư phạm AI:</strong> {(metrics as any).pedagogicalRecommendation || "Ma trận hiện tại có tỷ lệ lý tưởng cho kỳ thi đánh giá tiến trình giữa kỳ (74% nhận thức cơ bản). Khuyến nghị sinh bổ sung 15 câu hỏi Vận dụng & Tình huống thực tiễn để phục vụ kỳ thi tuyển chọn chất lượng cao."}
             </p>
           </div>
         </div>
@@ -324,7 +324,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         <div className="p-5 border-b border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Clock className="w-4 h-4 text-slate-400" />
-            <h3 className="text-base font-bold text-white">Nhật ký khảo thí gần đây</h3>
+            <h3 className="text-base font-bold text-white">Nhật ký khảo thi gần đây</h3>
           </div>
           <button className="text-xs text-blue-400 hover:text-blue-300 font-medium">
             Xem toàn bộ nhật ký

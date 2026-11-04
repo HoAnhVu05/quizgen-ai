@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BookOpen,
   CheckCircle2,
@@ -23,6 +23,7 @@ import {
   CheckCheck
 } from 'lucide-react';
 import { Question, SourceChunk, BloomLevel, QuestionStatus, ScreenId } from '../types';
+import { findKnowledgeForChapter } from '../constants/curriculumData';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -36,7 +37,7 @@ const MOCK_SOURCE_CHUNKS: Record<string, SourceChunk> = {
   'chunk-1': {
     id: 'chunk-1',
     pageNumber: 42,
-    chapter: 'Chương 3: Cung - Cầu và Giá cả thị trường',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
     textSnippet:
       'Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi (ceteris paribus), khi giá của một hàng hóa hoặc dịch vụ tăng lên thì lượng cầu về hàng hóa hoặc dịch vụ đó sẽ giảm xuống và ngược lại. Mối quan hệ tỷ lệ nghịch này được thể hiện thông qua đường cầu dốc xuống từ trái sang phải trên đồ thị giá - lượng.',
     relevanceScore: 98,
@@ -44,7 +45,7 @@ const MOCK_SOURCE_CHUNKS: Record<string, SourceChunk> = {
   'chunk-2': {
     id: 'chunk-2',
     pageNumber: 45,
-    chapter: 'Chương 3: Cung - Cầu và Giá cả thị trường',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
     textSnippet:
       'Hàng hóa thay thế (Substitute goods) là những cặp hàng hóa thỏa mãn cùng một nhu cầu. Khi giá của mặt hàng X tăng lên, người tiêu dùng có xu hướng giảm tiêu thụ X và chuyển sang sử dụng mặt hàng thay thế Y, làm cho lượng cầu của hàng hóa Y tăng lên dù giá của Y không đổi.',
     relevanceScore: 94,
@@ -52,7 +53,7 @@ const MOCK_SOURCE_CHUNKS: Record<string, SourceChunk> = {
   'chunk-3': {
     id: 'chunk-3',
     pageNumber: 48,
-    chapter: 'Chương 3: Cung - Cầu và Giá cả thị trường',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
     textSnippet:
       'Hệ số co giãn của cầu theo giá (Price Elasticity of Demand - PED) đo lường mức độ phản ứng của lượng cầu trước sự thay đổi của giá cả. Nếu |PED| > 1, cầu được coi là co giãn nhiều (Elastic demand), việc giảm giá sẽ làm tăng tổng doanh thu (Total Revenue) của doanh nghiệp.',
     relevanceScore: 91,
@@ -89,7 +90,20 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   const [isRegenerating, setIsRegenerating] = useState<string | null>(null);
 
   const activeQuestion = questions.find((q) => q.id === selectedQuestionId) || questions[0];
-  const activeChunk = activeQuestion ? MOCK_SOURCE_CHUNKS[activeQuestion.sourceChunkId] || MOCK_SOURCE_CHUNKS['chunk-1'] : null;
+  const activeChunk = useMemo<SourceChunk | null>(() => {
+    if (!activeQuestion) return null;
+    const knowledge = findKnowledgeForChapter(
+      activeQuestion.textbookName || 'doc-kinh-te-vi-mo-2025',
+      activeQuestion.chapter || 'Chương 2'
+    );
+    return {
+      id: activeQuestion.sourceChunkId || `chunk-${knowledge.pageNumber}`,
+      pageNumber: knowledge.pageNumber || 42,
+      chapter: activeQuestion.chapter || knowledge.chapterName,
+      textSnippet: knowledge.textSnippet,
+      relevanceScore: knowledge.relevanceScore || 96,
+    };
+  }, [activeQuestion]);
 
   // Keyboard Shortcuts Support
   useEffect(() => {
@@ -165,12 +179,15 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               <span className="font-bold text-white text-sm">
                 Không gian Đối chiếu & Kiểm duyệt RAG
               </span>
-              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/25">
-                Chương 3: Cung - Cầu
+              <span
+                className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/25 max-w-[280px] truncate"
+                title={activeQuestion?.chapter}
+              >
+                {activeQuestion?.chapter || 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường'}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-              <FileText className="w-3 h-3 text-slate-500" /> Nguồn: GiaoTrinh_KinhTeViMo_2025.pdf
+              <FileText className="w-3 h-3 text-slate-500" /> Nguồn: {activeQuestion?.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}
             </p>
           </div>
         </div>
@@ -250,7 +267,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
 
                 {/* Highlighted snippet (Yellow fluorescent marker look) */}
                 <div className="p-4 bg-amber-500/[0.07] border-l-4 border-amber-400 rounded-r-xl text-slate-200 text-xs md:text-sm leading-relaxed shadow-sm">
-                  <p className="font-serif italic text-amber-100">
+                  <p className="font-sans italic text-amber-100 leading-relaxed text-sm">
                     "{activeChunk.textSnippet}"
                   </p>
                 </div>
@@ -332,6 +349,11 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                       <span className="text-[11px] text-slate-400 font-mono">
                         Độ tin cậy: <strong className="text-emerald-400">{q.confidenceScore}%</strong>
                       </span>
+                      {q.chapter && (
+                        <span className="hidden sm:inline-block text-[10px] text-slate-400 bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.06] max-w-[180px] truncate" title={q.chapter}>
+                          {q.chapter}
+                        </span>
+                      )}
                     </div>
 
                     {/* Status Badge */}
