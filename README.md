@@ -80,3 +80,7 @@ Truy cập giao diện tại: `http://localhost:3000`
 * RAG Vector Service: `GET http://localhost:8003/health`
 * AI Generation Service: `GET http://localhost:8004/health`
 * Exam Export Service: `GET http://localhost:8005/health`
+
+### 4. Quy chuẩn liên kết Jira - GitHub (Development Integration)
+* **Quy tắc Commit:** Lời nhắn commit cần chứa mã nhiệm vụ Jira (ví dụ: SCRUM-47, SCRUM-48, SCRUM-49) để tự động đồng bộ vào mục Development trên Jira.
+* **Quy tắc Branch & PR:** Mọi nhánh tính năng eature/* khi tạo Pull Request bắt buộc chọn Base branch là develop.

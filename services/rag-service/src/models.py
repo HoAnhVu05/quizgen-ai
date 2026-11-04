@@ -14,6 +14,7 @@ class VectorIndexDB(Base):
 
     id = Column(String(50), primary_key=True)
     document_id = Column(String(50), nullable=False, index=True)
+    user_id = Column(String(50), nullable=True, index=True)
     collection_name = Column(String(100), nullable=False, default="textbook_chunks")
     total_vectors = Column(Integer, nullable=False, default=0)
     embedding_model = Column(String(100), nullable=False, default="all-MiniLM-L6-v2")
@@ -28,6 +29,7 @@ class RetrievalLogDB(Base):
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
 
     id = Column(String(50), primary_key=True)
+    user_id = Column(String(50), nullable=True, index=True)
     query_text = Column(Text, nullable=False)
     document_id = Column(String(50), nullable=True, index=True)
     top_k = Column(Integer, nullable=False, default=5)
