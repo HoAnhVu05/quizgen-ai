@@ -15,6 +15,15 @@ from .vector_store import RAGVectorStore
 from .cache import cache
 from .auth import get_current_user_id, get_optional_user_id
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.env"))
+    if os.path.exists(root_env):
+        load_dotenv(root_env)
+except Exception:
+    pass
+
 app = FastAPI(
     title="QuizGen AI - RAG Vector Service",
     description="Microservice lưu trữ Vector ChromaDB, tính toán Embeddings và đối soát minh chứng Zero-Hallucination",

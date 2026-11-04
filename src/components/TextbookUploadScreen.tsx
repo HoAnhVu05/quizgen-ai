@@ -121,7 +121,33 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     void fetchDocuments(false);
   }, [fetchDocuments]);
 
+  // Tự động Polling cập nhật tiến trình RAG ngầm cho các tài liệu đang xử lý
+  useEffect(() => {
+    const hasPendingDocs = textbooks.some(
+      (b) => b.status === 'uploading' || b.status === 'extracting' || b.status === 'embedding'
+    );
+    if (!hasPendingDocs) return;
+
+    const interval = setInterval(() => {
+      void fetchDocuments(true);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [textbooks, fetchDocuments]);
+
   const handleUploadFile = async (file: File) => {
+    if (!file) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'pdf' && ext !== 'docx') {
+      onShowToast('error', 'Định dạng không hỗ trợ', 'Hệ thống chỉ chấp nhận tệp .pdf hoặc .docx.');
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      onShowToast('error', 'Tệp quá lớn', `Dung lượng tệp tối đa cho phép là ${MAX_UPLOAD_SIZE_MB}MB.`);
+      return;
+    }
     setIsUploading(true);
     try {
     const token = localStorage.getItem('quizgen_token') || localStorage.getItem('access_token');

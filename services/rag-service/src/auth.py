@@ -83,6 +83,11 @@ def get_current_user_id(
             token = auth_str
 
     if not token:
+        # Hỗ trợ môi trường phát triển (development): cho phép fallback user nếu chưa có Gateway JWT
+        env = os.getenv("ENVIRONMENT", "development").lower()
+        if env in ["development", "dev", "local"]:
+            return "lec-001"
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Yêu cầu xác thực JWT. Vui lòng cung cấp tiêu đề 'Authorization: Bearer <token>' hợp lệ.",

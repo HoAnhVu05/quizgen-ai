@@ -17,13 +17,25 @@ from .chunker import TextChunker, EmptyChunksException
 from .cache import cache
 from .auth import get_current_user_id, get_optional_user_id
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    root_env = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.env"))
+    if os.path.exists(root_env):
+        load_dotenv(root_env)
+except Exception:
+    pass
+
 app = FastAPI(
     title="QuizGen AI - Document Service",
     description="Microservice bóc tách giáo trình PDF/Word, phân đoạn ngữ nghĩa và liên kết RAG",
     version="1.0.0"
 )
 
-RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag-service:8003")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://127.0.0.1:8003")
+if "rag-service" in RAG_SERVICE_URL and not os.path.exists("/.dockerenv"):
+    RAG_SERVICE_URL = "http://127.0.0.1:8003"
+
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
 RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "120"))
 STORAGE_DIR = Path(os.getenv("DOCUMENT_STORAGE_DIR", "./data/uploads"))
@@ -281,19 +293,29 @@ async def upload_document(
 
 
 @app.get("/progress/{document_id}")
+@app.get("/documents/{document_id}/progress")
 def get_document_progress(document_id: str, db: Session = Depends(get_db)):
     cached = cache.get_upload_progress(document_id)
     if cached:
-        return cached
+        return {
+            **cached,
+            "documentId": cached.get("document_id") or document_id,
+            "totalPages": cached.get("total_pages", 0)
+        }
     doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy giáo trình.")
     return {
+        "documentId": doc.id,
         "document_id": doc.id,
         "progress": doc.progress,
         "status": doc.status,
         "stage": "completed" if doc.progress == 100 else doc.status,
-        "total_pages": doc.total_pages
+        "totalPages": doc.total_pages,
+        "total_pages": doc.total_pages,
+        "chaptersCount": doc.chapters_count,
+        "chapters_count": doc.chapters_count,
+        "errorMessage": doc.error_message
     }
 
 
