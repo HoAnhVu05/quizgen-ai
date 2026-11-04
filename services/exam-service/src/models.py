@@ -1,6 +1,7 @@
+import json
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import Column, String, Integer, Text, DateTime, JSON, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base, DATABASE_URL
@@ -58,7 +59,7 @@ class QuestionDB(Base):
 
     id = Column(String(50), primary_key=True, index=True)
     document_id = Column(String(50), nullable=True, index=True)
-    source_chunk_id = Column(String(100), nullable=False)
+    source_chunk_id = Column(String(100), nullable=False, index=True)
     textbook_name = Column(String(255), nullable=False)
     chapter = Column(String(255), nullable=False)
     bloom_level = Column(String(30), nullable=False, index=True) # Nhận biết, Thông hiểu, Vận dụng, Phân tích
@@ -85,8 +86,8 @@ class ExamDB(Base):
     university = Column(String(150), default="ĐẠI HỌC QUỐC GIA")
     duration_minutes = Column(Integer, default=60)
     exam_codes = Column(JSON, nullable=False) # ["101", "102", "103", "104"]
-    selected_question_ids = Column(JSON, nullable=False)
-    format = Column(String(20), default="docx")
+    selected_question_ids = Column(JSON, nullable=False) # ["q-1", "q-2"]
+    format = Column(String(20), default="docx") # docx, pdf, qti
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     variants = relationship("ExamVariantDB", back_populates="exam", cascade="all, delete-orphan")
@@ -186,8 +187,50 @@ class OptionSchema(BaseModel):
     text: str
 
 
+class QuestionCreateSchema(BaseModel):
+    id: Optional[str] = None
+    document_id: Optional[str] = None
+    documentId: Optional[str] = None
+    source_chunk_id: Optional[str] = "chunk-default"
+    sourceChunkId: Optional[str] = None
+    textbook_name: Optional[str] = "GiaoTrinh_Chung.pdf"
+    textbookName: Optional[str] = None
+    chapter: Optional[str] = "Chương 1"
+    bloom_level: Optional[str] = "Nhận biết"
+    bloomLevel: Optional[str] = None
+    question_text: Optional[str] = None
+    question: Optional[str] = None
+    options: List[OptionSchema]
+    correct_answer_id: Optional[str] = None
+    correctAnswerId: Optional[str] = None
+    explanation: Optional[str] = ""
+    confidence_score: Optional[int] = 95
+    confidenceScore: Optional[int] = None
+    status: Optional[str] = "pending"
+    created_by: Optional[str] = "lec-001"
+
+    def get_question_text(self) -> str:
+        return self.question or self.question_text or ""
+
+    def get_source_chunk_id(self) -> str:
+        return self.sourceChunkId or self.source_chunk_id or "chunk-default"
+
+    def get_textbook_name(self) -> str:
+        return self.textbookName or self.textbook_name or "GiaoTrinh_Chung.pdf"
+
+    def get_bloom_level(self) -> str:
+        return self.bloomLevel or self.bloom_level or "Nhận biết"
+
+    def get_correct_answer_id(self) -> str:
+        return self.correctAnswerId or self.correct_answer_id or (self.options[0].id if self.options else "")
+
+    def get_confidence_score(self) -> int:
+        return self.confidenceScore if self.confidenceScore is not None else (self.confidence_score or 95)
+
+
 class QuestionUpdateSchema(BaseModel):
     question: Optional[str] = None
+    question_text: Optional[str] = None
     questionText: Optional[str] = None
     options: Optional[List[OptionSchema]] = None
     correctAnswerId: Optional[str] = None
@@ -204,13 +247,22 @@ class QuestionUpdateSchema(BaseModel):
     action: Optional[str] = None
 
     def get_question_text(self) -> Optional[str]:
-        return self.questionText or self.question
+        return self.questionText or self.question or self.question_text
+
+    def get_text(self) -> Optional[str]:
+        return self.get_question_text()
 
     def get_correct_answer_id(self) -> Optional[str]:
         return self.correctAnswerId or self.correct_answer_id
 
+    def get_answer_id(self) -> Optional[str]:
+        return self.get_correct_answer_id()
+
     def get_bloom_level(self) -> Optional[str]:
         return self.bloomLevel or self.bloom_level
+
+    def get_bloom(self) -> Optional[str]:
+        return self.get_bloom_level()
 
     def get_confidence_score(self) -> Optional[int]:
         return self.confidenceScore or self.confidence_score
@@ -241,8 +293,22 @@ class QuestionStatusUpdate(BaseModel):
 
 
 class BatchApproveRequest(BaseModel):
-    questionIds: List[str]
+    questionIds: Optional[List[str]] = None
+    question_ids: Optional[List[str]] = None
     lecturerId: Optional[str] = "lec-001"
+
+    def get_ids(self) -> List[str]:
+        return self.questionIds or self.question_ids or []
+
+
+class GenerateVariantsRequest(BaseModel):
+    questionIds: Optional[List[str]] = None
+    selectedQuestionIds: Optional[List[str]] = None
+    questions: Optional[List[Dict[str, Any]]] = None
+    examCodeCount: int = 4
+    baseExamCode: int = 101
+    shuffleQuestions: bool = True
+    shuffleOptions: bool = True
 
 
 class QuestionAuditLogResponse(BaseModel):
@@ -282,6 +348,133 @@ class BloomTaxonomyResponse(BaseModel):
     generatedAt: str
 
 
+class ExportDocxRequest(BaseModel):
+    exam_title: Optional[str] = None
+    examTitle: Optional[str] = None
+    subject: Optional[str] = None
+    subjectName: Optional[str] = None
+    faculty: Optional[str] = None
+    facultyName: Optional[str] = None
+    university: Optional[str] = None
+    universityName: Optional[str] = None
+    exam_code: Optional[str] = None
+    examCode: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    durationMinutes: Optional[int] = None
+    questions: Optional[List[Dict[str, Any]]] = None
+    selectedQuestionIds: Optional[List[str]] = None
+    includeAnswerKey: bool = True
+    includeExplanation: bool = False
+
+    def get_title(self) -> str:
+        return self.examTitle or self.exam_title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+
+    def get_subject(self) -> str:
+        return self.subjectName or self.subject or "Kinh tế vi mô"
+
+    def get_faculty(self) -> str:
+        return self.facultyName or self.faculty or "Khoa Kinh tế & Quản trị"
+
+    def get_university(self) -> str:
+        return self.universityName or self.university or "ĐẠI HỌC QUỐC GIA"
+
+    def get_code(self) -> str:
+        return str(self.examCode or self.exam_code or "101")
+
+    def get_duration(self) -> int:
+        return self.durationMinutes or self.duration_minutes or 60
+
+
+class ExportPdfRequest(BaseModel):
+    exam_title: Optional[str] = None
+    examTitle: Optional[str] = None
+    subject: Optional[str] = None
+    subjectName: Optional[str] = None
+    faculty: Optional[str] = None
+    facultyName: Optional[str] = None
+    university: Optional[str] = None
+    universityName: Optional[str] = None
+    exam_code: Optional[str] = None
+    examCode: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    durationMinutes: Optional[int] = None
+    questions: Optional[List[Dict[str, Any]]] = None
+    selectedQuestionIds: Optional[List[str]] = None
+    includeAnswerKey: bool = True
+    includeExplanation: bool = False
+    includeOmrSheet: bool = False
+
+    def get_title(self) -> str:
+        return self.examTitle or self.exam_title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+
+    def get_subject(self) -> str:
+        return self.subjectName or self.subject or "Kinh tế vi mô"
+
+    def get_faculty(self) -> str:
+        return self.facultyName or self.faculty or "Khoa Kinh tế & Quản trị"
+
+    def get_university(self) -> str:
+        return self.universityName or self.university or "ĐẠI HỌC QUỐC GIA"
+
+    def get_code(self) -> str:
+        return str(self.examCode or self.exam_code or "101")
+
+    def get_duration(self) -> int:
+        return self.durationMinutes or self.duration_minutes or 60
+
+
+class UnifiedExportRequest(BaseModel):
+    selectedQuestionIds: Optional[List[str]] = None
+    universityName: Optional[str] = "ĐẠI HỌC QUỐC GIA"
+    facultyName: Optional[str] = "Khoa Kinh tế & Quản trị"
+    examTitle: Optional[str] = "ĐỀ THI KẾT THÚC HỌC PHẦN"
+    subjectName: Optional[str] = "Kinh tế vi mô"
+    durationMinutes: Optional[int] = 60
+    examCodeCount: Optional[int] = 4
+    shuffleQuestions: Optional[bool] = True
+    shuffleOptions: Optional[bool] = True
+    includeAnswerKey: Optional[bool] = True
+    includeExplanation: Optional[bool] = False
+    includeOmrSheet: Optional[bool] = False
+    format: Optional[str] = "docx" # docx | pdf | qti
+    questions: Optional[List[Dict[str, Any]]] = None
+
+
+class ExportQtiRequest(BaseModel):
+    title: str = "Quiz Canvas LMS"
+    questions: Optional[List[Dict[str, Any]]] = None
+    selectedQuestionIds: Optional[List[str]] = None
+
+
+class CreateExamRecordRequest(BaseModel):
+    id: Optional[str] = None
+    user_id: Optional[str] = "lec-001"
+    userId: Optional[str] = None
+    title: str
+    subject: str
+    faculty: Optional[str] = "Khoa Kinh tế & Quản trị"
+    university: Optional[str] = "ĐẠI HỌC QUỐC GIA"
+    duration_minutes: Optional[int] = 60
+    durationMinutes: Optional[int] = None
+    exam_codes: Optional[List[str]] = None
+    examCodes: Optional[List[str]] = None
+    selected_question_ids: Optional[List[str]] = None
+    selectedQuestionIds: Optional[List[str]] = None
+    format: Optional[str] = "docx"
+
+    def get_user_id(self) -> str:
+        return self.userId or self.user_id or "lec-001"
+
+    def get_duration(self) -> int:
+        return self.durationMinutes or self.duration_minutes or 60
+
+    def get_exam_codes(self) -> List[str]:
+        return self.examCodes or self.exam_codes or ["101"]
+
+    def get_question_ids(self) -> List[str]:
+        return self.selectedQuestionIds or self.selected_question_ids or []
+
+
 class SubjectResponse(BaseModel):
     id: str
     code: str
@@ -300,44 +493,3 @@ class ActivityResponse(BaseModel):
     time: str
     icon: str
     color: str
-
-
-class ExportDocxRequest(BaseModel):
-    exam_title: Optional[str] = "Đề thi Giữa kỳ Học kỳ II"
-    examTitle: Optional[str] = None
-    subject: Optional[str] = "Kinh tế vi mô"
-    subjectName: Optional[str] = None
-    exam_code: Optional[str] = "101"
-    examCode: Optional[str] = None
-    questions: Optional[List[Dict[str, Any]]] = None
-    selectedQuestionIds: Optional[List[str]] = None
-
-    def get_title(self) -> str:
-        return self.examTitle or self.exam_title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
-
-    def get_subject(self) -> str:
-        return self.subjectName or self.subject or "Kinh tế vi mô"
-
-    def get_code(self) -> str:
-        return self.examCode or self.exam_code or "101"
-
-
-class UnifiedExportRequest(BaseModel):
-    selectedQuestionIds: Optional[List[str]] = None
-    universityName: Optional[str] = "ĐẠI HỌC QUỐC GIA"
-    facultyName: Optional[str] = "Khoa Kinh tế & Quản trị"
-    examTitle: Optional[str] = "ĐỀ THI KẾT THÚC HỌC PHẦN"
-    subjectName: Optional[str] = "Kinh tế vi mô"
-    durationMinutes: Optional[int] = 60
-    examCodeCount: Optional[int] = 4
-    shuffleQuestions: Optional[bool] = True
-    shuffleOptions: Optional[bool] = True
-    includeAnswerKey: Optional[bool] = True
-    includeExplanation: Optional[bool] = False
-    format: Optional[str] = "docx" # docx | pdf | qti
-    questions: Optional[List[Dict[str, Any]]] = None
-
-
-class ExportQtiRequest(BaseModel):
-    title: str = "Quiz Canvas LMS"
-    questions: List[Dict[str, Any]]
