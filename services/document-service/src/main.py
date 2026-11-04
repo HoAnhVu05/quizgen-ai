@@ -455,6 +455,12 @@ async def delete_document(
     except Exception as e:
         rag_warning = f"Không thể kết nối RAG service để dọn dẹp vector: {str(e)}"
 
+    # Dọn dẹp cache tiến trình upload và metadata của document-service
+    try:
+        cache.clear_document_cache(document_id)
+    except Exception:
+        pass
+
     # 2. Xóa tệp vật lý trên ổ đĩa
     if doc.file_path and os.path.exists(doc.file_path):
         try:
