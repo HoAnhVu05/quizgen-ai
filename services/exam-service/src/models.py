@@ -182,12 +182,24 @@ class QuestionCreateSchema(BaseModel):
 class QuestionUpdateSchema(BaseModel):
     question: Optional[str] = None
     question_text: Optional[str] = None
+    questionText: Optional[str] = None
     options: Optional[List[OptionSchema]] = None
     correctAnswerId: Optional[str] = None
     correct_answer_id: Optional[str] = None
     explanation: Optional[str] = None
     bloomLevel: Optional[str] = None
     bloom_level: Optional[str] = None
+    confidenceScore: Optional[int] = None
+    confidence_score: Optional[int] = None
+
+    def get_text(self) -> Optional[str]:
+        return self.questionText or self.question or self.question_text
+
+    def get_answer_id(self) -> Optional[str]:
+        return self.correctAnswerId or self.correct_answer_id
+
+    def get_bloom(self) -> Optional[str]:
+        return self.bloomLevel or self.bloom_level
 
 
 class QuestionStatusUpdate(BaseModel):
@@ -195,7 +207,11 @@ class QuestionStatusUpdate(BaseModel):
 
 
 class BatchApproveRequest(BaseModel):
-    questionIds: List[str]
+    questionIds: Optional[List[str]] = None
+    question_ids: Optional[List[str]] = None
+
+    def get_ids(self) -> List[str]:
+        return self.questionIds or self.question_ids or []
 
 
 class GenerateVariantsRequest(BaseModel):

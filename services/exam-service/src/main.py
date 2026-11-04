@@ -138,11 +138,13 @@ def health(db: Session = Depends(get_db)):
 @app.get("/questions")
 @app.get("/bank")
 def list_questions(
+    search: Optional[str] = None,
     status: Optional[str] = Query(None, description="pending, approved, rejected"),
     chapter: Optional[str] = Query(None),
     bloomLevel: Optional[str] = Query(None),
+    bloom_level: Optional[str] = Query(None),
     textbookName: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=200),
+    limit: Optional[int] = Query(None, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db)
 ):
@@ -151,20 +153,26 @@ def list_questions(
         query = query.filter(QuestionDB.status == status)
     if chapter:
         query = query.filter(QuestionDB.chapter == chapter)
-    if bloomLevel:
-        query = query.filter(QuestionDB.bloom_level == bloomLevel)
+    b_level = bloomLevel or bloom_level
+    if b_level and b_level != "all":
+        query = query.filter(QuestionDB.bloom_level == b_level)
     if textbookName:
         query = query.filter(QuestionDB.textbook_name.ilike(f"%{textbookName}%"))
 
-    total = query.count()
-    items = query.order_by(desc(QuestionDB.created_at)).offset(offset).limit(limit).all()
+    if search:
+        query = query.filter(
+            (QuestionDB.question_text.ilike(f"%{search}%")) |
+            (QuestionDB.chapter.ilike(f"%{search}%"))
+        )
 
-    return {
-        "total": total,
-        "limit": limit,
-        "offset": offset,
-        "questions": [format_question_response(q) for q in items]
-    }
+    query = query.order_by(desc(QuestionDB.created_at))
+    if offset:
+        query = query.offset(offset)
+    if limit:
+        query = query.limit(limit)
+
+    items = query.all()
+    return [format_question_response(q) for q in items]
 
 @app.post("/questions", status_code=status.HTTP_201_CREATED)
 def create_question(payload: QuestionCreateSchema, db: Session = Depends(get_db)):
@@ -204,19 +212,21 @@ def update_question(question_id: str, payload: QuestionUpdateSchema, db: Session
     if not q:
         raise HTTPException(status_code=404, detail="Câu hỏi không tồn tại.")
 
-    q_text = payload.question or payload.question_text
+    q_text = payload.get_text()
     if q_text is not None:
         q.question_text = q_text
     if payload.options is not None:
         q.options = [opt.dict() for opt in payload.options]
-    c_ans = payload.correctAnswerId or payload.correct_answer_id
+    c_ans = payload.get_answer_id()
     if c_ans is not None:
         q.correct_answer_id = c_ans
     if payload.explanation is not None:
         q.explanation = payload.explanation
-    b_level = payload.bloomLevel or payload.bloom_level
+    b_level = payload.get_bloom()
     if b_level is not None:
         q.bloom_level = b_level
+    if payload.confidenceScore is not None or payload.confidence_score is not None:
+        q.confidence_score = payload.confidenceScore if payload.confidenceScore is not None else payload.confidence_score
 
     q.updated_at = datetime.utcnow()
     db.commit()
@@ -237,12 +247,13 @@ def update_status(question_id: str, payload: QuestionStatusUpdate, db: Session =
 
 @app.post("/questions/batch-approve")
 def batch_approve(payload: BatchApproveRequest, db: Session = Depends(get_db)):
+    target_ids = payload.get_ids()
     updated_count = db.query(QuestionDB).filter(
-        QuestionDB.id.in_(payload.questionIds)
+        QuestionDB.id.in_(target_ids)
     ).update({"status": "approved", "updated_at": datetime.utcnow()}, synchronize_session=False)
 
     db.commit()
-    return {"message": f"Đã phê duyệt thành công {updated_count} câu hỏi.", "approvedIds": payload.questionIds}
+    return {"message": f"Đã phê duyệt thành công {updated_count} câu hỏi.", "approvedIds": target_ids}
 
 # ====================================================================
 # EXAM VARIANT GENERATION (Fisher-Yates Shuffler)
@@ -333,12 +344,31 @@ def export_qti(req: ExportQtiRequest, db: Session = Depends(get_db)):
     )
 
 @app.post("/export/unified")
+@app.post("/export")
+@app.post("/exams/export")
 def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
     if not questions:
         raise HTTPException(status_code=400, detail="Danh sách câu hỏi trống.")
 
     export_fmt = (req.format or "docx").lower()
+
+    # Tự động ghi nhật ký hệ thống
+    try:
+        act_id = f"act-{uuid.uuid4().hex[:8]}"
+        db.add(SystemActivityDB(
+            id=act_id,
+            user_id="lec-001",
+            action_type="export_exam",
+            title=f"Xuất bản đề thi ({export_fmt.upper()})",
+            detail=f"{req.subjectName or 'Đề thi'} - {len(questions)} câu - {req.examCodeCount or 1} mã đề",
+            icon_name="Download",
+            badge_color="text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+            created_at=datetime.utcnow()
+        ))
+        db.commit()
+    except Exception:
+        pass
 
     if export_fmt == "pdf":
         pdf_bytes = PDFExamExporter.generate_pdf(
