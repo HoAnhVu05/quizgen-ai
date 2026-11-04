@@ -166,11 +166,11 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 Không gian Đối chiếu & Kiểm duyệt RAG
               </span>
               <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/25">
-                Chương 3: Cung - Cầu
+                {activeQuestion?.chapter || "Chương mục RAG"}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-              <FileText className="w-3 h-3 text-slate-500" /> Nguồn: GiaoTrinh_KinhTeViMo_2025.pdf
+              <FileText className="w-3 h-3 text-slate-500" /> Nguồn: {activeQuestion?.textbookName || "Tài liệu học thuật"}
             </p>
           </div>
         </div>

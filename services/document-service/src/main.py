@@ -41,67 +41,9 @@ def _format_file_size(byte_count: int) -> str:
 
 @app.on_event("startup")
 def startup_db():
-    """Tự động khởi tạo bảng cơ sở dữ liệu và nạp dữ liệu mẫu ban đầu nếu trống"""
+    """Tự động khởi tạo bảng cơ sở dữ liệu nếu chưa tồn tại"""
     try:
         Base.metadata.create_all(bind=engine)
-        db = SessionLocal()
-        existing = db.execute(select(DocumentDB).filter_by(id="tb-001")).scalar_one_or_none()
-        if not existing:
-            default_doc = DocumentDB(
-                id="tb-001",
-                user_id="lec-001",
-                name="GiaoTrinh_KinhTeViMo_2025.pdf",
-                file_path=str(STORAGE_DIR / "tb-001_GiaoTrinh_KinhTeViMo_2025.pdf"),
-                file_size="14.2 MB",
-                total_pages=184,
-                chapters_count=5,
-                status="ready",
-                progress=100,
-                created_at=datetime.utcnow()
-            )
-            db.add(default_doc)
-            db.commit()
-
-            # Seed danh mục chương mẫu
-            chapters = [
-                DocumentChapterDB(id="ch-tb-001-1", document_id="tb-001", chapter_index=1, title="Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng", page_start=1, page_end=35),
-                DocumentChapterDB(id="ch-tb-001-2", document_id="tb-001", chapter_index=2, title="Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường", page_start=36, page_end=68),
-                DocumentChapterDB(id="ch-tb-001-3", document_id="tb-001", chapter_index=3, title="Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên", page_start=69, page_end=110),
-                DocumentChapterDB(id="ch-tb-001-4", document_id="tb-001", chapter_index=4, title="Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận", page_start=111, page_end=150),
-                DocumentChapterDB(id="ch-tb-001-5", document_id="tb-001", chapter_index=5, title="Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền", page_start=151, page_end=184),
-            ]
-            db.add_all(chapters)
-
-            # Seed chunks mẫu
-            chunks = [
-                DocumentChunkDB(
-                    id="chunk-1",
-                    document_id="tb-001",
-                    page_number=42,
-                    chapter="Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường",
-                    char_count=342,
-                    text_snippet="Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi (ceteris paribus), khi giá của một hàng hóa hoặc dịch vụ tăng lên thì lượng cầu về hàng hóa hoặc dịch vụ đó sẽ giảm xuống và ngược lại. Mối quan hệ tỷ lệ nghịch này được thể hiện thông qua đường cầu dốc xuống từ trái sang phải trên đồ thị giá - lượng."
-                ),
-                DocumentChunkDB(
-                    id="chunk-2",
-                    document_id="tb-001",
-                    page_number=45,
-                    chapter="Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường",
-                    char_count=318,
-                    text_snippet="Hàng hóa thay thế (Substitute goods) là những cặp hàng hóa thỏa mãn cùng một nhu cầu. Khi giá của mặt hàng X tăng lên, người tiêu dùng có xu hướng giảm tiêu thụ X và chuyển sang sử dụng mặt hàng thay thế Y, làm cho lượng cầu của hàng hóa Y tăng lên dù giá của Y không đổi."
-                ),
-                DocumentChunkDB(
-                    id="chunk-3",
-                    document_id="tb-001",
-                    page_number=48,
-                    chapter="Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường",
-                    char_count=295,
-                    text_snippet="Hệ số co giãn của cầu theo giá (Price Elasticity of Demand - PED) đo lường mức độ phản ứng của lượng cầu trước sự thay đổi của giá cả. Nếu |PED| > 1, cầu được coi là co giãn nhiều (Elastic demand), việc giảm giá sẽ làm tăng tổng doanh thu (Total Revenue) của doanh nghiệp."
-                )
-            ]
-            db.add_all(chunks)
-            db.commit()
-        db.close()
     except Exception as e:
         print(f"[DOCUMENT-SERVICE] DB Startup Warning: {e}")
 
