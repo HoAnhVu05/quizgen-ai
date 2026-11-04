@@ -524,8 +524,22 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
                 "color": a.badge_color or "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
             })
 
+        total_textbooks = 0
+        try:
+            doc_service_url = os.getenv("DOCUMENT_SERVICE_URL", "http://127.0.0.1:8002")
+            if "document-service" in doc_service_url and not os.path.exists("/.dockerenv"):
+                doc_service_url = "http://127.0.0.1:8002"
+            with httpx.Client(timeout=3.0) as client:
+                res = client.get(f"{doc_service_url}/documents")
+                if res.status_code == 200:
+                    doc_list = res.json()
+                    if isinstance(doc_list, list):
+                        total_textbooks = len(doc_list)
+        except Exception:
+            pass
+
         return {
-            "totalTextbooks": 3,
+            "totalTextbooks": total_textbooks,
             "totalApprovedQuestions": approved_questions,
             "totalExamsPackaged": total_exams,
             "bloomDistribution": {
@@ -538,14 +552,14 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
         }
     except Exception as e:
         return {
-            "totalTextbooks": 3,
-            "totalApprovedQuestions": 47,
-            "totalExamsPackaged": 5,
+            "totalTextbooks": 0,
+            "totalApprovedQuestions": 0,
+            "totalExamsPackaged": 0,
             "bloomDistribution": {
-                "nhanBiet": {"count": 18, "percentage": 38},
-                "thongHieu": {"count": 16, "percentage": 34},
-                "vanDung": {"count": 9, "percentage": 19},
-                "phanTich": {"count": 4, "percentage": 9}
+                "nhanBiet": {"count": 0, "percentage": 0},
+                "thongHieu": {"count": 0, "percentage": 0},
+                "vanDung": {"count": 0, "percentage": 0},
+                "phanTich": {"count": 0, "percentage": 0}
             },
             "recentActivities": []
         }
