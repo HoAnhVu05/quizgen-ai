@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from .database import engine, Base, get_db
-from .models import UserDB, UserTokenDB, LecturerCreate, LecturerResponse, TokenResponse
+from typing import List, Optional
+from .models import UserDB, UserTokenDB, UniversityDB, FacultyDB, LecturerCreate, LecturerResponse, TokenResponse, UniversityResponse, FacultyResponse
 from .cache import cache
 
 app = FastAPI(title="QuizGen AI - Auth Service", version="1.0.0")
@@ -43,6 +44,18 @@ def startup_db():
                 created_at=datetime.utcnow()
             )
             db.add(default_user)
+            db.commit()
+    except Exception as e:
+                # Seed default universities & faculties if empty
+        if not db.query(UniversityDB).first():
+            vnu = UniversityDB(id="uni-vnu", code="VNU", name="Đại học Quốc gia", city="Hà Nội", website="https://vnu.edu.vn")
+            hust = UniversityDB(id="uni-hust", code="HUST", name="Đại học Bách Khoa", city="Hà Nội", website="https://hust.edu.vn")
+            db.add_all([vnu, hust])
+            db.commit()
+
+            fac1 = FacultyDB(id="fac-fba", university_id="uni-vnu", code="FBA", name="Khoa Kinh tế & Quản trị", dean_name="PGS.TS. Trần Văn Nam")
+            fac2 = FacultyDB(id="fac-fit", university_id="uni-vnu", code="FIT", name="Khoa Công nghệ Thông tin", dean_name="GS.TS. Lê Hoài An")
+            db.add_all([fac1, fac2])
             db.commit()
     except Exception as e:
         print(f"[AUTH-SERVICE] DB Init warning: {e}")
@@ -133,3 +146,17 @@ def get_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
         raise
     except Exception:
         raise HTTPException(status_code=401, detail="Xác thực không hợp lệ.")
+
+
+@app.get("/universities", response_model=List[UniversityResponse])
+def get_universities(db: Session = Depends(get_db)):
+    """Danh mục các trường đại học cho màn hình Đăng ký"""
+    return db.query(UniversityDB).all()
+
+@app.get("/faculties", response_model=List[FacultyResponse])
+def get_faculties(university_id: Optional[str] = None, db: Session = Depends(get_db)):
+    """Danh mục các khoa đào tạo cho màn hình Đăng ký"""
+    query = db.query(FacultyDB)
+    if university_id:
+        query = query.filter(FacultyDB.university_id == university_id)
+    return query.all()

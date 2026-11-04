@@ -37,3 +37,20 @@ class RetrievalLogDB(Base):
     top_relevance_score = Column(Numeric(5, 2), nullable=True)
     latency_ms = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+from sqlalchemy import BigInteger
+
+class UsageQuotaDB(Base):
+    __tablename__ = "usage_quotas"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(50), primary_key=True)
+    user_id = Column(String(50), unique=True, nullable=False, index=True)
+    institution_id = Column(String(50), nullable=True)
+    max_tokens = Column(BigInteger, nullable=False, default=1000000)
+    used_tokens = Column(BigInteger, nullable=False, default=420000)
+    total_embeddings_count = Column(Integer, nullable=False, default=12450)
+    reset_cycle = Column(String(20), default="monthly")
+    cycle_start = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)

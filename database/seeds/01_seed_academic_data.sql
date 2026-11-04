@@ -283,3 +283,48 @@ INSERT INTO rag.usage_quotas (id, user_id, institution_id, max_tokens, used_toke
 VALUES 
     ('quota-lec-001', 'lec-001', 'uni-vnu', 1000000, 420000, 12450)
 ON CONFLICT (user_id) DO NOTHING;
+
+-- --------------------------------------------------------------------
+-- 10. Nhật ký kiểm toán câu hỏi & đề thi (Question & Exam Audit Logs)
+-- --------------------------------------------------------------------
+INSERT INTO exams.question_audit_logs (id, question_id, lecturer_id, action, previous_state, new_state)
+VALUES 
+    (
+        'q-audit-001',
+        'q-1',
+        'lec-001',
+        'approve',
+        '{"status": "pending"}'::jsonb,
+        '{"status": "approved", "note": "Câu hỏi chuẩn xác theo quy luật cung cầu"}'::jsonb
+    ),
+    (
+        'q-audit-002',
+        'q-2',
+        'lec-001',
+        'inline_edit',
+        '{"confidence_score": 90}'::jsonb,
+        '{"confidence_score": 95, "edited_field": "explanation"}'::jsonb
+    )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO exams.exam_audit_logs (id, exam_id, user_id, action, details, ip_address, user_agent)
+VALUES 
+    (
+        'ex-audit-001',
+        'exam-2026-001',
+        'lec-001',
+        'create',
+        '{"title": "ĐỀ THI KẾT THÚC HỌC PHẦN", "question_count": 3, "codes": ["101", "102"]}'::jsonb,
+        '127.0.0.1',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'
+    ),
+    (
+        'ex-audit-002',
+        'exam-2026-001',
+        'lec-001',
+        'export_pdf',
+        '{"format": "pdf", "with_answer_keys": true, "exam_codes": ["101", "102"]}'::jsonb,
+        '127.0.0.1',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0'
+    )
+ON CONFLICT (id) DO NOTHING;

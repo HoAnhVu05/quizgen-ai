@@ -128,6 +128,47 @@ class SystemActivityDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+
+class ExamAuditLogDB(Base):
+    __tablename__ = "exam_audit_logs"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(50), primary_key=True)
+    exam_id = Column(
+        String(50),
+        ForeignKey(f"{SCHEMA_NAME}.exams.id" if SCHEMA_NAME else "exams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    user_id = Column(String(50), nullable=False, index=True)
+    action = Column(String(50), nullable=False, index=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    performed_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    exam = relationship("ExamDB")
+
+
+class QuestionAuditLogDB(Base):
+    __tablename__ = "question_audit_logs"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(50), primary_key=True)
+    question_id = Column(
+        String(50),
+        ForeignKey(f"{SCHEMA_NAME}.questions.id" if SCHEMA_NAME else "questions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    lecturer_id = Column(String(50), nullable=False, index=True)
+    action = Column(String(50), nullable=False, index=True)
+    previous_state = Column(JSON, nullable=True)
+    new_state = Column(JSON, nullable=True)
+    performed_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    question = relationship("QuestionDB")
+
 # ====================================================================
 # PYDANTIC SCHEMAS
 # ====================================================================
