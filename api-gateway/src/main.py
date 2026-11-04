@@ -164,3 +164,9 @@ async def subjects_proxy(request: Request, path: str = ""):
 async def activities_proxy(request: Request, path: str = ""):
     target = f"/activities/{path}".rstrip("/") if not path else f"/activities/{path}"
     return await proxy_request(settings.EXAM_SERVICE_URL, target or "/activities", request)
+
+@app.api_route("/api/v1/audit-logs", methods=METHODS)
+@app.api_route("/api/v1/audit-logs/{path:path}", methods=METHODS)
+async def audit_logs_proxy(request: Request, path: str = ""):
+    target = f"/audit-logs/{path}".rstrip("/") if not path else f"/audit-logs/{path}"
+    return await proxy_request(settings.EXAM_SERVICE_URL, target or "/audit-logs", request)

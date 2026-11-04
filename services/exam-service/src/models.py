@@ -128,7 +128,6 @@ class SystemActivityDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
-
 class ExamAuditLogDB(Base):
     __tablename__ = "exam_audit_logs"
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
@@ -151,6 +150,9 @@ class ExamAuditLogDB(Base):
 
 
 class QuestionAuditLogDB(Base):
+    """
+    [SCRUM-58] Bảng ghi nhận lịch sử khảo thí và toàn bộ vết chỉnh sửa câu hỏi của giảng viên
+    """
     __tablename__ = "question_audit_logs"
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
 
@@ -162,12 +164,18 @@ class QuestionAuditLogDB(Base):
         index=True
     )
     lecturer_id = Column(String(50), nullable=False, index=True)
-    action = Column(String(50), nullable=False, index=True)
+    action = Column(String(50), nullable=False, index=True) # inline_edit, approve, reject, status_change, regenerate, update_bloom
     previous_state = Column(JSON, nullable=True)
     new_state = Column(JSON, nullable=True)
+    change_summary = Column(Text, nullable=True)
+    field_changes = Column(JSON, nullable=True)
+    edit_reason = Column(Text, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    user_agent = Column(String(255), nullable=True)
     performed_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     question = relationship("QuestionDB")
+
 
 # ====================================================================
 # PYDANTIC SCHEMAS
@@ -177,17 +185,102 @@ class OptionSchema(BaseModel):
     label: str
     text: str
 
+
 class QuestionUpdateSchema(BaseModel):
     question: Optional[str] = None
+    questionText: Optional[str] = None
     options: Optional[List[OptionSchema]] = None
     correctAnswerId: Optional[str] = None
+    correct_answer_id: Optional[str] = None
     explanation: Optional[str] = None
+    bloomLevel: Optional[str] = None
+    bloom_level: Optional[str] = None
+    confidenceScore: Optional[int] = None
+    confidence_score: Optional[int] = None
+    lecturerId: Optional[str] = None
+    lecturer_id: Optional[str] = None
+    editReason: Optional[str] = None
+    edit_reason: Optional[str] = None
+    action: Optional[str] = None
+
+    def get_question_text(self) -> Optional[str]:
+        return self.questionText or self.question
+
+    def get_correct_answer_id(self) -> Optional[str]:
+        return self.correctAnswerId or self.correct_answer_id
+
+    def get_bloom_level(self) -> Optional[str]:
+        return self.bloomLevel or self.bloom_level
+
+    def get_confidence_score(self) -> Optional[int]:
+        return self.confidenceScore or self.confidence_score
+
+    def get_lecturer_id(self) -> Optional[str]:
+        return self.lecturerId or self.lecturer_id
+
+    def get_edit_reason(self) -> Optional[str]:
+        return self.editReason or self.edit_reason
+
+
+class QuestionReviewRequest(BaseModel):
+    action: str # approve, reject, inline_edit, regenerate, update_bloom
+    lecturerId: Optional[str] = None
+    lecturer_id: Optional[str] = None
+    editReason: Optional[str] = None
+    edit_reason: Optional[str] = None
+    comment: Optional[str] = None
+    bloomLevel: Optional[str] = None
+    bloom_level: Optional[str] = None
+
 
 class QuestionStatusUpdate(BaseModel):
     status: str # approved | rejected | pending
+    lecturerId: Optional[str] = None
+    lecturer_id: Optional[str] = None
+    reason: Optional[str] = None
+
 
 class BatchApproveRequest(BaseModel):
     questionIds: List[str]
+    lecturerId: Optional[str] = "lec-001"
+
+
+class QuestionAuditLogResponse(BaseModel):
+    id: str
+    questionId: str
+    lecturerId: str
+    action: str
+    changeSummary: Optional[str] = None
+    fieldChanges: Optional[Dict[str, Any]] = None
+    editReason: Optional[str] = None
+    previousState: Optional[Dict[str, Any]] = None
+    newState: Optional[Dict[str, Any]] = None
+    ipAddress: Optional[str] = None
+    performedAt: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BloomLevelStat(BaseModel):
+    level: str
+    english: str
+    count: int
+    percentage: float
+    targetPercentage: float
+    deviation: float
+    color: str
+    badgeColor: str
+
+
+class BloomTaxonomyResponse(BaseModel):
+    totalQuestions: int
+    filter: Dict[str, Any]
+    distribution: Dict[str, BloomLevelStat]
+    summary: Dict[str, Any]
+    pedagogicalRecommendation: str
+    generatedAt: str
+
 
 class SubjectResponse(BaseModel):
     id: str
@@ -199,6 +292,7 @@ class SubjectResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class ActivityResponse(BaseModel):
     id: str
     action: str
@@ -206,6 +300,7 @@ class ActivityResponse(BaseModel):
     time: str
     icon: str
     color: str
+
 
 class ExportDocxRequest(BaseModel):
     exam_title: Optional[str] = "Đề thi Giữa kỳ Học kỳ II"
@@ -226,6 +321,7 @@ class ExportDocxRequest(BaseModel):
     def get_code(self) -> str:
         return self.examCode or self.exam_code or "101"
 
+
 class UnifiedExportRequest(BaseModel):
     selectedQuestionIds: Optional[List[str]] = None
     universityName: Optional[str] = "ĐẠI HỌC QUỐC GIA"
@@ -240,6 +336,7 @@ class UnifiedExportRequest(BaseModel):
     includeExplanation: Optional[bool] = False
     format: Optional[str] = "docx" # docx | pdf | qti
     questions: Optional[List[Dict[str, Any]]] = None
+
 
 class ExportQtiRequest(BaseModel):
     title: str = "Quiz Canvas LMS"

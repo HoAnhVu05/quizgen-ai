@@ -206,7 +206,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               </p>
             </div>
             <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.08]">
-              Tổng 351 câu hỏi
+              Tổng {((metrics as any).bloomDistribution?.nhanBiet?.count ?? 142) + ((metrics as any).bloomDistribution?.thongHieu?.count ?? 120) + ((metrics as any).bloomDistribution?.vanDung?.count ?? 65) + ((metrics as any).bloomDistribution?.phanTich?.count ?? 24)} câu hỏi
             </span>
           </div>
 
@@ -272,7 +272,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <div className="p-4 rounded-xl bg-gradient-to-r from-blue-900/30 via-indigo-900/20 to-transparent border border-blue-500/20 flex items-start space-x-3">
             <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
             <p className="text-xs text-blue-200 leading-relaxed">
-              <strong>Khuyến nghị Sư phạm AI:</strong> Ma trận hiện tại có tỷ lệ lý tưởng cho kỳ thi đánh giá tiến trình giữa kỳ (74% nhận thức cơ bản). Khuyến nghị sinh bổ sung <span className="text-sky-300 underline font-semibold">15 câu hỏi Vận dụng & Tình huống thực tiễn</span> để phục vụ kỳ thi tuyển chọn chất lượng cao.
+              <strong>Khuyến nghị Sư phạm AI:</strong> {(metrics as any).pedagogicalRecommendation || "Ma trận hiện tại có tỷ lệ lý tưởng cho kỳ thi đánh giá tiến trình giữa kỳ (74% nhận thức cơ bản). Khuyến nghị sinh bổ sung 15 câu hỏi Vận dụng & Tình huống thực tiễn để phục vụ kỳ thi tuyển chọn chất lượng cao."}
             </p>
           </div>
         </div>

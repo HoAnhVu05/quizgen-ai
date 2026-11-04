@@ -1262,6 +1262,31 @@ CREATE INDEX IF NOT EXISTS idx_questions_bloom ON exams.questions(bloom_level);
 
 CREATE INDEX IF NOT EXISTS idx_questions_chunk ON exams.questions(source_chunk_id);
 
+-- [SCRUM-58] Bảng Ghi nhận Lịch sử Khảo thí & Vết chỉnh sửa của Giảng viên
+CREATE TABLE IF NOT EXISTS exams.question_audit_logs (
+    id VARCHAR(50) PRIMARY KEY,
+    question_id VARCHAR(50) NOT NULL REFERENCES exams.questions(id) ON DELETE CASCADE,
+    lecturer_id VARCHAR(50) NOT NULL,
+    action VARCHAR(50) NOT NULL, -- 'inline_edit', 'approve', 'reject', 'update_bloom', 'regenerate'
+    previous_state JSONB,
+    new_state JSONB,
+    change_summary TEXT,
+    field_changes JSONB,
+    edit_reason TEXT,
+    ip_address VARCHAR(45),
+    user_agent VARCHAR(255),
+    performed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_question_audit_qid ON exams.question_audit_logs(question_id);
+CREATE INDEX IF NOT EXISTS idx_question_audit_lecturer ON exams.question_audit_logs(lecturer_id);
+CREATE INDEX IF NOT EXISTS idx_question_audit_action ON exams.question_audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_question_audit_qid_time ON exams.question_audit_logs(question_id, performed_at DESC);
+
+-- [SCRUM-58] Chỉ mục tổng hợp phục vụ Endpoint Thống kê Phân bổ Tỷ lệ Bloom
+CREATE INDEX IF NOT EXISTS idx_questions_bloom_status_composite ON exams.questions(status, bloom_level);
+CREATE INDEX IF NOT EXISTS idx_questions_bloom_doc_status ON exams.questions(document_id, status, bloom_level);
+
 ```
 
 
