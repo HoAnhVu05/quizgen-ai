@@ -8,13 +8,29 @@ import { QuestionBankScreen } from './components/QuestionBankScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
-import { ScreenId, AuthScreenId, Question, ToastMessage } from './types';
+import { ScreenId, AuthScreenId, UserProfile, Question, ToastMessage } from './types';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
 export const App: React.FC = () => {
-  // ─── Auth State ───────────────────────────────────────────────────────────
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // ─── Authentication State ────────────────────────────────────────────────
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('quizgen_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return !!localStorage.getItem('quizgen_user');
+    } catch {
+      return false;
+    }
+  });
+
   const [authScreen, setAuthScreen] = useState<AuthScreenId>('login');
 
   // ─── App State ────────────────────────────────────────────────────────────
@@ -40,10 +56,11 @@ export const App: React.FC = () => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
   // Đồng bộ câu hỏi từ Backend Database nếu có sẵn
   useEffect(() => {
+    if (!isAuthenticated) return;
     const fetchQuestions = async () => {
       try {
         const res = await fetch(`${API_BASE}/questions`);
@@ -58,7 +75,7 @@ export const App: React.FC = () => {
       }
     };
     fetchQuestions();
-  }, [API_BASE]);
+  }, [API_BASE, isAuthenticated]);
 
   const handleUpdateQuestion = async (updated: Question) => {
     setQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
@@ -104,31 +121,60 @@ export const App: React.FC = () => {
   };
 
   // ─── Auth Handlers ────────────────────────────────────────────────────────
-  const handleLogin = () => {
+  const handleLogin = (user: UserProfile) => {
+    setCurrentUser(user);
     setIsAuthenticated(true);
     setCurrentScreen('dashboard');
-    handleShowToast('success', 'Đăng nhập thành công', 'Chào mừng trở lại hệ thống QuizGen AI!');
+    const title = user.academicTitle ? `${user.academicTitle} ` : '';
+    handleShowToast(
+      'success',
+      'Đăng nhập thành công',
+      `Chào mừng ${title}${user.fullName} trở lại QuizGen AI!`
+    );
   };
 
-  const handleRegister = () => {
+  const handleRegister = (user: UserProfile) => {
+    setCurrentUser(user);
     setIsAuthenticated(true);
     setCurrentScreen('dashboard');
-    handleShowToast('success', 'Tạo tài khoản thành công', 'Chào mừng bạn đến với QuizGen AI!');
+    handleShowToast(
+      'success',
+      'Đăng ký tài khoản thành công',
+      `Chào mừng ${user.fullName} đã gia nhập hệ thống Khảo thi ĐHQG!`
+    );
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // 1. Thử gọi backend logout nếu có token
+    const token = localStorage.getItem('quizgen_auth_token');
+    if (token) {
+      try {
+        await fetch(`${API_BASE}/auth/logout`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (e) {
+        // Fallback local cleanup
+      }
+    }
+
+    // 2. Xóa phiên đăng nhập
+    localStorage.removeItem('quizgen_user');
+    localStorage.removeItem('quizgen_auth_token');
+    setCurrentUser(null);
     setIsAuthenticated(false);
     setAuthScreen('login');
     setCurrentScreen('dashboard');
+    handleShowToast('info', 'Đã đăng xuất', 'Bạn đã đăng xuất an toàn khỏi hệ thống QuizGen AI.');
   };
 
   const pendingCount = questions.filter((q) => q.status === 'pending').length;
   const approvedCount = questions.filter((q) => q.status === 'approved').length;
 
-  // ─── Auth Screens ─────────────────────────────────────────────────────────
+  // ─── Render Auth Screens (Login / Register) ───────────────────────────────
   if (!isAuthenticated) {
     return (
-      <div className="font-sans select-none">
+      <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#080c16] font-sans">
         <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
         {authScreen === 'login' ? (
           <LoginScreen
@@ -145,17 +191,18 @@ export const App: React.FC = () => {
     );
   }
 
-  // ─── Main App ─────────────────────────────────────────────────────────────
+  // ─── Render Main Application ──────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0b0f19] font-sans relative select-none">
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
-      {/* Persistent Academic Sidebar */}
+      {/* Persistent Academic Sidebar with User & Logout */}
       <Sidebar
         currentScreen={currentScreen}
         onNavigate={setCurrentScreen}
         pendingReviewCount={pendingCount}
+        currentUser={currentUser}
         onLogout={handleLogout}
       />
 
@@ -206,4 +253,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

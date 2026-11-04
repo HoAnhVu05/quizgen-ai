@@ -13,9 +13,12 @@ import {
   AlertCircle,
   Zap,
   BookmarkCheck,
-  Cpu
+  Cpu,
+  RefreshCw,
+  XCircle,
 } from 'lucide-react';
-import { ScreenId, Question, BloomLevel } from '../types';
+import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
+import { findKnowledgeForChapter } from '../constants/curriculumData';
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -26,6 +29,66 @@ interface AIGenerationScreenProps {
 const FALLBACK_DOCUMENTS: Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }> = [];
 const FALLBACK_CHAPTERS: Record<string, string[]> = {};
 
+const normalizeGeneratedQuestion = (
+  raw: any,
+  bookName: string,
+  defaultChapter: string,
+  index: number
+): Question => {
+  let options: QuestionOption[] = [];
+  if (Array.isArray(raw.options)) {
+    options = raw.options.map((opt: any, optIdx: number) => {
+      if (typeof opt === 'string') {
+        const labels = ['A', 'B', 'C', 'D'];
+        return {
+          id: `opt-${String.fromCharCode(97 + optIdx)}`,
+          label: labels[optIdx] || String(optIdx + 1),
+          text: opt,
+        };
+      }
+      return {
+        id: String(opt.id || `opt-${String.fromCharCode(97 + optIdx)}`),
+        label: String(opt.label || String.fromCharCode(65 + optIdx)),
+        text: String(opt.text || opt.content || ''),
+      };
+    });
+  } else {
+    options = [
+      { id: 'opt-a', label: 'A', text: 'Phương án A' },
+      { id: 'opt-b', label: 'B', text: 'Phương án B' },
+      { id: 'opt-c', label: 'C', text: 'Phương án C' },
+      { id: 'opt-d', label: 'D', text: 'Phương án D' },
+    ];
+  }
+
+  const bloomRaw = String(raw.bloomLevel || raw.bloom_level || 'Nhận biết');
+  let bloomLevel: BloomLevel = 'Nhận biết';
+  if (bloomRaw.toLowerCase().includes('thông hiểu') || bloomRaw.toLowerCase().includes('understand')) {
+    bloomLevel = 'Thông hiểu';
+  } else if (bloomRaw.toLowerCase().includes('vận dụng') || bloomRaw.toLowerCase().includes('apply')) {
+    bloomLevel = 'Vận dụng';
+  } else if (bloomRaw.toLowerCase().includes('phân tích') || bloomRaw.toLowerCase().includes('analyze')) {
+    bloomLevel = 'Phân tích';
+  } else {
+    bloomLevel = 'Nhận biết';
+  }
+
+  return {
+    id: String(raw.id || `q-gemini-${Date.now()}-${index + 1}`),
+    sourceChunkId: String(raw.sourceChunkId || raw.source_chunk_id || `chunk-${(index % 3) + 1}`),
+    textbookName: String(raw.textbookName || raw.textbook_name || bookName || 'Giáo trình chuẩn'),
+    chapter: String(raw.chapter || defaultChapter || 'Chương tổng hợp'),
+    bloomLevel,
+    question: String(raw.question || raw.questionText || raw.question_text || ''),
+    options,
+    correctAnswerId: String(raw.correctAnswerId || raw.correct_answer_id || options[0]?.id || 'opt-a'),
+    explanation: String(raw.explanation || 'Minh chứng trích xuất từ tài liệu giáo trình.'),
+    confidenceScore: Number(raw.confidenceScore ?? raw.confidence_score ?? Math.floor(92 + Math.random() * 7)),
+    status: 'pending',
+    createdAt: 'Hôm nay',
+  };
+};
+
 const generateDraftQuestions = (
   bookName: string,
   chapters: string[],
@@ -34,57 +97,6 @@ const generateDraftQuestions = (
   const result: Question[] = [];
   const timestamp = Date.now();
   let qIndex = 1;
-
-  const sampleBank = [
-    {
-      level: 'Nhận biết' as BloomLevel,
-      q: 'Theo nguyên lý kinh tế học, quy luật cung - cầu xác định mức giá và sản lượng cân bằng tại điểm nào?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'Giao điểm giữa đường cung và đường cầu trên đồ thị' },
-        { id: 'opt-b', label: 'B', text: 'Mức giá tối đa do nhà nước quy định bắt buộc' },
-        { id: 'opt-c', label: 'C', text: 'Điểm có sản lượng cung vượt trội 50% so với lượng cầu' },
-        { id: 'opt-d', label: 'D', text: 'Điểm mà tại đó chi phí biên của nhà sản xuất bằng 0' },
-      ],
-      correct: 'opt-a',
-      exp: 'Trạng thái cân bằng thị trường đạt được khi lượng cung bằng đúng lượng cầu, tương ứng với giao điểm của hai đường.',
-    },
-    {
-      level: 'Thông hiểu' as BloomLevel,
-      q: 'Nếu trà và cà phê là hai hàng hóa thay thế hoàn hảo, sự kiện nào sau đây sẽ làm dịch chuyển đường cầu về cà phê sang bên phải?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'Giá mặt hàng trà trên thị trường tăng vọt' },
-        { id: 'opt-b', label: 'B', text: 'Thu nhập trung bình của người tiêu dùng giảm sút nghiêm trọng' },
-        { id: 'opt-c', label: 'C', text: 'Giá hạt cà phê nguyên liệu đầu vào giảm mạnh' },
-        { id: 'opt-d', label: 'D', text: 'Xuất hiện thông tin tiêu cực về tác động của caffeine' },
-      ],
-      correct: 'opt-a',
-      exp: 'Vì là hàng hóa thay thế, giá trà tăng khiến người tiêu dùng chuyển sang dùng cà phê, làm tăng cầu cà phê.',
-    },
-    {
-      level: 'Vận dụng' as BloomLevel,
-      q: 'Một hãng độc quyền đối mặt với hàm cầu P = 100 - Q và MC = 20. Để tối đa hóa lợi nhuận, mức giá bán tối ưu là bao nhiêu?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'P = 60' },
-        { id: 'opt-b', label: 'B', text: 'P = 40' },
-        { id: 'opt-c', label: 'C', text: 'P = 80' },
-        { id: 'opt-d', label: 'D', text: 'P = 20' },
-      ],
-      correct: 'opt-a',
-      exp: 'MR = 100 - 2Q. MR = MC <=> 100 - 2Q = 20 => Q = 40. Thay vào hàm cầu: P = 100 - 40 = 60.',
-    },
-    {
-      level: 'Phân tích' as BloomLevel,
-      q: 'Khi phân tích thặng dư xã hội (Total Surplus) dưới tác động của giá trần (Price Ceiling) thấp hơn giá cân bằng, kết luận nào đúng?',
-      opts: [
-        { id: 'opt-a', label: 'A', text: 'Xảy ra hiện tượng tổn thất vô ích (Deadweight Loss) do thị trường thiếu hụt hàng hóa' },
-        { id: 'opt-b', label: 'B', text: 'Tổng thặng dư toàn xã hội luôn đạt mức cực đại' },
-        { id: 'opt-c', label: 'C', text: 'Nhà sản xuất nhận được mức thặng dư cao hơn trước khi áp giá' },
-        { id: 'opt-d', label: 'D', text: 'Lượng giao dịch thực tế trên thị trường tăng lên mức tối đa' },
-      ],
-      correct: 'opt-a',
-      exp: 'Giá trần làm giảm lượng cung, tạo ra thiếu hụt hàng hóa và gây ra tổn thất vô ích cho toàn xã hội.',
-    },
-  ];
 
   const levels: Array<{ label: BloomLevel; count: number }> = [
     { label: 'Nhận biết', count: bloom.nhanBiet },
@@ -95,18 +107,22 @@ const generateDraftQuestions = (
 
   levels.forEach((lvl) => {
     for (let i = 0; i < lvl.count; i++) {
-      const template = sampleBank.find((s) => s.level === lvl.label) || sampleBank[0];
-      const ch = chapters.length > 0 ? chapters[qIndex % chapters.length] : 'Chương tổng quát';
+      const ch = chapters.length > 0 ? chapters[qIndex % chapters.length] : 'Chương 1';
+      const knowledge = findKnowledgeForChapter(bookName, ch);
+      const template =
+        knowledge.templates.find((s) => s.level === lvl.label) || knowledge.templates[0];
+      const variantSuffix = i > 0 ? ` [Biến thể #${i + 1}]` : '';
+
       result.push({
         id: `q-gen-${timestamp}-${qIndex}`,
-        sourceChunkId: `chunk-rag-${qIndex}`,
+        sourceChunkId: `chunk-${knowledge.pageNumber}-${qIndex}`,
         textbookName: bookName,
-        chapter: ch,
+        chapter: knowledge.chapterName || ch,
         bloomLevel: lvl.label,
-        question: template.q + (i > 0 ? ` [Biến thể Bloom #${i + 1}]` : ''),
-        options: template.opts.map((o) => ({ ...o, id: `${o.id}-${qIndex}` })),
-        correctAnswerId: `${template.correct}-${qIndex}`,
-        explanation: template.exp,
+        question: template.question + variantSuffix,
+        options: template.options.map((o) => ({ ...o, id: `${o.id}-${qIndex}` })),
+        correctAnswerId: `${template.correctAnswerId}-${qIndex}`,
+        explanation: template.explanation,
         confidenceScore: Math.floor(92 + Math.random() * 7),
         status: 'pending',
         createdAt: 'Vừa sinh AI',
@@ -133,6 +149,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
+  const [generationProgress, setGenerationProgress] = useState(0);
+  const [generationError, setGenerationError] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string>('giuaKy');
   const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
   const [chaptersByDocument, setChaptersByDocument] = useState<Record<string, string[]>>({});
@@ -161,34 +179,60 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setIsLoadingDocuments(true);
     try {
       const res = await fetch(`${API_BASE}/documents/documents`);
-      if (!res.ok) {
-        throw new Error(await parseErrorMessage(res));
+      let list: any[] = [];
+      if (res.ok) {
+        const payload = await res.json();
+        if (Array.isArray(payload)) {
+          list = payload;
+        }
       }
-      const payload = await res.json();
-      const readyDocs = Array.isArray(payload)
-        ? payload
-            .filter((item: any) => item?.status === 'ready')
-            .map((item: any) => ({
-              id: String(item.id),
-              name: String(item.name),
-              status: String(item.status),
-              totalPages: Number(item.totalPages ?? 0),
-              chaptersCount: Number(item.chaptersCount ?? 0),
-            }))
-        : [];
 
-      if (readyDocs.length > 0) {
-        setDocuments(readyDocs);
-        setSelectedBook((prev) => (readyDocs.some((d) => d.id === prev) ? prev : readyDocs[0].id));
+      // Merge with localStorage custom uploaded documents
+      let localUploadedDocs: any[] = [];
+      try {
+        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+      } catch {}
+
+      const combined = [...localUploadedDocs, ...list];
+      const readyDocs = combined
+        .filter((item: any) => item && (item.status === 'ready' || !item.status))
+        .map((item: any) => ({
+          id: String(item.id),
+          name: String(item.name || item.title || 'Tài liệu giáo trình'),
+          status: 'ready',
+          totalPages: Number(item.totalPages ?? item.total_pages ?? 120),
+          chaptersCount: Number(item.chaptersCount ?? item.chapters_count ?? 4),
+        }));
+
+      // Deduplicate by ID
+      const uniqueDocs = readyDocs.filter(
+        (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
+      );
+
+      if (uniqueDocs.length > 0) {
+        setDocuments(uniqueDocs);
+        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
         setIsUsingFallback(false);
       } else {
-        // Backend rỗng, giữ mock data để trải nghiệm không gián đoạn
+        setDocuments(FALLBACK_DOCUMENTS);
         setIsUsingFallback(true);
       }
     } catch {
-      // Backend offline hoặc chưa khởi động -> Dùng mock data để tiếp tục làm việc mượt mà
+      // Offline fallback: check localStorage then fallback to sample documents
+      let localUploadedDocs: any[] = [];
+      try {
+        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+      } catch {}
+
+      if (localUploadedDocs.length > 0) {
+        const combined = [...localUploadedDocs, ...FALLBACK_DOCUMENTS];
+        setDocuments(combined);
+        setSelectedBook((prev) => (combined.some((d) => d.id === prev) ? prev : combined[0].id));
+      } else {
+        setDocuments(FALLBACK_DOCUMENTS);
+      }
       setIsUsingFallback(true);
-      setDocuments([]);
+setDocuments([]);
       if (!hasWarnedBackendRef.current) {
         hasWarnedBackendRef.current = true;
         onShowToast('info', 'Chế độ Demo (Backend ngoại tuyến)', 'Đang hiển thị tài liệu mẫu từ RAG Vector store.');
@@ -212,24 +256,40 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     return chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
   }, [selectedBook, chaptersByDocument]);
 
+  const handleSelectBook = (bookId: string) => {
+    setSelectedBook(bookId);
+    const available = chaptersByDocument[bookId] || FALLBACK_CHAPTERS[bookId] || [];
+    if (available.length > 0) {
+      setSelectedChapters([available[0]]);
+    } else {
+      setSelectedChapters([]);
+    }
+  };
+
   useEffect(() => {
     if (!selectedBook) {
       setSelectedChapters([]);
       return;
     }
 
-    // Nếu đã có trong state hoặc fallback, ưu tiên dùng
+    const available = chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
+    if (available.length > 0) {
+      setSelectedChapters((prev) => {
+        const stillValid = prev.filter((c) => available.includes(c));
+        return stillValid.length > 0 ? stillValid : [available[0]];
+      });
+    }
+
     if (chaptersByDocument[selectedBook]?.length) {
       return;
     }
 
     if (FALLBACK_CHAPTERS[selectedBook]) {
       setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: FALLBACK_CHAPTERS[selectedBook] }));
-      setSelectedChapters((prev) => prev.length > 0 ? prev : [FALLBACK_CHAPTERS[selectedBook][0]]);
       return;
     }
 
-    // Nếu là tài liệu từ backend thật, tải chapters
+    // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
         const res = await fetch(`${API_BASE}/documents/documents/${selectedBook}`);
@@ -238,12 +298,15 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         }
         const detail = await res.json();
         const chapters = Array.isArray(detail?.chapters) ? detail.chapters.filter(Boolean) : [];
-        setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
         if (chapters.length > 0) {
+          setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
           setSelectedChapters([chapters[0]]);
+        } else {
+          const defaultCh = ['Chương 1: Nội dung tổng quát'];
+          setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
+          setSelectedChapters(defaultCh);
         }
       } catch {
-        // Fallback nhẹ nhàng
         const defaultCh = ['Chương 1: Nội dung tổng quát'];
         setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
         setSelectedChapters(defaultCh);
@@ -251,7 +314,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     };
 
     void loadChapters();
-  }, [selectedBook, API_BASE]);
+  }, [selectedBook, API_BASE, chaptersByDocument]);
 
   const totalQuestions =
     bloomDistribution.nhanBiet +
@@ -282,136 +345,331 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     }
   };
 
-  const handleStartGenerate = () => {
+  // ─── ĐẤU NỐI API SINH CÂU HỎI AI THẬT ──────────────────────────────────────
+  const handleStartGenerate = async () => {
+    if (selectedChapters.length === 0) {
+      onShowToast('warning', 'Chưa chọn chương mục', 'Vui lòng chọn ít nhất 1 chương giáo trình để sinh câu hỏi.');
+      return;
+    }
+    if (totalQuestions === 0) {
+      onShowToast('warning', 'Chưa cấu hình ma trận Bloom', 'Tổng số lượng câu hỏi trong ma trận phải lớn hơn 0.');
+      return;
+    }
+
     setIsGenerating(true);
-    setGenerationStep('Đang truy xuất ngữ cảnh RAG từ tài liệu...');
+    setGenerationError(null);
+    setGenerationProgress(12);
+    setGenerationStep('Đang kết nối API Gateway và truy xuất ngữ cảnh RAG từ tài liệu...');
 
-    setTimeout(() => {
-      setGenerationStep('LLM đang tổng hợp và sinh câu hỏi theo Thang đo Bloom...');
-    }, 1200);
+    const selectedDoc = documents.find((d) => d.id === selectedBook);
+    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const defaultChapter = selectedChapters[0] || 'Chương tổng hợp';
 
-    setTimeout(() => {
-      setGenerationStep('Kiểm tra minh chứng trích dẫn và tạo phương án nhiễu...');
-    }, 2400);
+    // Timeout Controller (60 giây cho các đề thi lớn)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 60000);
 
-    setTimeout(() => {
-      setIsGenerating(false);
-      const selectedDoc = documents.find((d) => d.id === selectedBook);
-      const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
-      const newGeneratedQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
-      onShowToast(
-        'success',
-        'Sinh câu hỏi AI hoàn tất!',
-        `Đã khởi tạo thành công ${newGeneratedQuestions.length} câu hỏi theo Thang đo Bloom. Hãy bắt đầu kiểm duyệt.`
+    // Tiến trình hiển thị động giả lập nhịp bước trong lúc chờ Gemini phản hồi
+    const progressTimer = setInterval(() => {
+      setGenerationProgress((prev) => {
+        if (prev < 40) return prev + 6;
+        if (prev < 78) return prev + 3;
+        if (prev < 92) return prev + 1;
+        return prev;
+      });
+    }, 900);
+
+    const stepTimer2 = setTimeout(() => {
+      setGenerationStep('Mô hình Gemini AI đang tổng hợp kiến thức và sinh câu hỏi theo Thang đo Bloom...');
+    }, 2500);
+
+    const stepTimer3 = setTimeout(() => {
+      setGenerationStep('Kiểm tra minh chứng trích dẫn, phương án nhiễu và độ tin cậy RAG...');
+    }, 8000);
+
+    try {
+      const payload = {
+        documentId: selectedBook,
+        document_id: selectedBook,
+        chapters: selectedChapters,
+        bloomMatrix: bloomDistribution,
+        bloom_matrix: bloomDistribution,
+      };
+
+      const token = localStorage.getItem('quizgen_auth_token');
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${API_BASE}/ai/generate`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      clearInterval(progressTimer);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
+
+      if (!res.ok) {
+        let errorDetail = '';
+        try {
+          const errorData = await res.json();
+          errorDetail = errorData.detail || errorData.message || '';
+        } catch {
+          errorDetail = await res.text();
+        }
+
+        if (res.status === 429) {
+          throw new Error(
+            errorDetail ||
+              'Đã vượt quá hạn mức gọi AI (Rate limit 5 lượt/phút hoặc hết Quota Gemini). Vui lòng đợi trong giây lát hoặc liên hệ Quản trị viên.'
+          );
+        } else if (res.status === 401 || res.status === 403) {
+          throw new Error(
+            errorDetail || 'Phiên làm việc hết hạn hoặc không có quyền truy cập AI Service. Vui lòng đăng nhập lại.'
+          );
+        } else if (res.status === 503) {
+          throw new Error(
+            errorDetail || 'AI Service hoặc API Gateway hiện đang bận / ngoại tuyến. Vui lòng thử lại sau.'
+          );
+        } else {
+          throw new Error(errorDetail || `AI Service báo lỗi (Mã phản hồi HTTP ${res.status})`);
+        }
+      }
+
+      setGenerationProgress(98);
+      setGenerationStep('Hoàn tất! Đang chuyển dữ liệu câu hỏi sang Không gian Kiểm duyệt...');
+
+      const data = await res.json();
+      const rawQuestions: any[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.questions)
+        ? data.questions
+        : [];
+
+      if (rawQuestions.length === 0) {
+        throw new Error('Mô hình Gemini không trả về câu hỏi nào phù hợp với ngữ cảnh đã chọn.');
+      }
+
+      const mappedQuestions: Question[] = rawQuestions.map((item, index) =>
+        normalizeGeneratedQuestion(item, bookName, defaultChapter, index)
       );
-      onGenerateSuccess(newGeneratedQuestions);
-      onNavigate('review');
-    }, 3600);
+
+      setGenerationProgress(100);
+
+      setTimeout(() => {
+        setIsGenerating(false);
+        onShowToast(
+          'success',
+          'Sinh câu hỏi AI hoàn tất!',
+          `Đã khởi tạo thành công ${mappedQuestions.length} câu hỏi thật từ Gemini AI. Đang chuyển sang Không gian Kiểm duyệt...`
+        );
+        onGenerateSuccess(mappedQuestions);
+        onNavigate('review');
+      }, 500);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      clearInterval(progressTimer);
+      clearTimeout(stepTimer2);
+      clearTimeout(stepTimer3);
+
+      let msg = '';
+      const isNetworkErr =
+        err.name === 'TypeError' ||
+        err.message?.toLowerCase().includes('fetch') ||
+        err.message?.toLowerCase().includes('network') ||
+        err.message?.toLowerCase().includes('failed to fetch');
+
+      if (err.name === 'AbortError') {
+        msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 60s). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
+      } else if (isNetworkErr) {
+        msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng AI RAG Engine" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
+      } else {
+        msg = err.message || 'Lỗi không xác định khi gọi AI Service.';
+      }
+
+      setGenerationError(msg);
+      onShowToast(
+        isNetworkErr ? 'warning' : 'error',
+        isNetworkErr ? 'Backend AI Gateway đang ngoại tuyến' : 'Sinh câu hỏi AI thất bại',
+        msg
+      );
+    }
+  };
+
+  const handleUseFallbackQuestions = () => {
+    setIsGenerating(false);
+    setGenerationError(null);
+    const selectedDoc = documents.find((d) => d.id === selectedBook);
+    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
+    onShowToast(
+      'info',
+      'Đã nạp bộ câu hỏi dự phòng',
+      `Đã chuyển sang Không gian Kiểm duyệt với ${fallbackQuestions.length} câu hỏi dự phòng theo cấu hình Bloom.`
+    );
+    onGenerateSuccess(fallbackQuestions);
+    onNavigate('review');
   };
 
   return (
     <div className="flex-1 p-8 overflow-y-auto space-y-8 bg-[#0b0f19] text-slate-100 relative">
-
       {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
       {isGenerating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-2xl bg-black/80">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-2xl bg-black/80 p-4">
           {/* Ambient glows */}
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
           <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
 
-          <div className="relative glass-panel rounded-3xl p-10 max-w-md w-full mx-6 border border-white/[0.12] shadow-2xl overflow-hidden">
+          <div className="relative glass-panel rounded-3xl p-8 sm:p-10 max-w-md w-full border border-white/[0.12] shadow-2xl overflow-hidden">
             {/* Shimmer wave bar at top */}
             <div className="absolute top-0 left-0 right-0 h-1 shimmer-bar" />
 
-            {/* Brain / Sparkle icon */}
-            <div className="flex justify-center mb-6">
-              <div className="relative">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-md">
-                  <Sparkles className="w-10 h-10 text-white animate-spin" style={{ animationDuration: '3s' }} />
+            {generationError ? (
+              /* Error Display inside modal */
+              <div className="text-center space-y-4 animate-fade-in">
+                <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                  <AlertCircle className="w-8 h-8" />
                 </div>
-                <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl animate-pulse" />
-              </div>
-            </div>
 
-            <h2 className="text-center text-xl font-extrabold text-white mb-2 tracking-tight">
-              AI đang biên soạn đề thi
-            </h2>
-            <p className="text-center text-xs text-slate-400 mb-8">
-              Mô hình LLM đang truy xuất ngữ cảnh RAG & sinh câu hỏi theo Thang đo Bloom
-            </p>
+                <div className="space-y-1.5">
+                  <h3 className="text-lg font-bold text-white">Lỗi kết nối AI Service</h3>
+                  <p className="text-xs text-rose-300 leading-relaxed bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left">
+                    {generationError}
+                  </p>
+                </div>
 
-            {/* 3-step sequential status tracker */}
-            <div className="space-y-3">
-              {[
-                { step: 1, label: 'Đang truy xuất ngữ cảnh RAG từ tài liệu...' },
-                { step: 2, label: 'LLM đang tổng hợp và sinh câu hỏi theo Thang đo Bloom...' },
-                { step: 3, label: 'Kiểm tra minh chứng trích dẫn và tạo phương án nhiễu...' },
-              ].map(({ step, label }) => {
-                const currentStepNum =
-                  generationStep.includes('RAG') ? 1
-                  : generationStep.includes('LLM') ? 2
-                  : generationStep.includes('Kiểm tra') ? 3
-                  : 0;
-                const isDone = step < currentStepNum;
-                const isActive = step === currentStepNum;
-
-                return (
-                  <div
-                    key={step}
-                    className={`flex items-center space-x-3 p-3 rounded-xl border transition-all duration-500 ${
-                      isDone
-                        ? 'bg-emerald-500/10 border-emerald-500/25 opacity-60'
-                        : isActive
-                        ? 'bg-blue-500/10 border-blue-500/30'
-                        : 'bg-white/[0.02] border-white/[0.06] opacity-40'
-                    }`}
+                <div className="space-y-2 pt-2">
+                  <button
+                    onClick={handleUseFallbackQuestions}
+                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
                   >
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold border transition-all ${
-                      isDone
-                        ? 'bg-emerald-500 border-emerald-400 text-white'
-                        : isActive
-                        ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
-                        : 'bg-white/[0.05] border-white/[0.1] text-slate-500'
-                    }`}>
-                      {isDone ? '✓' : step}
+                    <Sparkles className="w-4 h-4" />
+                    Tiếp tục bằng AI RAG Engine (Không cần chờ Backend)
+                  </button>
+
+                  <button
+                    onClick={handleStartGenerate}
+                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/[0.08]"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                    Thử lại gọi API Gateway (:8000)
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setIsGenerating(false);
+                      setGenerationError(null);
+                    }}
+                    className="text-xs text-slate-400 hover:text-white transition-colors pt-1"
+                  >
+                    Hủy bỏ
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Normal Loading Progress */
+              <div>
+                <div className="flex justify-center mb-5">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-md">
+                      <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
                     </div>
-                    <span className={`text-xs font-medium leading-snug ${
-                      isActive ? 'text-blue-200' : isDone ? 'text-emerald-300' : 'text-slate-500'
-                    }`}>
-                      {label}
-                    </span>
-                    {isActive && (
-                      <div className="ml-auto flex space-x-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-                      </div>
-                    )}
+                    <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl animate-pulse" />
                   </div>
-                );
-              })}
-            </div>
+                </div>
 
-            {/* Progress bar */}
-            <div className="mt-6 w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
-              <div
-                className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-1000"
-                style={{
-                  width: generationStep.includes('RAG') ? '33%'
-                    : generationStep.includes('LLM') ? '66%'
-                    : generationStep.includes('Kiểm tra') ? '90%'
-                    : '10%'
-                }}
-              />
-            </div>
+                <h2 className="text-center text-xl font-extrabold text-white mb-1.5 tracking-tight">
+                  Gemini AI đang sinh câu hỏi
+                </h2>
+                <p className="text-center text-xs text-slate-400 mb-6">
+                  Đang xử lý {totalQuestions} câu hỏi theo Thang đo nhận thức Bloom qua API
+                </p>
 
-            <p className="text-center text-[11px] text-slate-500 font-mono mt-3">
-              Xử lý {totalQuestions} câu hỏi từ {selectedChapters.length} chương mục...
-            </p>
+                {/* 3-step sequential status tracker */}
+                <div className="space-y-2.5">
+                  {[
+                    { step: 1, label: 'Truy xuất ngữ cảnh RAG từ tài liệu...' },
+                    { step: 2, label: 'Gemini AI tổng hợp và sinh câu hỏi theo chuẩn Bloom...' },
+                    { step: 3, label: 'Kiểm tra minh chứng trích dẫn & chuẩn hóa câu hỏi...' },
+                  ].map(({ step, label }) => {
+                    const currentStepNum =
+                      generationProgress < 35 ? 1
+                      : generationProgress < 85 ? 2
+                      : 3;
+                    const isDone = step < currentStepNum;
+                    const isActive = step === currentStepNum;
+
+                    return (
+                      <div
+                        key={step}
+                        className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-all duration-300 ${
+                          isDone
+                            ? 'bg-emerald-500/10 border-emerald-500/25 opacity-70'
+                            : isActive
+                            ? 'bg-blue-500/15 border-blue-500/40 shadow-sm'
+                            : 'bg-white/[0.02] border-white/[0.06] opacity-40'
+                        }`}
+                      >
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold border transition-all ${
+                            isDone
+                              ? 'bg-emerald-500 border-emerald-400 text-white'
+                              : isActive
+                              ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
+                              : 'bg-white/[0.05] border-white/[0.1] text-slate-500'
+                          }`}
+                        >
+                          {isDone ? '✓' : step}
+                        </div>
+                        <span
+                          className={`text-xs font-medium leading-snug flex-1 ${
+                            isActive ? 'text-blue-200' : isDone ? 'text-emerald-300' : 'text-slate-500'
+                          }`}
+                        >
+                          {label}
+                        </span>
+                        {isActive && (
+                          <div className="flex space-x-1 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Progress bar */}
+                <div className="mt-5 w-full bg-white/[0.06] h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${generationProgress}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-400">
+                  <span className="truncate max-w-[200px]">{generationStep}</span>
+                  <span className="text-blue-400 font-bold shrink-0">{generationProgress}%</span>
+                </div>
+
+                <p className="text-center text-[10px] text-slate-500 font-mono mt-3">
+                  POST /api/v1/ai/generate · Timeout: 60s
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
-
 
       {/* Background Glow */}
       <div className="absolute top-20 right-1/4 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
@@ -483,7 +741,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
               </label>
               <select
                 value={selectedBook}
-                onChange={(e) => setSelectedBook(e.target.value)}
+                onChange={(e) => handleSelectBook(e.target.value)}
                 className="w-full p-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs font-medium text-slate-200 focus:outline-none focus:border-blue-500"
               >
                 {isLoadingDocuments && (
@@ -517,21 +775,17 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                     <div
                       key={ch}
                       onClick={() => handleToggleChapter(ch)}
-                      className={`p-3 rounded-xl border text-xs font-medium cursor-pointer flex items-center justify-between transition-all ${
+                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
                         isChecked
-                          ? 'bg-blue-600/15 border-blue-500/40 text-blue-200'
-                          : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:bg-white/[0.05] hover:text-slate-200'
+                          ? 'bg-blue-600/10 border-blue-500/40 text-white'
+                          : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:bg-white/[0.04]'
                       }`}
                     >
-                      <span>{ch}</span>
-                      <div
-                        className={`w-4 h-4 rounded-md flex items-center justify-center border transition-colors ${
-                          isChecked
-                            ? 'bg-blue-600 border-blue-600 text-white'
-                            : 'border-white/20 bg-transparent'
-                        }`}
-                      >
-                        {isChecked && <Check className="w-3 h-3" />}
+                      <span className="text-xs font-medium">{ch}</span>
+                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                        isChecked ? 'bg-blue-600 border-blue-600' : 'border-white/20'
+                      }`}>
+                        {isChecked && <Check className="w-3 h-3 text-white" />}
                       </div>
                     </div>
                   );
@@ -540,129 +794,90 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             </div>
           </div>
 
-          {/* Card 2: Ma trận Bloom */}
-          <div className="glass-card p-6 rounded-2xl space-y-5">
-            <div className="flex items-center space-x-2.5 pb-3 border-b border-white/[0.06]">
-              <Sliders className="w-4 h-4 text-blue-400" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-                2. Phân bổ ma trận nhận thức (Thang đo Bloom)
-              </h2>
+          {/* Card 2: Thang đo Bloom */}
+          <div className="glass-card p-6 rounded-2xl space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+              <div className="flex items-center space-x-2.5">
+                <Sliders className="w-4 h-4 text-indigo-400" />
+                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                  2. Ma trận Độ khó Nhận thức (Bloom's Taxonomy)
+                </h2>
+              </div>
+              <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
+                Tổng: {totalQuestions} câu hỏi
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Level 1 */}
-              <div className="p-4 rounded-xl bg-sky-500/[0.06] border border-sky-500/20">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-sky-300">1. Nhận biết (Remember)</span>
-                  <span className="text-xs font-semibold text-sky-400 font-mono">
-                    {bloomDistribution.nhanBiet} câu ({totalQuestions > 0 ? Math.round((bloomDistribution.nhanBiet / totalQuestions) * 100) : 0}%)
-                  </span>
+            {/* Sliders */}
+            <div className="space-y-5">
+              {[
+                {
+                  key: 'nhanBiet' as const,
+                  label: 'Mức 1: Nhận biết (Remembering)',
+                  desc: 'Hỏi định nghĩa, quy luật, công thức cơ bản trích nguyên từ giáo trình.',
+                  color: 'text-sky-400',
+                  accent: 'accent-sky-500',
+                },
+                {
+                  key: 'thongHieu' as const,
+                  label: 'Mức 2: Thông hiểu (Understanding)',
+                  desc: 'Giải thích hiện tượng, so sánh khái niệm, phân biệt các trường phái.',
+                  color: 'text-teal-400',
+                  accent: 'accent-teal-500',
+                },
+                {
+                  key: 'vanDung' as const,
+                  label: 'Mức 3: Vận dụng (Applying)',
+                  desc: 'Giải quyết bài toán thực tế, áp dụng công thức vào số liệu cụ thể.',
+                  color: 'text-amber-400',
+                  accent: 'accent-amber-500',
+                },
+                {
+                  key: 'phanTich' as const,
+                  label: 'Mức 4: Phân tích (Analyzing)',
+                  desc: 'Đánh giá chính sách, phân tích tác động đa chiều và tình huống thực tế.',
+                  color: 'text-purple-400',
+                  accent: 'accent-purple-500',
+                },
+              ].map(({ key, label, desc, color, accent }) => (
+                <div key={key} className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <div>
+                      <span className={`font-bold ${color}`}>{label}</span>
+                      <p className="text-[11px] text-slate-400 font-normal mt-0.5">{desc}</p>
+                    </div>
+                    <span className="font-mono text-base font-extrabold text-white bg-white/[0.06] px-3 py-1 rounded-xl border border-white/[0.08]">
+                      {bloomDistribution[key]} câu
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    value={bloomDistribution[key]}
+                    onChange={(e) =>
+                      setBloomDistribution({
+                        ...bloomDistribution,
+                        [key]: parseInt(e.target.value) || 0,
+                      })
+                    }
+                    className={`w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer ${accent}`}
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  value={bloomDistribution.nhanBiet}
-                  onChange={(e) =>
-                    setBloomDistribution({
-                      ...bloomDistribution,
-                      nhanBiet: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full accent-sky-400 cursor-pointer"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Định nghĩa, khái niệm, công thức cơ bản
-                </span>
-              </div>
-
-              {/* Level 2 */}
-              <div className="p-4 rounded-xl bg-teal-500/[0.06] border border-teal-500/20">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-teal-300">2. Thông hiểu (Understand)</span>
-                  <span className="text-xs font-semibold text-teal-400 font-mono">
-                    {bloomDistribution.thongHieu} câu ({totalQuestions > 0 ? Math.round((bloomDistribution.thongHieu / totalQuestions) * 100) : 0}%)
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  value={bloomDistribution.thongHieu}
-                  onChange={(e) =>
-                    setBloomDistribution({
-                      ...bloomDistribution,
-                      thongHieu: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full accent-teal-400 cursor-pointer"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Giải thích quy luật, so sánh, phân biệt
-                </span>
-              </div>
-
-              {/* Level 3 */}
-              <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/20">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-amber-300">3. Vận dụng (Apply)</span>
-                  <span className="text-xs font-semibold text-amber-400 font-mono">
-                    {bloomDistribution.vanDung} câu ({totalQuestions > 0 ? Math.round((bloomDistribution.vanDung / totalQuestions) * 100) : 0}%)
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="15"
-                  value={bloomDistribution.vanDung}
-                  onChange={(e) =>
-                    setBloomDistribution({
-                      ...bloomDistribution,
-                      vanDung: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full accent-amber-400 cursor-pointer"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Bài toán thực tế, tính toán tình huống
-                </span>
-              </div>
-
-              {/* Level 4 */}
-              <div className="p-4 rounded-xl bg-purple-500/[0.06] border border-purple-500/20">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-purple-300">4. Phân tích (Analyze)</span>
-                  <span className="text-xs font-semibold text-purple-400 font-mono">
-                    {bloomDistribution.phanTich} câu ({totalQuestions > 0 ? Math.round((bloomDistribution.phanTich / totalQuestions) * 100) : 0}%)
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  value={bloomDistribution.phanTich}
-                  onChange={(e) =>
-                    setBloomDistribution({
-                      ...bloomDistribution,
-                      phanTich: parseInt(e.target.value) || 0,
-                    })
-                  }
-                  className="w-full accent-purple-400 cursor-pointer"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Phân tích tình huống đa biến, suy luận
-                </span>
-              </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Right Summary & Trigger (1 Col) */}
+        {/* Right Summary Sidebar (1 Col) */}
         <div className="space-y-6">
-          <div className="glass-card p-6 rounded-2xl space-y-5">
-            <h3 className="text-sm font-bold text-white pb-3 border-b border-white/[0.06] uppercase tracking-wider">
-              Tổng quan cấu hình
-            </h3>
+          <div className="glass-card p-6 rounded-2xl space-y-5 sticky top-8">
+            <div className="flex items-center space-x-2 pb-3 border-b border-white/[0.06]">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                Tóm tắt cấu hình sinh đề
+              </h3>
+            </div>
 
             <div className="space-y-3 text-xs">
               <div className="flex justify-between text-slate-400">
