@@ -664,20 +664,115 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Auth: Danh mục tài khoản 3 vai trò chuẩn mực
+    const MOCK_USERS = {
+      'lecturer@vnu.edu.vn': {
+        id: 'usr-lec-001',
+        full_name: 'TS. Nguyễn Văn An',
+        academic_title: 'TS.',
+        email: 'lecturer@vnu.edu.vn',
+        role: 'lecturer',
+        department: 'Khoa Công nghệ Thông tin',
+        university: 'Đại học Quốc gia',
+      },
+      'truongbomon@vnu.edu.vn': {
+        id: 'usr-head-001',
+        full_name: 'PGS. TS. Trần Thị Mai',
+        academic_title: 'PGS. TS.',
+        email: 'truongbomon@vnu.edu.vn',
+        role: 'head_of_department',
+        department: 'Bộ môn Hệ thống Thông tin',
+        university: 'Đại học Quốc gia',
+      },
+      'admin.khaothi@vnu.edu.vn': {
+        id: 'usr-adm-001',
+        full_name: 'ThS. Lê Hoàng Nam',
+        academic_title: 'ThS.',
+        email: 'admin.khaothi@vnu.edu.vn',
+        role: 'admin',
+        department: 'Phòng Khảo thí & Đảm bảo Chất lượng',
+        university: 'Đại học Quốc gia',
+      },
+    };
+
     // Auth Login
     if (pathname === '/api/v1/auth/login') {
+      let username = '';
+      if (body) {
+        if (body.includes('=')) {
+          const params = new URLSearchParams(body);
+          username = params.get('username') || params.get('email') || '';
+        } else {
+          try {
+            const parsed = JSON.parse(body);
+            username = parsed.username || parsed.email || '';
+          } catch (e) {}
+        }
+      }
+
+      const matchedUser = MOCK_USERS[username.toLowerCase()] || MOCK_USERS['lecturer@vnu.edu.vn'];
+      const role = matchedUser.role;
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        access_token: 'mock-jwt-academic-token-2026',
+        access_token: `mock-jwt-access-${role}-${Date.now()}`,
+        refresh_token: `mock-jwt-refresh-${role}-${Date.now()}`,
         token_type: 'bearer',
-        user: {
-          id: 'usr-lec-001',
-          full_name: 'TS. Nguyễn Văn Hùng',
-          email: 'lecturer@vnu.edu.vn',
-          role: 'lecturer',
-          department: 'Khoa Kinh tế Quốc tế',
-        },
+        expires_in: 1800,
+        user: matchedUser,
       }));
+      return;
+    }
+
+    // Auth Refresh Token
+    if (pathname === '/api/v1/auth/refresh') {
+      let refreshToken = '';
+      if (body) {
+        try {
+          const parsed = JSON.parse(body);
+          refreshToken = parsed.refresh_token || '';
+        } catch (e) {}
+      }
+      if (!refreshToken && req.headers['authorization']) {
+        const authHeader = req.headers['authorization'];
+        if (authHeader.startsWith('Bearer ')) refreshToken = authHeader.slice(7);
+      }
+
+      let role = 'lecturer';
+      if (refreshToken.includes('head_of_department') || refreshToken.includes('truongbomon')) {
+        role = 'head_of_department';
+      } else if (refreshToken.includes('admin')) {
+        role = 'admin';
+      }
+
+      const user = Object.values(MOCK_USERS).find((u) => u.role === role) || MOCK_USERS['lecturer@vnu.edu.vn'];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        access_token: `mock-jwt-access-${role}-${Date.now()}`,
+        refresh_token: `mock-jwt-refresh-${role}-${Date.now()}`,
+        token_type: 'bearer',
+        expires_in: 1800,
+        user: user,
+      }));
+      return;
+    }
+
+    // Auth Me
+    if (pathname === '/api/v1/auth/me') {
+      const auth = req.headers['authorization'] || '';
+      let role = 'lecturer';
+      if (auth.includes('head_of_department')) role = 'head_of_department';
+      else if (auth.includes('admin')) role = 'admin';
+      const user = Object.values(MOCK_USERS).find((u) => u.role === role) || MOCK_USERS['lecturer@vnu.edu.vn'];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(user));
+      return;
+    }
+
+    // Auth Logout
+    if (pathname === '/api/v1/auth/logout') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', message: 'Đăng xuất thành công, token đã bị thu hồi.' }));
       return;
     }
 

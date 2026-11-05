@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
+import apiClient from '../services/apiClient';
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -210,7 +211,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const fetchDocuments = useCallback(async () => {
     setIsLoadingDocuments(true);
     try {
-      const res = await fetch(`${API_BASE}/documents/documents`);
+      const res = await apiClient.fetch(`${API_BASE}/documents/documents`);
       let list: any[] = [];
       if (res.ok) {
         const payload = await res.json();
@@ -323,7 +324,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
-        const res = await fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        const res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
         if (!res.ok) {
           throw new Error(await parseErrorMessage(res));
         }
@@ -437,7 +438,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`${API_BASE}/ai/generate`, {
+      const res = await apiClient.fetch(`${API_BASE}/ai/generate`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),

@@ -19,6 +19,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
+import apiClient from '../services/apiClient';
 
 interface LoginScreenProps {
   onLogin: (user: UserProfile) => void;
@@ -161,7 +162,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         if (res.ok) {
           const data = await res.json();
           if (data.access_token) {
-            localStorage.setItem('quizgen_auth_token', data.access_token);
+            apiClient.setTokens(data.access_token, data.refresh_token || `mock-jwt-refresh-${data.user?.role || selectedRole}-${Date.now()}`);
             if (data.user) {
               authenticatedUser = {
                 id: data.user.id || `usr-${Date.now()}`,
@@ -233,8 +234,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         }
       }
 
-      if (rememberMe && authenticatedUser) {
-        localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
+      if (authenticatedUser) {
+        const curRole = authenticatedUser.role || selectedRole;
+        if (!apiClient.getAccessToken()) {
+          apiClient.setTokens(
+            `mock-jwt-access-${curRole}-${Date.now()}`,
+            `mock-jwt-refresh-${curRole}-${Date.now()}`
+          );
+        }
+        if (rememberMe) {
+          localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
+        }
       }
 
       setTimeout(() => {
