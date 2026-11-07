@@ -6,6 +6,42 @@ const PORT = 8000;
 // ============================================================================
 // ACADEMIC USER DATABASE (Strict Authentication & In-Memory Store)
 // ============================================================================
+let MOCK_DOCUMENTS = [
+  {
+    id: 'doc-kinh-te-vi-mo-2025',
+    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    size: '14.2 MB',
+    status: 'ready',
+    totalPages: 184,
+    chaptersCount: 5,
+    chapters: [
+      'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
+      'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
+      'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
+      'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
+      'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
+    ],
+    progress: 100,
+    uploadedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'doc-tri-tue-nhan-tao-2026',
+    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    size: '18.6 MB',
+    status: 'ready',
+    totalPages: 240,
+    chaptersCount: 4,
+    chapters: [
+      'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
+      'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
+      'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
+      'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
+    ],
+    progress: 100,
+    uploadedAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+];
+
 const MOCK_USERS_DB = new Map([
   [
     'lecturer@vnu.edu.vn',
@@ -676,38 +712,60 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Documents
-    if (pathname.startsWith('/api/v1/documents')) {
+    // Documents: Upload động, Xóa & Liệt kê kho tri thức học thuật
+    if (pathname === '/api/v1/documents/upload' || pathname === '/documents/upload') {
+      let uploadedFilename = 'Tai_Lieu_Moi_' + Date.now() + '.docx';
+      if (body) {
+        const match = body.match(/filename="([^"]+)"/i);
+        if (match && match[1]) {
+          try {
+            uploadedFilename = decodeURIComponent(escape(match[1]));
+          } catch (e) {
+            uploadedFilename = match[1];
+          }
+        }
+      }
+      const newDoc = {
+        id: `doc-${Date.now()}`,
+        name: uploadedFilename,
+        size: '3.6 MB',
+        status: 'ready',
+        totalPages: 48,
+        chaptersCount: 4,
+        chapters: [
+          'Chương 1: Tổng quan kiến thức học phần',
+          'Chương 2: Cơ sở lý thuyết và Mô hình phân tích',
+          'Chương 3: Quy trình áp dụng và Bài tập tình huống',
+          'Chương 4: Đánh giá, tổng kết và Hướng dẫn ôn tập',
+        ],
+        progress: 100,
+        uploadedAt: new Date().toISOString(),
+      };
+      MOCK_DOCUMENTS.unshift(newDoc);
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify([
-        {
-          id: 'doc-kinh-te-vi-mo-2025',
-          name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-          status: 'ready',
-          totalPages: 184,
-          chaptersCount: 5,
-          chapters: [
-            'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
-            'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
-            'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
-            'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
-            'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
-          ],
-        },
-        {
-          id: 'doc-tri-tue-nhan-tao-2026',
-          name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-          status: 'ready',
-          totalPages: 240,
-          chaptersCount: 4,
-          chapters: [
-            'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
-            'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
-            'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
-            'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
-          ],
-        },
-      ]));
+      res.end(
+        JSON.stringify({
+          status: 'success',
+          message: `Đã nạp và xử lý RAG vector thành công cho tài liệu: ${uploadedFilename}`,
+          document: newDoc,
+          id: newDoc.id,
+        })
+      );
+      return;
+    }
+
+    if ((pathname.startsWith('/api/v1/documents/documents/') || pathname.startsWith('/documents/documents/')) && req.method === 'DELETE') {
+      const docId = pathname.split('/').pop();
+      MOCK_DOCUMENTS = MOCK_DOCUMENTS.filter((d) => d.id !== docId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, message: 'Đã xóa tài liệu khỏi kho tri thức' }));
+      return;
+    }
+
+    if (pathname.startsWith('/api/v1/documents') || pathname.startsWith('/documents')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(MOCK_DOCUMENTS));
       return;
     }
 
