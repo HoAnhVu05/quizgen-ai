@@ -12,7 +12,7 @@ const MOCK_USERS_DB = new Map([
     {
       id: 'lec-001',
       email: 'lecturer@vnu.edu.vn',
-      password: 'academic123',
+      password: 'Admin@123456',
       full_name: 'TS. Nguyễn Văn Hùng',
       fullName: 'TS. Nguyễn Văn Hùng',
       academic_title: 'TS.',
@@ -28,7 +28,7 @@ const MOCK_USERS_DB = new Map([
     {
       id: 'head-001',
       email: 'truongbomon@vnu.edu.vn',
-      password: 'academic123',
+      password: 'Admin@123456',
       full_name: 'PGS. TS. Trần Thị Mai',
       fullName: 'PGS. TS. Trần Thị Mai',
       academic_title: 'PGS. TS.',
@@ -44,7 +44,7 @@ const MOCK_USERS_DB = new Map([
     {
       id: 'admin-001',
       email: 'admin.khaothi@vnu.edu.vn',
-      password: 'admin123',
+      password: 'Admin@123456',
       full_name: 'ThS. Lê Hoàng Nam',
       fullName: 'ThS. Lê Hoàng Nam',
       academic_title: 'ThS.',
@@ -717,58 +717,6 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ success: true, message: 'Thao tác thành công' }));
       return;
     }
-
-    // Auth: Quản lý người dùng đa vai trò & Xác thực nghiêm ngặt
-    const MOCK_USERS_DB = new Map([
-      [
-        'lecturer@vnu.edu.vn',
-        {
-          id: 'usr-lec-001',
-          password: 'Admin@123456',
-          email: 'lecturer@vnu.edu.vn',
-          full_name: 'TS. Nguyễn Văn An',
-          fullName: 'TS. Nguyễn Văn An',
-          academic_title: 'TS.',
-          academicTitle: 'TS.',
-          department: 'Khoa Công nghệ Thông tin',
-          university: 'Đại học Quốc gia',
-          role: 'lecturer',
-          roleLabel: 'Giảng viên',
-        },
-      ],
-      [
-        'truongbomon@vnu.edu.vn',
-        {
-          id: 'usr-head-001',
-          password: 'Admin@123456',
-          email: 'truongbomon@vnu.edu.vn',
-          full_name: 'PGS. TS. Trần Thị Mai',
-          fullName: 'PGS. TS. Trần Thị Mai',
-          academic_title: 'PGS. TS.',
-          academicTitle: 'PGS. TS.',
-          department: 'Bộ môn Hệ thống Thông tin',
-          university: 'Đại học Quốc gia',
-          role: 'head_of_department',
-          roleLabel: 'Trưởng bộ môn',
-        },
-      ],
-      [
-        'admin.khaothi@vnu.edu.vn',
-        {
-          id: 'usr-adm-001',
-          password: 'Admin@123456',
-          email: 'admin.khaothi@vnu.edu.vn',
-          full_name: 'ThS. Lê Hoàng Nam',
-          fullName: 'ThS. Lê Hoàng Nam',
-          academic_title: 'ThS.',
-          academicTitle: 'ThS.',
-          department: 'Phòng Khảo thí & Đảm bảo Chất lượng',
-          university: 'Đại học Quốc gia',
-          role: 'admin',
-          roleLabel: 'Quản trị Khảo thi',
-        },
-      ],
-    ]);
 
     // Auth Login (Strict Credential Verification)
     if (pathname === '/api/v1/auth/login') {
