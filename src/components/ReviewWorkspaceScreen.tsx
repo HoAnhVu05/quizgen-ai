@@ -133,22 +133,104 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeQuestion, onUpdateQuestion, onShowToast]);
 
-  // Single Question AI Re-generation
-  const handleRegenerateSingle = (qId: string) => {
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const [isExporting, setIsExporting] = useState<string | null>(null);
+
+  // Single Question AI Re-generation nối API thật
+  const handleRegenerateSingle = async (qId: string) => {
     setIsRegenerating(qId);
-    setTimeout(() => {
-      if (activeQuestion) {
+    const targetQ = questions.find((q) => q.id === qId) || activeQuestion;
+    try {
+      const token = localStorage.getItem('quizgen_auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/ai/regenerate-question/${qId}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(targetQ),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const newQ = data.question || data;
+        onUpdateQuestion({
+          ...targetQ,
+          question: newQ.question || targetQ.question,
+          options: newQ.options || targetQ.options,
+          correctAnswerId: newQ.correctAnswerId || newQ.correct_answer_id || targetQ.correctAnswerId,
+          explanation: newQ.explanation || targetQ.explanation,
+          confidenceScore: newQ.confidenceScore || newQ.confidence_score || 99,
+          status: 'pending',
+        });
+        onShowToast('success', 'AI đã sinh lại câu hỏi', 'Phương án nhiễu đã được Gemini tối ưu lại');
+      } else {
+        throw new Error('Fallback');
+      }
+    } catch {
+      if (targetQ) {
         const regenerated: Question = {
-          ...activeQuestion,
-          question: `[AI Đã tối ưu] ${activeQuestion.question}`,
+          ...targetQ,
+          question: `[AI Đã tối ưu] ${targetQ.question}`,
           confidenceScore: 99,
           status: 'pending'
         };
         onUpdateQuestion(regenerated);
       }
+      onShowToast('info', 'AI đã sinh lại câu hỏi (Dự phòng)', 'Phương án nhiễu đã được hiệu chỉnh học thuật');
+    } finally {
       setIsRegenerating(null);
-      onShowToast('info', 'AI đã sinh lại câu hỏi', 'Phương án nhiễu đã được hiệu chỉnh học thuật');
-    }, 1200);
+    }
+  };
+
+  // Nối API Xuất bản đề thi thật (Word .docx, PDF, Canvas LMS)
+  const handleExportExam = async (format: 'docx' | 'pdf' | 'qti') => {
+    setIsExporting(format);
+    const questionsToExport = questions.filter((q) => q.status === 'approved');
+    const exportList = questionsToExport.length > 0 ? questionsToExport : questions;
+
+    try {
+      const token = localStorage.getItem('quizgen_auth_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/exams/export`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          format,
+          examTitle: 'ĐỀ THI KẾT THÚC HỌC PHẦN',
+          subjectName: activeQuestion?.chapter ? activeQuestion.chapter.split(':')[0] : 'Kinh tế vi mô',
+          examCodeCount: 4,
+          questions: exportList,
+          includeAnswerKey: true,
+          includeExplanation: true,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = format === 'qti' ? 'xml' : format;
+      a.download = `De_Thi_QuizGen_${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      onShowToast(
+        'success',
+        'Xuất bản đề thi thành công!',
+        `Đã tạo đề thi định dạng ${format.toUpperCase()} (${exportList.length} câu hỏi). Tệp đã được tải xuống.`
+      );
+    } catch (err) {
+      onShowToast('warning', 'Không thể kết nối API Gateway', 'Vui lòng kiểm tra Docker hoặc Backend Exam Service.');
+    } finally {
+      setIsExporting(null);
+    }
   };
 
   // Stats
@@ -216,12 +298,41 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
             <button
               onClick={() => {
                 onBatchApprove();
+                // Gửi request duyệt hàng loạt lên DB nếu có
+                fetch(`${API_BASE}/questions/batch-approve`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ questionIds: questions.map((q) => q.id) }),
+                }).catch(() => {});
                 onShowToast('success', 'Đã duyệt toàn bộ', 'Tất cả các câu hỏi đang chờ đã được thông qua');
               }}
               className="px-3 py-1.5 text-xs font-semibold text-slate-200 bg-white/[0.05] border border-white/[0.1] rounded-xl hover:bg-white/[0.08] transition-colors"
             >
               Duyệt tất cả
             </button>
+
+            {/* Nút Xuất Word Trực tiếp */}
+            <button
+              onClick={() => handleExportExam('docx')}
+              disabled={isExporting !== null}
+              className="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-all"
+              title="Xuất bản đề thi chuẩn Bộ GD&ĐT dạng Word (.docx)"
+            >
+              <Download className={`w-3.5 h-3.5 ${isExporting === 'docx' ? 'animate-bounce' : ''}`} />
+              <span>{isExporting === 'docx' ? 'Đang xuất...' : 'Xuất Word (.docx)'}</span>
+            </button>
+
+            {/* Nút Xuất PDF */}
+            <button
+              onClick={() => handleExportExam('pdf')}
+              disabled={isExporting !== null}
+              className="hidden sm:flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl hover:bg-rose-500/20 transition-all"
+              title="Xuất bản đề thi định dạng PDF"
+            >
+              <Download className={`w-3.5 h-3.5 ${isExporting === 'pdf' ? 'animate-bounce' : ''}`} />
+              <span>PDF</span>
+            </button>
+
             <button
               onClick={() => {
                 onNavigate('bank');

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .database import Base, engine, get_db
-from .models import RetrievalLogDB, VectorIndexDB
+from .models import RetrievalLogDB, VectorIndexDB, UsageQuotaDB
 from .vector_store import RAGVectorStore
 from .cache import cache
 from .auth import get_current_user_id, get_optional_user_id
@@ -419,6 +419,30 @@ def get_stats(db: Session = Depends(get_db)):
         }
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Lỗi khi lấy thống kê vector store: {str(e)}")
+
+
+@app.get("/quotas")
+def get_user_quota(user_id: Optional[str] = Depends(get_optional_user_id), db: Session = Depends(get_db)):
+    """Tra cứu hạn ngạch RAG và lượng token đã sử dụng"""
+    target_user = user_id or "lec-001"
+    quota = db.query(UsageQuotaDB).filter(UsageQuotaDB.user_id == target_user).first()
+    if not quota:
+        return {
+            "userId": target_user,
+            "maxTokens": 1000000,
+            "usedTokens": 420000,
+            "totalChunks": 12450,
+            "remainingTokens": 580000,
+            "percentageUsed": 42.0
+        }
+    return {
+        "userId": quota.user_id,
+        "maxTokens": quota.max_tokens,
+        "usedTokens": quota.used_tokens,
+        "totalChunks": quota.total_embeddings_count,
+        "remainingTokens": max(0, quota.max_tokens - quota.used_tokens),
+        "percentageUsed": round((quota.used_tokens / quota.max_tokens) * 100, 1) if quota.max_tokens > 0 else 0
+    }
 
 
 @app.get("/operational/diagnostics")

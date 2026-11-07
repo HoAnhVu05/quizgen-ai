@@ -73,10 +73,17 @@ class RedisCacheClient:
 
     def _mem_incr(self, key: str, ttl: int = 60) -> int:
         val = self._mem_get(key)
-        current = int(val) if val is not None else 0
-        new_val = current + 1
-        self._mem_set(key, new_val, ttl)
-        return new_val
+        if val is None:
+            new_val = 1
+            expiry = time.time() + ttl if ttl > 0 else 0
+            self._memory_store[key] = (new_val, expiry)
+            return new_val
+        else:
+            current = int(val)
+            new_val = current + 1
+            expiry = self._memory_store[key][1]
+            self._memory_store[key] = (new_val, expiry)
+            return new_val
 
     # -------------------------------------------------------------
     # 1. JWT Blacklist (jwt:revoked:{token_hash}) - TTL 24h
@@ -274,4 +281,15 @@ class RedisCacheClient:
         return allowed, remaining
 
 # Singleton instance
+    def reset_ai_rate_limit(self, user_id: str) -> bool:
+        key = f"ratelimit:ai:generate:{user_id}"
+        try:
+            if self.is_connected and self.client:
+                self.client.delete(key)
+        except Exception as e:
+            logger.warning(f"[CACHE] Redis reset error: {e}")
+        if key in self._memory_store:
+            del self._memory_store[key]
+        return True
+
 cache = RedisCacheClient()

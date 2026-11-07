@@ -383,7 +383,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <p className="text-xs text-blue-200 leading-relaxed">
               {totalBloomQuestions > 0 ? (
                 <>
-                  <strong>Khuyến nghị Sư phạm AI:</strong> Ma trận nhận thức đang phản ánh phân bổ từ dữ liệu câu hỏi thực tế trong hệ thống.
+                  <strong>Khuyến nghị Sư phạm AI:</strong> {(metrics as any).pedagogicalRecommendation || "Ma trận nhận thức đang phản ánh phân bổ từ dữ liệu câu hỏi thực tế trong hệ thống."}
                 </>
               ) : (
                 <>

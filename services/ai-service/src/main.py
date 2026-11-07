@@ -25,7 +25,7 @@ from .auth import get_current_user_id, get_optional_user_id
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
 
-RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://rag-service:8003")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8003")
 
 @app.on_event("startup")
 def startup_db():
@@ -70,12 +70,18 @@ async def generate_questions(
     # Dùng user_id từ JWT nếu có, hỗ trợ fallback 'lec-001' khi Frontend đang phát triển cục bộ
     effective_user_id = user_id or "lec-001"
 
-    # Kiểm tra Rate Limit qua Redis (Section 5 Spec: 10 lượt/phút)
-    allowed, remaining = cache.check_ai_rate_limit(user_id=effective_user_id, limit=10, window_seconds=60)
+    # Kiểm tra Rate Limit qua Redis (Section 5 Spec)
+    rate_limit_max = int(os.getenv("AI_RATE_LIMIT_PER_MINUTE", "10"))
+    allowed, remaining = cache.check_ai_rate_limit(user_id=effective_user_id, limit=rate_limit_max, window_seconds=60)
     if not allowed:
         raise HTTPException(
             status_code=429,
-            detail="Bạn đã vượt quá giới hạn 10 yêu cầu sinh đề / phút. Vui lòng thử lại sau giây lát."
+            detail=f"Bạn đã vượt quá giới hạn {rate_limit_max} yêu cầu sinh đề / phút. Vui lòng thử lại sau giây lát.",
+            headers={
+                "X-RateLimit-Limit": str(rate_limit_max),
+                "X-RateLimit-Remaining": "0",
+                "Retry-After": "60"
+            }
         )
 
     document_id = req.get_document_id()
@@ -148,7 +154,11 @@ async def generate_questions(
             "document_id": document_id,
             "documentId": document_id,
             "totalGenerated": len(questions),
-            "questions": questions
+            "questions": questions,
+            "rateLimit": {
+                "limit": rate_limit_max,
+                "remaining": remaining
+            }
         }
     except Exception as e:
         job.status = "failed"
