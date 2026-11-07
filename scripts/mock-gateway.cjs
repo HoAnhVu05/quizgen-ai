@@ -4,6 +4,60 @@ const url = require('url');
 const PORT = 8000;
 
 // ============================================================================
+// ACADEMIC USER DATABASE (Strict Authentication & In-Memory Store)
+// ============================================================================
+const MOCK_USERS_DB = new Map([
+  [
+    'lecturer@vnu.edu.vn',
+    {
+      id: 'lec-001',
+      email: 'lecturer@vnu.edu.vn',
+      password: 'academic123',
+      full_name: 'TS. Nguyễn Văn Hùng',
+      fullName: 'TS. Nguyễn Văn Hùng',
+      academic_title: 'TS.',
+      academicTitle: 'TS.',
+      university: 'Đại học Quốc gia',
+      department: 'Khoa Kinh tế & Quản trị',
+      role: 'lecturer',
+      roleLabel: 'Giảng viên',
+    },
+  ],
+  [
+    'truongbomon@vnu.edu.vn',
+    {
+      id: 'head-001',
+      email: 'truongbomon@vnu.edu.vn',
+      password: 'academic123',
+      full_name: 'PGS. TS. Trần Thị Mai',
+      fullName: 'PGS. TS. Trần Thị Mai',
+      academic_title: 'PGS. TS.',
+      academicTitle: 'PGS. TS.',
+      university: 'Đại học Quốc gia',
+      department: 'Bộ môn Hệ thống Thông tin',
+      role: 'head_of_department',
+      roleLabel: 'Trưởng bộ môn',
+    },
+  ],
+  [
+    'admin.khaothi@vnu.edu.vn',
+    {
+      id: 'admin-001',
+      email: 'admin.khaothi@vnu.edu.vn',
+      password: 'admin123',
+      full_name: 'ThS. Lê Hoàng Nam',
+      fullName: 'ThS. Lê Hoàng Nam',
+      academic_title: 'ThS.',
+      academicTitle: 'ThS.',
+      university: 'Đại học Quốc gia',
+      department: 'Phòng Khảo thi & Đảm bảo Chất lượng',
+      role: 'admin',
+      roleLabel: 'Quản trị Khảo thi',
+    },
+  ],
+]);
+
+// ============================================================================
 // ACADEMIC CURRICULUM DATABASE (Kinh tế Vi mô & Trí tuệ Nhân tạo)
 // ============================================================================
 const CURRICULUM_DATABASE = {
@@ -664,63 +718,177 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Auth: Danh mục tài khoản 3 vai trò chuẩn mực
-    const MOCK_USERS = {
-      'lecturer@vnu.edu.vn': {
-        id: 'usr-lec-001',
-        full_name: 'TS. Nguyễn Văn An',
-        academic_title: 'TS.',
-        email: 'lecturer@vnu.edu.vn',
-        role: 'lecturer',
-        department: 'Khoa Công nghệ Thông tin',
-        university: 'Đại học Quốc gia',
-      },
-      'truongbomon@vnu.edu.vn': {
-        id: 'usr-head-001',
-        full_name: 'PGS. TS. Trần Thị Mai',
-        academic_title: 'PGS. TS.',
-        email: 'truongbomon@vnu.edu.vn',
-        role: 'head_of_department',
-        department: 'Bộ môn Hệ thống Thông tin',
-        university: 'Đại học Quốc gia',
-      },
-      'admin.khaothi@vnu.edu.vn': {
-        id: 'usr-adm-001',
-        full_name: 'ThS. Lê Hoàng Nam',
-        academic_title: 'ThS.',
-        email: 'admin.khaothi@vnu.edu.vn',
-        role: 'admin',
-        department: 'Phòng Khảo thí & Đảm bảo Chất lượng',
-        university: 'Đại học Quốc gia',
-      },
-    };
+    // Auth: Quản lý người dùng đa vai trò & Xác thực nghiêm ngặt
+    const MOCK_USERS_DB = new Map([
+      [
+        'lecturer@vnu.edu.vn',
+        {
+          id: 'usr-lec-001',
+          password: 'Admin@123456',
+          email: 'lecturer@vnu.edu.vn',
+          full_name: 'TS. Nguyễn Văn An',
+          fullName: 'TS. Nguyễn Văn An',
+          academic_title: 'TS.',
+          academicTitle: 'TS.',
+          department: 'Khoa Công nghệ Thông tin',
+          university: 'Đại học Quốc gia',
+          role: 'lecturer',
+          roleLabel: 'Giảng viên',
+        },
+      ],
+      [
+        'truongbomon@vnu.edu.vn',
+        {
+          id: 'usr-head-001',
+          password: 'Admin@123456',
+          email: 'truongbomon@vnu.edu.vn',
+          full_name: 'PGS. TS. Trần Thị Mai',
+          fullName: 'PGS. TS. Trần Thị Mai',
+          academic_title: 'PGS. TS.',
+          academicTitle: 'PGS. TS.',
+          department: 'Bộ môn Hệ thống Thông tin',
+          university: 'Đại học Quốc gia',
+          role: 'head_of_department',
+          roleLabel: 'Trưởng bộ môn',
+        },
+      ],
+      [
+        'admin.khaothi@vnu.edu.vn',
+        {
+          id: 'usr-adm-001',
+          password: 'Admin@123456',
+          email: 'admin.khaothi@vnu.edu.vn',
+          full_name: 'ThS. Lê Hoàng Nam',
+          fullName: 'ThS. Lê Hoàng Nam',
+          academic_title: 'ThS.',
+          academicTitle: 'ThS.',
+          department: 'Phòng Khảo thí & Đảm bảo Chất lượng',
+          university: 'Đại học Quốc gia',
+          role: 'admin',
+          roleLabel: 'Quản trị Khảo thi',
+        },
+      ],
+    ]);
 
-    // Auth Login
+    // Auth Login (Strict Credential Verification)
     if (pathname === '/api/v1/auth/login') {
       let username = '';
-      if (body) {
-        if (body.includes('=')) {
-          const params = new URLSearchParams(body);
-          username = params.get('username') || params.get('email') || '';
-        } else {
-          try {
-            const parsed = JSON.parse(body);
-            username = parsed.username || parsed.email || '';
-          } catch (e) {}
-        }
+      let password = '';
+
+      if (jsonBody && (jsonBody.username || jsonBody.email)) {
+        username = (jsonBody.username || jsonBody.email).trim();
+        password = jsonBody.password || '';
+      } else if (body) {
+        // Parse URL-encoded form data (OAuth2PasswordRequestForm)
+        const params = new URLSearchParams(body);
+        username = (params.get('username') || params.get('email') || '').trim();
+        password = params.get('password') || '';
       }
 
-      const matchedUser = MOCK_USERS[username.toLowerCase()] || MOCK_USERS['lecturer@vnu.edu.vn'];
-      const role = matchedUser.role;
+      if (!username || !password) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Vui lòng nhập đầy đủ email và mật khẩu.' }));
+        return;
+      }
 
+      const user = MOCK_USERS_DB.get(username.toLowerCase());
+      if (!user) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Email hoặc mật khẩu không chính xác.' }));
+        return;
+      }
+
+      if (user.password !== password) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu không chính xác.' }));
+        return;
+      }
+
+      // Đăng nhập thành công -> Trả về JWT Token và User Profile
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        access_token: `mock-jwt-access-${role}-${Date.now()}`,
-        refresh_token: `mock-jwt-refresh-${role}-${Date.now()}`,
-        token_type: 'bearer',
-        expires_in: 1800,
-        user: matchedUser,
-      }));
+      res.end(
+        JSON.stringify({
+          access_token: `mock-jwt-${user.id}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${user.role}-${Date.now()}`,
+          token_type: 'bearer',
+          expires_in: 1800,
+          user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            academic_title: user.academic_title,
+            university: user.university,
+            department: user.department,
+            role: user.role,
+            role_label: user.roleLabel,
+          },
+        })
+      );
+      return;
+    }
+
+    // Auth Register (Strict Registration & Duplicate Prevention)
+    if (pathname === '/api/v1/auth/register') {
+      const email = (jsonBody.email || '').trim().toLowerCase();
+      const password = jsonBody.password || '';
+      const fullName = (jsonBody.full_name || jsonBody.fullName || '').trim();
+      const academicTitle = jsonBody.academic_title || jsonBody.academicTitle || 'TS.';
+      const university = jsonBody.university || 'Đại học Quốc gia';
+      const department = jsonBody.department || jsonBody.faculty || 'Khoa Kinh tế & Quản trị';
+      const role = jsonBody.role || 'lecturer';
+
+      if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Định dạng email học thuật không hợp lệ.' }));
+        return;
+      }
+
+      if (MOCK_USERS_DB.has(email)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Tài khoản email trường này đã được đăng ký.' }));
+        return;
+      }
+
+      if (password.length < 8) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu phải có tối thiểu 8 ký tự theo chuẩn an toàn.' }));
+        return;
+      }
+
+      const newId = `lec-${String(MOCK_USERS_DB.size + 1).padStart(3, '0')}`;
+      const newUser = {
+        id: newId,
+        email: email,
+        password: password,
+        full_name: fullName,
+        fullName: fullName,
+        academic_title: academicTitle,
+        academicTitle: academicTitle,
+        university: university,
+        department: department,
+        role: role,
+        roleLabel: role === 'head_of_department' ? 'Trưởng bộ môn' : role === 'admin' ? 'Quản trị Khảo thi' : 'Giảng viên',
+      };
+
+      MOCK_USERS_DB.set(email, newUser);
+
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: newUser.id,
+          email: newUser.email,
+          full_name: newUser.full_name,
+          academic_title: newUser.academic_title,
+          university: newUser.university,
+          department: newUser.department,
+          role: newUser.role,
+          access_token: `mock-jwt-${newUser.id}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${newUser.role}-${Date.now()}`,
+          token_type: 'bearer',
+          is_active: true,
+          created_at: new Date().toISOString(),
+        })
+      );
       return;
     }
 
@@ -733,39 +901,61 @@ const server = http.createServer((req, res) => {
           refreshToken = parsed.refresh_token || '';
         } catch (e) {}
       }
-      if (!refreshToken && req.headers['authorization']) {
-        const authHeader = req.headers['authorization'];
-        if (authHeader.startsWith('Bearer ')) refreshToken = authHeader.slice(7);
-      }
-
       let role = 'lecturer';
-      if (refreshToken.includes('head_of_department') || refreshToken.includes('truongbomon')) {
-        role = 'head_of_department';
-      } else if (refreshToken.includes('admin')) {
-        role = 'admin';
-      }
+      if (refreshToken.includes('head_of_department')) role = 'head_of_department';
+      else if (refreshToken.includes('admin')) role = 'admin';
 
-      const user = Object.values(MOCK_USERS).find((u) => u.role === role) || MOCK_USERS['lecturer@vnu.edu.vn'];
+      let user = Array.from(MOCK_USERS_DB.values()).find((u) => u.role === role);
+      if (!user) user = MOCK_USERS_DB.get('lecturer@vnu.edu.vn');
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        access_token: `mock-jwt-access-${role}-${Date.now()}`,
-        refresh_token: `mock-jwt-refresh-${role}-${Date.now()}`,
-        token_type: 'bearer',
-        expires_in: 1800,
-        user: user,
-      }));
+      res.end(
+        JSON.stringify({
+          access_token: `mock-jwt-access-${role}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${role}-${Date.now()}`,
+          token_type: 'bearer',
+          expires_in: 1800,
+          user: user,
+        })
+      );
       return;
     }
 
-    // Auth Me
-    if (pathname === '/api/v1/auth/me') {
-      const auth = req.headers['authorization'] || '';
-      let role = 'lecturer';
-      if (auth.includes('head_of_department')) role = 'head_of_department';
-      else if (auth.includes('admin')) role = 'admin';
-      const user = Object.values(MOCK_USERS).find((u) => u.role === role) || MOCK_USERS['lecturer@vnu.edu.vn'];
+    // Auth Me (Fetch current session info via Bearer token for F5 reload)
+    if (pathname === '/api/v1/auth/me' || pathname === '/me') {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Token không hợp lệ hoặc thiếu Bearer header.' }));
+        return;
+      }
+
+      const token = authHeader.slice(7);
+      let foundUser = null;
+      for (const u of MOCK_USERS_DB.values()) {
+        if (token.includes(u.id) || (u.role && token.includes(u.role))) {
+          foundUser = u;
+          break;
+        }
+      }
+      if (!foundUser) {
+        foundUser = MOCK_USERS_DB.get('lecturer@vnu.edu.vn') || Array.from(MOCK_USERS_DB.values())[0];
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(user));
+      res.end(
+        JSON.stringify({
+          id: foundUser.id,
+          email: foundUser.email,
+          full_name: foundUser.full_name,
+          academic_title: foundUser.academic_title,
+          university: foundUser.university,
+          department: foundUser.department,
+          role: foundUser.role,
+          is_active: true,
+          created_at: new Date().toISOString(),
+        })
+      );
       return;
     }
 
@@ -774,6 +964,62 @@ const server = http.createServer((req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'success', message: 'Đăng xuất thành công, token đã bị thu hồi.' }));
       return;
+    }
+
+        // Exams Export (DOCX, PDF with OMR, ZIP Bundle, QTI 2.1)
+    if (
+      pathname === '/api/v1/exams/export' ||
+      pathname === '/exams/export' ||
+      pathname === '/export/unified' ||
+      pathname === '/api/v1/exams/export/omr' ||
+      pathname === '/export/omr' ||
+      pathname === '/api/v1/exams/export/bundle' ||
+      pathname === '/exams/export/bundle'
+    ) {
+      const { spawnSync } = require('child_process');
+      const fs = require('fs');
+      const os = require('os');
+      const pathModule = require('path');
+
+      const format = (jsonBody.format || (pathname.includes('omr') ? 'pdf' : pathname.includes('bundle') ? 'zip' : 'docx')).toLowerCase();
+      const ext = (format === 'zip' || format === 'bundle' || format === 'qti') ? 'zip' : format;
+      const contentType =
+        format === 'pdf'
+          ? 'application/pdf'
+          : format === 'zip' || format === 'qti' || format === 'bundle'
+          ? 'application/zip'
+          : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+      const tmpIn = pathModule.join(os.tmpdir(), `quizgen_req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.json`);
+      const tmpOut = pathModule.join(os.tmpdir(), `quizgen_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`);
+
+      try {
+        fs.writeFileSync(tmpIn, JSON.stringify(jsonBody), 'utf-8');
+        const cliPath = pathModule.join(__dirname, 'export_exam_cli.py');
+        const resCli = spawnSync('python', [cliPath, tmpIn, tmpOut], { encoding: 'utf-8', timeout: 30000 });
+
+        if (fs.existsSync(tmpOut) && fs.statSync(tmpOut).size > 0) {
+          const fileData = fs.readFileSync(tmpOut);
+          try { fs.unlinkSync(tmpIn); } catch (e) {}
+          try { fs.unlinkSync(tmpOut); } catch (e) {}
+
+          const filename = `DeThi_QuizGen_${Date.now()}.${ext}`;
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': fileData.length,
+          });
+          res.end(fileData);
+          return;
+        } else {
+          console.error('[MOCK GATEWAY] Export CLI failed:', resCli.stderr || resCli.stdout);
+        }
+      } catch (err) {
+        console.error('[MOCK GATEWAY] Error generating export:', err);
+      } finally {
+        try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (e) {}
+        try { if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut); } catch (e) {}
+      }
     }
 
     // Fallback 200 JSON

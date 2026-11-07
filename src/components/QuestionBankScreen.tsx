@@ -133,7 +133,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       const questionsToExport = approvedQuestions.filter((q) => selectedIds.includes(q.id));
       // 1. Lưu bài thi đã kiểm duyệt vào DB exams.exams qua endpoint POST /api/v1/exams/save
       try {
-        await apiClient.fetch(${API_BASE}/exams/save, {
+        await apiClient.fetch(`${API_BASE}/exams/save`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -153,7 +153,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       }
 
       // 2. Tải trực tiếp file đề thi (Word .docx hoặc PDF kèm phiếu OMR hoặc QTI)
-      const response = await apiClient.fetch(${API_BASE}/exams/export, {
+      const response = await apiClient.fetch(`${API_BASE}/exams/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
