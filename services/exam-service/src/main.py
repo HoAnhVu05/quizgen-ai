@@ -1415,7 +1415,6 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
             "totalApprovedQuestions": approved_count + 348 if approved_count == 0 else approved_count,
             "totalExamsPackaged": max(total_exams, 28),
             "pendingReviewCount": pending_count,
-            },
             "recentActivities": []
         }
 
