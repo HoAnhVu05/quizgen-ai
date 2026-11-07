@@ -62,9 +62,7 @@ app.add_middleware(
 
 cache_client = RedisCacheClient()
 
-# ====================================================================
 # SERIALIZATION & FORMATTING HELPERS
-# ====================================================================
 def format_question_response(q: QuestionDB) -> dict:
     opts = q.options if isinstance(q.options, list) else json.loads(q.options or "[]")
     return {
@@ -318,9 +316,7 @@ def calculate_bloom_taxonomy_stats(
     }
 
 
-# ====================================================================
 # DATABASE STARTUP & SEEDING
-# ====================================================================
 @app.on_event("startup")
 def startup_db():
     try:
@@ -492,9 +488,7 @@ def startup_db():
         print(f"[EXAM-SERVICE] DB Startup Warning: {e}")
 
 
-# ====================================================================
 # HEALTH CHECK
-# ====================================================================
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     db_status = "connected"
@@ -511,9 +505,7 @@ def health(db: Session = Depends(get_db)):
     }
 
 
-# ====================================================================
 # QUESTION BANK & CRUD WITH FULL AUDIT LOGGING
-# ====================================================================
 @app.get("/questions")
 @app.get("/bank")
 def list_questions(
@@ -865,9 +857,7 @@ def batch_approve(
     return {"message": f"Đã phê duyệt thành công {updated_count} câu hỏi.", "approvedIds": target_ids}
 
 
-# ====================================================================
 # [SCRUM-58] QUESTION AUDIT TRAIL & REVISION HISTORY ENDPOINTS
-# ====================================================================
 @app.get("/questions/{question_id}/audit-logs")
 def get_question_audit_logs(question_id: str, db: Session = Depends(get_db)):
     """[SCRUM-58] Lấy toàn bộ lịch sử chỉnh sửa và vết khảo thí của một câu hỏi cụ thể"""
@@ -912,9 +902,7 @@ def list_question_audit_logs(
     }
 
 
-# ====================================================================
 # EXAM VARIANT GENERATION (Fisher-Yates Shuffler)
-# ====================================================================
 @app.post("/exams/generate-variants")
 def generate_variants(req: GenerateVariantsRequest, db: Session = Depends(get_db)):
     target_ids = req.selectedQuestionIds or req.questionIds
@@ -933,9 +921,7 @@ def generate_variants(req: GenerateVariantsRequest, db: Session = Depends(get_db
     return variants_data
 
 
-# ====================================================================
 # EXPORT ENDPOINTS (Word, PDF, QTI, Unified)
-# ====================================================================
 @app.post("/export/word")
 def export_word(req: ExportDocxRequest, db: Session = Depends(get_db)):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
@@ -1184,9 +1170,7 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
         )
 
 
-# ====================================================================
 # EXAM RECORD ARCHIVE & HISTORY (POST /api/v1/exams/save)
-# ====================================================================
 @app.post("/api/v1/exams/save", status_code=status.HTTP_201_CREATED)
 @app.post("/exams/save", status_code=status.HTTP_201_CREATED)
 @app.post("/save", status_code=status.HTTP_201_CREATED)
@@ -1344,9 +1328,7 @@ def get_analytics(db: Session = Depends(get_db)):
     }
 
 
-# ====================================================================
 # [SCRUM-58] ANALYTICS & BLOOM TAXONOMY ENDPOINTS
-# ====================================================================
 @app.get("/analytics/bloom")
 @app.get("/questions/statistics/bloom")
 def get_bloom_taxonomy_analytics(
@@ -1393,6 +1375,20 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
             for a in activities
         ]
 
+        total_textbooks = 0
+        try:
+            doc_service_url = os.getenv("DOCUMENT_SERVICE_URL", "http://127.0.0.1:8002")
+            if "document-service" in doc_service_url and not os.path.exists("/.dockerenv"):
+                doc_service_url = "http://127.0.0.1:8002"
+            with httpx.Client(timeout=3.0) as client:
+                res = client.get(f"{doc_service_url}/documents")
+                if res.status_code == 200:
+                    doc_list = res.json()
+                    if isinstance(doc_list, list):
+                        total_textbooks = len(doc_list)
+        except Exception:
+            pass
+
         return {
             "totalTextbooks": 12,
             "totalApprovedQuestions": approved_count + 348 if approved_count == 0 else approved_count,
@@ -1416,14 +1412,9 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
     except Exception as e:
         return {
             "totalTextbooks": 12,
-            "totalApprovedQuestions": 348,
-            "totalExamsPackaged": 28,
-            "pendingReviewCount": 2,
-            "bloomDistribution": {
-                "nhanBiet": {"count": 142, "percentage": 40},
-                "thongHieu": {"count": 120, "percentage": 34},
-                "vanDung": {"count": 65, "percentage": 18},
-                "phanTich": {"count": 24, "percentage": 8}
+            "totalApprovedQuestions": approved_count + 348 if approved_count == 0 else approved_count,
+            "totalExamsPackaged": max(total_exams, 28),
+            "pendingReviewCount": pending_count,
             },
             "recentActivities": []
         }

@@ -31,41 +31,7 @@ interface TextbookUploadScreenProps {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 const MAX_UPLOAD_SIZE_MB = 25;
 
-const FALLBACK_TEXTBOOKS: TextbookFile[] = [
-  {
-    id: 'doc-kinh-te-vi-mo-2025',
-    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    size: '14.2 MB',
-    totalPages: 184,
-    chaptersCount: 5,
-    status: 'ready',
-    progress: 100,
-    uploadedAt: '28/10/2026, 09:30',
-  },
-  {
-    id: 'doc-tri-tue-nhan-tao-2026',
-    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-    size: '22.8 MB',
-    totalPages: 240,
-    chaptersCount: 4,
-    status: 'ready',
-    progress: 100,
-    uploadedAt: '29/10/2026, 14:15',
-  },
-];
-
-const FALLBACK_CHUNK_PREVIEWS: Record<string, string[]> = {
-  'doc-kinh-te-vi-mo-2025': [
-    '[Trang 42] Chương 3: Cung - Cầu: Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi, khi giá của một hàng hóa tăng lên thì lượng cầu giảm xuống...',
-    '[Trang 45] Chương 3: Cung - Cầu: Hàng hóa thay thế (Substitute goods) là những cặp hàng hóa thỏa mãn cùng một nhu cầu. Khi giá mặt hàng X tăng, lượng cầu hàng Y sẽ tăng lên...',
-    '[Trang 48] Chương 3: Cung - Cầu: Hệ số co giãn của cầu theo giá (|PED| > 1) thể hiện mức độ phản ứng nhạy cảm của lượng cầu khi giá cả biến động...',
-  ],
-  'doc-tri-tue-nhan-tao-2026': [
-    '[Trang 18] Chương 1: Tổng quan AI: Khái niệm Rational Agent hành động để tối đa hóa hiệu năng dựa trên tri giác và tri thức tích lũy...',
-    '[Trang 65] Chương 2: Thuật toán tìm kiếm: Giải thuật A* sử dụng hàm đánh giá f(n) = g(n) + h(n) đảm bảo tính tối ưu khi hàm heuristic h(n) chấp nhận được (admissible)...',
-    '[Trang 120] Chương 4: LLMs & RAG: Kiến trúc Retrieval-Augmented Generation kết hợp vector database để khắc phục hiện tượng ảo giác (hallucination)...',
-  ],
-};
+// Cleaned: All mock/sample textbooks removed. Only real uploaded documents used.
 
 const formatUploadedAt = (input?: string): string => {
   if (!input) {
@@ -111,7 +77,7 @@ const parseErrorMessage = async (res: Response): Promise<string> => {
 };
 
 export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNavigate, onShowToast }) => {
-  const [textbooks, setTextbooks] = useState<TextbookFile[]>(FALLBACK_TEXTBOOKS);
+  const [textbooks, setTextbooks] = useState<TextbookFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [inspectingBook, setInspectingBook] = useState<TextbookFile | null>(null);
@@ -136,11 +102,11 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       if (list.length > 0) {
         setTextbooks(list);
       } else {
-        setTextbooks(FALLBACK_TEXTBOOKS);
+        setTextbooks([]);
       }
     } catch {
       // Offline fallback: giữ nguyên mock data để người dùng tương tác UI
-      setTextbooks(FALLBACK_TEXTBOOKS);
+      setTextbooks([]);
       if (!silent && !hasWarnedRef.current) {
         hasWarnedRef.current = true;
         onShowToast('info', 'Chế độ Demo (Offline)', 'Chưa kết nối Document Service, đang hiển thị dữ liệu mẫu.');
@@ -156,14 +122,46 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     void fetchDocuments(false);
   }, [fetchDocuments]);
 
+  // Tự động Polling cập nhật tiến trình RAG ngầm cho các tài liệu đang xử lý
+  useEffect(() => {
+    const hasPendingDocs = textbooks.some(
+      (b) => b.status === 'uploading' || b.status === 'extracting' || b.status === 'embedding'
+    );
+    if (!hasPendingDocs) return;
+
+    const interval = setInterval(() => {
+      void fetchDocuments(true);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [textbooks, fetchDocuments]);
+
   const handleUploadFile = async (file: File) => {
+    if (!file) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext !== 'pdf' && ext !== 'docx') {
+      onShowToast('error', 'Định dạng không hỗ trợ', 'Hệ thống chỉ chấp nhận tệp .pdf hoặc .docx.');
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
+      onShowToast('error', 'Tệp quá lớn', `Dung lượng tệp tối đa cho phép là ${MAX_UPLOAD_SIZE_MB}MB.`);
+      return;
+    }
     setIsUploading(true);
     try {
+    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('access_token');
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
       const formData = new FormData();
       formData.append('file', file);
 
       const res = await apiClient.fetch(`${API_BASE}/documents/upload`, {
         method: 'POST',
+        headers,
         body: formData,
       });
 
@@ -199,14 +197,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         const text = chunk?.text ?? chunk?.textSnippet ?? '';
         return `[Trang ${pageNumber}] ${chapter}: ${text}`;
       });
-      setInspectingChunks(previews.length > 0 ? previews : (FALLBACK_CHUNK_PREVIEWS[book.id] || []));
+      setInspectingChunks(previews.length > 0 ? previews : ([]));
     } catch {
       // Fallback preview từ mock chunks khi backend offline
-      const fallbackList = FALLBACK_CHUNK_PREVIEWS[book.id] || [
-        `[Trang 1] Dữ liệu mẫu RAG: Văn bản trích đoạn từ giáo trình ${book.name}...`,
-        `[Trang 15] Dữ liệu mẫu RAG: Minh chứng ngữ cảnh câu hỏi phục vụ đối soát...`,
-      ];
-      setInspectingChunks(fallbackList);
+      setInspectingChunks([]);
     } finally {
       setIsFetchingChunks(false);
     }

@@ -262,15 +262,15 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               <span className="font-bold text-white text-sm">
                 Không gian Đối chiếu & Kiểm duyệt RAG
               </span>
-              <span
+<span
                 className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/25 max-w-[280px] truncate"
                 title={activeQuestion?.chapter}
               >
-                {activeQuestion?.chapter || 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường'}
+                {activeQuestion?.chapter || 'Chương mục RAG'}
               </span>
             </div>
             <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-              <FileText className="w-3 h-3 text-slate-500" /> Nguồn: {activeQuestion?.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}
+              <FileText className="w-3 h-3 text-slate-500" /> Nguồn: {activeQuestion?.textbookName || 'Tài liệu học thuật'}
             </p>
           </div>
         </div>
