@@ -15,7 +15,8 @@ import {
   ChevronDown,
   X,
   Settings2,
-  Check
+  Check,
+  Archive
 } from 'lucide-react';
 import { Question, BloomLevel, ExamExportConfig } from '../types';
 
@@ -31,7 +32,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBloom, setSelectedBloom] = useState<string>('all');
   const [showExportModal, setShowExportModal] = useState(false);
-  const [exportFormat, setExportFormat] = useState<'docx' | 'pdf' | 'qti'>('docx');
+  const [exportFormat, setExportFormat] = useState<'docx' | 'pdf' | 'qti' | 'zip'>('zip');
   const [isExporting, setIsExporting] = useState(false);
 
   // Exam Builder Config
@@ -75,10 +76,43 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
     }
   };
 
-  const handleOpenExportModal = (format: 'docx' | 'pdf' | 'qti') => {
+  const handleOpenExportModal = (format: 'docx' | 'pdf' | 'qti' | 'zip') => {
     setExportFormat(format);
-    setExamConfig((prev) => ({ ...prev, format }));
+    setExamConfig((prev) => ({
+      ...prev,
+      format,
+      includeOmrSheet: format === 'pdf' || format === 'zip' ? true : false,
+    }));
     setShowExportModal(true);
+  };
+
+  const handleDownloadStandaloneOmr = async () => {
+    try {
+      const response = await fetch(`${API_BASE}/exams/export/omr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          universityName: examConfig.universityName,
+          facultyName: examConfig.facultyName,
+          subjectName: examConfig.subjectName,
+          examCode: '101'
+        })
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Phieu_Tra_Loi_OMR_50_Cau_Chuan.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      onShowToast('success', 'Tải phiếu OMR thành công!', 'Đã tải Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn thi đại học.');
+    } catch (err) {
+      console.warn('Lỗi tải phiếu OMR:', err);
+      onShowToast('info', 'Phiếu OMR 50 câu', 'Đang chuyển hướng tạo phiếu trắc nghiệm quang học OMR.');
+    }
   };
 
   const handleConfirmExport = async () => {
@@ -89,11 +123,36 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       exportFormat === 'docx'
         ? 'Word (.docx chuẩn ĐH)'
         : exportFormat === 'pdf'
-        ? 'PDF có phiếu chấm'
-        : 'Canvas/Moodle QTI Zip';
+        ? 'PDF (kèm phiếu OMR)'
+        : exportFormat === 'qti'
+        ? 'Gói LMS QTI 2.1 (Canvas/Moodle)'
+        : 'Trọn bộ Khảo thí (.ZIP Đề + OMR + Đáp án)';
 
     try {
       const questionsToExport = approvedQuestions.filter((q) => selectedIds.includes(q.id));
+
+      // 1. Lưu bài thi đã kiểm duyệt vào DB exams.exams qua endpoint POST /api/v1/exams/save
+      try {
+        await fetch(`${API_BASE}/exams/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: examConfig.examTitle,
+            subject: examConfig.subjectName,
+            university: examConfig.universityName,
+            faculty: examConfig.facultyName,
+            durationMinutes: examConfig.durationMinutes || 60,
+            examCodes: Array.from({ length: examConfig.examCodeCount || 1 }, (_, i) => String(101 + i)),
+            selectedQuestionIds: selectedIds,
+            format: exportFormat,
+            questions: questionsToExport,
+          }),
+        });
+      } catch (saveErr) {
+        console.warn('Lưu bài thi vào DB exams.exams có cảnh báo:', saveErr);
+      }
+
+      // 2. Tải trực tiếp file đề thi (Word .docx hoặc PDF kèm phiếu OMR hoặc QTI)
       const response = await fetch(`${API_BASE}/exams/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,6 +161,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
           format: exportFormat,
           selectedQuestionIds: selectedIds,
           questions: questionsToExport,
+          includeOmrSheet: (exportFormat === 'pdf' || exportFormat === 'zip') ? (examConfig.includeOmrSheet ?? true) : false,
         }),
       });
 
@@ -113,8 +173,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      const fileExt = exportFormat === 'qti' ? 'xml' : exportFormat;
-      const safeSubject = (examConfig.subjectName || 'DeThi').replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1EA0-\u1EF9]/g, '_');
+      const fileExt = (exportFormat === 'qti' || exportFormat === 'zip') ? 'zip' : exportFormat;
+      const safeSubject = (examConfig.subjectName || 'DeThi').replace(/[^a-zA-Z0-9_À-ɏẠ-ỹ]/g, '_');
       a.download = `DeThi_${safeSubject}_${Date.now()}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
@@ -123,16 +183,16 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
       onShowToast(
         'success',
-        'Đã đóng gói & xuất bản đề thi thành công!',
-        `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tệp đã được tải xuống máy.`
+        'Đã lưu vào DB exams.exams & Tải đề thi thành công!',
+        `Đã lưu cấu trúc đề thi vào CSDL và tải xuống ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}.`
       );
     } catch (err) {
       console.warn('Lỗi kết nối xuất đề thi qua API Gateway, sử dụng mô phỏng client:', err);
       onShowToast(
         'info',
         'Đã đóng gói đề thi (Chế độ mô phỏng)',
-      `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tải xuống hoàn tất.`
-    );
+        `Đã tạo ${examConfig.examCodeCount} mã đề (${count} câu/đề) định dạng ${formatName}. Tải xuống hoàn tất.`
+      );
     } finally {
       setIsExporting(false);
     }
@@ -346,13 +406,21 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
             </div>
           </div>
 
-          <div className="flex items-center space-x-2.5">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => handleOpenExportModal('zip')}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+            >
+              <Archive className="w-4 h-4" />
+              <span>Trọn bộ ZIP (Đề + OMR)</span>
+            </button>
+
             <button
               onClick={() => handleOpenExportModal('docx')}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+              className="flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold transition-all shadow-md"
             >
               <FileText className="w-4 h-4" />
-              <span>Xuất ra Word (.docx)</span>
+              <span>Word</span>
             </button>
 
             <button
@@ -372,8 +440,17 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
             </button>
 
             <button
+              onClick={handleDownloadStandaloneOmr}
+              title="Tải riêng Phiếu tô trắc nghiệm OMR 50 câu chuẩn thi đại học"
+              className="flex items-center space-x-1 px-3 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-emerald-400 rounded-xl text-xs font-semibold transition-all border border-emerald-500/20"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span>Phiếu OMR 50</span>
+            </button>
+
+            <button
               onClick={() => setSelectedIds([])}
-              className="p-2 text-slate-400 hover:text-white rounded-lg transition-colors ml-2"
+              className="p-2 text-slate-400 hover:text-white rounded-lg transition-colors ml-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -401,6 +478,63 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
             </div>
 
             <div className="p-6 space-y-4 text-xs text-slate-300">
+              {/* Tabs chọn định dạng */}
+              <div>
+                <label className="font-semibold block mb-1.5 text-slate-400">Định dạng xuất bản khảo thí:</label>
+                <div className="grid grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setExportFormat('zip'); setExamConfig(c => ({ ...c, format: 'zip', includeOmrSheet: true })); }}
+                    className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
+                      exportFormat === 'zip'
+                        ? 'bg-emerald-600/30 border-emerald-500 text-emerald-300 shadow-glow-sm'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    Trọn bộ ZIP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setExportFormat('docx'); setExamConfig(c => ({ ...c, format: 'docx' })); }}
+                    className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
+                      exportFormat === 'docx'
+                        ? 'bg-blue-600/30 border-blue-500 text-blue-300 shadow-glow-sm'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    Word (.docx)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setExportFormat('pdf'); setExamConfig(c => ({ ...c, format: 'pdf', includeOmrSheet: true })); }}
+                    className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
+                      exportFormat === 'pdf'
+                        ? 'bg-cyan-600/30 border-cyan-500 text-cyan-300 shadow-glow-sm'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    PDF + OMR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setExportFormat('qti'); setExamConfig(c => ({ ...c, format: 'qti' })); }}
+                    className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
+                      exportFormat === 'qti'
+                        ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 shadow-glow-sm'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    LMS QTI 2.1
+                  </button>
+                </div>
+              </div>
+
+              {exportFormat === 'zip' && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-xs leading-relaxed">
+                  <strong>Đóng gói bộ đề thi đa định dạng (SCRUM-56):</strong> Tự động xuất nén các mã đề (.pdf & .docx), Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn thi đại học, Bảng ma trận đáp án so sánh chéo (.docx & .csv) và Gói LMS Canvas/Moodle IMS QTI 2.1 vào 1 tệp .ZIP duy nhất.
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold block mb-1 text-slate-400">Tên trường Đại học:</label>
@@ -457,6 +591,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-400">Thời gian làm bài (phút):</label>
+                  <input
+                    type="number"
+                    min={15}
+                    max={180}
+                    value={examConfig.durationMinutes || 60}
+                    onChange={(e) => setExamConfig({ ...examConfig, durationMinutes: parseInt(e.target.value) || 60 })}
+                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold block mb-1 text-slate-400">Mã đề gốc:</label>
+                  <input
+                    type="text"
+                    defaultValue="101"
+                    readOnly
+                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-400 font-mono cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
               {/* Toggles */}
               <div className="space-y-2 pt-2 border-t border-white/[0.06]">
                 <label className="flex items-center space-x-2 cursor-pointer">
@@ -478,6 +635,18 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                   />
                   <span>Xáo trộn ngẫu nhiên thứ tự các phương án A, B, C, D</span>
                 </label>
+
+                {(exportFormat === 'pdf' || exportFormat === 'zip') && (
+                  <label className="flex items-center space-x-2 cursor-pointer text-emerald-400">
+                    <input
+                      type="checkbox"
+                      checked={examConfig.includeOmrSheet ?? true}
+                      onChange={(e) => setExamConfig({ ...examConfig, includeOmrSheet: e.target.checked })}
+                      className="w-4 h-4 text-emerald-600 rounded accent-emerald-600"
+                    />
+                    <span>Đính kèm phiếu trả lời trắc nghiệm chuẩn OMR 50 câu (Bubble Sheet)</span>
+                  </label>
+                )}
               </div>
             </div>
 

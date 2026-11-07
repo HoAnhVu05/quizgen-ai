@@ -33,6 +33,8 @@ from .models import (
     ExportPdfRequest,
     UnifiedExportRequest,
     ExportQtiRequest,
+    ExportOmrRequest,
+    ExportBundleRequest,
     CreateExamRecordRequest,
     SubjectResponse,
     ActivityResponse
@@ -40,6 +42,7 @@ from .models import (
 from .exporters.word_exporter import WordExamExporter
 from .exporters.pdf_exporter import PDFExamExporter
 from .exporters.qti_exporter import QTIExporter
+from .exporters.bundle_exporter import ExamBundleExporter
 from .shuffler import ExamShuffler
 from .cache import RedisCacheClient
 
@@ -172,6 +175,10 @@ def _resolve_questions(
         db_questions = db.query(QuestionDB).limit(20).all()
     return [format_question_response(q) for q in db_questions]
 
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception:
+    pass
 
 # Thang đo chuẩn mực sư phạm Bloom (40% - 30% - 20% - 10%)
 BLOOM_LEVEL_STANDARDS = {
@@ -943,8 +950,8 @@ def export_word(req: ExportDocxRequest, db: Session = Depends(get_db)):
         university=req.get_university(),
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
-        include_answer_key=req.includeAnswerKey,
-        include_explanation=req.includeExplanation
+        include_answer_key=req.get_include_answer_key(),
+        include_explanation=req.get_include_explanation()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
@@ -969,8 +976,9 @@ def export_pdf(req: ExportPdfRequest, db: Session = Depends(get_db)):
         university=req.get_university(),
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
-        include_answer_key=req.includeAnswerKey,
-        include_omr_sheet=req.includeOmrSheet
+        include_answer_key=req.get_include_answer_key(),
+        include_explanation=req.get_include_explanation(),
+        include_omr_sheet=req.get_include_omr_sheet()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -980,21 +988,85 @@ def export_pdf(req: ExportPdfRequest, db: Session = Depends(get_db)):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+@app.post("/export/omr")
+@app.post("/exams/export/omr")
+@app.post("/api/v1/exams/export/omr")
+def export_omr_sheet(req: ExportOmrRequest):
+    """Xuất riêng Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn thi đại học (PDF vector)."""
+    pdf_bytes = PDFExamExporter.generate_omr_50_pdf(
+        university=req.get_university(),
+        faculty=req.get_faculty(),
+        subject=req.get_subject(),
+        exam_code=req.get_code()
+    )
+    filename = f"Phieu_Tra_Loi_OMR_50_Cau_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
+@app.post("/export/bundle")
+@app.post("/exams/bundle")
+@app.post("/exams/export/bundle")
+@app.post("/api/v1/exams/export/bundle")
+def export_exam_bundle(req: ExportBundleRequest, db: Session = Depends(get_db)):
+    """Đóng gói toàn bộ tài nguyên khảo thí (PDF, DOCX, OMR 50 câu, Ma trận đáp án, LMS QTI 2.1) thành file ZIP."""
+    questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Danh sách câu hỏi không được rỗng.")
+
+    zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+        exam_title=req.get_title(),
+        subject=req.get_subject(),
+        questions=questions,
+        university=req.get_university(),
+        faculty=req.get_faculty(),
+        duration_minutes=req.get_duration(),
+        exam_code_count=req.get_exam_code_count(),
+        base_exam_code=req.get_base_code(),
+        shuffle_questions=req.shuffleQuestions if req.shuffleQuestions is not None else True,
+        shuffle_options=req.shuffleOptions if req.shuffleOptions is not None else True,
+        include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
+        include_explanation=req.includeExplanation if req.includeExplanation is not None else True,
+        include_omr_sheet=req.includeOmrSheet if req.includeOmrSheet is not None else True
+    )
+
+    filename = f"Bo_De_Thi_Khao_Thi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 @app.post("/export/qti")
+@app.post("/exams/export/qti")
+@app.post("/api/v1/exams/export/qti")
 def export_qti(req: ExportQtiRequest, db: Session = Depends(get_db)):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
     if not questions:
         raise HTTPException(status_code=400, detail="Danh sách câu hỏi không được rỗng.")
 
-    xml_content = QTIExporter.export_canvas_moodle_xml(title=req.title, questions=questions)
-    filename = f"quiz_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    qti_format = (req.format or "zip").lower()
 
-    return Response(
-        content=xml_content,
-        media_type="application/xml",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
+    if qti_format in ("zip", "package", "bundle"):
+        # Xuất gói IMS QTI 2.1 Content Package chuẩn LMS
+        zip_bytes = QTIExporter.export_qti21_package_zip(title=req.title, questions=questions)
+        filename = f"Goi_LMS_QTI_2.1_{timestamp}.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    else:
+        # Xuất file Moodle XML trực tiếp
+        xml_content = QTIExporter.export_canvas_moodle_xml(title=req.title, questions=questions)
+        filename = f"quiz_export_{timestamp}.xml"
+        return Response(
+            content=xml_content,
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 
 @app.post("/export/unified")
@@ -1024,75 +1096,162 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    if export_fmt == "pdf":
-        pdf_bytes = PDFExamExporter.generate_pdf(
-            exam_title=req.examTitle or "ĐỀ THI KẾT THÚC HỌC PHẦN",
-            subject=req.subjectName or "Kinh tế vi mô",
-            exam_code="101",
+    university_name = req.get_university()
+    faculty_name = req.get_faculty()
+    exam_title = req.get_title()
+    subject_name = req.get_subject()
+    exam_code = req.get_code()
+    duration_minutes = req.get_duration()
+    include_answer_key = req.get_include_answer_key()
+    include_explanation = req.get_include_explanation()
+    include_omr = req.get_include_omr_sheet()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if export_fmt in ("zip", "bundle"):
+        zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+            exam_title=exam_title,
+            subject=subject_name,
             questions=questions,
-            university=req.universityName or "ĐẠI HỌC QUỐC GIA",
-            faculty=req.facultyName or "Khoa Kinh tế & Quản trị",
-            duration_minutes=req.durationMinutes or 60,
-            include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
-            include_omr_sheet=req.includeOmrSheet if req.includeOmrSheet is not None else False
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            exam_code_count=req.get_exam_code_count(),
+            base_exam_code=req.get_base_code(),
+            shuffle_questions=req.shuffleQuestions if req.shuffleQuestions is not None else True,
+            shuffle_options=req.shuffleOptions if req.shuffleOptions is not None else True,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
         )
+        filename = f"Bo_De_Thi_{exam_code}_{timestamp}.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    elif export_fmt == "pdf":
+        pdf_bytes = PDFExamExporter.generate_pdf(
+            exam_title=exam_title,
+            subject=subject_name,
+            exam_code=exam_code,
+            questions=questions,
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
+        )
+        filename = f"De_Thi_{exam_code}_{timestamp}.pdf"
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="De_Thi_101.pdf"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     elif export_fmt == "qti":
-        xml_content = QTIExporter.export_canvas_moodle_xml(
-            title=req.examTitle or "Quiz Canvas LMS",
+        # Mặc định export QTI trả về gói IMS Content Package ZIP
+        zip_bytes = QTIExporter.export_qti21_package_zip(
+            title=exam_title,
             questions=questions
         )
+        filename = f"Goi_LMS_QTI_2.1_{exam_code}_{timestamp}.zip"
         return Response(
-            content=xml_content,
-            media_type="application/xml",
-            headers={"Content-Disposition": f'attachment; filename="exam_qti.xml"'}
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     else:
         docx_bytes = WordExamExporter.generate_docx(
-            exam_title=req.examTitle or "ĐỀ THI KẾT THÚC HỌC PHẦN",
-            subject=req.subjectName or "Kinh tế vi mô",
-            exam_code="101",
+            exam_title=exam_title,
+            subject=subject_name,
+            exam_code=exam_code,
             questions=questions,
-            university=req.universityName or "ĐẠI HỌC QUỐC GIA",
-            faculty=req.facultyName or "Khoa Kinh tế & Quản trị",
-            duration_minutes=req.durationMinutes or 60,
-            include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
-            include_explanation=req.includeExplanation if req.includeExplanation is not None else False
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation
         )
+        filename = f"De_Thi_{exam_code}_{timestamp}.docx"
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="De_Thi_101.docx"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
 
 # ====================================================================
-# EXAM RECORD ARCHIVE & HISTORY
+# EXAM RECORD ARCHIVE & HISTORY (POST /api/v1/exams/save)
 # ====================================================================
+@app.post("/api/v1/exams/save", status_code=status.HTTP_201_CREATED)
+@app.post("/exams/save", status_code=status.HTTP_201_CREATED)
+@app.post("/save", status_code=status.HTTP_201_CREATED)
 @app.post("/exams", status_code=status.HTTP_201_CREATED)
-def create_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get_db)):
+def save_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get_db)):
     eid = payload.id or f"exam-{uuid.uuid4().hex[:8]}"
+    user_id = payload.get_user_id()
+    title = payload.get_title()
+    subject = payload.get_subject()
+    faculty = payload.get_faculty()
+    university = payload.get_university()
+    duration = payload.get_duration()
+    codes = payload.get_exam_codes()
+    q_ids = payload.get_question_ids()
+    export_fmt = payload.format or "docx"
+
+    # 1. Lưu bài thi đã kiểm duyệt vào DB exams.exams
     new_exam = ExamDB(
         id=eid,
-        user_id=payload.get_user_id(),
-        title=payload.title,
-        subject=payload.subject,
-        faculty=payload.faculty or "Khoa Kinh tế & Quản trị",
-        university=payload.university or "ĐẠI HỌC QUỐC GIA",
-        duration_minutes=payload.get_duration(),
-        exam_codes=payload.get_exam_codes(),
-        selected_question_ids=payload.get_question_ids(),
-        format=payload.format or "docx"
+        user_id=user_id,
+        title=title,
+        subject=subject,
+        faculty=faculty,
+        university=university,
+        duration_minutes=duration,
+        exam_codes=codes,
+        selected_question_ids=q_ids,
+        format=export_fmt,
+        created_at=datetime.utcnow()
     )
     db.add(new_exam)
 
-    # Ghi nhận exam audit log
+    # 2. Lưu chi tiết các biến thể mã đề vào DB exams.exam_variants
+    variants_to_save = payload.variants
+    if not variants_to_save and payload.questions and len(codes) > 1:
+        try:
+            shuffled = ExamShuffler.generate_variants(
+                questions=payload.questions,
+                exam_code_count=len(codes),
+                base_exam_code=int(codes[0]) if codes[0].isdigit() else 101
+            )
+            variants_to_save = shuffled.get("variants", [])
+        except Exception as e:
+            print(f"[EXAM-SERVICE] Shuffler warning: {e}")
+
+    if variants_to_save:
+        for v in variants_to_save:
+            var_id = f"var-{uuid.uuid4().hex[:8]}"
+            var_code = str(v.get("examCode") or v.get("exam_code") or "101")
+            var_questions = v.get("questions", [])
+            q_seq = [q.get("id") for q in var_questions] if var_questions else q_ids
+            ans_keys = v.get("answerKey") or v.get("answer_keys") or []
+            
+            db_variant = ExamVariantDB(
+                id=var_id,
+                exam_id=eid,
+                exam_code=var_code,
+                question_sequence=q_seq,
+                options_permutation=[{q.get("id"): [opt.get("id") for opt in q.get("options", [])]} for q in var_questions] if var_questions else [],
+                answer_keys=ans_keys,
+                created_at=datetime.utcnow()
+            )
+            db.add(db_variant)
+
+    # 3. Ghi log kiểm toán exam_audit_logs
     try:
         exam_audit = ExamAuditLogDB(
             id=f"exam-audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}",
@@ -1106,9 +1265,33 @@ def create_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(g
     except Exception:
         pass
 
+    # 4. Ghi log hoạt động khảo thí vào DB system_activities
+    try:
+        act_id = f"act-{uuid.uuid4().hex[:8]}"
+        db.add(SystemActivityDB(
+            id=act_id,
+            user_id=user_id,
+            action_type="save_exam",
+            title=f"Lưu đề thi kiểm duyệt: {title}",
+            detail=f"{subject} - {len(q_ids)} câu hỏi - {len(codes)} mã đề ({export_fmt.upper()})",
+            icon_name="CheckCircle2",
+            badge_color="text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+            created_at=datetime.utcnow()
+        ))
+    except Exception:
+        pass
+    except Exception:
+        pass
+
     db.commit()
     db.refresh(new_exam)
-    return format_exam_response(new_exam)
+
+    return {
+        "status": "success",
+        "message": "Đã lưu bài thi đã kiểm duyệt thành công vào CSDL exams.exams.",
+        "exam": format_exam_response(new_exam),
+        "savedAt": new_exam.created_at.isoformat()
+    }
 
 
 @app.get("/exams")
