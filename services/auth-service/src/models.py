@@ -55,7 +55,7 @@ class UserDB(Base):
     academic_title = Column(String(20), default="TS.")
     university = Column(String(150), nullable=False)
     department = Column(String(150), nullable=False)
-    role = Column(String(20), default="lecturer")
+    role = Column(String(30), default="lecturer") # lecturer, head_of_department, admin
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -74,7 +74,8 @@ class UserTokenDB(Base):
         nullable=False,
         index=True
     )
-    token_hash = Column(String(255), nullable=False)
+    token_hash = Column(String(255), nullable=False, index=True)
+    token_type = Column(String(20), default="refresh") # access, refresh
     device_info = Column(String(255), nullable=True)
     expires_at = Column(DateTime, nullable=False)
     revoked = Column(Boolean, default=False)
@@ -109,9 +110,10 @@ class FacultyResponse(BaseModel):
 class LecturerBase(BaseModel):
     email: EmailStr
     full_name: str
-    academic_title: str  # e.g., "TS.", "PGS.TS.", "ThS."
+    academic_title: str  # e.g., "TS.", "PGS. TS.", "ThS."
     university: str
     department: str
+    role: Optional[str] = "lecturer"
 
 class LecturerCreate(LecturerBase):
     password: str
@@ -127,6 +129,10 @@ class LecturerResponse(LecturerBase):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     expires_in: int
     user: LecturerResponse
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

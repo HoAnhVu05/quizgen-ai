@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Question, SourceChunk, BloomLevel, QuestionStatus, ScreenId } from '../types';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
+import apiClient from '../services/apiClient';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -145,7 +146,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${API_BASE}/ai/regenerate-question/${qId}`, {
+      const res = await apiClient.fetch(`${API_BASE}/ai/regenerate-question/${qId}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(targetQ),
@@ -194,7 +195,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      const res = await fetch(`${API_BASE}/exams/export`, {
+      const res = await apiClient.fetch(`${API_BASE}/exams/export`, {
         method: 'POST',
         headers,
         body: JSON.stringify({

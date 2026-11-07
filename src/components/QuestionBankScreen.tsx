@@ -19,6 +19,7 @@ import {
   Archive
 } from 'lucide-react';
 import { Question, BloomLevel, ExamExportConfig } from '../types';
+import apiClient from '../services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -130,10 +131,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
     try {
       const questionsToExport = approvedQuestions.filter((q) => selectedIds.includes(q.id));
-
       // 1. Lưu bài thi đã kiểm duyệt vào DB exams.exams qua endpoint POST /api/v1/exams/save
       try {
-        await fetch(`${API_BASE}/exams/save`, {
+        await apiClient.fetch(${API_BASE}/exams/save, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -153,7 +153,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
       }
 
       // 2. Tải trực tiếp file đề thi (Word .docx hoặc PDF kèm phiếu OMR hoặc QTI)
-      const response = await fetch(`${API_BASE}/exams/export`, {
+      const response = await apiClient.fetch(${API_BASE}/exams/export, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

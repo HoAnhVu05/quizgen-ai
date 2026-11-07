@@ -21,6 +21,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { TextbookFile, ScreenId } from '../types';
+import apiClient from '../services/apiClient';
 
 interface TextbookUploadScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -126,7 +127,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       setIsLoadingDocuments(true);
     }
     try {
-      const res = await fetch(`${API_BASE}/documents/documents`);
+      const res = await apiClient.fetch(`${API_BASE}/documents/documents`);
       if (!res.ok) {
         throw new Error(await parseErrorMessage(res));
       }
@@ -161,7 +162,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch(`${API_BASE}/documents/upload`, {
+      const res = await apiClient.fetch(`${API_BASE}/documents/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -185,7 +186,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     setInspectingChunks([]);
     setIsFetchingChunks(true);
     try {
-      const res = await fetch(`${API_BASE}/rag/documents/${book.id}/chunks?limit=20`);
+      const res = await apiClient.fetch(`${API_BASE}/rag/documents/${book.id}/chunks?limit=20`);
       if (!res.ok) {
         throw new Error(await parseErrorMessage(res));
       }
@@ -221,7 +222,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
   const handleDelete = async (id: string, name: string) => {
     try {
-      const res = await fetch(`${API_BASE}/documents/documents/${id}`, {
+      const res = await apiClient.fetch(`${API_BASE}/documents/documents/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
