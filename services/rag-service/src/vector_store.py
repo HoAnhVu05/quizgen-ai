@@ -2,13 +2,15 @@
 QuizGen AI - RAG Vector Store & High-Performance Semantic Search
 ChromaDB Persistent Client with:
 1. Persistent ONNX MiniLM embedding model & LRU query embedding cache (latency < 25ms)
-2. Concurrent multi-chapter Top-K vector retrieval (ThreadPoolExecutor) ensuring balanced context
-3. Cosine similarity score normalization (0 - 100% Relevance Score)
-4. Comprehensive cache invalidation and cleanup upon textbook deletion (Zero stale cache)
-5. Strict latency instrumentation meeting SLA < 200ms
+2. Hybrid Retrieval (Dense Cosine Vector 70% + Lexical/BM25 Keyword & Acronym/Formula Overlap 30%)
+3. Concurrent multi-chapter Top-K vector retrieval (ThreadPoolExecutor) ensuring balanced context
+4. Normalized Relevance Score (0 - 100%) with denseScore and lexicalScore breakdown
+5. Comprehensive cache invalidation and cleanup upon textbook deletion (Zero stale cache)
+6. Strict latency instrumentation meeting SLA < 200ms
 """
 
 import os
+import re
 import math
 import time
 import logging
@@ -24,11 +26,62 @@ from .cache import cache
 logger = logging.getLogger("quizgen.rag.vector_store")
 
 
+class LexicalScorer:
+    """
+    Bộ chấm điểm trùng khớp từ vựng học thuật (Academic Lexical & BM25-style Scorer):
+    - Nhận diện từ vựng cốt lõi tiếng Việt và thuật ngữ chuyên ngành.
+    - Phát hiện và ưu tiên từ viết tắt in hoa (PED, GDP, CPI, VC, TR...).
+    - Bảo toàn và nhận diện công thức toán học dạng LaTeX ($...$).
+    - Thưởng điểm cho so khớp cụm từ chính xác (Exact phrase bonus).
+    """
+
+    @classmethod
+    def tokenize(cls, text: str) -> List[str]:
+        cleaned = re.sub(r"[^\w\s\$\%\-\+\/\=\_]", " ", text.lower())
+        return [w.strip() for w in cleaned.split() if len(w.strip()) > 1]
+
+    @classmethod
+    def extract_acronyms_and_formulas(cls, text: str) -> List[str]:
+        acronyms = re.findall(r"\b[A-Z]{2,}\b", text)
+        formulas = re.findall(r"\$[^\$]+\$", text)
+        return [a.lower() for a in acronyms] + [f.lower() for f in formulas]
+
+    @classmethod
+    def compute_lexical_score(cls, query: str, document_text: str) -> float:
+        q_tokens = cls.tokenize(query)
+        if not q_tokens:
+            return 0.0
+
+        doc_lower = document_text.lower()
+        doc_tokens = set(cls.tokenize(doc_lower))
+
+        # 1. Tỷ lệ trùng khớp từ vựng cơ bản
+        matched_tokens = [t for t in q_tokens if t in doc_tokens]
+        base_overlap = len(matched_tokens) / len(q_tokens)
+
+        # 2. Thưởng cụm từ chính xác (Exact phrase match bonus)
+        phrase_bonus = 0.0
+        cleaned_query = query.strip().lower()
+        if len(cleaned_query) > 5 and cleaned_query in doc_lower:
+            phrase_bonus = 0.25
+
+        # 3. Ưu tiên thuật ngữ viết tắt và ký hiệu công thức
+        specials = cls.extract_acronyms_and_formulas(query)
+        special_bonus = 0.0
+        if specials:
+            matched_specials = [s for s in specials if s in doc_lower]
+            special_bonus = 0.25 * (len(matched_specials) / len(specials))
+
+        raw_score = (0.5 * base_overlap) + phrase_bonus + special_bonus
+        return min(1.0, max(0.0, raw_score))
+
+
 class RAGVectorStore:
     """
     Hệ thống lưu trữ và truy vấn Vector ChromaDB tối ưu hóa hiệu năng cao:
     - Quản lý collection: `textbook_chunks` với không gian khoảng cách Cosine và chỉ mục HNSW.
     - Tìm kiếm Top-K đa chương đồng thời (Concurrent Multi-Chapter Retrieval) qua ThreadPool.
+    - Hybrid Search: Kết hợp Vector Cosine (70%) + Lexical Overlap (30%).
     - Duy trì Persistent Embedding Session tránh tải lại model, đạt SLA truy xuất < 200ms.
     - Tự động dọn dẹp cache Redis/RAM khi xóa giáo trình để bảo đảm tính nhất quán dữ liệu 100%.
     """
@@ -84,7 +137,6 @@ class RAGVectorStore:
 
         with self._embedding_lock:
             if len(self._query_cache) >= self._max_cache_size:
-                # Evict 25% older entries
                 keys = list(self._query_cache.keys())[: self._max_cache_size // 4]
                 for k in keys:
                     self._query_cache.pop(k, None)
@@ -116,7 +168,6 @@ class RAGVectorStore:
         if not prepared:
             return 0
 
-        # Batch upsert theo lô (Batch size = 100) để tối ưu bộ nhớ RAM và bảo đảm an toàn giao dịch
         batch_size = 100
         for i in range(0, len(prepared), batch_size):
             batch_slice = prepared[i:i + batch_size]
@@ -136,7 +187,6 @@ class RAGVectorStore:
                 metadatas=b_metas
             )
 
-        # Làm sạch cache cũ liên quan đến document này
         cache.clear_document_cache(document_id)
         return len(prepared)
 
@@ -155,14 +205,12 @@ class RAGVectorStore:
         except Exception as e:
             logger.error(f"[RAGVectorStore] Error deleting vectors for document {document_id}: {e}")
 
-        # Làm sạch cache triệt để
         try:
             cleared_cache_keys = cache.clear_document_cache(document_id)
             logger.info(f"[RAGVectorStore] Cleared {cleared_cache_keys} cache keys for document {document_id}")
         except Exception as e:
             logger.warning(f"[RAGVectorStore] Cache clearing warning for document {document_id}: {e}")
 
-        # Làm sạch query cache cục bộ
         with self._embedding_lock:
             self._query_cache.clear()
 
@@ -221,33 +269,13 @@ class RAGVectorStore:
             }
         return None
 
-    def _query_single_chapter(
-        self,
-        query_embeddings: List[List[float]],
-        chapter: str,
-        document_id: Optional[str],
-        top_k: int
-    ) -> List[Dict[str, Any]]:
-        """Truy vấn Top-K vector của một chương cụ thể (phục vụ chạy song song trong worker thread)"""
-        conds = [{"chapter": chapter}]
-        if document_id:
-            conds.append({"document_id": document_id})
-
-        where_filter = conds[0] if len(conds) == 1 else {"$and": conds}
-
-        try:
-            results = self.collection.query(
-                query_embeddings=query_embeddings,
-                n_results=top_k,
-                where=where_filter
-            )
-            return self._format_raw_results(results)
-        except Exception as e:
-            logger.warning(f"[RAGVectorStore] Error in chapter query for '{chapter}': {e}")
-            return []
-
-    def _format_raw_results(self, results: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Chuyển đổi kết quả thô của ChromaDB sang định dạng chuẩn và tính Relevance Score (%)"""
+    def _format_raw_results(self, results: Dict[str, Any], query_text: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Chuyển đổi kết quả thô của ChromaDB sang định dạng chuẩn và tính Hybrid Relevance Score:
+        - Dense Score (Cosine Similarity): S_dense = 1 - distance
+        - Lexical Score (Token & Acronym/Formula overlap): S_lex
+        - Hybrid Score = 0.70 * S_dense + 0.30 * S_lex
+        """
         formatted = []
         ids = results.get("ids", []) if results else []
         documents = results.get("documents", []) if results else []
@@ -257,12 +285,18 @@ class RAGVectorStore:
         if ids and len(ids[0]) > 0:
             for idx in range(len(ids[0])):
                 distance = distances[0][idx] if distances and len(distances[0]) > idx else 0.1
-                # Khoảng cách cosine: 0 là hoàn hảo, 1 là vuông góc
-                similarity = max(0.0, 1.0 - distance)
-                relevance_score = round(similarity * 100, 2)
-
-                metadata = metadatas[0][idx] if metadatas and len(metadatas[0]) > idx else {}
+                dense_similarity = max(0.0, 1.0 - distance)
                 chunk_text = documents[0][idx] if documents and len(documents[0]) > idx else ""
+
+                if query_text:
+                    lexical_score = LexicalScorer.compute_lexical_score(query_text, chunk_text)
+                    hybrid_score = (0.70 * dense_similarity) + (0.30 * lexical_score)
+                else:
+                    lexical_score = 0.0
+                    hybrid_score = dense_similarity
+
+                relevance_score = round(hybrid_score * 100, 2)
+                metadata = metadatas[0][idx] if metadatas and len(metadatas[0]) > idx else {}
 
                 formatted.append({
                     "chunkId": ids[0][idx],
@@ -274,10 +308,43 @@ class RAGVectorStore:
                     "text": chunk_text,
                     "relevanceScore": relevance_score,
                     "relevance_score": relevance_score,
+                    "denseScore": round(dense_similarity * 100, 2),
+                    "lexicalScore": round(lexical_score * 100, 2),
                     "distance": round(distance, 4),
                     "metadata": metadata
                 })
+
+        # Sắp xếp theo relevanceScore giảm dần
+        formatted.sort(key=lambda x: x["relevanceScore"], reverse=True)
         return formatted
+
+    def _query_single_chapter(
+        self,
+        query_embeddings: List[List[float]],
+        chapter: str,
+        document_id: Optional[str],
+        top_k: int,
+        query_text: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Truy vấn Top-K vector của một chương cụ thể (phục vụ chạy song song trong worker thread)"""
+        conds = [{"chapter": chapter}]
+        if document_id:
+            conds.append({"document_id": document_id})
+
+        where_filter = conds[0] if len(conds) == 1 else {"$and": conds}
+
+        try:
+            fetch_k = max(top_k * 2, 6)
+            results = self.collection.query(
+                query_embeddings=query_embeddings,
+                n_results=fetch_k,
+                where=where_filter
+            )
+            candidates = self._format_raw_results(results, query_text=query_text)
+            return candidates[:top_k]
+        except Exception as e:
+            logger.warning(f"[RAGVectorStore] Error in chapter query for '{chapter}': {e}")
+            return []
 
     def query_context(
         self,
@@ -288,13 +355,15 @@ class RAGVectorStore:
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Truy vấn tương đồng ngữ nghĩa top-k đa chương đồng thời:
-        1. Tính toán embedding vector một lần duy nhất với persistent session.
+        Truy vấn tương đồng ngữ nghĩa hybrid top-k đa chương đồng thời:
+        1. Tính toán embedding vector một lần duy nhất với persistent session và LRU cache.
         2. Nếu yêu cầu nhiều chương (chapters >= 2):
            - Kích hoạt ThreadPoolExecutor chạy song song tìm kiếm Top-K cho từng chương đồng thời.
            - Đảm bảo tính cân bằng (không để chương nào bị bỏ đói / starvation).
-           - Tự động gộp, khử trùng lặp (dedup) và xếp hạng theo relevanceScore cao nhất.
-        3. Đo đạc độ trễ chi tiết (embedding time, search time, total latency), đảm bảo < 200ms.
+           - Tự động gộp, khử trùng lặp (dedup) và xếp hạng theo relevanceScore hybrid cao nhất.
+        3. Nếu đơn chương hoặc toàn bộ giáo trình:
+           - Lấy tập ứng viên mở rộng (candidate pool) và áp dụng Hybrid Scoring (Dense 70% + Lexical 30%).
+        4. Đo đạc độ trễ chi tiết (embedding time, search time, total latency), đảm bảo < 200ms.
         """
         if top_k < 1:
             return []
@@ -318,7 +387,6 @@ class RAGVectorStore:
 
         # 3. Phân luồng: Tìm kiếm đa chương đồng thời (Concurrent Multi-Chapter Search)
         if len(target_chapters) > 1:
-            # Số lượng lấy mẫu cho từng chương để đảm bảo tính phân bổ đồng đều
             k_per_chapter = max(2, int(math.ceil(top_k / len(target_chapters))))
             max_workers = min(len(target_chapters), 8)
 
@@ -330,7 +398,8 @@ class RAGVectorStore:
                         query_embeddings,
                         ch,
                         document_id,
-                        k_per_chapter
+                        k_per_chapter,
+                        query_text
                     ): ch
                     for ch in target_chapters
                 }
@@ -353,7 +422,7 @@ class RAGVectorStore:
             is_concurrent = True
 
         else:
-            # 4. Tìm kiếm đơn chương hoặc toàn bộ giáo trình
+            # 4. Tìm kiếm đơn chương hoặc toàn bộ giáo trình (Candidate Expansion + Hybrid Reranking)
             conditions = []
             if document_id:
                 conditions.append({"document_id": document_id})
@@ -366,12 +435,14 @@ class RAGVectorStore:
             elif len(conditions) > 1:
                 where_filter = {"$and": conditions}
 
+            candidate_fetch_k = max(top_k * 2, 10)
             raw_results = self.collection.query(
                 query_embeddings=query_embeddings,
-                n_results=top_k,
+                n_results=candidate_fetch_k,
                 where=where_filter
             )
-            final_results = self._format_raw_results(raw_results)
+            scored_candidates = self._format_raw_results(raw_results, query_text=query_text)
+            final_results = scored_candidates[:top_k]
             is_concurrent = False
 
         search_time_ms = round((time.perf_counter() - t_search_start) * 1000, 2)
@@ -384,6 +455,9 @@ class RAGVectorStore:
             "totalLatencyMs": total_latency_ms,
             "meetsSla200ms": total_latency_ms < 200.0,
             "isConcurrent": is_concurrent,
+            "isHybrid": True,
+            "denseWeight": 0.70,
+            "lexicalWeight": 0.30,
             "chaptersCount": len(target_chapters),
             "retrievedCount": len(final_results)
         }
