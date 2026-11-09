@@ -234,31 +234,31 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0b0f19] text-slate-100 font-sans overflow-hidden">
       {/* ─── 1. Header Bar ────────────────────────────────────────────── */}
-      <header className="h-16 bg-[#0e1424] border-b border-white/[0.06] px-6 flex items-center justify-between z-10 shrink-0">
-        <div className="flex items-center space-x-4">
+      <header className="h-16 bg-[#0e1424] border-b border-white/[0.06] px-4 sm:px-6 flex items-center justify-between z-10 shrink-0">
+        <div className="flex items-center space-x-3 sm:space-x-4 min-w-0">
           <button
             onClick={() => onNavigate('dashboard')}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors shrink-0"
             title="Quay lại Bảng điều khiển"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="h-5 w-px bg-white/[0.08]" />
-          <div>
+          <div className="h-5 w-px bg-white/[0.08] shrink-0" />
+          <div className="min-w-0">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-white text-sm">
+              <span className="font-bold text-white text-xs sm:text-sm truncate">
                 Không gian Đối chiếu & Kiểm duyệt RAG
               </span>
               <span
-                className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/25 max-w-[280px] truncate"
+                className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/25 max-w-[160px] sm:max-w-[240px] truncate hidden md:inline"
                 title={activeQuestion?.chapter}
               >
                 {activeQuestion?.chapter || 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-              <FileText className="w-3 h-3 text-slate-500" /> Nguồn:{' '}
-              {activeQuestion?.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}
+            <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 truncate">
+              <FileText className="w-3 h-3 text-slate-500 shrink-0" /> Nguồn:{' '}
+              <span className="truncate">{activeQuestion?.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}</span>
             </p>
           </div>
         </div>

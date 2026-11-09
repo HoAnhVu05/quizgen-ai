@@ -552,7 +552,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   };
 
   return (
-    <div className="flex-1 p-8 overflow-y-auto space-y-8 bg-[#0b0f19] text-slate-100 relative">
+    <div className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto space-y-6 sm:space-y-8 bg-[#0b0f19] text-slate-100 relative">
       {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-2xl bg-black/80 p-4">
@@ -560,7 +560,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
           <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
 
-          <div className="relative glass-panel rounded-3xl p-8 sm:p-10 max-w-md w-full border border-white/[0.12] shadow-2xl overflow-hidden">
+          <div className="relative glass-panel rounded-3xl p-6 sm:p-8 max-w-xl sm:max-w-2xl w-full border border-white/[0.12] shadow-2xl max-h-[92vh] overflow-y-auto">
             {/* Shimmer wave bar at top */}
             <div className="absolute top-0 left-0 right-0 h-1 shimmer-bar" />
 
@@ -607,47 +607,91 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 </div>
               </div>
             ) : (
-              /* Normal Loading Progress */
-              <div>
-                <div className="flex justify-center mb-5">
-                  <div className="relative">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-md">
-                      <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
+              /* Normal Loading Progress with Stepper & Dynamic Skeleton Cards */
+              <div className="space-y-5">
+                <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+                  <div className="flex items-center space-x-3 min-w-0">
+                    <div className="relative shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-sm">
+                        <Sparkles className="w-5 h-5 text-white animate-spin" style={{ animationDuration: '4s' }} />
+                      </div>
+                      <div className="absolute inset-0 bg-blue-500/20 rounded-xl blur-lg animate-pulse" />
                     </div>
-                    <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl animate-pulse" />
+                    <div className="min-w-0">
+                      <h2 className="text-base font-extrabold text-white tracking-tight flex items-center gap-2">
+                        <span>Gemini AI đang sinh câu hỏi</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/25 shrink-0">
+                          RAG Grounded
+                        </span>
+                      </h2>
+                      <p className="text-xs text-slate-400 truncate mt-0.5">
+                        Xử lý <strong className="text-white font-mono">{totalQuestions} câu hỏi</strong> chuẩn Bloom từ giáo trình
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="text-base font-mono font-extrabold text-blue-400 bg-blue-500/10 px-3 py-1 rounded-xl border border-blue-500/20 shrink-0">
+                    {generationProgress}%
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="space-y-1.5">
+                  <div className="w-full bg-white/[0.06] h-2.5 rounded-full overflow-hidden p-0.5 border border-white/[0.08]">
+                    <div
+                      className="bg-gradient-to-r from-sky-500 via-blue-500 to-indigo-500 h-full rounded-full transition-all duration-500 shadow-glow-sm"
+                      style={{ width: `${Math.max(generationProgress, 8)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                    <span className="truncate max-w-[280px] text-blue-300 flex items-center gap-1.5">
+                      <Cpu className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                      {generationStep}
+                    </span>
+                    <span className="text-slate-400 text-[10px] font-mono hidden sm:inline">Timeout: 60s</span>
                   </div>
                 </div>
 
-                <h2 className="text-center text-xl font-extrabold text-white mb-1.5 tracking-tight">
-                  Gemini AI đang sinh câu hỏi
-                </h2>
-                <p className="text-center text-xs text-slate-400 mb-6">
-                  Đang xử lý {totalQuestions} câu hỏi theo Thang đo nhận thức Bloom qua API
-                </p>
-
-                {/* 3-step sequential status tracker */}
-                <div className="space-y-2.5">
+                {/* 4-Step Sequential Status Tracker */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
                   {[
-                    { step: 1, label: 'Truy xuất ngữ cảnh RAG từ tài liệu...' },
-                    { step: 2, label: 'Gemini AI tổng hợp và sinh câu hỏi theo chuẩn Bloom...' },
-                    { step: 3, label: 'Kiểm tra minh chứng trích dẫn & chuẩn hóa câu hỏi...' },
-                  ].map(({ step, label }) => {
-                    const currentStepNum =
-                      generationProgress < 35 ? 1
-                      : generationProgress < 85 ? 2
-                      : 3;
-                    const isDone = step < currentStepNum;
-                    const isActive = step === currentStepNum;
+                    {
+                      step: 1,
+                      title: 'RAG Context Retrieval',
+                      desc: 'Quét Chunks & tọa độ trang sách',
+                      threshold: 25,
+                    },
+                    {
+                      step: 2,
+                      title: 'Gemini 1.5 Pro Processing',
+                      desc: 'Sinh câu hỏi theo chuẩn Bloom',
+                      threshold: 55,
+                    },
+                    {
+                      step: 3,
+                      title: 'Distractor Balancing',
+                      desc: 'Tối ưu 3 phương án gây nhiễu',
+                      threshold: 85,
+                    },
+                    {
+                      step: 4,
+                      title: 'Citation Grounding',
+                      desc: 'Đối chiếu số trang & thẩm định',
+                      threshold: 100,
+                    },
+                  ].map(({ step, title, desc, threshold }) => {
+                    const isDone = generationProgress >= threshold;
+                    const isActive = !isDone && (step === 1 ? generationProgress < 25 : generationProgress >= (step === 2 ? 25 : step === 3 ? 55 : 85));
 
                     return (
                       <div
                         key={step}
                         className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-all duration-300 ${
                           isDone
-                            ? 'bg-emerald-500/10 border-emerald-500/25 opacity-70'
+                            ? 'bg-emerald-500/[0.08] border-emerald-500/30 text-emerald-300'
                             : isActive
-                            ? 'bg-blue-500/15 border-blue-500/40 shadow-sm'
-                            : 'bg-white/[0.02] border-white/[0.06] opacity-40'
+                            ? 'bg-blue-600/[0.15] border-blue-500/50 shadow-glow-sm text-white'
+                            : 'bg-white/[0.02] border-white/[0.06] text-slate-400 opacity-50'
                         }`}
                       >
                         <div
@@ -659,20 +703,17 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                               : 'bg-white/[0.05] border-white/[0.1] text-slate-500'
                           }`}
                         >
-                          {isDone ? '✓' : step}
+                          {isDone ? <Check className="w-3.5 h-3.5" /> : step}
                         </div>
-                        <span
-                          className={`text-xs font-medium leading-snug flex-1 ${
-                            isActive ? 'text-blue-200' : isDone ? 'text-emerald-300' : 'text-slate-500'
-                          }`}
-                        >
-                          {label}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className={`text-xs font-bold truncate ${isActive ? 'text-white' : isDone ? 'text-emerald-300' : 'text-slate-400'}`}>
+                            {title}
+                          </div>
+                          <div className="text-[10px] text-slate-400 truncate mt-0.5">{desc}</div>
+                        </div>
                         {isActive && (
                           <div className="flex space-x-1 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-ping" />
                           </div>
                         )}
                       </div>
@@ -680,22 +721,83 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                   })}
                 </div>
 
-                {/* Progress bar */}
-                <div className="mt-5 w-full bg-white/[0.06] h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500"
-                    style={{ width: `${generationProgress}%` }}
-                  />
+                {/* DYNAMIC LOADING SKELETON CARDS (Hiệu ứng chờ sinh câu hỏi động) */}
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <span className="flex items-center gap-1.5 text-blue-300">
+                      <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                      Mô phỏng Dòng câu hỏi AI đang tạo sinh (Stream Skeleton):
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">Đang truyền tải...</span>
+                  </div>
+
+                  <div className="space-y-3 max-h-48 overflow-hidden rounded-xl border border-white/[0.06] p-3 bg-white/[0.01]">
+                    {/* Skeleton Question Card 1 */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2.5 animate-pulse">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="h-5 w-16 rounded-md bg-sky-500/20 border border-sky-500/30 flex items-center justify-center text-[10px] text-sky-300 font-bold">
+                            Nhận biết
+                          </span>
+                          <span className="h-4 w-28 rounded bg-white/[0.08]" />
+                        </div>
+                        <span className="h-4 w-20 rounded bg-emerald-500/10 border border-emerald-500/20" />
+                      </div>
+
+                      {/* Question Text Skeleton */}
+                      <div className="space-y-1.5 py-1">
+                        <div className="h-3.5 w-11/12 rounded bg-white/[0.12]" />
+                        <div className="h-3 w-4/5 rounded bg-white/[0.07]" />
+                      </div>
+
+                      {/* 4 Options Skeleton Grid */}
+                      <div className="grid grid-cols-2 gap-2 pt-1">
+                        {[1, 2, 3, 4].map((optIdx) => (
+                          <div key={optIdx} className="flex items-center space-x-2 p-1.5 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+                            <span className="w-4 h-4 rounded-full bg-white/[0.1] shrink-0" />
+                            <span className="h-2.5 w-24 rounded bg-white/[0.06]" />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Grounding Source Skeleton */}
+                      <div className="flex items-center justify-between pt-1 border-t border-white/[0.04] text-[10px]">
+                        <span className="h-3 w-36 rounded bg-blue-500/10" />
+                        <span className="h-3 w-20 rounded bg-white/[0.05]" />
+                      </div>
+                    </div>
+
+                    {/* Skeleton Question Card 2 */}
+                    <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-2.5 animate-pulse opacity-60">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="h-5 w-16 rounded-md bg-teal-500/20 border border-teal-500/30 flex items-center justify-center text-[10px] text-teal-300 font-bold">
+                            Thông hiểu
+                          </span>
+                          <span className="h-4 w-24 rounded bg-white/[0.08]" />
+                        </div>
+                        <span className="h-4 w-16 rounded bg-emerald-500/10" />
+                      </div>
+
+                      <div className="space-y-1.5 py-1">
+                        <div className="h-3.5 w-5/6 rounded bg-white/[0.12]" />
+                        <div className="h-3 w-3/5 rounded bg-white/[0.07]" />
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-400">
-                  <span className="truncate max-w-[200px]">{generationStep}</span>
-                  <span className="text-blue-400 font-bold shrink-0">{generationProgress}%</span>
+                <div className="pt-2 flex justify-between items-center text-xs border-t border-white/[0.06]">
+                  <span className="text-slate-400 text-[11px]">
+                    Minh chứng trang sách sẽ được gắn tự động vào từng câu hỏi.
+                  </span>
+                  <button
+                    onClick={handleUseFallbackQuestions}
+                    className="text-xs text-blue-400 hover:text-blue-300 underline font-medium"
+                  >
+                    Bỏ qua chờ và nạp ngay đề mẫu
+                  </button>
                 </div>
-
-                <p className="text-center text-[10px] text-slate-500 font-mono mt-3">
-                  POST /api/v1/ai/generate · Timeout: 60s
-                </p>
               </div>
             )}
           </div>

@@ -58,6 +58,47 @@ const MOCK_USERS_DB = new Map([
 ]);
 
 // ============================================================================
+// ACADEMIC DOCUMENT STORAGE & REAL-TIME PROGRESS POLLING
+// ============================================================================
+const MOCK_DOCUMENTS_STORE = [
+  {
+    id: 'doc-kinh-te-vi-mo-2025',
+    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    size: '14.2 MB',
+    totalPages: 184,
+    chaptersCount: 5,
+    status: 'ready',
+    progress: 100,
+    uploadedAt: '28/10/2026, 09:30',
+    chapters: [
+      'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
+      'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
+      'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
+      'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
+      'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
+    ],
+  },
+  {
+    id: 'doc-tri-tue-nhan-tao-2026',
+    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    size: '22.8 MB',
+    totalPages: 240,
+    chaptersCount: 4,
+    status: 'ready',
+    progress: 100,
+    uploadedAt: '29/10/2026, 14:15',
+    chapters: [
+      'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
+      'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
+      'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
+      'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
+    ],
+  },
+];
+
+const DOCUMENT_PROGRESS_STORE = new Map();
+
+// ============================================================================
 // ACADEMIC CURRICULUM DATABASE (Kinh tế Vi mô & Trí tuệ Nhân tạo)
 // ============================================================================
 const CURRICULUM_DATABASE = {
@@ -676,38 +717,150 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Documents
-    if (pathname.startsWith('/api/v1/documents')) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify([
-        {
-          id: 'doc-kinh-te-vi-mo-2025',
-          name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-          status: 'ready',
-          totalPages: 184,
-          chaptersCount: 5,
-          chapters: [
-            'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
-            'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
-            'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
-            'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
-            'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
-          ],
-        },
-        {
-          id: 'doc-tri-tue-nhan-tao-2026',
-          name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-          status: 'ready',
-          totalPages: 240,
+    // ========================================================================
+    // Document Service Routes (Upload, Progress Polling, Retrieval & Deletion)
+    // ========================================================================
+    if (pathname === '/api/v1/documents/upload' || pathname === '/documents/upload') {
+      const docIndex = MOCK_DOCUMENTS_STORE.length + 1;
+      const newDocId = `tb-doc-${Date.now().toString(36)}`;
+      let originalFilename = `GiaoTrinh_HocPhan_Moi_${docIndex}.pdf`;
+
+      // Extract filename from header or body if available
+      const contentDisposition = req.headers['content-disposition'] || '';
+      const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+      if (match && match[1]) {
+        originalFilename = match[1];
+      }
+
+      const initialProgress = {
+        document_id: newDocId,
+        progress: 15,
+        status: 'uploading',
+        stage: 'uploading',
+        total_pages: 148,
+        file_name: originalFilename,
+        file_size: '16.8 MB',
+        chapters_count: 4,
+        updated_at: new Date().toISOString(),
+      };
+      DOCUMENT_PROGRESS_STORE.set(newDocId, initialProgress);
+
+      const newDocRecord = {
+        id: newDocId,
+        name: originalFilename,
+        size: '16.8 MB',
+        totalPages: 148,
+        chaptersCount: 4,
+        status: 'uploading',
+        progress: 15,
+        uploadedAt: 'Vừa xong',
+        chapters: [
+          'Chương 1: Tổng quan và Khái niệm nền tảng',
+          'Chương 2: Cấu trúc dữ liệu và Mô hình phân tích',
+          'Chương 3: Quy trình ứng dụng thực tế',
+          'Chương 4: Đánh giá chất lượng và Tối ưu hóa',
+        ],
+      };
+      MOCK_DOCUMENTS_STORE.unshift(newDocRecord);
+
+      // Simulate Real-time 4-step Pipeline Progress (uploading -> extracting -> embedding -> ready)
+      setTimeout(() => {
+        const item = DOCUMENT_PROGRESS_STORE.get(newDocId);
+        if (item) {
+          item.progress = 40;
+          item.status = 'extracting';
+          item.stage = 'extracting';
+          newDocRecord.status = 'extracting';
+          newDocRecord.progress = 40;
+        }
+      }, 1500);
+
+      setTimeout(() => {
+        const item = DOCUMENT_PROGRESS_STORE.get(newDocId);
+        if (item) {
+          item.progress = 75;
+          item.status = 'embedding';
+          item.stage = 'embedding';
+          newDocRecord.status = 'embedding';
+          newDocRecord.progress = 75;
+        }
+      }, 3500);
+
+      setTimeout(() => {
+        const item = DOCUMENT_PROGRESS_STORE.get(newDocId);
+        if (item) {
+          item.progress = 100;
+          item.status = 'ready';
+          item.stage = 'ready';
+          newDocRecord.status = 'ready';
+          newDocRecord.progress = 100;
+        }
+      }, 5500);
+
+      res.writeHead(202, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        message: 'Đã tải lên và bóc tách thành công. Đang tiến hành tạo Vector Embedding trong nền.',
+        document: {
+          id: newDocId,
+          name: originalFilename,
+          size: '16.8 MB',
+          totalPages: 148,
           chaptersCount: 4,
-          chapters: [
-            'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
-            'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
-            'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
-            'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
-          ],
+          status: 'uploading',
+          progress: 15,
+          uploadedAt: 'Vừa xong',
         },
-      ]));
+      }));
+      return;
+    }
+
+    // Polling progress endpoint: GET /api/v1/documents/progress/{id} or /progress/{id}
+    const progressMatch = pathname.match(/^\/(?:api\/v1\/documents|documents|api\/v1)\/progress\/([^/?]+)/);
+    if (progressMatch) {
+      const docId = progressMatch[1];
+      const prog = DOCUMENT_PROGRESS_STORE.get(docId);
+      if (prog) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(prog));
+        return;
+      }
+
+      // Check if doc exists in ready store
+      const existing = MOCK_DOCUMENTS_STORE.find((d) => d.id === docId);
+      if (existing) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          document_id: docId,
+          progress: existing.progress ?? 100,
+          status: existing.status ?? 'ready',
+          stage: existing.status ?? 'ready',
+          total_pages: existing.totalPages ?? 184,
+        }));
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ detail: 'Không tìm thấy thông tin tiến trình của giáo trình này.' }));
+      return;
+    }
+
+    // Delete document: DELETE /api/v1/documents/documents/{id} or DELETE /api/v1/documents/{id}
+    if (req.method === 'DELETE' && (pathname.startsWith('/api/v1/documents') || pathname.startsWith('/documents'))) {
+      const deleteId = pathname.split('/').filter(Boolean).pop();
+      const idx = MOCK_DOCUMENTS_STORE.findIndex((d) => d.id === deleteId);
+      if (idx !== -1) {
+        MOCK_DOCUMENTS_STORE.splice(idx, 1);
+        DOCUMENT_PROGRESS_STORE.delete(deleteId);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, message: 'Đã xóa tài liệu khỏi kho RAG.' }));
+      return;
+    }
+
+    // List documents: GET /api/v1/documents or /api/v1/documents/documents
+    if (pathname.startsWith('/api/v1/documents') || pathname === '/documents') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(MOCK_DOCUMENTS_STORE));
       return;
     }
 

@@ -104,10 +104,10 @@ const LOCKOUT_DURATION_SECONDS = 60;
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateRegister }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('lecturer');
-  const [email, setEmail] = useState('lecturer@vnu.edu.vn');
-  const [password, setPassword] = useState('academic123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
 
@@ -144,8 +144,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
   const handleSelectRole = (role: RoleConfig) => {
     setSelectedRole(role.id);
-    setEmail(role.defaultEmail);
-    setPassword(role.defaultPass);
     setErrors({});
   };
 
@@ -541,7 +539,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                     setEmail(e.target.value);
                     setErrors((p) => ({ ...p, email: undefined, general: undefined }));
                   }}
-                  placeholder={currentRoleConfig.defaultEmail}
+                  placeholder="canbo@vnu.edu.vn"
                   className={`w-full bg-white/[0.04] border rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all duration-200
                     disabled:opacity-40 disabled:cursor-not-allowed
                     focus:bg-white/[0.07] focus:shadow-[0_0_0_2px_rgba(59,130,246,0.4)]
@@ -622,7 +620,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
               )}
             </div>
 
-            {/* Remember & Quick Credential Reset */}
+            {/* Remember Checkbox */}
             <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
@@ -634,19 +632,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 />
                 <span>Ghi nhớ phiên làm việc an toàn</span>
               </label>
-
-              <button
-                type="button"
-                disabled={isLocked}
-                onClick={() => {
-                  setEmail(currentRoleConfig.defaultEmail);
-                  setPassword(currentRoleConfig.defaultPass);
-                  setErrors({});
-                }}
-                className="text-[11px] text-blue-400 hover:text-blue-300 underline font-medium disabled:opacity-40"
-              >
-                Nạp tài khoản mẫu ({currentRoleConfig.title})
-              </button>
             </div>
 
             {/* Submit Button */}
@@ -676,19 +661,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
               )}
             </button>
           </form>
-
-          {/* Hộp Thông tin Demo Tài khoản Tự động */}
-          <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between text-[11px]">
-            <div className="flex items-center gap-2 text-slate-400 truncate">
-              <HelpCircle className="w-4 h-4 text-blue-400 shrink-0" />
-              <span>
-                Tài khoản mẫu: <span className="text-white font-mono">{currentRoleConfig.defaultEmail}</span>
-              </span>
-            </div>
-            <span className="font-mono text-slate-400 bg-white/[0.05] px-2 py-0.5 rounded border border-white/[0.05] shrink-0">
-              pass: {currentRoleConfig.defaultPass}
-            </span>
-          </div>
 
           {/* Divider */}
           <div className="flex items-center gap-3">

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
+import { Header } from './components/Header';
 import { DashboardScreen } from './components/DashboardScreen';
 import { TextbookUploadScreen } from './components/TextbookUploadScreen';
 import { AIGenerationScreen } from './components/AIGenerationScreen';
@@ -95,6 +96,24 @@ export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
   const [questions, setQuestions] = useState<Question[]>(INITIAL_QUESTIONS);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 1280;
+    }
+    return false;
+  });
+
+  // Phím tắt Ctrl+B / Cmd+B để thu gọn / mở rộng sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setIsSidebarCollapsed((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
@@ -319,10 +338,21 @@ export const App: React.FC = () => {
         pendingReviewCount={pendingCount}
         currentUser={currentUser}
         onLogout={handleLogout}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#0b0f19]">
+        {/* Top Header with Breadcrumbs, Token Quota AI Widget & Cyber Dark accents */}
+        <Header
+          currentScreen={currentScreen}
+          currentUser={currentUser}
+          onNavigate={setCurrentScreen}
+          onLogout={handleLogout}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+        />
         {currentScreen === 'dashboard' && (
           <DashboardScreen
             onNavigate={setCurrentScreen}
