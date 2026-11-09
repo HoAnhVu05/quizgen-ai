@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
+import apiClient from '../services/apiClient';
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -139,7 +140,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   onGenerateSuccess,
   onShowToast,
 }) => {
-  const [selectedBook, setSelectedBook] = useState('');
+  const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [bloomDistribution, setBloomDistribution] = useState({
     nhanBiet: 4,
@@ -178,7 +179,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const fetchDocuments = useCallback(async () => {
     setIsLoadingDocuments(true);
     try {
-      const res = await fetch(`${API_BASE}/documents/documents`);
+      const res = await apiClient.fetch(`${API_BASE}/documents/documents`);
       let list: any[] = [];
       if (res.ok) {
         const payload = await res.json();
@@ -211,7 +212,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
       if (uniqueDocs.length > 0) {
         setDocuments(uniqueDocs);
-        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
+        const savedId = localStorage.getItem('quizgen_selected_book_id');
+        if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+          setSelectedBook(savedId);
+        } else {
+          setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
+        }
         setIsUsingFallback(false);
       } else {
         setDocuments(FALLBACK_DOCUMENTS);
@@ -258,6 +264,7 @@ setDocuments([]);
 
   const handleSelectBook = (bookId: string) => {
     setSelectedBook(bookId);
+    localStorage.setItem('quizgen_selected_book_id', bookId);
     const available = chaptersByDocument[bookId] || FALLBACK_CHAPTERS[bookId] || [];
     if (available.length > 0) {
       setSelectedChapters([available[0]]);
@@ -292,7 +299,7 @@ setDocuments([]);
     // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
-        const res = await fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        const res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
         if (!res.ok) {
           throw new Error(await parseErrorMessage(res));
         }
@@ -393,6 +400,8 @@ setDocuments([]);
       const payload = {
         documentId: selectedBook,
         document_id: selectedBook,
+        document_name: selectedDoc?.name || '',
+        documentName: selectedDoc?.name || '',
         chapters: selectedChapters,
         bloomMatrix: bloomDistribution,
         bloom_matrix: bloomDistribution,
@@ -406,7 +415,7 @@ setDocuments([]);
         headers['Authorization'] = `Bearer ${token}`;
       }
 
-      const res = await fetch(`${API_BASE}/ai/generate`, {
+      const res = await apiClient.fetch(`${API_BASE}/ai/generate`, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),

@@ -103,9 +103,21 @@ async def generate_questions(
     db.add(job)
     db.commit()
 
-    # 2. Truy xuất ngữ cảnh RAG từ RAG Service
-    query_text = " ".join(req.chapters) if req.chapters else "kinh tế học vi mô quy luật cung cầu"
-    primary_chapter = req.chapters[0] if req.chapters else "Chương 3: Cung - Cầu và Cơ chế cân bằng giá cả thị trường"
+    # 2. Lấy tên giáo trình thực tế từ CSDL
+    from sqlalchemy import text
+    textbook_name = getattr(req, "document_name", None) or getattr(req, "documentName", None) or ""
+    if not textbook_name:
+        try:
+            doc_row = db.execute(text("SELECT name FROM documents.documents WHERE id = :did"), {"did": document_id}).fetchone()
+            if doc_row and doc_row[0]:
+                textbook_name = doc_row[0]
+        except Exception:
+            pass
+    if not textbook_name:
+        textbook_name = "GiaoTrinh_KinhTeViMo_2025.pdf"
+
+    query_text = " ".join(req.chapters) if req.chapters else (textbook_name or "kiến thức học thuật")
+    primary_chapter = req.chapters[0] if req.chapters else "Chương 1: Tổng quan"
     retrieved_chunks = []
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -139,7 +151,8 @@ async def generate_questions(
             chunks=retrieved_chunks,
             bloom_matrix=bloom_matrix,
             document_id=document_id,
-            chapter_name=primary_chapter
+            chapter_name=primary_chapter,
+            textbook_name=textbook_name
         )
 
         # Cập nhật kết quả Job vào DB

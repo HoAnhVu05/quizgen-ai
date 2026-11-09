@@ -28,7 +28,8 @@ class QuestionGenerator:
         chunks: List[Dict[str, Any]],
         bloom_matrix: Dict[str, int],
         document_id: str = "tb-001",
-        chapter_name: str = "Chương 3: Cung - Cầu và Cơ chế cân bằng giá cả thị trường"
+        chapter_name: str = "Chương 3: Cung - Cầu và Cơ chế cân bằng giá cả thị trường",
+        textbook_name: str = ""
     ) -> List[Dict[str, Any]]:
         """
         Sinh danh sách câu hỏi trắc nghiệm theo đúng ma trận Bloom và bám sát ngữ cảnh RAG.
@@ -70,12 +71,12 @@ Hãy đọc kỹ ngữ cảnh và biên soạn chính xác các câu hỏi theo 
                 parsed = json.loads(response.text)
                 raw_questions = parsed.get("questions", [])
                 if raw_questions:
-                    return self._normalize_questions(raw_questions, chunks, document_id, chapter_name)
+                    return self._normalize_questions(raw_questions, chunks, document_id, chapter_name, textbook_name)
             except Exception as exc:
                 print(f"[AI-SERVICE] Lỗi khi gọi Gemini API ({exc}). Kích hoạt bộ sinh câu hỏi học thuật Fallback...")
 
         # 2. Bộ sinh Fallback học thuật chuẩn mực theo ma trận Bloom
-        return self._generate_fallback_matrix(chunks, bloom_matrix, document_id, chapter_name)
+        return self._generate_fallback_matrix(chunks, bloom_matrix, document_id, chapter_name, textbook_name)
 
     async def regenerate_single_question(
         self,
@@ -119,7 +120,8 @@ Hãy đọc kỹ ngữ cảnh và biên soạn chính xác các câu hỏi theo 
         raw_list: List[Dict[str, Any]],
         chunks: List[Dict[str, Any]],
         document_id: str,
-        chapter_name: str
+        chapter_name: str,
+        textbook_name: str = ""
     ) -> List[Dict[str, Any]]:
         """Bổ sung đầy đủ các trường tương thích kép camelCase và snake_case"""
         normalized = []
@@ -136,8 +138,8 @@ Hãy đọc kỹ ngữ cảnh và biên soạn chính xác các câu hỏi theo 
                 "id": q_id,
                 "sourceChunkId": chunk_id,
                 "source_chunk_id": chunk_id,
-                "textbookName": "GiaoTrinh_KinhTeViMo_2025.pdf",
-                "textbook_name": "GiaoTrinh_KinhTeViMo_2025.pdf",
+                "textbookName": textbook_name or "GiaoTrinh_KinhTeViMo_2025.pdf",
+                "textbook_name": textbook_name or "GiaoTrinh_KinhTeViMo_2025.pdf",
                 "chapter": chapter_name,
                 "bloomLevel": bloom,
                 "bloom_level": bloom,
@@ -159,7 +161,8 @@ Hãy đọc kỹ ngữ cảnh và biên soạn chính xác các câu hỏi theo 
         chunks: List[Dict[str, Any]],
         bloom_matrix: Dict[str, int],
         document_id: str,
-        chapter_name: str
+        chapter_name: str,
+        textbook_name: str = ""
     ) -> List[Dict[str, Any]]:
         """Sinh bộ câu hỏi mẫu phong phú theo đúng tỷ lệ ma trận Bloom yêu cầu"""
         c1 = chunks[0].get("chunk_id") or chunks[0].get("id", "chunk-1") if chunks else "chunk-1"
@@ -273,8 +276,8 @@ Hãy đọc kỹ ngữ cảnh và biên soạn chính xác các câu hỏi theo 
                     "id": q_id,
                     "sourceChunkId": template["chunk"],
                     "source_chunk_id": template["chunk"],
-                    "textbookName": "GiaoTrinh_KinhTeViMo_2025.pdf",
-                    "textbook_name": "GiaoTrinh_KinhTeViMo_2025.pdf",
+                    "textbookName": textbook_name or "GiaoTrinh_KinhTeViMo_2025.pdf",
+                    "textbook_name": textbook_name or "GiaoTrinh_KinhTeViMo_2025.pdf",
                     "chapter": chapter_name,
                     "bloomLevel": level,
                     "bloom_level": level,

@@ -77,5 +77,7 @@ export interface ExamExportConfig {
   shuffleOptions: boolean;
   includeAnswerKey: boolean;
   includeExplanation: boolean;
-  format: 'docx' | 'pdf' | 'qti';
+  includeOmrSheet?: boolean;
+  baseExamCode?: number;
+  format: 'docx' | 'pdf' | 'qti' | 'zip';
 }

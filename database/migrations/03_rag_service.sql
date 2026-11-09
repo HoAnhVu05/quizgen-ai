@@ -9,7 +9,8 @@ SET search_path TO rag, public;
 -- Lưu ý: Vector Embeddings thực tế được lưu tại ChromaDB collection 'textbook_chunks'
 CREATE TABLE IF NOT EXISTS rag.vector_indexes (
     id VARCHAR(50) PRIMARY KEY,                             -- ID format: 'idx-...'
-    document_id VARCHAR(50) NOT NULL,                       -- ID tài liệu tương ứng
+    document_id VARCHAR(50) NOT NULL,
+    user_id VARCHAR(50),                       -- ID tài liệu tương ứng
     collection_name VARCHAR(100) NOT NULL DEFAULT 'textbook_chunks',
     total_vectors INT NOT NULL DEFAULT 0,                   -- Tổng số vector đã nhúng
     embedding_model VARCHAR(100) NOT NULL DEFAULT 'all-MiniLM-L6-v2',
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS rag.retrieval_logs (
     id VARCHAR(50) PRIMARY KEY,
     query_text TEXT NOT NULL,
     document_id VARCHAR(50),
+    user_id VARCHAR(50),
     top_k INT NOT NULL DEFAULT 5,
     matched_chunks_count INT NOT NULL DEFAULT 0,
     top_relevance_score NUMERIC(5,2),

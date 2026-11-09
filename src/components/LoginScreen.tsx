@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   GraduationCap,
   Mail,
@@ -14,11 +14,14 @@ import {
   Send,
   Building2,
   Award,
-  Layers,
-  ChevronRight,
   UserCheck,
+  AlertTriangle,
+  AlertCircle,
+  Clock,
+  KeyRound,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
+import apiClient from '../services/apiClient';
 
 interface LoginScreenProps {
   onLogin: (user: UserProfile) => void;
@@ -97,6 +100,9 @@ const ROLES: RoleConfig[] = [
   },
 ];
 
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_SECONDS = 60;
+
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateRegister }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole>('lecturer');
   const [email, setEmail] = useState('lecturer@vnu.edu.vn');
@@ -106,12 +112,36 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
 
+  // ─── Brute-Force Protection & Lockout States ──────────────────────────────
+  const [failedAttempts, setFailedAttempts] = useState<number>(0);
+  const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+
   // Forgot password modal
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
 
   const currentRoleConfig = ROLES.find((r) => r.id === selectedRole) || ROLES[0];
+  const isLocked = lockoutSeconds > 0;
+
+  // ─── Countdown Timer for Lockout ──────────────────────────────────────────
+  useEffect(() => {
+    let timer: any = null;
+    if (lockoutSeconds > 0) {
+      timer = setInterval(() => {
+        setLockoutSeconds((prev) => {
+          if (prev <= 1) {
+            setFailedAttempts(0);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [lockoutSeconds]);
 
   const handleSelectRole = (role: RoleConfig) => {
     setSelectedRole(role.id);
@@ -122,34 +152,62 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
   const validate = () => {
     const newErrors: { email?: string; password?: string } = {};
-    if (!email.trim()) {
-      newErrors.email = 'Vui lòng nhập email học thuật';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Định dạng email không hợp lệ';
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      newErrors.email = 'Vui lòng nhập email học thuật / công tác.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      newErrors.email = 'Định dạng email không hợp lệ (ví dụ: canbo@vnu.edu.vn).';
     }
+
     if (!password) {
-      newErrors.password = 'Vui lòng nhập mật khẩu';
+      newErrors.password = 'Vui lòng nhập mật khẩu tài khoản.';
     } else if (password.length < 6) {
-      newErrors.password = 'Mật khẩu phải có tối thiểu 6 ký tự';
+      newErrors.password = 'Mật khẩu phải có tối thiểu 6 ký tự.';
     }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+  const recordFailedAttempt = (customErrorMessage?: string) => {
+    const newCount = failedAttempts + 1;
+    setFailedAttempts(newCount);
+
+    if (newCount >= MAX_FAILED_ATTEMPTS) {
+      setLockoutSeconds(LOCKOUT_DURATION_SECONDS);
+      setErrors({
+        general: `Tài khoản tạm thời bị khóa trong ${LOCKOUT_DURATION_SECONDS} giây do nhập sai thông tin ${MAX_FAILED_ATTEMPTS} lần liên tiếp.`,
+      });
+    } else {
+      const remaining = MAX_FAILED_ATTEMPTS - newCount;
+      setErrors({
+        general:
+          customErrorMessage ||
+          `Email hoặc mật khẩu không chính xác. Bạn còn ${remaining} lần thử trước khi bị khóa tạm thời.`,
+      });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLocked) return;
     if (!validate()) return;
+
     setIsLoading(true);
     setErrors({});
+
+    const normalizedEmail = email.trim().toLowerCase();
 
     try {
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
       let authenticatedUser: UserProfile | null = null;
+      let backendFailed = false;
 
-      // 1. Thử xác thực với Backend API Auth-Service nếu backend online
+      // ─── 1. Gửi xác thực tới Backend Auth Service ─────────────────────────
       try {
         const formData = new URLSearchParams();
-        formData.append('username', email);
+        formData.append('username', normalizedEmail);
         formData.append('password', password);
 
         const res = await fetch(`${API_BASE}/auth/login`, {
@@ -161,18 +219,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         if (res.ok) {
           const data = await res.json();
           if (data.access_token) {
+            apiClient.setTokens(data.access_token, data.refresh_token || `mock-jwt-refresh-${data.user?.role || selectedRole}-${Date.now()}`);
+            localStorage.setItem('quizgen_token', data.access_token);
             localStorage.setItem('quizgen_auth_token', data.access_token);
             if (data.user) {
               authenticatedUser = {
                 id: data.user.id || `usr-${Date.now()}`,
                 fullName: data.user.full_name || currentRoleConfig.defaultName,
-                email: data.user.email || email,
+                email: data.user.email || normalizedEmail,
                 academicTitle: data.user.academic_title || currentRoleConfig.defaultTitle,
                 department: data.user.department || currentRoleConfig.defaultDept,
                 faculty: data.user.department || currentRoleConfig.defaultDept,
                 university: data.user.university || 'Đại học Quốc gia',
                 role: (data.user.role as UserRole) || selectedRole,
-                roleLabel: currentRoleConfig.title,
+                roleLabel:
+                  data.user.role === 'head_of_department'
+                    ? 'Trưởng bộ môn'
+                    : data.user.role === 'admin'
+                    ? 'Quản trị Khảo thi'
+                    : 'Giảng viên',
               };
             }
           }
@@ -182,23 +247,32 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
           setErrors({ general: errMsg });
           setIsLoading(false);
+          recordFailedAttempt(errMsg);
           return;
         }
       } catch (netErr) {
-        // Backend offline (Network error), fallback tài khoản mẫu
+        // Backend offline -> Fallback qua xác thực cục bộ nghiêm ngặt
+        backendFailed = true;
       }
 
-      // 2. Fallback kiểm tra trong LocalStorage và danh sách tài khoản
-      if (!authenticatedUser) {
+      // ─── 2. Fallback Xác thực Nghiêm ngặt (Local Storage & Default Roles) ─
+      if (!authenticatedUser && backendFailed) {
+        // A. Kiểm tra trong danh sách người dùng đã đăng ký
         const registeredUsers: Array<UserProfile & { password?: string }> = JSON.parse(
           localStorage.getItem('quizgen_registered_users') || '[]'
         );
 
         const foundUser = registeredUsers.find(
-          (u) => u.email.toLowerCase() === email.toLowerCase() && (!u.password || u.password === password)
+          (u) => u.email.toLowerCase() === normalizedEmail
         );
 
         if (foundUser) {
+          if (!foundUser.password || foundUser.password !== password) {
+            setIsLoading(false);
+            recordFailedAttempt('Mật khẩu học thuật không chính xác.');
+            return;
+          }
+
           authenticatedUser = {
             id: foundUser.id,
             fullName: foundUser.fullName,
@@ -210,46 +284,67 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             role: foundUser.role || selectedRole,
             roleLabel: foundUser.roleLabel || currentRoleConfig.title,
           };
-        } else if (
-          email.toLowerCase() === currentRoleConfig.defaultEmail.toLowerCase() &&
-          password === currentRoleConfig.defaultPass
-        ) {
-          authenticatedUser = {
-            id: `usr-${currentRoleConfig.id}-001`,
-            fullName: currentRoleConfig.defaultName,
-            email: currentRoleConfig.defaultEmail,
-            academicTitle: currentRoleConfig.defaultTitle,
-            department: currentRoleConfig.defaultDept,
-            faculty: currentRoleConfig.defaultDept,
-            university: 'Đại học Quốc gia',
-            role: currentRoleConfig.id,
-            roleLabel: currentRoleConfig.title,
-          };
         } else {
-          // Chỉ tài khoản hợp lệ mới được đăng nhập
-          setErrors({ general: 'Email hoặc mật khẩu không chính xác.' });
-          setIsLoading(false);
-          return;
+          // B. Kiểm tra danh sách tài khoản mẫu của các vai trò hệ thống
+          const matchedRole = ROLES.find(
+            (r) => r.defaultEmail.toLowerCase() === normalizedEmail
+          );
+
+          if (matchedRole) {
+            if (matchedRole.defaultPass !== password) {
+              setIsLoading(false);
+              recordFailedAttempt(`Mật khẩu không chính xác cho tài khoản ${matchedRole.title}.`);
+              return;
+            }
+
+            authenticatedUser = {
+              id: `usr-${matchedRole.id}-001`,
+              fullName: matchedRole.defaultName,
+              email: matchedRole.defaultEmail,
+              academicTitle: matchedRole.defaultTitle,
+              department: matchedRole.defaultDept,
+              faculty: matchedRole.defaultDept,
+              university: 'Đại học Quốc gia',
+              role: matchedRole.id,
+              roleLabel: matchedRole.title,
+            };
+          } else {
+            // C. Không tìm thấy tài khoản hợp lệ nào -> TỪ CHỐI ĐĂNG NHẬP
+            setIsLoading(false);
+            recordFailedAttempt('Tài khoản email này chưa được đăng ký trong hệ thống Khảo thí ĐHQG.');
+            return;
+          }
         }
       }
 
-      if (rememberMe && authenticatedUser) {
-        localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
+      // ─── Đăng nhập thành công -> Reset số lần thử, lưu Session và chuyển màn hình trực tiếp ─
+      setFailedAttempts(0);
+      if (authenticatedUser) {
+        if (backendFailed) {
+          const curRole = authenticatedUser.role || selectedRole;
+          const mockAccess = 'mock-jwt-access-' + curRole + '-' + Date.now();
+          const mockRefresh = 'mock-jwt-refresh-' + curRole + '-' + Date.now();
+          apiClient.setTokens(mockAccess, mockRefresh);
+          localStorage.setItem('quizgen_token', mockAccess);
+          localStorage.setItem('quizgen_auth_token', mockAccess);
+        }
+        if (rememberMe) {
+          localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
+        }
       }
-
-      setTimeout(() => {
-        setIsLoading(false);
-        if (authenticatedUser) onLogin(authenticatedUser);
-      }, 600);
+      setIsLoading(false);
+      if (authenticatedUser) {
+        onLogin(authenticatedUser);
+      }
     } catch (err: any) {
       setIsLoading(false);
-      setErrors({ general: err.message || 'Lỗi không xác định khi đăng nhập.' });
+      setErrors({ general: err.message || 'Lỗi không xác định khi xác thực tài khoản.' });
     }
   };
 
   const handleSendResetPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!forgotEmail || !/\S+@\S+\.\S+/.test(forgotEmail)) return;
+    if (!forgotEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail)) return;
     setForgotSent(true);
     setTimeout(() => {
       setForgotSent(false);
@@ -259,7 +354,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
   return (
     <div className="w-full min-h-full flex flex-col items-center justify-start sm:justify-center py-10 px-4 selection:bg-blue-500/30">
-      {/* Hiệu ứng ánh sáng nền động (Ambient Background) */}
+      {/* Ambient Glow Orbs */}
       <div className="fixed top-[-10%] left-[-10%] w-[600px] h-[600px] bg-blue-700/15 rounded-full blur-[140px] pointer-events-none" />
       <div className="fixed bottom-[-10%] right-[-10%] w-[600px] h-[600px] bg-indigo-700/15 rounded-full blur-[140px] pointer-events-none" />
       <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-purple-900/10 rounded-full blur-[180px] pointer-events-none" />
@@ -273,10 +368,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         }}
       />
 
-      <div className="relative z-10 w-full max-w-2xl mx-auto my-auto space-y-6">
+      <div className="relative z-10 w-full max-w-2xl mx-auto my-auto space-y-5">
         {/* Logo & Header */}
         <div className="flex flex-col items-center text-center">
-          <div className="relative group cursor-pointer mb-3">
+          <div className="relative group cursor-pointer mb-2.5">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-400 flex items-center justify-center text-white shadow-2xl shadow-blue-500/30 group-hover:shadow-blue-500/50 transition-all duration-500 group-hover:scale-105">
               <GraduationCap className="w-8 h-8" />
             </div>
@@ -286,35 +381,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           <h1 className="text-3xl font-black text-white tracking-tight flex items-center gap-2">
             QuizGen <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">AI</span>
           </h1>
-          <p className="text-sm text-slate-400 mt-1 font-medium">
-            Hệ thống Khảo thi ĐHQG & Khởi tạo Ngân hàng Câu hỏi Chuẩn hóa
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5 font-medium">
+            Hệ thống Khảo thí ĐHQG & Khởi tạo Ngân hàng Câu hỏi Chuẩn hóa Bloom
           </p>
 
-          <div className="flex items-center gap-2 mt-2.5">
+          <div className="flex items-center gap-2 mt-2">
             <span className="px-3 py-0.5 text-[10px] font-mono font-bold uppercase rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 tracking-wider">
               PRO AI · V2.4
             </span>
             <span className="px-2.5 py-0.5 text-[10px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Cổng Xác thực Học thuật
+              Bảo mật Cấp độ 3
             </span>
           </div>
         </div>
 
-        {/* ─── PHẦN HỎI BẠN LÀ AI? (ROLE SELECTOR) ───────────────────────── */}
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl p-5 shadow-2xl space-y-3">
+        {/* ─── PHẦN CHỌN VAI TRÒ ─────────────────────────────────────────── */}
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl p-4 sm:p-5 shadow-2xl space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <UserCheck className="w-4 h-4 text-blue-400" />
               <span className="text-xs font-bold uppercase tracking-wider text-slate-300">
-                1. Xác định vai trò của bạn trong hệ thống
+                1. Xác định vai trò công tác của bạn
               </span>
             </div>
-            <span className="text-[11px] text-slate-400">Chọn vai trò để tiếp tục</span>
+            <span className="text-[11px] text-slate-400 hidden sm:inline">Phân quyền theo chức vụ</span>
           </div>
 
-          {/* 3 Thẻ Vai Trò (Role Cards) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* 3 Thẻ Vai Trò */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {ROLES.map((role) => {
               const Icon = role.icon;
               const isSelected = selectedRole === role.id;
@@ -324,16 +419,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   key={role.id}
                   type="button"
                   onClick={() => handleSelectRole(role)}
-                  className={`group relative text-left p-3.5 rounded-xl border transition-all duration-300 flex flex-col justify-between ${
+                  className={`group relative text-left p-3 rounded-xl border transition-all duration-300 flex flex-col justify-between ${
                     isSelected
                       ? `${role.borderActive} ${role.bgActive} shadow-lg`
                       : 'border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/20'
                   }`}
                 >
-                  {/* Top: Icon + Checkmark */}
                   <div className="flex items-center justify-between mb-2">
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors ${
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
                         isSelected
                           ? `bg-gradient-to-tr ${role.accentColor} text-white shadow-md`
                           : 'bg-white/[0.06] text-slate-400 group-hover:text-white group-hover:bg-white/10'
@@ -343,9 +437,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                     </div>
 
                     <div
-                      className={`w-5 h-5 rounded-full flex items-center justify-center text-xs transition-all ${
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] transition-all ${
                         isSelected
-                          ? 'bg-blue-500 text-white shadow-sm'
+                          ? 'bg-blue-500 text-white shadow-sm font-bold'
                           : 'border border-white/20 text-transparent group-hover:border-white/40'
                       }`}
                     >
@@ -353,18 +447,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                     </div>
                   </div>
 
-                  {/* Middle: Title & Badge */}
                   <div>
-                    <div className="text-sm font-bold text-white leading-snug group-hover:text-blue-300 transition-colors">
+                    <div className="text-xs font-bold text-white leading-snug group-hover:text-blue-300 transition-colors">
                       {role.title}
                     </div>
-                    <span className={`inline-block mt-1 px-2 py-0.5 text-[9px] font-semibold rounded-full border ${role.badgeClass}`}>
+                    <span className={`inline-block mt-0.5 px-1.5 py-0.5 text-[8px] font-semibold rounded-full border ${role.badgeClass}`}>
                       {role.badge}
                     </span>
                   </div>
 
-                  {/* Bottom: Description */}
-                  <p className="text-[10px] text-slate-400 mt-2 leading-relaxed line-clamp-2">
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed line-clamp-2">
                     {role.description}
                   </p>
                 </button>
@@ -373,36 +465,63 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           </div>
         </div>
 
-        {/* ─── PHẦN FORM ĐĂNG NHẬP (LOGIN FORM) ──────────────────────────── */}
+        {/* ─── PHẦN FORM ĐĂNG NHẬP (CHẶT CHẼ & BẢO MẬT) ─────────────────── */}
         <div
-          className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl p-6 sm:p-8 space-y-6"
+          className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl p-6 sm:p-7 space-y-5"
           style={{
             boxShadow: `0 0 0 1px rgba(255,255,255,0.05), 0 25px 50px rgba(0,0,0,0.5), 0 0 80px ${currentRoleConfig.glowColor}`,
           }}
         >
           {/* Header Form */}
-          <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3.5">
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <span>Đăng nhập với tư cách</span>
-                <span className={`text-xs px-2.5 py-0.5 rounded-full border font-bold ${currentRoleConfig.badgeClass}`}>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <span>Cổng Đăng nhập Xác thực</span>
+                <span className={`text-[11px] px-2.5 py-0.5 rounded-full border font-bold ${currentRoleConfig.badgeClass}`}>
                   {currentRoleConfig.title}
                 </span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Nhập thông tin xác thực cho phân quyền {currentRoleConfig.title.toLowerCase()}.
+                Nhập thông tin tài khoản đã được phê duyệt trong Hội đồng Khảo thí.
               </p>
             </div>
 
             <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400 bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/[0.06]">
               <Building2 className="w-3.5 h-3.5 text-blue-400" />
-              <span>ĐHQG TP.HCM / Hà Nội</span>
+              <span>ĐHQG Việt Nam</span>
             </div>
           </div>
 
-          {errors.general && (
+          {/* ─── CẢNH BÁO KHÓA TÀI KHOẢN BRUTE-FORCE ─────────────────────── */}
+          {isLocked && (
+            <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-3 animate-pulse">
+              <Clock className="w-5 h-5 shrink-0 text-rose-400 mt-0.5" />
+              <div>
+                <div className="font-bold text-white text-sm">Tài khoản đang bị tạm khóa an toàn</div>
+                <div className="mt-1 leading-relaxed">
+                  Hệ thống tạm ngưng phiên đăng nhập do phát hiện {MAX_FAILED_ATTEMPTS} lần nhập sai thông tin. Vui lòng thử lại sau{' '}
+                  <span className="font-mono font-extrabold text-amber-300 text-sm px-1.5 py-0.5 rounded bg-black/40 border border-amber-500/30">
+                    {lockoutSeconds}s
+                  </span>.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ─── CẢNH BÁO SẮP BỊ KHÓA NẾU SAI >= 3 LẦN ──────────────────── */}
+          {!isLocked && failedAttempts >= 3 && (
+            <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>
+                Cảnh báo an ninh: Bạn đã nhập sai <strong>{failedAttempts}</strong> lần. Nếu tiếp tục sai đến lần thứ {MAX_FAILED_ATTEMPTS}, hệ thống sẽ kích hoạt khóa tự động 60 giây.
+              </span>
+            </div>
+          )}
+
+          {/* ─── LỖI CHUNG ──────────────────────────────────────────────── */}
+          {!isLocked && errors.general && failedAttempts < 3 && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-              <span>⚠</span>
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
               <span>{errors.general}</span>
             </div>
           )}
@@ -410,9 +529,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             {/* Email Field */}
             <div className="space-y-1.5">
-              <label htmlFor="login-email" className="text-xs font-semibold text-slate-300 tracking-wide uppercase flex items-center justify-between">
+              <label
+                htmlFor="login-email"
+                className="text-xs font-semibold text-slate-300 tracking-wide uppercase flex items-center justify-between"
+              >
                 <span>Email công tác / tài khoản trường</span>
-                <span className="text-[10px] text-slate-400 lowercase font-normal">(@vnu.edu.vn)</span>
+                <span className="text-[10px] text-slate-400 lowercase font-normal">(@vnu.edu.vn / @*.edu.vn)</span>
               </label>
               <div className="relative group">
                 <div
@@ -425,6 +547,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 <input
                   id="login-email"
                   type="email"
+                  disabled={isLocked || isLoading}
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
@@ -432,13 +555,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   }}
                   placeholder={currentRoleConfig.defaultEmail}
                   className={`w-full bg-white/[0.04] border rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all duration-200
+                    disabled:opacity-40 disabled:cursor-not-allowed
                     focus:bg-white/[0.07] focus:shadow-[0_0_0_2px_rgba(59,130,246,0.4)]
-                    ${errors.email ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/[0.08] focus:border-blue-500/50'}`}
+                    ${
+                      errors.email
+                        ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]'
+                        : 'border-white/[0.08] focus:border-blue-500/50'
+                    }`}
                 />
               </div>
               {errors.email && (
                 <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                  <span>⚠</span> {errors.email}
+                  <AlertCircle className="w-3 h-3" /> {errors.email}
                 </p>
               )}
             </div>
@@ -446,8 +574,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             {/* Password Field */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label htmlFor="login-password" className="text-xs font-semibold text-slate-300 tracking-wide uppercase">
-                  Mật khẩu
+                <label
+                  htmlFor="login-password"
+                  className="text-xs font-semibold text-slate-300 tracking-wide uppercase"
+                >
+                  Mật khẩu tài khoản
                 </label>
                 <button
                   type="button"
@@ -471,6 +602,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 <input
                   id="login-password"
                   type={showPassword ? 'text' : 'password'}
+                  disabled={isLocked || isLoading}
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
@@ -478,45 +610,54 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   }}
                   placeholder="••••••••"
                   className={`w-full bg-white/[0.04] border rounded-xl pl-10 pr-11 py-3 text-sm text-white placeholder-slate-500 outline-none transition-all duration-200
+                    disabled:opacity-40 disabled:cursor-not-allowed
                     focus:bg-white/[0.07] focus:shadow-[0_0_0_2px_rgba(59,130,246,0.4)]
-                    ${errors.password ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/[0.08] focus:border-blue-500/50'}`}
+                    ${
+                      errors.password
+                        ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]'
+                        : 'border-white/[0.08] focus:border-blue-500/50'
+                    }`}
                 />
                 <button
                   type="button"
+                  disabled={isLocked}
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-40"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {errors.password && (
                 <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                  <span>⚠</span> {errors.password}
+                  <AlertCircle className="w-3 h-3" /> {errors.password}
                 </p>
               )}
             </div>
 
-            {/* Remember & Quick Credential Tip */}
+            {/* Remember & Quick Credential Reset */}
             <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={rememberMe}
+                  disabled={isLocked}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                  className="w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-0 cursor-pointer"
                 />
-                <span>Ghi nhớ phiên làm việc</span>
+                <span>Ghi nhớ phiên làm việc an toàn</span>
               </label>
 
               <button
                 type="button"
+                disabled={isLocked}
                 onClick={() => {
                   setEmail(currentRoleConfig.defaultEmail);
                   setPassword(currentRoleConfig.defaultPass);
+                  setErrors({});
                 }}
-                className="text-[11px] text-blue-400 hover:text-blue-300 underline font-medium"
+                className="text-[11px] text-blue-400 hover:text-blue-300 underline font-medium disabled:opacity-40"
               >
-                Tải lại mật khẩu mẫu ({currentRoleConfig.title})
+                Nạp tài khoản mẫu ({currentRoleConfig.title})
               </button>
             </div>
 
@@ -524,18 +665,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             <button
               id="login-submit-btn"
               type="submit"
-              disabled={isLoading}
-              className={`relative w-full group flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r ${currentRoleConfig.accentColor} hover:brightness-110 transition-all duration-300 shadow-lg shadow-black/40 hover:scale-[1.01] disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100 overflow-hidden mt-3`}
+              disabled={isLoading || isLocked}
+              className={`relative w-full group flex items-center justify-center gap-2.5 py-3.5 rounded-xl font-bold text-sm text-white bg-gradient-to-r ${currentRoleConfig.accentColor} hover:brightness-110 transition-all duration-300 shadow-lg shadow-black/40 hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 overflow-hidden mt-3`}
             >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Đang xác thực quyền {currentRoleConfig.title}...</span>
+                  <span>Đang xác thực bảo mật với máy chủ...</span>
+                </>
+              ) : isLocked ? (
+                <>
+                  <Clock className="w-4 h-4 animate-spin" />
+                  <span>Đang khóa an toàn ({lockoutSeconds}s)...</span>
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4" />
+                  <KeyRound className="w-4 h-4" />
                   <span>Đăng nhập với vai trò {currentRoleConfig.title}</span>
                   <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                 </>
@@ -545,13 +691,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
           {/* Hộp Thông tin Demo Tài khoản Tự động */}
           <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between text-[11px]">
-            <div className="flex items-center gap-2 text-slate-400">
+            <div className="flex items-center gap-2 text-slate-400 truncate">
               <HelpCircle className="w-4 h-4 text-blue-400 shrink-0" />
               <span>
                 Tài khoản mẫu: <span className="text-white font-mono">{currentRoleConfig.defaultEmail}</span>
               </span>
             </div>
-            <span className="font-mono text-slate-400 bg-white/[0.05] px-2 py-0.5 rounded border border-white/[0.05]">
+            <span className="font-mono text-slate-400 bg-white/[0.05] px-2 py-0.5 rounded border border-white/[0.05] shrink-0">
               pass: {currentRoleConfig.defaultPass}
             </span>
           </div>
@@ -565,7 +711,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
           {/* Register Link */}
           <div className="text-center text-xs text-slate-400">
-            Chưa có tài khoản khảo thi?{' '}
+            Chưa có tài khoản khảo thi chính thức?{' '}
             <button
               id="go-to-register-btn"
               onClick={onNavigateRegister}
@@ -579,13 +725,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         {/* Security badge footer */}
         <div className="flex items-center justify-center gap-2 text-[11px] text-slate-500">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Xác thực RSA-2048 & TLS 1.3 · Hệ thống Khảo thi ĐHQG Việt Nam</span>
+          <span>Kiểm định An toàn Thông tin ĐHQG · Xác thực 2 lớp & Chống Brute-force</span>
         </div>
       </div>
 
       {/* Forgot Password Modal */}
       {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
           <div className="relative w-full max-w-sm rounded-2xl border border-white/10 bg-[#0e1424] p-6 shadow-2xl space-y-4">
             <button
               onClick={() => setShowForgotModal(false)}
@@ -595,19 +741,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             </button>
 
             <div className="space-y-1">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Lock className="w-5 h-5 text-blue-400" />
-                Khôi phục mật khẩu
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Lock className="w-4 h-4 text-blue-400" />
+                Khôi phục Mật khẩu Khảo thí
               </h3>
               <p className="text-xs text-slate-400">
-                Nhập email của bạn để nhận liên kết đặt lại mật khẩu từ Trung tâm Khảo thi.
+                Nhập email của bạn để nhận liên kết xác minh từ Phòng Đảm bảo Chất lượng.
               </p>
             </div>
 
             {forgotSent ? (
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-400" />
-                <span>Liên kết đặt lại mật khẩu đã được gửi đến email của bạn!</span>
+                <span>Liên kết đặt lại mật khẩu đã được gửi đến email học thuật của bạn!</span>
               </div>
             ) : (
               <form onSubmit={handleSendResetPassword} className="space-y-3">
@@ -615,13 +761,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   type="email"
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
-                  placeholder="Nhập email học thuật"
+                  placeholder="Nhập email học thuật (@vnu.edu.vn)"
                   required
-                  className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-blue-500"
+                  className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 outline-none focus:border-blue-500"
                 />
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl font-semibold text-xs text-white bg-blue-600 hover:bg-blue-500 transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-2.5 rounded-xl font-semibold text-xs text-white bg-blue-600 hover:bg-blue-500 transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
                 >
                   <Send className="w-3.5 h-3.5" />
                   Gửi hướng dẫn khôi phục

@@ -4,6 +4,96 @@ const url = require('url');
 const PORT = 8000;
 
 // ============================================================================
+// ACADEMIC USER DATABASE (Strict Authentication & In-Memory Store)
+// ============================================================================
+let MOCK_DOCUMENTS = [
+  {
+    id: 'doc-kinh-te-vi-mo-2025',
+    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    size: '14.2 MB',
+    status: 'ready',
+    totalPages: 184,
+    chaptersCount: 5,
+    chapters: [
+      'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
+      'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
+      'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
+      'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
+      'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
+    ],
+    progress: 100,
+    uploadedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'doc-tri-tue-nhan-tao-2026',
+    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    size: '18.6 MB',
+    status: 'ready',
+    totalPages: 240,
+    chaptersCount: 4,
+    chapters: [
+      'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
+      'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
+      'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
+      'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
+    ],
+    progress: 100,
+    uploadedAt: new Date(Date.now() - 86400000).toISOString(),
+  },
+];
+
+const MOCK_USERS_DB = new Map([
+  [
+    'lecturer@vnu.edu.vn',
+    {
+      id: 'lec-001',
+      email: 'lecturer@vnu.edu.vn',
+      password: 'Admin@123456',
+      full_name: 'TS. Nguyễn Văn Hùng',
+      fullName: 'TS. Nguyễn Văn Hùng',
+      academic_title: 'TS.',
+      academicTitle: 'TS.',
+      university: 'Đại học Quốc gia',
+      department: 'Khoa Kinh tế & Quản trị',
+      role: 'lecturer',
+      roleLabel: 'Giảng viên',
+    },
+  ],
+  [
+    'truongbomon@vnu.edu.vn',
+    {
+      id: 'head-001',
+      email: 'truongbomon@vnu.edu.vn',
+      password: 'Admin@123456',
+      full_name: 'PGS. TS. Trần Thị Mai',
+      fullName: 'PGS. TS. Trần Thị Mai',
+      academic_title: 'PGS. TS.',
+      academicTitle: 'PGS. TS.',
+      university: 'Đại học Quốc gia',
+      department: 'Bộ môn Hệ thống Thông tin',
+      role: 'head_of_department',
+      roleLabel: 'Trưởng bộ môn',
+    },
+  ],
+  [
+    'admin.khaothi@vnu.edu.vn',
+    {
+      id: 'admin-001',
+      email: 'admin.khaothi@vnu.edu.vn',
+      password: 'Admin@123456',
+      full_name: 'ThS. Lê Hoàng Nam',
+      fullName: 'ThS. Lê Hoàng Nam',
+      academic_title: 'ThS.',
+      academicTitle: 'ThS.',
+      university: 'Đại học Quốc gia',
+      department: 'Phòng Khảo thi & Đảm bảo Chất lượng',
+      role: 'admin',
+      roleLabel: 'Quản trị Khảo thi',
+    },
+  ],
+]);
+
+// ============================================================================
 // ACADEMIC CURRICULUM DATABASE (Kinh tế Vi mô & Trí tuệ Nhân tạo)
 // ============================================================================
 const CURRICULUM_DATABASE = {
@@ -622,38 +712,60 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Documents
-    if (pathname.startsWith('/api/v1/documents')) {
+    // Documents: Upload động, Xóa & Liệt kê kho tri thức học thuật
+    if (pathname === '/api/v1/documents/upload' || pathname === '/documents/upload') {
+      let uploadedFilename = 'Tai_Lieu_Moi_' + Date.now() + '.docx';
+      if (body) {
+        const match = body.match(/filename="([^"]+)"/i);
+        if (match && match[1]) {
+          try {
+            uploadedFilename = decodeURIComponent(escape(match[1]));
+          } catch (e) {
+            uploadedFilename = match[1];
+          }
+        }
+      }
+      const newDoc = {
+        id: `doc-${Date.now()}`,
+        name: uploadedFilename,
+        size: '3.6 MB',
+        status: 'ready',
+        totalPages: 48,
+        chaptersCount: 4,
+        chapters: [
+          'Chương 1: Tổng quan kiến thức học phần',
+          'Chương 2: Cơ sở lý thuyết và Mô hình phân tích',
+          'Chương 3: Quy trình áp dụng và Bài tập tình huống',
+          'Chương 4: Đánh giá, tổng kết và Hướng dẫn ôn tập',
+        ],
+        progress: 100,
+        uploadedAt: new Date().toISOString(),
+      };
+      MOCK_DOCUMENTS.unshift(newDoc);
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify([
-        {
-          id: 'doc-kinh-te-vi-mo-2025',
-          name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-          status: 'ready',
-          totalPages: 184,
-          chaptersCount: 5,
-          chapters: [
-            'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
-            'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
-            'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
-            'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
-            'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
-          ],
-        },
-        {
-          id: 'doc-tri-tue-nhan-tao-2026',
-          name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-          status: 'ready',
-          totalPages: 240,
-          chaptersCount: 4,
-          chapters: [
-            'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
-            'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
-            'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
-            'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
-          ],
-        },
-      ]));
+      res.end(
+        JSON.stringify({
+          status: 'success',
+          message: `Đã nạp và xử lý RAG vector thành công cho tài liệu: ${uploadedFilename}`,
+          document: newDoc,
+          id: newDoc.id,
+        })
+      );
+      return;
+    }
+
+    if ((pathname.startsWith('/api/v1/documents/documents/') || pathname.startsWith('/documents/documents/')) && req.method === 'DELETE') {
+      const docId = pathname.split('/').pop();
+      MOCK_DOCUMENTS = MOCK_DOCUMENTS.filter((d) => d.id !== docId);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, message: 'Đã xóa tài liệu khỏi kho tri thức' }));
+      return;
+    }
+
+    if (pathname.startsWith('/api/v1/documents') || pathname.startsWith('/documents')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(MOCK_DOCUMENTS));
       return;
     }
 
@@ -664,21 +776,256 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Auth Login
+    // Auth Login (Strict Credential Verification)
     if (pathname === '/api/v1/auth/login') {
+      let username = '';
+      let password = '';
+
+      if (jsonBody && (jsonBody.username || jsonBody.email)) {
+        username = (jsonBody.username || jsonBody.email).trim();
+        password = jsonBody.password || '';
+      } else if (body) {
+        // Parse URL-encoded form data (OAuth2PasswordRequestForm)
+        const params = new URLSearchParams(body);
+        username = (params.get('username') || params.get('email') || '').trim();
+        password = params.get('password') || '';
+      }
+
+      if (!username || !password) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Vui lòng nhập đầy đủ email và mật khẩu.' }));
+        return;
+      }
+
+      const user = MOCK_USERS_DB.get(username.toLowerCase());
+      if (!user) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Email hoặc mật khẩu không chính xác.' }));
+        return;
+      }
+
+      if (user.password !== password) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu không chính xác.' }));
+        return;
+      }
+
+      // Đăng nhập thành công -> Trả về JWT Token và User Profile
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        access_token: 'mock-jwt-academic-token-2026',
-        token_type: 'bearer',
-        user: {
-          id: 'usr-lec-001',
-          full_name: 'TS. Nguyễn Văn Hùng',
-          email: 'lecturer@vnu.edu.vn',
-          role: 'lecturer',
-          department: 'Khoa Kinh tế Quốc tế',
-        },
-      }));
+      res.end(
+        JSON.stringify({
+          access_token: `mock-jwt-${user.id}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${user.role}-${Date.now()}`,
+          token_type: 'bearer',
+          expires_in: 1800,
+          user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            academic_title: user.academic_title,
+            university: user.university,
+            department: user.department,
+            role: user.role,
+            role_label: user.roleLabel,
+          },
+        })
+      );
       return;
+    }
+
+    // Auth Register (Strict Registration & Duplicate Prevention)
+    if (pathname === '/api/v1/auth/register') {
+      const email = (jsonBody.email || '').trim().toLowerCase();
+      const password = jsonBody.password || '';
+      const fullName = (jsonBody.full_name || jsonBody.fullName || '').trim();
+      const academicTitle = jsonBody.academic_title || jsonBody.academicTitle || 'TS.';
+      const university = jsonBody.university || 'Đại học Quốc gia';
+      const department = jsonBody.department || jsonBody.faculty || 'Khoa Kinh tế & Quản trị';
+      const role = jsonBody.role || 'lecturer';
+
+      if (!email || !/\S+@\S+\.\S+/.test(email)) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Định dạng email học thuật không hợp lệ.' }));
+        return;
+      }
+
+      if (MOCK_USERS_DB.has(email)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Tài khoản email trường này đã được đăng ký.' }));
+        return;
+      }
+
+      if (password.length < 8) {
+        res.writeHead(422, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu phải có tối thiểu 8 ký tự theo chuẩn an toàn.' }));
+        return;
+      }
+
+      const newId = `lec-${String(MOCK_USERS_DB.size + 1).padStart(3, '0')}`;
+      const newUser = {
+        id: newId,
+        email: email,
+        password: password,
+        full_name: fullName,
+        fullName: fullName,
+        academic_title: academicTitle,
+        academicTitle: academicTitle,
+        university: university,
+        department: department,
+        role: role,
+        roleLabel: role === 'head_of_department' ? 'Trưởng bộ môn' : role === 'admin' ? 'Quản trị Khảo thi' : 'Giảng viên',
+      };
+
+      MOCK_USERS_DB.set(email, newUser);
+
+      res.writeHead(201, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: newUser.id,
+          email: newUser.email,
+          full_name: newUser.full_name,
+          academic_title: newUser.academic_title,
+          university: newUser.university,
+          department: newUser.department,
+          role: newUser.role,
+          access_token: `mock-jwt-${newUser.id}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${newUser.role}-${Date.now()}`,
+          token_type: 'bearer',
+          is_active: true,
+          created_at: new Date().toISOString(),
+        })
+      );
+      return;
+    }
+
+    // Auth Refresh Token
+    if (pathname === '/api/v1/auth/refresh') {
+      let refreshToken = '';
+      if (body) {
+        try {
+          const parsed = JSON.parse(body);
+          refreshToken = parsed.refresh_token || '';
+        } catch (e) {}
+      }
+      let role = 'lecturer';
+      if (refreshToken.includes('head_of_department')) role = 'head_of_department';
+      else if (refreshToken.includes('admin')) role = 'admin';
+
+      let user = Array.from(MOCK_USERS_DB.values()).find((u) => u.role === role);
+      if (!user) user = MOCK_USERS_DB.get('lecturer@vnu.edu.vn');
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          access_token: `mock-jwt-access-${role}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${role}-${Date.now()}`,
+          token_type: 'bearer',
+          expires_in: 1800,
+          user: user,
+        })
+      );
+      return;
+    }
+
+    // Auth Me (Fetch current session info via Bearer token for F5 reload)
+    if (pathname === '/api/v1/auth/me' || pathname === '/me') {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Token không hợp lệ hoặc thiếu Bearer header.' }));
+        return;
+      }
+
+      const token = authHeader.slice(7);
+      let foundUser = null;
+      for (const u of MOCK_USERS_DB.values()) {
+        if (token.includes(u.id) || (u.role && token.includes(u.role))) {
+          foundUser = u;
+          break;
+        }
+      }
+      if (!foundUser) {
+        foundUser = MOCK_USERS_DB.get('lecturer@vnu.edu.vn') || Array.from(MOCK_USERS_DB.values())[0];
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          id: foundUser.id,
+          email: foundUser.email,
+          full_name: foundUser.full_name,
+          academic_title: foundUser.academic_title,
+          university: foundUser.university,
+          department: foundUser.department,
+          role: foundUser.role,
+          is_active: true,
+          created_at: new Date().toISOString(),
+        })
+      );
+      return;
+    }
+
+    // Auth Logout
+    if (pathname === '/api/v1/auth/logout') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', message: 'Đăng xuất thành công, token đã bị thu hồi.' }));
+      return;
+    }
+
+        // Exams Export (DOCX, PDF with OMR, ZIP Bundle, QTI 2.1)
+    if (
+      pathname === '/api/v1/exams/export' ||
+      pathname === '/exams/export' ||
+      pathname === '/export/unified' ||
+      pathname === '/api/v1/exams/export/omr' ||
+      pathname === '/export/omr' ||
+      pathname === '/api/v1/exams/export/bundle' ||
+      pathname === '/exams/export/bundle'
+    ) {
+      const { spawnSync } = require('child_process');
+      const fs = require('fs');
+      const os = require('os');
+      const pathModule = require('path');
+
+      const format = (jsonBody.format || (pathname.includes('omr') ? 'pdf' : pathname.includes('bundle') ? 'zip' : 'docx')).toLowerCase();
+      const ext = (format === 'zip' || format === 'bundle' || format === 'qti') ? 'zip' : format;
+      const contentType =
+        format === 'pdf'
+          ? 'application/pdf'
+          : format === 'zip' || format === 'qti' || format === 'bundle'
+          ? 'application/zip'
+          : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+      const tmpIn = pathModule.join(os.tmpdir(), `quizgen_req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.json`);
+      const tmpOut = pathModule.join(os.tmpdir(), `quizgen_out_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`);
+
+      try {
+        fs.writeFileSync(tmpIn, JSON.stringify(jsonBody), 'utf-8');
+        const cliPath = pathModule.join(__dirname, 'export_exam_cli.py');
+        const resCli = spawnSync('python', [cliPath, tmpIn, tmpOut], { encoding: 'utf-8', timeout: 30000 });
+
+        if (fs.existsSync(tmpOut) && fs.statSync(tmpOut).size > 0) {
+          const fileData = fs.readFileSync(tmpOut);
+          try { fs.unlinkSync(tmpIn); } catch (e) {}
+          try { fs.unlinkSync(tmpOut); } catch (e) {}
+
+          const filename = `DeThi_QuizGen_${Date.now()}.${ext}`;
+          res.writeHead(200, {
+            'Content-Type': contentType,
+            'Content-Disposition': `attachment; filename="${filename}"`,
+            'Content-Length': fileData.length,
+          });
+          res.end(fileData);
+          return;
+        } else {
+          console.error('[MOCK GATEWAY] Export CLI failed:', resCli.stderr || resCli.stdout);
+        }
+      } catch (err) {
+        console.error('[MOCK GATEWAY] Error generating export:', err);
+      } finally {
+        try { if (fs.existsSync(tmpIn)) fs.unlinkSync(tmpIn); } catch (e) {}
+        try { if (fs.existsSync(tmpOut)) fs.unlinkSync(tmpOut); } catch (e) {}
+      }
     }
 
     // Fallback 200 JSON

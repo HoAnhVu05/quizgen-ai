@@ -21,6 +21,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { TextbookFile, ScreenId } from '../types';
+import apiClient from '../services/apiClient';
 
 interface TextbookUploadScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -92,7 +93,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       setIsLoadingDocuments(true);
     }
     try {
-      const res = await fetch(`${API_BASE}/documents/documents`);
+      const res = await apiClient.fetch(`${API_BASE}/documents/documents`);
       if (!res.ok) {
         throw new Error(await parseErrorMessage(res));
       }
@@ -150,7 +151,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     }
     setIsUploading(true);
     try {
-    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('access_token');
+    const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -158,7 +159,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       const formData = new FormData();
       formData.append('file', file);
 
-      const res = await fetch(`${API_BASE}/documents/upload`, {
+      const res = await apiClient.fetch(`${API_BASE}/documents/upload`, {
         method: 'POST',
         headers,
         body: formData,
@@ -183,7 +184,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     setInspectingChunks([]);
     setIsFetchingChunks(true);
     try {
-      const res = await fetch(`${API_BASE}/rag/documents/${book.id}/chunks?limit=20`);
+      const res = await apiClient.fetch(`${API_BASE}/rag/documents/${book.id}/chunks?limit=20`);
       if (!res.ok) {
         throw new Error(await parseErrorMessage(res));
       }
@@ -215,7 +216,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
   const handleDelete = async (id: string, name: string) => {
     try {
-      const res = await fetch(`${API_BASE}/documents/documents/${id}`, {
+      const res = await apiClient.fetch(`${API_BASE}/documents/documents/${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -483,7 +484,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
                       {book.status === 'ready' ? (
                         <button
-                          onClick={() => onNavigate('generate')}
+                          onClick={() => {
+                            localStorage.setItem('quizgen_selected_book_id', book.id);
+                            onNavigate('generate');
+                          }}
                           className="px-3 py-1.5 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors shadow-sm"
                         >
                           Sinh câu hỏi AI
