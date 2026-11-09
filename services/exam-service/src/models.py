@@ -69,7 +69,7 @@ class QuestionDB(Base):
     explanation = Column(Text, nullable=True)
     confidence_score = Column(Integer, default=95)
     status = Column(String(20), default="pending", index=True) # pending, approved, rejected
-    created_by = Column(String(50), default="lec-001")
+    created_by = Column(String(50), default="lecturer")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -79,7 +79,7 @@ class ExamDB(Base):
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
 
     id = Column(String(50), primary_key=True, index=True)
-    user_id = Column(String(50), nullable=False, default="lec-001", index=True)
+    user_id = Column(String(50), nullable=False, default="lecturer", index=True)
     title = Column(String(255), nullable=False)
     subject = Column(String(150), nullable=False)
     faculty = Column(String(150), default="Khoa Kinh tế & Quản trị")
@@ -119,7 +119,7 @@ class SystemActivityDB(Base):
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
 
     id = Column(String(50), primary_key=True)
-    user_id = Column(String(50), nullable=False, default="lec-001", index=True)
+    user_id = Column(String(50), nullable=False, default="lecturer", index=True)
     action_type = Column(String(100), nullable=False) # export_exam, approve_question, extract_textbook
     title = Column(String(255), nullable=False)
     detail = Column(Text, nullable=False)
@@ -207,7 +207,7 @@ class QuestionCreateSchema(BaseModel):
     confidence_score: Optional[int] = 95
     confidenceScore: Optional[int] = None
     status: Optional[str] = "pending"
-    created_by: Optional[str] = "lec-001"
+    created_by: Optional[str] = None
 
     def get_question_text(self) -> str:
         return self.question or self.question_text or ""
@@ -295,7 +295,7 @@ class QuestionStatusUpdate(BaseModel):
 class BatchApproveRequest(BaseModel):
     questionIds: Optional[List[str]] = None
     question_ids: Optional[List[str]] = None
-    lecturerId: Optional[str] = "lec-001"
+    lecturerId: Optional[str] = None
 
     def get_ids(self) -> List[str]:
         return self.questionIds or self.question_ids or []
@@ -626,7 +626,7 @@ class ExportQtiRequest(BaseModel):
 
 class CreateExamRecordRequest(BaseModel):
     id: Optional[str] = None
-    user_id: Optional[str] = "lec-001"
+    user_id: Optional[str] = None
     userId: Optional[str] = None
     title: Optional[str] = None
     examTitle: Optional[str] = None
@@ -654,7 +654,7 @@ class CreateExamRecordRequest(BaseModel):
     variants: Optional[List[Dict[str, Any]]] = None
 
     def get_user_id(self) -> str:
-        return self.userId or self.user_id or "lec-001"
+        return self.userId or self.user_id
 
     def get_title(self) -> str:
         return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"

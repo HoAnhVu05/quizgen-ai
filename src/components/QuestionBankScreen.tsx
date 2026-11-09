@@ -89,7 +89,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
   const handleDownloadStandaloneOmr = async () => {
     try {
-      const response = await fetch(`${API_BASE}/exams/export/omr`, {
+      const response = await apiClient.fetch(`${API_BASE}/exams/export/omr`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

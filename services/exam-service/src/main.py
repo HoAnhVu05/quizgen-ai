@@ -45,6 +45,8 @@ from .exporters.qti_exporter import QTIExporter
 from .exporters.bundle_exporter import ExamBundleExporter
 from .shuffler import ExamShuffler
 from .cache import RedisCacheClient
+from .auth import get_current_user_id, get_optional_user_id, get_current_user
+
 
 app = FastAPI(
     title="QuizGen AI - Exam & Question Bank Service",
@@ -139,7 +141,7 @@ def record_question_audit_log(
     entry = QuestionAuditLogDB(
         id=log_id,
         question_id=question_id,
-        lecturer_id=lecturer_id or "lec-001",
+        lecturer_id=lecturer_id or "lecturer",
         action=action,
         previous_state=previous_state,
         new_state=new_state,
@@ -547,7 +549,11 @@ def list_questions(
 
 
 @app.post("/questions", status_code=status.HTTP_201_CREATED)
-def create_question(payload: QuestionCreateSchema, db: Session = Depends(get_db)):
+def create_question(
+    payload: QuestionCreateSchema,
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     qid = payload.id or f"q-{uuid.uuid4().hex[:8]}"
     options_data = [opt.dict() for opt in payload.options]
 
@@ -564,7 +570,7 @@ def create_question(payload: QuestionCreateSchema, db: Session = Depends(get_db)
         explanation=payload.explanation or "",
         confidence_score=payload.get_confidence_score(),
         status=payload.status or "pending",
-        created_by=payload.created_by or "lec-001"
+        created_by=payload.created_by or current_user_id
     )
     db.add(new_q)
     db.commit()
@@ -671,7 +677,7 @@ def update_question(
         summary = "Hiệu chỉnh và xác nhận nội dung câu hỏi"
 
     # 5. Lưu vào question_audit_logs
-    lecturer = payload.get_lecturer_id() or x_user_id or "lec-001"
+    lecturer = payload.get_lecturer_id() or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
@@ -723,7 +729,7 @@ def update_status(
         act_action = "status_change"
         summary = f"Chuyển trạng thái câu hỏi từ '{old_status}' sang '{payload.status}'"
 
-    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or "lec-001"
+    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
@@ -792,7 +798,7 @@ def review_question(
         field_changes["bloomLevel"] = {"old": old_bloom, "new": new_bloom}
         q.bloom_level = new_bloom
 
-    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or "lec-001"
+    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     reason = payload.edit_reason or payload.editReason or payload.comment or "Đánh giá chuyên môn từ giảng viên"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
@@ -830,7 +836,7 @@ def batch_approve(
 ):
     """[SCRUM-58] Phê duyệt hàng loạt câu hỏi và lưu vết audit log cho từng câu hỏi"""
     target_ids = payload.get_ids()
-    lecturer = payload.lecturerId or x_user_id or "lec-001"
+    lecturer = payload.lecturerId or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
@@ -1058,7 +1064,11 @@ def export_qti(req: ExportQtiRequest, db: Session = Depends(get_db)):
 @app.post("/export/unified")
 @app.post("/export")
 @app.post("/exams/export")
-def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
+def unified_export(
+    req: UnifiedExportRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
     if not questions:
         raise HTTPException(status_code=400, detail="Danh sách câu hỏi trống.")
@@ -1070,7 +1080,7 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
         act_id = f"act-{uuid.uuid4().hex[:8]}"
         db.add(SystemActivityDB(
             id=act_id,
-            user_id="lec-001",
+            user_id=current_user_id,
             action_type="export_exam",
             title=f"Xuất bản đề thi ({export_fmt.upper()})",
             detail=f"{req.subjectName or 'Đề thi'} - {len(questions)} câu - {req.examCodeCount or 1} mã đề",
@@ -1175,9 +1185,13 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
 @app.post("/exams/save", status_code=status.HTTP_201_CREATED)
 @app.post("/save", status_code=status.HTTP_201_CREATED)
 @app.post("/exams", status_code=status.HTTP_201_CREATED)
-def save_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get_db)):
+def save_exam_record(
+    payload: CreateExamRecordRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     eid = payload.id or f"exam-{uuid.uuid4().hex[:8]}"
-    user_id = payload.get_user_id()
+    user_id = payload.get_user_id() or current_user["user_id"]
     title = payload.get_title()
     subject = payload.get_subject()
     faculty = payload.get_faculty()
@@ -1240,7 +1254,7 @@ def save_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get
         exam_audit = ExamAuditLogDB(
             id=f"exam-audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}",
             exam_id=eid,
-            user_id=payload.get_user_id(),
+            user_id=user_id,
             action="create",
             details={"title": payload.title, "exam_codes": payload.get_exam_codes(), "question_count": len(payload.get_question_ids())},
             performed_at=datetime.utcnow()
@@ -1264,8 +1278,6 @@ def save_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get
         ))
     except Exception:
         pass
-    except Exception:
-        pass
 
     db.commit()
     db.refresh(new_exam)
@@ -1279,14 +1291,18 @@ def save_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get
 
 
 @app.get("/exams")
+@app.get("/api/v1/exams")
 def list_exams(
-    user_id: Optional[str] = Query("lec-001"),
+    user_id: Optional[str] = Query(None, description="Lọc theo mã định danh giảng viên"),
     limit: int = Query(20, ge=1, le=100),
+    current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(ExamDB)
-    if user_id:
-        query = query.filter(ExamDB.user_id == user_id)
+    role = current_user.get("role", "lecturer")
+    target_user_id = user_id or (current_user["user_id"] if role == "lecturer" else None)
+    if target_user_id:
+        query = query.filter(ExamDB.user_id == target_user_id)
     exams = query.order_by(desc(ExamDB.created_at)).limit(limit).all()
     return [format_exam_response(e) for e in exams]
 
@@ -1297,6 +1313,120 @@ def get_exam(exam_id: str, db: Session = Depends(get_db)):
     if not exam:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi gói đề thi.")
     return format_exam_response(exam)
+
+@app.get("/exams/{exam_id}/download")
+@app.get("/api/v1/exams/{exam_id}/download")
+def download_saved_exam(
+    exam_id: str,
+    format: str = Query("zip", pattern="^(zip|pdf|docx|qti)$"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Tải lại bộ đề thi đã lưu trữ theo định dạng yêu cầu (zip, pdf, docx, qti)."""
+    exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài thi với ID tương ứng.")
+
+    role = current_user.get("role", "lecturer")
+    if role == "lecturer" and exam.user_id != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền tải đề thi của giảng viên khác.")
+
+    q_ids = exam.selected_question_ids or []
+    questions = _resolve_questions(None, q_ids, db)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Không tìm thấy câu hỏi thuộc gói đề thi này.")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_fmt = format.lower()
+    exam_code = (exam.exam_codes[0] if exam.exam_codes else "101")
+
+    if export_fmt in ("zip", "bundle"):
+        zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+            exam_title=exam.title,
+            subject=exam.subject,
+            questions=questions,
+            university=exam.university or "ĐẠI HỌC QUỐC GIA",
+            faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
+            duration_minutes=exam.duration_minutes or 60,
+            exam_code_count=len(exam.exam_codes) if exam.exam_codes else 4,
+            base_exam_code=int(exam_code) if exam_code.isdigit() else 101,
+            include_answer_key=True,
+            include_explanation=True,
+            include_omr_sheet=True
+        )
+        filename = f"Bo_De_Thi_{exam_id}_{timestamp}.zip"
+        return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif export_fmt == "pdf":
+        pdf_bytes = PDFExamExporter.generate_pdf(
+            exam_title=exam.title,
+            subject=exam.subject,
+            exam_code=exam_code,
+            questions=questions,
+            university=exam.university or "ĐẠI HỌC QUỐC GIA",
+            faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
+            duration_minutes=exam.duration_minutes or 60,
+            include_answer_key=True,
+            include_explanation=False,
+            include_omr_sheet=True
+        )
+        filename = f"De_Thi_{exam_code}_{timestamp}.pdf"
+        return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif export_fmt == "qti":
+        zip_bytes = QTIExporter.export_qti21_package_zip(title=exam.title, questions=questions)
+        filename = f"Goi_LMS_QTI_2.1_{exam_code}_{timestamp}.zip"
+        return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    else:
+        docx_bytes = WordExamExporter.generate_docx(
+            exam_title=exam.title,
+            subject=exam.subject,
+            exam_code=exam_code,
+            questions=questions,
+            university=exam.university or "ĐẠI HỌC QUỐC GIA",
+            faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
+            duration_minutes=exam.duration_minutes or 60,
+            include_answer_key=True,
+            include_explanation=False
+        )
+        filename = f"De_Thi_{exam_code}_{timestamp}.docx"
+        return Response(content=docx_bytes, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.delete("/exams/{exam_id}")
+@app.delete("/api/v1/exams/{exam_id}")
+def delete_saved_exam(
+    exam_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Xóa bản ghi gói đề thi với kiểm soát phân quyền (RBAC)."""
+    exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài thi cần xóa.")
+
+    role = current_user.get("role", "lecturer")
+    if role == "lecturer" and exam.user_id != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa đề thi của giảng viên khác.")
+
+    try:
+        exam_audit = ExamAuditLogDB(
+            id=f"exam-audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}",
+            exam_id=exam_id,
+            user_id=current_user["user_id"],
+            action="delete",
+            details={"title": exam.title, "subject": exam.subject},
+            performed_at=datetime.utcnow()
+        )
+        db.add(exam_audit)
+    except Exception:
+        pass
+
+    db.delete(exam)
+    db.commit()
+    return {"status": "success", "message": f"Đã xóa thành công bài thi {exam_id}."}
+
 
 
 @app.get("/exams/analytics")
