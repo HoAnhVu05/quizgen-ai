@@ -1,5 +1,5 @@
 export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank';
-export type AuthScreenId = 'login' | 'register';
+export type AuthScreenId = 'login' | 'register' | 'profile_setup';
 
 export type UserRole = 'lecturer' | 'head_of_department' | 'admin';
 
@@ -13,6 +13,7 @@ export interface UserProfile {
   university?: string;
   role: UserRole;
   roleLabel?: string;
+  profileCompleted?: boolean;
 }
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';
