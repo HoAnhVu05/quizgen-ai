@@ -37,6 +37,7 @@ MANIFEST
 # Local databases & storage
 data/
 chroma_data/
+backups/
 *.sqlite
 *.sqlite3
 client-web/
