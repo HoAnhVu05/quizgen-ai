@@ -16,7 +16,10 @@ import {
   X,
   Settings2,
   Check,
-  Archive
+  Archive,
+  History,
+  Clock,
+  FileDown
 } from 'lucide-react';
 import { Question, BloomLevel, ExamExportConfig } from '../types';
 import apiClient from '../services/apiClient';
@@ -35,6 +38,57 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<'docx' | 'pdf' | 'qti' | 'zip'>('zip');
   const [isExporting, setIsExporting] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [savedExams, setSavedExams] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  const fetchSavedExams = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/exams`);
+      if (res.ok) {
+        const data = await res.json();
+        setSavedExams(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy danh sách đề thi đã lưu:', err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const handleDownloadSavedExam = async (examId: string, format: string, examTitle: string) => {
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/exams/${examId}/download?format=${format}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = (format === 'zip' || format === 'qti') ? 'zip' : format;
+      const safeTitle = (examTitle || 'DeThi').replace(/[^a-zA-Z0-9_À-ɏẠ-ỹ]/g, '_');
+      a.download = `${safeTitle}_${Date.now()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      onShowToast('success', 'Tải lại đề thi thành công!', `Đã tải đề thi định dạng ${format.toUpperCase()}.`);
+    } catch (err) {
+      onShowToast('error', 'Lỗi tải đề thi', 'Không thể tải đề thi từ máy chủ.');
+    }
+  };
+
+  const handleDeleteSavedExam = async (examId: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa bài thi này khỏi lịch sử lưu trữ?')) return;
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/exams/${examId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSavedExams((prev) => prev.filter((e) => e.id !== examId));
+      onShowToast('success', 'Đã xóa bài thi!', 'Bài thi đã được gỡ bỏ khỏi hệ thống khảo thí.');
+    } catch (err) {
+      onShowToast('error', 'Lỗi xóa bài thi', 'Bạn không có quyền hoặc có lỗi xảy ra.');
+    }
+  };
 
   // Exam Builder Config
   const [examConfig, setExamConfig] = useState<ExamExportConfig>({
@@ -226,6 +280,16 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
         </div>
 
         <div className="flex items-center space-x-3">
+          <button
+            onClick={() => {
+              setShowHistoryModal(true);
+              fetchSavedExams();
+            }}
+            className="flex items-center space-x-2 px-3.5 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white transition-all shadow-sm"
+          >
+            <History className="w-3.5 h-3.5 text-blue-400" />
+            <span>Lịch sử đề thi đã lưu</span>
+          </button>
           <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">
             {approvedQuestions.length} câu đã thẩm định
           </span>
@@ -454,6 +518,142 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
             >
               <X className="w-4 h-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 5. MODAL: Lịch sử đề thi đã lưu & xuất bản */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl border border-white/[0.1] overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-white/[0.06] flex items-center justify-between bg-white/[0.02]">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                  <History className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-sm">
+                    Kho Lưu trữ Lịch sử Đề thi đã Xuất bản
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Xem lại cấu trúc, tải lại các mã đề (.zip, .pdf kèm OMR, .docx) hoặc quản lý bài thi đã lưu
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.08] transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-3.5 flex-1 text-xs">
+              {isLoadingHistory ? (
+                <div className="py-16 text-center text-slate-400">
+                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                  <span>Đang tải danh sách đề thi từ máy chủ...</span>
+                </div>
+              ) : savedExams.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 glass-card rounded-xl border border-white/[0.06]">
+                  <Archive className="w-10 h-10 text-slate-500 mx-auto mb-3" />
+                  <p className="font-semibold text-slate-300">Chưa có đề thi nào được lưu trữ</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Hãy tích chọn các câu hỏi đã thẩm định và bấm xuất bản đề thi để tự động lưu vào CSDL.
+                  </p>
+                </div>
+              ) : (
+                savedExams.map((exam) => (
+                  <div
+                    key={exam.id}
+                    className="glass-card p-4 rounded-xl border border-white/[0.08] hover:border-white/20 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className="font-bold text-white text-sm truncate">
+                          {exam.title || 'ĐỀ THI KẾT THÚC HỌC PHẦN'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                          {exam.subject || 'Môn học'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                          {exam.examCodes?.length || 1} mã đề ({exam.examCodes?.join(', ') || '101'})
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-3 text-slate-400 text-[11px] font-medium flex-wrap">
+                        <span>{exam.university || 'ĐẠI HỌC QUỐC GIA'}</span>
+                        <span>•</span>
+                        <span>{exam.faculty || 'Khoa Kinh tế & Quản trị'}</span>
+                        <span>•</span>
+                        <span>{exam.selectedQuestionIds?.length || 0} câu hỏi</span>
+                        <span>•</span>
+                        <span>{exam.durationMinutes || 60} phút</span>
+                      </div>
+                    </div>
+
+                    {/* Quick Download Actions */}
+                    <div className="flex items-center space-x-1.5 shrink-0">
+                      <button
+                        onClick={() => handleDownloadSavedExam(exam.id, 'zip', exam.title)}
+                        title="Tải trọn bộ ZIP gồm tất cả các mã đề, OMR 50 câu và ma trận đáp án"
+                        className="flex items-center space-x-1 px-2.5 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-semibold transition-all"
+                      >
+                        <Archive className="w-3.5 h-3.5" />
+                        <span>ZIP</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDownloadSavedExam(exam.id, 'pdf', exam.title)}
+                        title="Tải đề thi PDF kèm phiếu OMR 50 câu"
+                        className="flex items-center space-x-1 px-2.5 py-1.5 bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 rounded-lg text-xs font-semibold transition-all"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>PDF</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDownloadSavedExam(exam.id, 'docx', exam.title)}
+                        title="Tải đề thi Word (.docx)"
+                        className="flex items-center space-x-1 px-2.5 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-xs font-semibold transition-all"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>Word</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDownloadSavedExam(exam.id, 'qti', exam.title)}
+                        title="Tải gói Canvas/Moodle QTI 2.1"
+                        className="flex items-center space-x-1 px-2.5 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 rounded-lg text-xs font-semibold transition-all"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>QTI</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteSavedExam(exam.id)}
+                        title="Xóa bài thi khỏi lịch sử"
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors border border-transparent hover:border-rose-500/20"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t border-white/[0.06] bg-white/[0.02] flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                Tổng cộng: <strong className="text-white font-mono">{savedExams.length}</strong> bài thi đã lưu trữ
+              </span>
+              <button
+                onClick={() => setShowHistoryModal(false)}
+                className="px-4 py-2 bg-white/[0.08] hover:bg-white/[0.12] text-white rounded-xl text-xs font-semibold transition-all"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
