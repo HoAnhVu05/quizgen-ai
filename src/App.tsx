@@ -184,7 +184,7 @@ export const App: React.FC = () => {
 
   const handleGenerateSuccess = (newQuestions?: Question[]) => {
     if (newQuestions && newQuestions.length > 0) {
-      setQuestions((prev) => [...newQuestions, ...prev]);
+      setQuestions(newQuestions);
     }
     setCurrentScreen('review');
   };

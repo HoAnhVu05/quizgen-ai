@@ -473,4 +473,3 @@ def get_operational_diagnostics():
             "mode": "redis" if cache.is_connected else "in-memory-fallback"
         }
     }
-    }

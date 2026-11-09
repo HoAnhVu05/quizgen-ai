@@ -151,7 +151,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     }
     setIsUploading(true);
     try {
-    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('access_token');
+    const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
@@ -484,7 +484,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
                       {book.status === 'ready' ? (
                         <button
-                          onClick={() => onNavigate('generate')}
+                          onClick={() => {
+                            localStorage.setItem('quizgen_selected_book_id', book.id);
+                            onNavigate('generate');
+                          }}
                           className="px-3 py-1.5 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors shadow-sm"
                         >
                           Sinh câu hỏi AI

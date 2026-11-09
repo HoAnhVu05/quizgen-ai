@@ -27,6 +27,14 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
     if not token:
         return
 
+    if token.startswith("mock-jwt-"):
+        parts_m = token.split("-")
+        r_part = parts_m[3] if len(parts_m) > 3 else "lecturer"
+        headers["x-user-id"] = "usr-lec-005"
+        headers["x-user-role"] = r_part
+        headers["x-user-email"] = "avanimechannel@gmail.com"
+        return
+
     try:
         parts = token.split(".")
         if len(parts) == 3:

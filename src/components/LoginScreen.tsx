@@ -320,18 +320,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       // ─── Đăng nhập thành công -> Reset số lần thử, lưu Session và chuyển màn hình trực tiếp ─
       setFailedAttempts(0);
       if (authenticatedUser) {
-        const curRole = authenticatedUser.role || selectedRole;
-        apiClient.setTokens(
-          `mock-jwt-access-${curRole}-${Date.now()}`,
-          `mock-jwt-refresh-${curRole}-${Date.now()}`
-        );
-        localStorage.setItem('quizgen_token', `mock-jwt-access-${curRole}-${Date.now()}`);
-        localStorage.setItem('quizgen_auth_token', `mock-jwt-access-${curRole}-${Date.now()}`);
+        if (backendFailed) {
+          const curRole = authenticatedUser.role || selectedRole;
+          const mockAccess = 'mock-jwt-access-' + curRole + '-' + Date.now();
+          const mockRefresh = 'mock-jwt-refresh-' + curRole + '-' + Date.now();
+          apiClient.setTokens(mockAccess, mockRefresh);
+          localStorage.setItem('quizgen_token', mockAccess);
+          localStorage.setItem('quizgen_auth_token', mockAccess);
+        }
         if (rememberMe) {
           localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
         }
       }
-
       setIsLoading(false);
       if (authenticatedUser) {
         onLogin(authenticatedUser);

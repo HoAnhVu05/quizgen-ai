@@ -140,7 +140,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   onGenerateSuccess,
   onShowToast,
 }) => {
-  const [selectedBook, setSelectedBook] = useState('');
+  const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [bloomDistribution, setBloomDistribution] = useState({
     nhanBiet: 4,
@@ -212,7 +212,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
       if (uniqueDocs.length > 0) {
         setDocuments(uniqueDocs);
-        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
+        const savedId = localStorage.getItem('quizgen_selected_book_id');
+        if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+          setSelectedBook(savedId);
+        } else {
+          setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
+        }
         setIsUsingFallback(false);
       } else {
         setDocuments(FALLBACK_DOCUMENTS);
@@ -259,6 +264,7 @@ setDocuments([]);
 
   const handleSelectBook = (bookId: string) => {
     setSelectedBook(bookId);
+    localStorage.setItem('quizgen_selected_book_id', bookId);
     const available = chaptersByDocument[bookId] || FALLBACK_CHAPTERS[bookId] || [];
     if (available.length > 0) {
       setSelectedChapters([available[0]]);
@@ -394,6 +400,8 @@ setDocuments([]);
       const payload = {
         documentId: selectedBook,
         document_id: selectedBook,
+        document_name: selectedDoc?.name || '',
+        documentName: selectedDoc?.name || '',
         chapters: selectedChapters,
         bloomMatrix: bloomDistribution,
         bloom_matrix: bloomDistribution,
