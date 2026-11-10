@@ -6,11 +6,11 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     
     # Downstream Microservices URLs
-    AUTH_SERVICE_URL: str = "http://localhost:8001"
-    DOCUMENT_SERVICE_URL: str = "http://localhost:8002"
-    RAG_SERVICE_URL: str = "http://localhost:8003"
-    AI_SERVICE_URL: str = "http://localhost:8004"
-    EXAM_SERVICE_URL: str = "http://localhost:8005"
+    AUTH_SERVICE_URL: str = "http://127.0.0.1:8001"
+    DOCUMENT_SERVICE_URL: str = "http://127.0.0.1:8002"
+    RAG_SERVICE_URL: str = "http://127.0.0.1:8003"
+    AI_SERVICE_URL: str = "http://127.0.0.1:8004"
+    EXAM_SERVICE_URL: str = "http://127.0.0.1:8005"
 
     class Config:
         env_file = ".env"
