@@ -45,6 +45,9 @@ export interface Question {
   confidenceScore: number;
   status: QuestionStatus;
   createdAt: string;
+  pageNumber?: number;
+  sourceChunk?: SourceChunk;
+  citation?: string;
 }
 
 export interface TextbookFile {
@@ -66,6 +69,8 @@ export interface ToastMessage {
   message: string;
 }
 
+export type ExamExportFormat = 'docx' | 'pdf' | 'qti' | 'omr' | 'zip';
+
 export interface ExamExportConfig {
   universityName: string;
   facultyName: string;
@@ -73,9 +78,11 @@ export interface ExamExportConfig {
   examTitle: string;
   durationMinutes: number;
   examCodeCount: number; // e.g. 4 mã đề (101, 102, 103, 104)
+  examCode?: string;
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   includeAnswerKey: boolean;
   includeExplanation: boolean;
-  format: 'docx' | 'pdf' | 'qti';
+  format: ExamExportFormat;
+  includeOmrSheet?: boolean;
 }
