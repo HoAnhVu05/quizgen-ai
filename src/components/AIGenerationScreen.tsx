@@ -299,7 +299,10 @@ setDocuments([]);
     // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
-        const res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        let res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        if (!res.ok) {
+          res = await apiClient.fetch(`${API_BASE}/documents/${selectedBook}`);
+        }
         if (!res.ok) {
           throw new Error(await parseErrorMessage(res));
         }
@@ -309,12 +312,12 @@ setDocuments([]);
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
           setSelectedChapters([chapters[0]]);
         } else {
-          const defaultCh = ['Chương 1: Nội dung tổng quát'];
+          const defaultCh = ['Toàn bộ nội dung tài liệu'];
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
           setSelectedChapters(defaultCh);
         }
       } catch {
-        const defaultCh = ['Chương 1: Nội dung tổng quát'];
+        const defaultCh = ['Toàn bộ nội dung tài liệu'];
         setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
         setSelectedChapters(defaultCh);
       }
@@ -369,7 +372,7 @@ setDocuments([]);
     setGenerationStep('Đang kết nối API Gateway và truy xuất ngữ cảnh RAG từ tài liệu...');
 
     const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const defaultChapter = selectedChapters[0] || 'Chương tổng hợp';
 
     // Timeout Controller (60 giây cho các đề thi lớn)
@@ -518,7 +521,7 @@ setDocuments([]);
     setIsGenerating(false);
     setGenerationError(null);
     const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
     onShowToast(
       'info',
@@ -558,19 +561,11 @@ setDocuments([]);
 
                 <div className="space-y-2 pt-2">
                   <button
-                    onClick={handleUseFallbackQuestions}
+                    onClick={handleStartGenerate}
                     className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    Tiếp tục bằng AI RAG Engine (Không cần chờ Backend)
-                  </button>
-
-                  <button
-                    onClick={handleStartGenerate}
-                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/[0.08]"
-                  >
                     <RefreshCw className="w-4 h-4" />
-                    Thử lại gọi API Gateway (:8000)
+                    Thử lại gọi mô hình AI
                   </button>
 
                   <button
@@ -578,9 +573,9 @@ setDocuments([]);
                       setIsGenerating(false);
                       setGenerationError(null);
                     }}
-                    className="text-xs text-slate-400 hover:text-white transition-colors pt-1"
+                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/[0.08]"
                   >
-                    Hủy bỏ
+                    Đóng và cấu hình lại
                   </button>
                 </div>
               </div>

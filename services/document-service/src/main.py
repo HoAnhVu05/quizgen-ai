@@ -419,6 +419,7 @@ def list_documents(
     ]
 
 
+@app.get("/{document_id}")
 @app.get("/documents/{document_id}")
 def get_document(document_id: str, db: Session = Depends(get_db)):
     """Lấy thông tin chi tiết một giáo trình kèm danh sách các chương mục đã nhận diện"""
@@ -446,6 +447,7 @@ def get_document(document_id: str, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/{document_id}/download")
 @app.get("/documents/{document_id}/download")
 def download_document_file(document_id: str, db: Session = Depends(get_db)):
     """Tải xuống tệp giáo trình gốc (PDF/Word) từ máy chủ lưu trữ"""
@@ -461,6 +463,7 @@ def download_document_file(document_id: str, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/{document_id}/chunks")
 @app.get("/documents/{document_id}/chunks")
 def get_document_chunks(
     document_id: str, 
