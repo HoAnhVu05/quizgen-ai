@@ -51,10 +51,10 @@ class UserDB(Base):
     id = Column(String(50), primary_key=True, index=True)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    full_name = Column(String(100), nullable=False)
-    academic_title = Column(String(20), default="TS.")
-    university = Column(String(150), nullable=False)
-    department = Column(String(150), nullable=False)
+    full_name = Column(String(100), nullable=False, default="")
+    academic_title = Column(String(20), default="")
+    university = Column(String(150), nullable=False, default="")
+    department = Column(String(150), nullable=False, default="")
     role = Column(String(30), default="lecturer") # lecturer, head_of_department, admin
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -97,6 +97,7 @@ class UniversityResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class FacultyResponse(BaseModel):
     id: str
     university_id: Optional[str] = None
@@ -107,25 +108,49 @@ class FacultyResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class LecturerBase(BaseModel):
     email: EmailStr
+    full_name: Optional[str] = ""
+    academic_title: Optional[str] = ""
+    university: Optional[str] = ""
+    department: Optional[str] = ""
+    role: Optional[str] = "lecturer"
+
+
+class LecturerCreate(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = ""
+    academic_title: Optional[str] = ""
+    university: Optional[str] = ""
+    department: Optional[str] = ""
+    role: Optional[str] = "lecturer"
+
+
+class UpdateProfileRequest(BaseModel):
     full_name: str
-    academic_title: str  # e.g., "TS.", "PGS. TS.", "ThS."
+    academic_title: Optional[str] = "TS."
     university: str
     department: str
     role: Optional[str] = "lecturer"
 
-class LecturerCreate(LecturerBase):
-    password: str
 
-class LecturerResponse(LecturerBase):
+class LecturerResponse(BaseModel):
     id: str
+    email: EmailStr
+    full_name: str = ""
+    academic_title: Optional[str] = ""
+    university: str = ""
+    department: str = ""
     role: str = "lecturer"
     is_active: bool = True
+    profile_completed: bool = False
     created_at: datetime
 
     class Config:
         from_attributes = True
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -133,6 +158,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: LecturerResponse
+
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str

@@ -295,8 +295,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               </p>
             </div>
             <span className="text-xs font-mono font-semibold px-2.5 py-1 rounded-full bg-white/[0.06] text-slate-300 border border-white/[0.08]">
-              Tổng {totalBloomQuestions > 0 ? totalBloomQuestions : 351} câu hỏi
-              Tổng {totalBloomQuestions > 0 ? totalBloomQuestions : 351} câu hỏi
+              Tổng {totalBloomQuestions} câu hỏi
             </span>
           </div>
 
@@ -382,8 +381,15 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <div className="p-4 rounded-xl bg-gradient-to-r from-blue-900/30 via-indigo-900/20 to-transparent border border-blue-500/20 flex items-start space-x-3">
             <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
             <p className="text-xs text-blue-200 leading-relaxed">
-              <strong>Khuyến nghị Sư phạm AI:</strong> {(metrics as any).pedagogicalRecommendation || "Ma trận hiện tại có tỷ lệ lý tưởng cho kỳ thi đánh giá tiến trình giữa kỳ (74% nhận thức cơ bản). Khuyến nghị sinh bổ sung 15 câu hỏi Vận dụng để phục vụ kỳ thi."}
-              <strong>Khuyến nghị Sư phạm AI:</strong> {(metrics as any).pedagogicalRecommendation || "Ma trận hiện tại có tỷ lệ lý tưởng cho kỳ thi đánh giá tiến trình giữa kỳ (74% nhận thức cơ bản). Khuyến nghị sinh bổ sung 15 câu hỏi Vận dụng để phục vụ kỳ thi."}
+              {totalBloomQuestions > 0 ? (
+                <>
+                  <strong>Khuyến nghị Sư phạm AI:</strong> {(metrics as any).pedagogicalRecommendation || "Ma trận nhận thức đang phản ánh phân bổ từ dữ liệu câu hỏi thực tế trong hệ thống."}
+                </>
+              ) : (
+                <>
+                  <strong>Chưa có dữ liệu ma trận Bloom:</strong> Hãy tải lên giáo trình và bắt đầu sinh câu hỏi AI để hệ thống tự động phân loại theo 4 cấp độ nhận thức.
+                </>
+              )}
             </p>
           </div>
         </div>

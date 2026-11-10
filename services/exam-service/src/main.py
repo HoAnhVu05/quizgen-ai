@@ -1520,9 +1520,9 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
             pass
 
         return {
-            "totalTextbooks": 12,
-            "totalApprovedQuestions": approved_count + 348 if approved_count == 0 else approved_count,
-            "totalExamsPackaged": max(total_exams, 28),
+            "totalTextbooks": total_textbooks,
+            "totalApprovedQuestions": approved_count,
+            "totalExamsPackaged": total_exams,
             "pendingReviewCount": pending_count,
             "bloomDistribution": {
                 "nhanBiet": bloom_stats["distribution"]["nhanBiet"],
@@ -1541,10 +1541,16 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
         }
     except Exception as e:
         return {
-            "totalTextbooks": 12,
-            "totalApprovedQuestions": approved_count + 348 if approved_count == 0 else approved_count,
-            "totalExamsPackaged": max(total_exams, 28),
-            "pendingReviewCount": pending_count,
+            "totalTextbooks": 0,
+            "totalApprovedQuestions": 0,
+            "totalExamsPackaged": 0,
+            "pendingReviewCount": 0,
+            "bloomDistribution": {
+                "nhanBiet": {"count": 0, "percentage": 0},
+                "thongHieu": {"count": 0, "percentage": 0},
+                "vanDung": {"count": 0, "percentage": 0},
+                "phanTich": {"count": 0, "percentage": 0}
+            },
             "recentActivities": []
         }
 

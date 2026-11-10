@@ -5,13 +5,14 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from fastapi import FastAPI, HTTPException, status, Depends, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
 
 try:
     from jose import jwt
 except ImportError:
     import jwt
 
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -26,14 +27,15 @@ from .models import (
     TokenResponse,
     RefreshTokenRequest,
     UniversityResponse,
-    FacultyResponse
+    FacultyResponse,
+    UpdateProfileRequest
 )
 from .cache import cache
 
 app = FastAPI(
     title="QuizGen AI - Auth Service",
-    version="1.1.0",
-    description="Microservice quản lý Tài khoản học thuật ĐHQG, Xác thực đa vai trò (Lecturer, Head of Dept, Admin) & Auto Refresh Token"
+    version="1.2.0",
+    description="Microservice quản lý Tài khoản học thuật ĐHQG, Xác thực đa vai trò & Auto Refresh Token (Zero Mock Data)"
 )
 
 SECRET_KEY = os.getenv("SECRET_KEY", "quizgen-super-secret-academic-key-2026")
@@ -41,8 +43,48 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+def hash_password(password: str) -> str:
+    """Mã hóa mật khẩu sử dụng thư viện bcrypt chuẩn, tương thích Python 3.11/3.12/3.13"""
+    pwd_bytes = password.encode('utf-8')[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Xác thực mật khẩu người dùng đối chiếu với mã hash đã lưu trữ"""
+    try:
+        pwd_bytes = plain_password.encode('utf-8')[:72]
+        return bcrypt.checkpw(pwd_bytes, hashed_password.encode('utf-8'))
+    except Exception:
+        return False
+
+
+def serialize_user(user: UserDB) -> dict:
+    """Chuẩn hóa dữ liệu người dùng và xác định trạng thái hoàn thiện hồ sơ (profile_completed)"""
+    has_info = bool(
+        user.full_name and 
+        user.full_name.strip() and 
+        user.full_name.strip() != "Chưa cập nhật" and 
+        user.university and 
+        user.university.strip() and 
+        user.department and 
+        user.department.strip()
+    )
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name or "",
+        "academic_title": user.academic_title or "TS.",
+        "university": user.university or "",
+        "department": user.department or "",
+        "role": user.role or "lecturer",
+        "is_active": user.is_active,
+        "profile_completed": has_info,
+        "created_at": user.created_at
+    }
 
 
 def create_access_token(user: UserDB) -> str:
@@ -75,14 +117,22 @@ def create_refresh_token(user: UserDB) -> Tuple[str, datetime]:
     return token, expire
 
 
-# Khởi tạo bảng và nạp tài khoản 3 vai trò chuẩn nếu chưa tồn tại
+# Khởi tạo bảng CSDL (Zero Mock Accounts: Không tự động chèn tài khoản giả)
 @app.on_event("startup")
 def startup_db():
     try:
         Base.metadata.create_all(bind=engine)
+        
+        # Tự động đảm bảo schema SQLite có đầy đủ cột token_type
+        try:
+            with engine.begin() as conn:
+                conn.exec_driver_sql("ALTER TABLE user_tokens ADD COLUMN token_type VARCHAR(20) DEFAULT 'refresh'")
+        except Exception:
+            pass
+
         db = next(get_db())
 
-        # 1. Nạp danh mục trường và khoa mẫu
+        # Nạp danh mục trường và khoa phục vụ màn hình đăng ký/điền thông tin nếu chưa có
         if not db.query(UniversityDB).first():
             vnu = UniversityDB(id="uni-vnu", code="VNU", name="Đại học Quốc gia", city="Hà Nội", website="https://vnu.edu.vn")
             hust = UniversityDB(id="uni-hust", code="HUST", name="Đại học Bách Khoa", city="Hà Nội", website="https://hust.edu.vn")
@@ -94,58 +144,6 @@ def startup_db():
             fac3 = FacultyDB(id="fac-qa", university_id="uni-vnu", code="QA", name="Phòng Khảo thí & Đảm bảo Chất lượng", dean_name="ThS. Lê Hoàng Nam")
             db.add_all([fac1, fac2, fac3])
             db.commit()
-
-        # 2. Nạp dữ liệu tài khoản 3 vai trò mẫu chuẩn mực
-        default_accounts = [
-            {
-                "id": "usr-lec-001",
-                "email": "lecturer@vnu.edu.vn",
-                "full_name": "Nguyễn Văn An",
-                "academic_title": "TS.",
-                "university": "Đại học Quốc gia",
-                "department": "Khoa Công nghệ Thông tin",
-                "password": "academic123",
-                "role": "lecturer"
-            },
-            {
-                "id": "usr-head-001",
-                "email": "truongbomon@vnu.edu.vn",
-                "full_name": "Trần Thị Mai",
-                "academic_title": "PGS. TS.",
-                "university": "Đại học Quốc gia",
-                "department": "Bộ môn Hệ thống Thông tin",
-                "password": "academic123",
-                "role": "head_of_department"
-            },
-            {
-                "id": "usr-adm-001",
-                "email": "admin.khaothi@vnu.edu.vn",
-                "full_name": "Lê Hoàng Nam",
-                "academic_title": "ThS.",
-                "university": "Đại học Quốc gia",
-                "department": "Phòng Khảo thí & Đảm bảo Chất lượng",
-                "password": "admin123",
-                "role": "admin"
-            }
-        ]
-
-        for acc in default_accounts:
-            existing = db.execute(select(UserDB).filter_by(email=acc["email"])).scalar_one_or_none()
-            if not existing:
-                user_obj = UserDB(
-                    id=acc["id"],
-                    email=acc["email"],
-                    full_name=acc["full_name"],
-                    academic_title=acc["academic_title"],
-                    university=acc["university"],
-                    department=acc["department"],
-                    password_hash=pwd_context.hash(acc["password"]),
-                    role=acc["role"],
-                    is_active=True,
-                    created_at=datetime.utcnow()
-                )
-                db.add(user_obj)
-        db.commit()
     except Exception as e:
         print(f"[AUTH-SERVICE] DB Init warning: {e}")
 
@@ -162,25 +160,36 @@ def health():
 
 @app.post("/register", response_model=LecturerResponse)
 def register(user_in: LecturerCreate, db: Session = Depends(get_db)):
-    existing = db.execute(select(UserDB).filter_by(email=user_in.email)).scalar_one_or_none()
+    """
+    Đăng ký tài khoản người dùng mới:
+    - Nếu đã điền đầy đủ thông tin (Họ tên, Trường, Khoa) -> profile_completed = True
+    - Nếu là đăng ký nhanh chỉ có Email/Password -> profile_completed = False (yêu cầu điền tiếp thông tin)
+    """
+    normalized_email = user_in.email.strip().lower()
+    existing = db.execute(select(UserDB).filter_by(email=normalized_email)).scalar_one_or_none()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tài khoản email trường này đã được đăng ký."
+            detail="Tài khoản email này đã được đăng ký trong hệ thống."
         )
 
     role = user_in.role or "lecturer"
     count = db.query(UserDB).count()
     user_id = f"usr-{role[:3]}-{count + 1:03d}"
 
+    full_name = (user_in.full_name or "").strip()
+    university = (user_in.university or "").strip()
+    department = (user_in.department or "").strip()
+    academic_title = (user_in.academic_title or "TS.").strip()
+
     new_user = UserDB(
         id=user_id,
-        email=user_in.email,
-        full_name=user_in.full_name,
-        academic_title=user_in.academic_title,
-        university=user_in.university,
-        department=user_in.department,
-        password_hash=pwd_context.hash(user_in.password),
+        email=normalized_email,
+        full_name=full_name,
+        academic_title=academic_title,
+        university=university,
+        department=department,
+        password_hash=hash_password(user_in.password),
         role=role,
         is_active=True,
         created_at=datetime.utcnow()
@@ -188,17 +197,20 @@ def register(user_in: LecturerCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return new_user
+    return serialize_user(new_user)
 
 
 @app.post("/login", response_model=TokenResponse)
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     """
-    Xác thực đăng nhập đa vai trò (Giảng viên, Trưởng bộ môn, Quản trị Khảo thí):
-    Cấp phát đồng thời Access Token (30 phút) và Refresh Token (7 ngày).
+    Xác thực đăng nhập người dùng thực tế:
+    - Kiểm tra email và mật khẩu qua bcrypt native
+    - Cấp phát đồng thời Access Token (30 phút) và Refresh Token (7 ngày)
+    - Trả về cờ `profile_completed` để frontend quyết định chuyển đến trang điền thông tin hay vào dashboard
     """
-    user = db.execute(select(UserDB).filter_by(email=form_data.username)).scalar_one_or_none()
-    if not user or not pwd_context.verify(form_data.password, user.password_hash):
+    normalized_email = form_data.username.strip().lower()
+    user = db.execute(select(UserDB).filter_by(email=normalized_email)).scalar_one_or_none()
+    if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email hoặc mật khẩu không chính xác."
@@ -232,8 +244,60 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        "user": user
+        "user": serialize_user(user)
     }
+
+
+@app.put("/profile", response_model=LecturerResponse)
+def update_profile(
+    profile_in: UpdateProfileRequest,
+    token: Optional[str] = Depends(oauth2_scheme),
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Cập nhật thông tin người dùng (Dành cho tài khoản mới cần hoàn thiện hồ sơ):
+    Điền Họ tên, Học hàm/Học vị, Trường, Khoa, Vai trò.
+    """
+    raw_token = token
+    if not raw_token and authorization:
+        auth_str = authorization.strip()
+        if auth_str.lower().startswith("bearer "):
+            raw_token = auth_str[7:].strip()
+        else:
+            raw_token = auth_str
+
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization: Bearer <token>")
+
+    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+    if cache.is_token_revoked(token_hash):
+        raise HTTPException(status_code=401, detail="Phiên làm việc đã kết thúc (Token đã bị thu hồi).")
+
+    try:
+        payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub") or payload.get("email")
+        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+
+        user.full_name = profile_in.full_name.strip()
+        if profile_in.academic_title:
+            user.academic_title = profile_in.academic_title.strip()
+        user.university = profile_in.university.strip()
+        user.department = profile_in.department.strip()
+        if profile_in.role:
+            user.role = profile_in.role.strip()
+        user.updated_at = datetime.utcnow()
+
+        db.commit()
+        db.refresh(user)
+        return serialize_user(user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi cập nhật hồ sơ: {str(e)}")
 
 
 @app.post("/refresh", response_model=TokenResponse)
@@ -243,10 +307,7 @@ def refresh_token_endpoint(
     db: Session = Depends(get_db)
 ):
     """
-    Tự động tái cấp mã truy cập mới (Auto Token Refresh) khi Access Token JWT hết hạn:
-    1. Kiểm tra chữ ký & thời hạn của Refresh Token
-    2. Kiểm tra tính hợp lệ trong Redis Blacklist và CSDL
-    3. Cấp mới cặp Access Token + Refresh Token (Rotation) và duy trì phiên đăng nhập không ngắt quãng
+    Tự động tái cấp mã truy cập mới (Auto Token Refresh) khi Access Token JWT hết hạn
     """
     token = None
     if req and req.refresh_token:
@@ -324,7 +385,7 @@ def refresh_token_endpoint(
             "refresh_token": new_refresh,
             "token_type": "bearer",
             "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "user": user
+            "user": serialize_user(user)
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -364,6 +425,7 @@ def logout(
 
 @app.get("/me", response_model=LecturerResponse)
 def get_me(token: Optional[str] = Depends(oauth2_scheme), authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
+    """Lấy thông tin người dùng hiện tại dựa trên JWT Token"""
     raw_token = token
     if not raw_token and authorization:
         auth_str = authorization.strip()
@@ -387,7 +449,7 @@ def get_me(token: Optional[str] = Depends(oauth2_scheme), authorization: Optiona
         user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=401, detail="Không tìm thấy người dùng.")
-        return user
+        return serialize_user(user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token đã hết hạn. Vui lòng gọi /refresh để lấy token mới.")
     except HTTPException:
@@ -398,13 +460,13 @@ def get_me(token: Optional[str] = Depends(oauth2_scheme), authorization: Optiona
 
 @app.get("/universities", response_model=List[UniversityResponse])
 def get_universities(db: Session = Depends(get_db)):
-    """Danh mục các trường đại học cho màn hình Đăng ký"""
+    """Danh mục các trường đại học cho màn hình Đăng ký / Điền thông tin"""
     return db.query(UniversityDB).all()
 
 
 @app.get("/faculties", response_model=List[FacultyResponse])
 def get_faculties(university_id: Optional[str] = None, db: Session = Depends(get_db)):
-    """Danh mục các khoa đào tạo cho màn hình Đăng ký"""
+    """Danh mục các khoa đào tạo cho màn hình Đăng ký / Điền thông tin"""
     query = db.query(FacultyDB)
     if university_id:
         query = query.filter(FacultyDB.university_id == university_id)

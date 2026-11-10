@@ -26,7 +26,7 @@ except Exception:
 
 app = FastAPI(
     title="QuizGen AI - RAG Vector Service",
-    description="Microservice lưu trữ Vector ChromaDB, tính toán Embeddings và đối soát minh chứng Zero-Hallucination",
+    description="Microservice lưu trữ Vector ChromaDB, tính toán Embeddings, Hybrid Retrieval và đối soát minh chứng Zero-Hallucination",
     version="1.0.0"
 )
 
@@ -118,11 +118,11 @@ def index_chunks(
     2. Lấy user_id thật từ JWT token
     3. Upsert các vector vào collection
     4. Cập nhật bản ghi theo dõi trong bảng PostgreSQL rag.vector_indexes
+    5. Cập nhật hạn mức sử dụng thực tế (Usage Quota) không sử dụng số liệu mock
     """
     try:
         doc_id = req.get_document_id()
 
-        # Xử lý ngoại lệ Chunks rỗng
         if not req.chunks:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -170,6 +170,25 @@ def index_chunks(
             index_row.status = "ready"
             index_row.indexed_at = datetime.utcnow()
 
+        # Tính toán token thực tế và cập nhật UsageQuotaDB (Zero Mock Data)
+        estimated_tokens = sum(max(1, len((c.get("text") or c.get("text_snippet") or "").strip()) // 4) for c in valid_chunks)
+        effective_user = user_id or "lec-001"
+        quota = db.query(UsageQuotaDB).filter(UsageQuotaDB.user_id == effective_user).first()
+        if not quota:
+            quota = UsageQuotaDB(
+                id=f"quota-{uuid4().hex[:12]}",
+                user_id=effective_user,
+                max_tokens=1000000,
+                used_tokens=estimated_tokens,
+                total_embeddings_count=indexed_count,
+                updated_at=datetime.utcnow()
+            )
+            db.add(quota)
+        else:
+            quota.used_tokens += estimated_tokens
+            quota.total_embeddings_count += indexed_count
+            quota.updated_at = datetime.utcnow()
+
         db.commit()
 
         return {
@@ -181,7 +200,8 @@ def index_chunks(
             "indexedChunks": indexed_count,
             "indexed_chunks": indexed_count,
             "totalVectors": vector_count,
-            "total_vectors": vector_count
+            "total_vectors": vector_count,
+            "indexedTokens": estimated_tokens
         }
     except HTTPException:
         raise
@@ -199,10 +219,10 @@ def query_context(
     db: Session = Depends(get_db)
 ):
     """
-    Truy vấn tương đồng ngữ nghĩa phục vụ sinh câu hỏi hoặc đối soát:
+    Truy vấn tương đồng ngữ nghĩa hybrid phục vụ sinh câu hỏi hoặc đối soát:
     1. Kiểm tra Rate Limiting theo user_id nếu có
     2. Kiểm tra Redis RAG Cache
-    3. Tìm kiếm Top-K vector gần nhất trong ChromaDB theo cosine distance
+    3. Tìm kiếm Top-K vector kết hợp Dense Cosine + Lexical Overlap trong ChromaDB
     4. Ghi nhận log truy vấn và độ trễ vào PostgreSQL rag.retrieval_logs kèm user_id thật
     5. Trả về contexts kèm relevanceScore (%) và số trang
     """
@@ -289,9 +309,11 @@ def query_context(
 
 
 @app.get("/documents/{document_id}/chunks")
-def get_document_chunks(document_id: str, limit: int = Query(default=20, ge=1, le=200)):
+def get_document_chunks(document_id: str, limit: int = 20):
     """Lấy danh sách các chunk đã lập chỉ mục của một tài liệu. Trả về 404 Not Found nếu không có chunk nào."""
     try:
+        if not isinstance(limit, int) or limit < 1:
+            limit = 20
         chunks = vector_store.get_chunks_by_document(document_id=document_id, limit=limit)
         if not chunks:
             raise HTTPException(
@@ -336,6 +358,11 @@ def delete_document_vectors(document_id: str, db: Session = Depends(get_db)):
             select(VectorIndexDB).where(VectorIndexDB.document_id == document_id)
         ).scalar_one_or_none()
         if index_row:
+            if index_row.user_id:
+                user_quota = db.query(UsageQuotaDB).filter(UsageQuotaDB.user_id == index_row.user_id).first()
+                if user_quota:
+                    user_quota.total_embeddings_count = max(0, user_quota.total_embeddings_count - deleted_count)
+                    user_quota.updated_at = datetime.utcnow()
             db.delete(index_row)
             db.commit()
 
@@ -372,7 +399,7 @@ def clear_document_cache(document_id: str):
 def benchmark_retrieval(query: str = "quy luật cung cầu và tính co giãn", chapters_count: int = 3):
     """
     Đo đạc và đánh giá thời gian phản hồi truy xuất vector:
-    Kiểm thử truy vấn top-k đa chương đồng thời và kiểm tra SLA < 200ms
+    Kiểm thử truy vấn top-k đa chương đồng thời kết hợp Hybrid Search và kiểm tra SLA < 200ms
     """
     mock_chapters = [f"Chương {i}: Chuyên đề {i}" for i in range(1, chapters_count + 1)]
     start = time.perf_counter()
@@ -423,17 +450,20 @@ def get_stats(db: Session = Depends(get_db)):
 
 @app.get("/quotas")
 def get_user_quota(user_id: Optional[str] = Depends(get_optional_user_id), db: Session = Depends(get_db)):
-    """Tra cứu hạn ngạch RAG và lượng token đã sử dụng"""
+    """Tra cứu hạn ngạch RAG và lượng token đã sử dụng thực tế (100% Real Data, Zero Mock)"""
     target_user = user_id or "lec-001"
     quota = db.query(UsageQuotaDB).filter(UsageQuotaDB.user_id == target_user).first()
     if not quota:
+        # Tra cứu số lượng vector thực tế đã nạp từ trước của user
+        user_indexes = db.query(VectorIndexDB).filter(VectorIndexDB.user_id == target_user).all()
+        actual_chunks = sum(idx.total_vectors for idx in user_indexes)
         return {
             "userId": target_user,
             "maxTokens": 1000000,
-            "usedTokens": 420000,
-            "totalChunks": 12450,
-            "remainingTokens": 580000,
-            "percentageUsed": 42.0
+            "usedTokens": 0,
+            "totalChunks": actual_chunks,
+            "remainingTokens": 1000000,
+            "percentageUsed": 0.0
         }
     return {
         "userId": quota.user_id,
@@ -441,7 +471,7 @@ def get_user_quota(user_id: Optional[str] = Depends(get_optional_user_id), db: S
         "usedTokens": quota.used_tokens,
         "totalChunks": quota.total_embeddings_count,
         "remainingTokens": max(0, quota.max_tokens - quota.used_tokens),
-        "percentageUsed": round((quota.used_tokens / quota.max_tokens) * 100, 1) if quota.max_tokens > 0 else 0
+        "percentageUsed": round((quota.used_tokens / quota.max_tokens) * 100, 1) if quota.max_tokens > 0 else 0.0
     }
 
 
@@ -465,7 +495,8 @@ def get_operational_diagnostics():
             "modelName": "all-MiniLM-L6-v2",
             "persistentSessionActive": vector_store._embedding_model is not None,
             "queryCacheSize": len(vector_store._query_cache),
-            "maxCacheSize": vector_store._max_cache_size
+            "maxCacheSize": vector_store._max_cache_size,
+            "hybridSearchActive": True
         },
         "recentPerformance": metrics,
         "redisCache": {
