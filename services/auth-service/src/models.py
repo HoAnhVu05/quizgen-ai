@@ -146,7 +146,7 @@ class LecturerResponse(BaseModel):
     role: str = "lecturer"
     is_active: bool = True
     profile_completed: bool = False
-    created_at: datetime
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

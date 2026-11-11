@@ -85,9 +85,9 @@ def serialize_user(user: UserDB) -> dict:
         "university": user.university or "",
         "department": user.department or "",
         "role": user.role or "lecturer",
-        "is_active": user.is_active,
+        "is_active": user.is_active if user.is_active is not None else True,
         "profile_completed": has_info,
-        "created_at": user.created_at
+        "created_at": user.created_at or datetime.utcnow()
     }
 
 
@@ -281,7 +281,7 @@ def update_profile(
     try:
         payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub") or payload.get("email")
-        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+        user = db.query(UserDB).filter(UserDB.email == email).first()
         if not user:
             raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
 
@@ -301,6 +301,7 @@ def update_profile(
         raise
     except Exception as e:
         db.rollback()
+        print(f"[AUTH PROFILE UPDATE ERROR] {e}")
         raise HTTPException(status_code=500, detail=f"Lỗi cập nhật hồ sơ: {str(e)}")
 
 
