@@ -7,6 +7,14 @@ import subprocess
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+try:
+    from dotenv import load_dotenv
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+except Exception:
+    pass
+
 SERVICES = [
     {
         "name": "auth-service",
