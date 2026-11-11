@@ -22,7 +22,7 @@ import {
   FileDown,
   BookOpen
 } from 'lucide-react';
-import { Question, BloomLevel, ExamExportConfig } from '../types';
+import { Question, BloomLevel, ExamExportConfig, UserProfile } from '../types';
 import apiClient from '../services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -36,9 +36,10 @@ interface RealTextbookOption {
 interface QuestionBankScreenProps {
   questions: Question[];
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
+  currentUser?: UserProfile | null;
 }
 
-export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ questions, onShowToast }) => {
+export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ questions, onShowToast, currentUser }) => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBloom, setSelectedBloom] = useState<string>('all');
