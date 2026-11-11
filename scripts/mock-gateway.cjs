@@ -117,41 +117,7 @@ async function verifyGoogleOAuthToken({ googleAccessToken, idToken, expectedClie
 // ============================================================================
 // ACADEMIC USER DATABASE (Strict Authentication & In-Memory Store)
 // ============================================================================
-let MOCK_DOCUMENTS = [
-  {
-    id: 'doc-kinh-te-vi-mo-2025',
-    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    size: '14.2 MB',
-    status: 'ready',
-    totalPages: 184,
-    chaptersCount: 5,
-    chapters: [
-      'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
-      'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
-      'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
-      'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
-      'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
-    ],
-    progress: 100,
-    uploadedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: 'doc-tri-tue-nhan-tao-2026',
-    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-    size: '18.6 MB',
-    status: 'ready',
-    totalPages: 240,
-    chaptersCount: 4,
-    chapters: [
-      'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
-      'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
-      'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
-      'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
-    ],
-    progress: 100,
-    uploadedAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-];
+let MOCK_DOCUMENTS = [];
 
 const MOCK_USERS_DB = new Map([
   [
