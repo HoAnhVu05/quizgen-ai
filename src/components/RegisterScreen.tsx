@@ -88,6 +88,7 @@ const SYSTEM_DEFAULT_EMAILS = [
   'lecturer@vnu.edu.vn',
   'truongbomon@vnu.edu.vn',
   'admin.khaothi@vnu.edu.vn',
+  'admin@ut.edu.vn',
 ];
 
 // Regex kiểm tra tên tiếng Việt đầy đủ (chữ cái, dấu tiếng Việt, khoảng trắng, 3-50 ký tự)
@@ -309,9 +310,27 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
 
       existingUsers.push({
         ...newUser,
+        role: 'lecturer',
+        roleLabel: 'Giảng viên',
+        status: 'active',
         password: form.password,
       });
       localStorage.setItem('quizgen_registered_users', JSON.stringify(existingUsers));
+
+      // Ghi log đăng ký tài khoản mới cho Admin Portal
+      try {
+        const logs = JSON.parse(localStorage.getItem('quizgen_security_audit_logs') || '[]');
+        logs.unshift({
+          id: `audit-${Date.now()}`,
+          timestamp: new Date().toLocaleString('vi-VN'),
+          actorEmail: normalizedEmail,
+          action: 'REGISTER_LECTURER_ACCOUNT',
+          detail: `Đăng ký tài khoản Giảng viên mới: ${newUser.academicTitle} ${newUser.fullName} (${newUser.faculty})`,
+          severity: 'info',
+          ipAddress: '127.0.0.1',
+        });
+        localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(logs.slice(0, 100)));
+      } catch {}
 
       // Tự động thiết lập phiên đăng nhập
       localStorage.setItem('quizgen_user', JSON.stringify(newUser));
@@ -325,405 +344,281 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
   };
 
   return (
-    <div className="w-full min-h-full flex flex-col items-center justify-start sm:justify-center py-10 px-4 selection:bg-blue-500/30">
-      {/* Background Orbs */}
-      <div className="fixed top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-700/15 rounded-full blur-[120px] pointer-events-none" />
-      <div className="fixed bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-blue-700/15 rounded-full blur-[120px] pointer-events-none" />
-      <div className="fixed top-1/3 right-1/4 w-[400px] h-[400px] bg-purple-900/10 rounded-full blur-[100px] pointer-events-none" />
+    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70]">
+      {/* Minimal Top Accent Bar */}
+      <div className="h-1.5 w-full bg-[#008689] shrink-0" />
 
-      <div className="relative z-10 w-full max-w-xl mx-auto my-auto space-y-4">
-        {/* Header */}
-        <div className="flex flex-col items-center mb-2">
-          <div className="relative group cursor-pointer mb-2.5">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-400 flex items-center justify-center text-white shadow-2xl shadow-blue-500/30 group-hover:scale-105 transition-all">
-              <GraduationCap className="w-7 h-7" />
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-lg space-y-5">
+          {/* Clean Brand Header */}
+          <div className="text-center space-y-1.5">
+            <div className="inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-[#008689] text-white shadow-sm mb-1">
+              <GraduationCap className="w-5 h-5" />
             </div>
-            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#080c16] rounded-full animate-pulse" />
-          </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">
-            QuizGen <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">AI</span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Cổng Đăng ký Tài khoản Khảo thí & Soạn đề Thông minh ĐHQG
-          </p>
-        </div>
-
-        {/* Card */}
-        <div
-          className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl shadow-black/50 p-6 sm:p-7 space-y-4"
-          style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 25px 50px rgba(0,0,0,0.5)' }}
-        >
-          <div className="border-b border-white/[0.06] pb-3">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <span>Đăng ký Tài khoản Giảng viên / Cán bộ</span>
-              <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                Xác thực định danh
-              </span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Thông tin được kiểm định phục vụ việc cấp quyền truy cập Ngân hàng đề thi và Tài nguyên RAG.
+            <h1 className="text-lg font-extrabold text-[#008689] tracking-tight uppercase">
+              QuizGen AI
+            </h1>
+            <p className="text-xs text-slate-500">
+              Đăng ký tài khoản Giảng viên & Cán bộ Khảo thí
             </p>
           </div>
 
-          {errors.general && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-              <span>{errors.general}</span>
+          {/* Card */}
+          <div className="rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] bg-white shadow-sm p-6 sm:p-7 space-y-4">
+            <div className="text-center border-b border-slate-100 pb-3">
+              <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
+                Tạo tài khoản mới
+              </h2>
             </div>
-          )}
 
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            {/* ─── 1. CHỌN VAI TRÒ ĐĂNG KÝ ────────────────────────────── */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <UserCheck className="w-3.5 h-3.5 text-blue-400" />
-                  <span>1. Vai trò trong Hội đồng Khảo thí</span>
-                </span>
-                <span className="text-[10px] text-slate-500 lowercase font-normal">(bắt buộc chọn)</span>
-              </label>
-
-              <div className="grid grid-cols-3 gap-2">
-                {ROLES_OPTIONS.map((r) => {
-                  const Icon = r.icon;
-                  const isSelected = form.role === r.id;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setField('role', r.id)}
-                      className={`p-2.5 rounded-xl border text-left transition-all ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-500/15 shadow-sm ring-1 ring-blue-500/40'
-                          : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Icon className={`w-4 h-4 ${isSelected ? 'text-blue-400' : 'text-slate-400'}`} />
-                        {isSelected && <span className="text-[10px] text-blue-400 font-bold">✓</span>}
-                      </div>
-                      <div className={`text-xs font-bold leading-tight ${isSelected ? 'text-white' : 'text-slate-300'}`}>
-                        {r.title}
-                      </div>
-                      <div className="text-[9px] text-slate-400 truncate mt-0.5">{r.subtitle}</div>
-                    </button>
-                  );
-                })}
+            {errors.general && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#da1c2d]" />
+                <span>{errors.general}</span>
               </div>
-            </div>
+            )}
 
-            {/* ─── 2. HỌ VÀ TÊN & HỌC VỊ ──────────────────────────────── */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="col-span-1 space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase">Học vị</label>
-                <div className="relative">
-                  <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-                    <Award className="w-4 h-4" />
-                  </div>
+            <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
+              {/* 1. Loại tài khoản cố định: Giảng viên (Strict Whitelist) */}
+              <div className="p-2.5 rounded-xl bg-[#e6f4f4]/70 border border-[#008689]/25 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-[#006d70] font-semibold">
+                  <GraduationCap className="w-4 h-4 text-[#008689]" />
+                  <span>Tài khoản Giảng viên Biên soạn & Xuất bản Đề thi</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-[#008689] border border-[#008689]/20">
+                  Mặc định
+                </span>
+              </div>
+
+              {/* 2. Học vị & Họ tên */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="col-span-1 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Học vị</label>
                   <select
                     value={form.academicTitle}
                     onChange={(e) => setField('academicTitle', e.target.value)}
-                    className="w-full bg-[#131b2e] border border-white/10 rounded-xl pl-8 pr-2 py-2.5 text-xs text-white outline-none focus:border-blue-500/50 cursor-pointer"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer"
                   >
                     {ACADEMIC_TITLES.map((t) => (
-                      <option key={t} value={t} className="bg-[#131b2e] text-white">
+                      <option key={t} value={t} className="bg-white text-slate-900">
                         {t}
                       </option>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              <div className="col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase flex items-center justify-between">
-                  <span>Họ và tên</span>
-                  <span className="text-[10px] text-slate-500 lowercase font-normal">(tối thiểu 2 từ)</span>
-                </label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <User className="w-4 h-4" />
+                <div className="col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Họ và tên</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(e) => setField('fullName', e.target.value)}
+                      placeholder="Nguyễn Văn An"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.fullName ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={form.fullName}
-                    onChange={(e) => setField('fullName', e.target.value)}
-                    placeholder="Nguyễn Văn An"
-                    className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                      ${errors.fullName ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/10 focus:border-blue-500/50'}`}
-                  />
-                </div>
-                {errors.fullName && (
-                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {errors.fullName}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* ─── 3. EMAIL HỌC THUẬT VỚI KIỂM SOÁT ĐỊNH DẠNG & TRÙNG LẶP ─ */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-300 uppercase">
-                  Email công tác / học thuật
-                </label>
-                {isAcademicEmail ? (
-                  <span className="text-[10px] text-emerald-400 font-medium flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Tên miền học thuật hợp lệ
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-500 lowercase">Ưu tiên @*.edu.vn / @*.edu</span>
-                )}
-              </div>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setField('email', e.target.value)}
-                  placeholder="giangvien@vnu.edu.vn"
-                  className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                    ${errors.email ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/10 focus:border-blue-500/50'}`}
-                />
-              </div>
-              {errors.email ? (
-                <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> {errors.email}
-                </p>
-              ) : form.email && !isAcademicEmail ? (
-                <p className="text-[10px] text-amber-400/90 flex items-center gap-1">
-                  <span>ℹ</span> Khuyến nghị: Email tên miền trường đại học giúp tự động kích hoạt hạn mức AI cao nhất.
-                </p>
-              ) : null}
-            </div>
-
-            {/* ─── 4. CƠ SỞ ĐÀO TẠO & KHOA BỘ MÔN ─────────────────────── */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase">Trường đại học (University)</label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <School className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={form.university}
-                    onChange={(e) => setField('university', e.target.value)}
-                    placeholder="Ví dụ: Đại học Quốc gia TP.HCM, ĐH Bách Khoa..."
-                    className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                      ${errors.university ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/10 focus:border-blue-500/50'}`}
-                  />
-                </div>
-                {errors.university && (
-                  <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {errors.university}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase">Khoa / Đơn vị công tác</label>
-                <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <Building2 className="w-4 h-4" />
-                  </div>
-                  <select
-                    value={form.faculty}
-                    onChange={(e) => setField('faculty', e.target.value)}
-                    className="w-full bg-[#131b2e] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white outline-none focus:border-blue-500/50 cursor-pointer truncate"
-                  >
-                    {FACULTY_OPTIONS.map((f) => (
-                      <option key={f} value={f} className="bg-[#131b2e] text-white">
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* ─── 5. MẬT KHẨU & CHECKLIST BẢO MẬT CHẶT CHẼ ───────────── */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-slate-300 uppercase">
-                  Mật khẩu bảo mật
-                </label>
-                <span className="text-[10px] text-slate-400">
-                  Chuẩn an toàn: <span className={isPasswordSecure ? 'text-emerald-400 font-bold' : 'text-amber-400'}>{passwordScore}/4 tiêu chí</span>
-                </span>
-              </div>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={(e) => setField('password', e.target.value)}
-                  placeholder="Tối thiểu 8 ký tự, có số, chữ hoa & ký tự đặc biệt"
-                  className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                    ${errors.password ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]' : 'border-white/10 focus:border-blue-500/50'}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {/* Checklist 4 tiêu chuẩn mật khẩu trực quan */}
-              <div className="grid grid-cols-2 gap-1.5 p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.06] mt-2">
-                <div className={`flex items-center gap-1.5 text-[10px] transition-colors ${passwordCriteria.minLength ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border text-[8px] ${passwordCriteria.minLength ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'border-slate-600 text-transparent'}`}>
-                    ✓
-                  </div>
-                  <span>Tối thiểu 8 ký tự</span>
-                </div>
-
-                <div className={`flex items-center gap-1.5 text-[10px] transition-colors ${passwordCriteria.hasUpper ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border text-[8px] ${passwordCriteria.hasUpper ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'border-slate-600 text-transparent'}`}>
-                    ✓
-                  </div>
-                  <span>Ít nhất 1 chữ in hoa (A-Z)</span>
-                </div>
-
-                <div className={`flex items-center gap-1.5 text-[10px] transition-colors ${passwordCriteria.hasNumber ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border text-[8px] ${passwordCriteria.hasNumber ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'border-slate-600 text-transparent'}`}>
-                    ✓
-                  </div>
-                  <span>Ít nhất 1 chữ số (0-9)</span>
-                </div>
-
-                <div className={`flex items-center gap-1.5 text-[10px] transition-colors ${passwordCriteria.hasSpecial ? 'text-emerald-400' : 'text-slate-500'}`}>
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border text-[8px] ${passwordCriteria.hasSpecial ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'border-slate-600 text-transparent'}`}>
-                    ✓
-                  </div>
-                  <span>1 ký tự đặc biệt (!@#$...)</span>
-                </div>
-              </div>
-
-              {errors.password && (
-                <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> {errors.password}
-                </p>
-              )}
-            </div>
-
-            {/* ─── 6. XÁC NHẬN MẬT KHẨU ───────────────────────────────── */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase">
-                Xác nhận lại mật khẩu
-              </label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={form.confirmPassword}
-                  onChange={(e) => setField('confirmPassword', e.target.value)}
-                  placeholder="Nhập lại chính xác mật khẩu trên"
-                  className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                    ${
-                      errors.confirmPassword
-                        ? 'border-rose-500/60 shadow-[0_0_0_1px_rgba(244,63,94,0.3)]'
-                        : form.confirmPassword && form.password === form.confirmPassword
-                        ? 'border-emerald-500/50'
-                        : 'border-white/10 focus:border-blue-500/50'
-                    }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {form.confirmPassword && (
-                <div className="text-[11px] flex items-center gap-1 pt-0.5">
-                  {form.password === form.confirmPassword ? (
-                    <span className="text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Mật khẩu xác nhận hoàn toàn trùng khớp
-                    </span>
-                  ) : (
-                    <span className="text-rose-400 flex items-center gap-1">
-                      <AlertCircle className="w-3.5 h-3.5" /> Mật khẩu xác nhận chưa trùng khớp
-                    </span>
+                  {errors.fullName && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.fullName}</p>
                   )}
                 </div>
-              )}
-              {errors.confirmPassword && (
-                <p className="text-[11px] text-rose-400 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> {errors.confirmPassword}
+              </div>
+
+              {/* 3. Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Email công tác</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setField('email', e.target.value)}
+                    placeholder="giangvien@ut.edu.vn"
+                    className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                      errors.email ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                    }`}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="text-[11px] text-[#da1c2d]">{errors.email}</p>
+                )}
+              </div>
+
+              {/* 4. Trường & Khoa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Trường đại học</label>
+                  <div className="relative">
+                    <School className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={form.university}
+                      onChange={(e) => setField('university', e.target.value)}
+                      placeholder="ĐH GTVT TP.HCM (UTH)"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.university ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                  </div>
+                  {errors.university && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.university}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Khoa / Đơn vị</label>
+                  <div className="relative">
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <select
+                      value={form.faculty}
+                      onChange={(e) => setField('faculty', e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer truncate"
+                    >
+                      {FACULTY_OPTIONS.map((f) => (
+                        <option key={f} value={f} className="bg-white text-slate-900">
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Mật khẩu & Xác nhận */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Mật khẩu</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setField('password', e.target.value)}
+                      placeholder="Tối thiểu 8 ký tự"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.password ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Xác nhận mật khẩu</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={form.confirmPassword}
+                      onChange={(e) => setField('confirmPassword', e.target.value)}
+                      placeholder="Nhập lại mật khẩu"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.confirmPassword
+                          ? 'border-[#da1c2d]'
+                          : form.confirmPassword && form.password === form.confirmPassword
+                          ? 'border-emerald-500'
+                          : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compact Password Criteria Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { ok: passwordCriteria.minLength, label: '≥ 8 ký tự' },
+                  { ok: passwordCriteria.hasUpper, label: 'Chữ hoa (A-Z)' },
+                  { ok: passwordCriteria.hasNumber, label: 'Chữ số (0-9)' },
+                  { ok: passwordCriteria.hasSpecial, label: 'Ký tự đặc biệt' },
+                ].map((item) => (
+                  <span
+                    key={item.label}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
+                      item.ok
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-50 text-slate-400 border-slate-200'
+                    }`}
+                  >
+                    {item.ok ? '✓ ' : ''}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+
+              {(errors.password || errors.confirmPassword) && (
+                <p className="text-[11px] text-[#da1c2d]">
+                  {errors.password || errors.confirmPassword}
                 </p>
               )}
-            </div>
 
-            {/* ─── 7. CAM KẾT QUY CHẾ KHẢO THÍ & BẢO MẬT ĐỀ THI ───────── */}
-            <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.07]">
-              <label className="flex items-start gap-2.5 cursor-pointer">
+              {/* 6. Terms */}
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
                 <input
                   type="checkbox"
                   checked={agreedToTerms}
                   onChange={(e) => setAgreedToTerms(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-0 cursor-pointer shrink-0"
+                  className="w-4 h-4 rounded border-slate-300 text-[#008689] accent-[#008689] cursor-pointer shrink-0"
                 />
-                <span className="text-[11px] text-slate-300 leading-relaxed">
-                  Tôi cam kết thông tin khai báo là hoàn toàn trung thực, tuân thủ nghiêm ngặt{' '}
-                  <span className="text-blue-400 font-semibold hover:underline">
-                    Quy chế Khảo thí, Bí mật Đề thi
-                  </span>{' '}
-                  và Quy định Bảo vệ Dữ liệu Cá nhân của Đại học Quốc gia.
+                <span className="text-xs text-slate-600">
+                  Tôi đồng ý tuân thủ <strong className="text-[#008689]">Quy chế Khảo thí & Bảo mật Đề thi</strong>.
                 </span>
               </label>
+
+              {/* Submit Button */}
+              <button
+                id="register-submit-btn"
+                type="submit"
+                disabled={isLoading || !agreedToTerms || !isPasswordSecure}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm text-white bg-[#008689] hover:bg-[#006d70] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang tạo tài khoản...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Đăng ký tài khoản</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="text-center text-xs text-slate-500 pt-2 border-t border-slate-100">
+              Đã có tài khoản?{' '}
+              <button
+                id="go-to-login-btn"
+                onClick={onNavigateLogin}
+                className="text-[#008689] font-bold hover:underline"
+              >
+                Đăng nhập
+              </button>
             </div>
-
-            {/* Submit Button */}
-            <button
-              id="register-submit-btn"
-              type="submit"
-              disabled={isLoading || !agreedToTerms || !isPasswordSecure}
-              className="relative w-full group flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 transition-all duration-300 shadow-lg shadow-indigo-600/30 hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Đang thẩm định & khởi tạo tài khoản...</span>
-                </>
-              ) : (
-                <>
-                  <FileCheck className="w-4 h-4" />
-                  <span>Xác nhận & Khởi tạo Tài khoản Khảo thí</span>
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Link sang Đăng nhập */}
-          <div className="text-center text-xs text-slate-400 pt-2 border-t border-white/[0.06]">
-            Đã có tài khoản cán bộ khảo thí?{' '}
-            <button
-              id="go-to-login-btn"
-              onClick={onNavigateLogin}
-              className="text-blue-400 hover:text-blue-300 font-semibold transition-colors hover:underline"
-            >
-              Đăng nhập ngay
-            </button>
           </div>
         </div>
-
-        {/* Security badge */}
-        <div className="flex items-center justify-center gap-2 mt-3 text-[11px] text-slate-500">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Mã hóa TLS 1.3 · Ràng buộc Đạo đức Học thuật & Kiểm định ĐHQG</span>
-        </div>
       </div>
+
+      <footer className="py-3 text-center text-[11px] text-slate-400">
+        © 2026 QuizGen AI
+      </footer>
     </div>
   );
 };

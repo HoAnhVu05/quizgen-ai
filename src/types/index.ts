@@ -1,7 +1,17 @@
-export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank';
+export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank' | 'admin_portal';
 export type AuthScreenId = 'login' | 'register';
 
 export type UserRole = 'lecturer' | 'head_of_department' | 'admin';
+
+export interface SecurityAuditLog {
+  id: string;
+  timestamp: string;
+  actorEmail: string;
+  action: string;
+  detail: string;
+  severity: 'info' | 'warning' | 'critical';
+  ipAddress: string;
+}
 
 export interface UserProfile {
   id: string;
@@ -13,10 +23,19 @@ export interface UserProfile {
   university?: string;
   role: UserRole;
   roleLabel?: string;
+  avatarUrl?: string;
+  authProvider?: 'local' | 'google';
+  status?: 'active' | 'locked';
+  twoFactorVerified?: boolean;
 }
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';
-export type QuestionStatus = 'pending' | 'approved' | 'rejected';
+export type QuestionStatus =
+  | 'pending'
+  | 'submitted_to_hod'
+  | 'approved'
+  | 'rejected'
+  | 'locked_for_exam';
 
 export interface SourceChunk {
   id: string;
@@ -45,6 +64,8 @@ export interface Question {
   confidenceScore: number;
   status: QuestionStatus;
   createdAt: string;
+  hodFeedback?: string;
+  examCodes?: string[];
 }
 
 export interface TextbookFile {

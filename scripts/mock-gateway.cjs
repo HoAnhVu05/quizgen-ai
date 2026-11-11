@@ -1,7 +1,118 @@
 const http = require('http');
+const https = require('https');
 const url = require('url');
 
 const PORT = 8000;
+
+function fetchJsonHttps(targetUrl, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(targetUrl, { headers, timeout: 10000 }, (resp) => {
+      let data = '';
+      resp.on('data', (chunk) => {
+        data += chunk;
+      });
+      resp.on('end', () => {
+        let parsed = {};
+        try {
+          parsed = data ? JSON.parse(data) : {};
+        } catch (e) {
+          parsed = { raw: data };
+        }
+        resolve({ statusCode: resp.statusCode || 500, data: parsed });
+      });
+    });
+    request.on('timeout', () => {
+      request.destroy(new Error('Google verification request timed out'));
+    });
+    request.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+async function verifyGoogleOAuthToken({ googleAccessToken, idToken, expectedClientId }) {
+  if (googleAccessToken) {
+    const [tokenInfoRes, userInfoRes] = await Promise.all([
+      fetchJsonHttps(
+        `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(googleAccessToken)}`
+      ),
+      fetchJsonHttps('https://www.googleapis.com/oauth2/v3/userinfo', {
+        Authorization: `Bearer ${googleAccessToken}`,
+      }),
+    ]);
+
+    if (tokenInfoRes.statusCode !== 200 || userInfoRes.statusCode !== 200) {
+      const err = new Error('Google access token không hợp lệ hoặc đã hết hạn.');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    const tokenInfo = tokenInfoRes.data || {};
+    const userInfo = userInfoRes.data || {};
+    const tokenAud = tokenInfo.aud || tokenInfo.azp;
+    if (expectedClientId && tokenAud && tokenAud !== expectedClientId) {
+      const err = new Error('Google OAuth token không khớp với Client ID của hệ thống.');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    const email = (userInfo.email || tokenInfo.email || '').trim().toLowerCase();
+    const isVerified =
+      userInfo.email_verified === true ||
+      userInfo.email_verified === 'true' ||
+      tokenInfo.email_verified === true ||
+      tokenInfo.email_verified === 'true';
+
+    if (!email || !isVerified) {
+      const err = new Error('Tài khoản Google chưa xác minh địa chỉ email.');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    return {
+      sub: userInfo.sub || tokenInfo.sub || '',
+      email,
+      fullName: (userInfo.name || userInfo.given_name || email.split('@')[0]).trim(),
+      avatarUrl: userInfo.picture || '',
+    };
+  }
+
+  if (idToken) {
+    const tokenInfoRes = await fetchJsonHttps(
+      `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`
+    );
+    if (tokenInfoRes.statusCode !== 200) {
+      const err = new Error('Google ID token không hợp lệ hoặc đã hết hạn.');
+      err.statusCode = 401;
+      throw err;
+    }
+    const info = tokenInfoRes.data || {};
+    if (expectedClientId && info.aud && info.aud !== expectedClientId) {
+      const err = new Error('Google ID token không khớp với Client ID của hệ thống.');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    const email = (info.email || '').trim().toLowerCase();
+    const isVerified = info.email_verified === true || info.email_verified === 'true';
+    if (!email || !isVerified) {
+      const err = new Error('Tài khoản Google chưa xác minh địa chỉ email.');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    return {
+      sub: info.sub || '',
+      email,
+      fullName: (info.name || info.given_name || email.split('@')[0]).trim(),
+      avatarUrl: info.picture || '',
+    };
+  }
+
+  const err = new Error('Thiếu mã xác thực Google OAuth token.');
+  err.statusCode = 400;
+  throw err;
+}
 
 // ============================================================================
 // ACADEMIC USER DATABASE (Strict Authentication & In-Memory Store)
@@ -85,13 +196,32 @@ const MOCK_USERS_DB = new Map([
       fullName: 'ThS. Lê Hoàng Nam',
       academic_title: 'ThS.',
       academicTitle: 'ThS.',
-      university: 'Đại học Quốc gia',
-      department: 'Phòng Khảo thi & Đảm bảo Chất lượng',
+      university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+      department: 'Trung tâm Quản trị Hệ thống & CNTT',
       role: 'admin',
-      roleLabel: 'Quản trị Khảo thi',
+      roleLabel: 'Quản trị Hệ thống',
+    },
+  ],
+  [
+    'admin@ut.edu.vn',
+    {
+      id: 'admin-uth-001',
+      email: 'admin@ut.edu.vn',
+      password: 'admin123',
+      full_name: 'Quản trị viên Hệ thống UTH',
+      fullName: 'Quản trị viên Hệ thống UTH',
+      academic_title: 'ThS.',
+      academicTitle: 'ThS.',
+      university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+      department: 'Trung tâm Quản trị Hệ thống & An ninh mạng',
+      role: 'admin',
+      roleLabel: 'Quản trị Hệ thống',
     },
   ],
 ]);
+
+// Store tạm lưu mã OTP khôi phục mật khẩu (10 phút)
+const PASSWORD_RESET_OTP_STORE = new Map();
 
 // ============================================================================
 // ACADEMIC CURRICULUM DATABASE (Kinh tế Vi mô & Trí tuệ Nhân tạo)
@@ -674,7 +804,7 @@ const server = http.createServer((req, res) => {
     body += chunk;
   });
 
-  req.on('end', () => {
+  req.on('end', async () => {
     let jsonBody = {};
     if (body) {
       try {
@@ -898,6 +1028,105 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // Auth Google OAuth 2.0 Sign-In (Real Token Verification with Google APIs)
+    if (pathname === '/api/v1/auth/google' && req.method === 'POST') {
+      const googleAccessToken = String(jsonBody?.google_access_token || jsonBody?.access_token || '').trim();
+      const idToken = String(jsonBody?.id_token || jsonBody?.credential || '').trim();
+
+      if (!googleAccessToken && !idToken) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            detail: 'Yêu cầu google_access_token hoặc id_token hợp lệ từ Google OAuth 2.0.',
+          })
+        );
+        return;
+      }
+
+      let googleProfile;
+      try {
+        googleProfile = await verifyGoogleOAuthToken({
+          googleAccessToken,
+          idToken,
+          expectedClientId: (process.env.GOOGLE_CLIENT_ID || jsonBody?.client_id || '').trim(),
+        });
+      } catch (err) {
+        const statusCode = err?.statusCode || 502;
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            detail:
+              err?.statusCode
+                ? err.message
+                : 'Không thể kết nối máy chủ xác thực Google (googleapis.com) để kiểm tra token.',
+          })
+        );
+        return;
+      }
+
+      const targetEmail = googleProfile.email;
+      let user = MOCK_USERS_DB.get(targetEmail);
+      const requestedRole = jsonBody?.role || 'lecturer';
+      const roleLabels = {
+        lecturer: 'Giảng viên',
+        head_of_department: 'Trưởng bộ môn',
+        admin: 'Quản trị Khảo thi',
+      };
+
+      if (!user) {
+        user = {
+          id: `gg-${Date.now().toString(36)}`,
+          email: targetEmail,
+          password: `google-oauth-${Date.now()}`,
+          full_name: googleProfile.fullName,
+          fullName: googleProfile.fullName,
+          academic_title: jsonBody?.academic_title || 'ThS.',
+          academicTitle: jsonBody?.academic_title || 'ThS.',
+          university: jsonBody?.university || 'Đại học Quốc gia',
+          department: jsonBody?.department || 'Khoa Công nghệ Thông tin',
+          role: requestedRole,
+          roleLabel: roleLabels[requestedRole] || 'Giảng viên',
+          avatar_url: googleProfile.avatarUrl,
+          google_sub: googleProfile.sub,
+          auth_provider: 'google',
+        };
+        MOCK_USERS_DB.set(targetEmail, user);
+      } else {
+        user.avatar_url = googleProfile.avatarUrl || user.avatar_url || '';
+        user.google_sub = googleProfile.sub || user.google_sub || '';
+        user.auth_provider = 'google';
+        if (!user.full_name && googleProfile.fullName) {
+          user.full_name = googleProfile.fullName;
+          user.fullName = googleProfile.fullName;
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          access_token: `mock-jwt-${user.id}-${Date.now()}`,
+          refresh_token: `mock-jwt-refresh-${user.role}-${Date.now()}`,
+          token_type: 'bearer',
+          expires_in: 86400,
+          auth_provider: 'google',
+          google_verified: true,
+          user: {
+            id: user.id,
+            full_name: user.full_name,
+            email: user.email,
+            academic_title: user.academic_title,
+            university: user.university,
+            department: user.department,
+            role: user.role,
+            role_label: user.roleLabel,
+            avatar_url: user.avatar_url || '',
+            auth_provider: 'google',
+          },
+        })
+      );
+      return;
+    }
+
     // Auth Refresh Token
     if (pathname === '/api/v1/auth/refresh') {
       let refreshToken = '';
@@ -958,6 +1187,8 @@ const server = http.createServer((req, res) => {
           university: foundUser.university,
           department: foundUser.department,
           role: foundUser.role,
+          avatar_url: foundUser.avatar_url || '',
+          auth_provider: foundUser.auth_provider || 'local',
           is_active: true,
           created_at: new Date().toISOString(),
         })
@@ -969,6 +1200,82 @@ const server = http.createServer((req, res) => {
     if (pathname === '/api/v1/auth/logout') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'success', message: 'Đăng xuất thành công, token đã bị thu hồi.' }));
+      return;
+    }
+
+    // Auth Forgot Password (Step 1: Verify Email & Issue Verification OTP)
+    if (pathname === '/api/v1/auth/forgot-password' && req.method === 'POST') {
+      const targetEmail = (jsonBody?.email || '').trim().toLowerCase();
+      if (!targetEmail) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Vui lòng nhập địa chỉ email học thuật.' }));
+        return;
+      }
+
+      const existingUser = MOCK_USERS_DB.get(targetEmail);
+      if (!existingUser) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Email này chưa được đăng ký trong hệ thống Khảo thí ĐHQG.' }));
+        return;
+      }
+
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      PASSWORD_RESET_OTP_STORE.set(targetEmail, {
+        otp,
+        expiresAt: Date.now() + 10 * 60 * 1000, // 10 phút
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'success',
+        message: `Mã xác minh 6 chữ số đã được gửi tới email ${targetEmail}.`,
+        expires_in: 600,
+        dev_otp: otp, // Phục vụ môi trường kiểm thử cục bộ không có SMTP server
+      }));
+      return;
+    }
+
+    // Auth Reset Password (Step 2: Verify OTP & Update User Password)
+    if (pathname === '/api/v1/auth/reset-password' && req.method === 'POST') {
+      const targetEmail = (jsonBody?.email || '').trim().toLowerCase();
+      const otp = String(jsonBody?.otp || '').trim();
+      const newPassword = String(jsonBody?.new_password || '');
+
+      if (!targetEmail || !otp || !newPassword) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Vui lòng nhập đầy đủ email, mã xác minh OTP và mật khẩu mới.' }));
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mật khẩu mới phải có ít nhất 6 ký tự.' }));
+        return;
+      }
+
+      const otpRecord = PASSWORD_RESET_OTP_STORE.get(targetEmail);
+      if (!otpRecord || otpRecord.otp !== otp || Date.now() > otpRecord.expiresAt) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Mã xác minh OTP không chính xác hoặc đã hết hạn.' }));
+        return;
+      }
+
+      const user = MOCK_USERS_DB.get(targetEmail);
+      if (!user) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ detail: 'Không tìm thấy tài khoản người dùng.' }));
+        return;
+      }
+
+      // Cập nhật mật khẩu mới trực tiếp vào DB
+      user.password = newPassword;
+      PASSWORD_RESET_OTP_STORE.delete(targetEmail);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'success',
+        message: 'Mật khẩu của bạn đã được cập nhật thành công! Vui lòng đăng nhập bằng mật khẩu mới.',
+      }));
       return;
     }
 
