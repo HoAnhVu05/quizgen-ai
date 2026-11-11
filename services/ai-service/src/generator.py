@@ -12,6 +12,17 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+# Configure trusted SSL certificates on Windows for gRPC and Google GenAI
+try:
+    import certifi
+    ca_path = certifi.where()
+    if os.path.exists(ca_path):
+        os.environ["SSL_CERT_FILE"] = ca_path
+        os.environ["REQUESTS_CA_BUNDLE"] = ca_path
+        os.environ["GRPC_DEFAULT_SSL_ROOTS_FILE_PATH"] = ca_path
+except Exception:
+    pass
+
 import google.generativeai as genai
 try:
     from dotenv import load_dotenv
