@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database,
   Filter,
@@ -19,12 +19,19 @@ import {
   Archive,
   History,
   Clock,
-  FileDown
+  FileDown,
+  BookOpen
 } from 'lucide-react';
 import { Question, BloomLevel, ExamExportConfig } from '../types';
 import apiClient from '../services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+interface RealTextbookOption {
+  id: string;
+  name: string;
+  questionCount: number;
+}
 
 interface QuestionBankScreenProps {
   questions: Question[];
@@ -35,6 +42,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBloom, setSelectedBloom] = useState<string>('all');
+  const [selectedTextbook, setSelectedTextbook] = useState<string>('all');
+  const [availableTextbooks, setAvailableTextbooks] = useState<RealTextbookOption[]>([]);
+  const [isLoadingTextbooks, setIsLoadingTextbooks] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportFormat, setExportFormat] = useState<'docx' | 'pdf' | 'qti' | 'zip'>('zip');
   const [isExporting, setIsExporting] = useState(false);
@@ -91,28 +101,147 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
   };
 
   // Exam Builder Config
-  const [examConfig, setExamConfig] = useState<ExamExportConfig>({
-    universityName: 'ĐẠI HỌC QUỐC GIA',
-    facultyName: 'Khoa Kinh tế & Quản trị',
-    subjectName: 'Kinh tế vi mô',
-    examTitle: 'ĐỀ THI KẾT THÚC HỌC PHẦN - HỌC KỲ II',
-    durationMinutes: 60,
-    examCodeCount: 4,
-    shuffleQuestions: true,
-    shuffleOptions: true,
-    includeAnswerKey: true,
-    includeExplanation: false,
-    format: 'docx',
+  const [examConfig, setExamConfig] = useState<ExamExportConfig>(() => {
+    let faculty = 'Khoa Công nghệ Thông tin';
+    let univ = 'ĐẠI HỌC QUỐC GIA';
+    try {
+      const savedUser = JSON.parse(localStorage.getItem('quizgen_user_profile') || '{}');
+      if (savedUser.faculty || savedUser.department) {
+        faculty = savedUser.faculty || savedUser.department;
+      }
+      if (savedUser.university) {
+        univ = savedUser.university;
+      }
+    } catch {}
+    return {
+      universityName: univ,
+      facultyName: faculty,
+      subjectName: '',
+      examTitle: 'ĐỀ THI KẾT THÚC HỌC PHẦN',
+      durationMinutes: 60,
+      examCodeCount: 4,
+      shuffleQuestions: true,
+      shuffleOptions: true,
+      includeAnswerKey: true,
+      includeExplanation: false,
+      format: 'docx',
+    };
   });
 
   const approvedQuestions = questions.filter((q) => q.status === 'approved');
 
+  // Lấy dữ liệu giáo trình nguồn thực tế từ Document Service, localStorage và danh sách câu hỏi
+  const fetchRealTextbooks = useCallback(async () => {
+    setIsLoadingTextbooks(true);
+    try {
+      let serverDocs: any[] = [];
+      try {
+        let res = await apiClient.fetch(`${API_BASE}/documents/documents`);
+        if (!res.ok) {
+          res = await apiClient.fetch(`${API_BASE}/documents`);
+        }
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            serverDocs = data;
+          }
+        }
+      } catch (err) {
+        console.warn('Không thể nạp danh sách tài liệu từ Document Service:', err);
+      }
+
+      let localDocs: any[] = [];
+      try {
+        localDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+      } catch {}
+
+      // Lập bản đồ số lượng câu hỏi thực tế theo từng giáo trình
+      const questionTextbooksMap: Record<string, number> = {};
+      approvedQuestions.forEach((q) => {
+        const tbName = (q.textbookName || '').trim();
+        if (tbName) {
+          questionTextbooksMap[tbName] = (questionTextbooksMap[tbName] || 0) + 1;
+        }
+      });
+
+      const docMap = new Map<string, RealTextbookOption>();
+
+      // 1. Nạp từ backend Document Service
+      serverDocs.forEach((doc: any) => {
+        const name = String(doc.name || doc.title || '').trim();
+        if (name) {
+          const lower = name.toLowerCase();
+          docMap.set(lower, {
+            id: String(doc.id || name),
+            name,
+            questionCount: questionTextbooksMap[name] || 0,
+          });
+        }
+      });
+
+      // 2. Nạp từ localStorage
+      localDocs.forEach((doc: any) => {
+        const name = String(doc.name || doc.title || '').trim();
+        if (name) {
+          const lower = name.toLowerCase();
+          if (!docMap.has(lower)) {
+            docMap.set(lower, {
+              id: String(doc.id || name),
+              name,
+              questionCount: questionTextbooksMap[name] || 0,
+            });
+          }
+        }
+      });
+
+      // 3. Nạp từ dữ liệu thực tế câu hỏi trong ngân hàng
+      Object.entries(questionTextbooksMap).forEach(([name, count]) => {
+        const lower = name.toLowerCase();
+        if (docMap.has(lower)) {
+          const item = docMap.get(lower)!;
+          item.questionCount = Math.max(item.questionCount, count);
+        } else {
+          docMap.set(lower, {
+            id: name,
+            name,
+            questionCount: count,
+          });
+        }
+      });
+
+      const list = Array.from(docMap.values());
+      setAvailableTextbooks(list);
+
+      // Nếu môn học chưa có tên, tự động cập nhật theo giáo trình thực đầu tiên
+      if (list.length > 0) {
+        const firstCleanName = list[0].name.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
+        setExamConfig((prev) => ({
+          ...prev,
+          subjectName: prev.subjectName || firstCleanName,
+          examTitle: prev.examTitle === 'ĐỀ THI KẾT THÚC HỌC PHẦN'
+            ? `ĐỀ THI KẾT THÚC HỌC PHẦN - ${firstCleanName.toUpperCase()}`
+            : prev.examTitle,
+        }));
+      }
+    } finally {
+      setIsLoadingTextbooks(false);
+    }
+  }, [approvedQuestions]);
+
+  useEffect(() => {
+    void fetchRealTextbooks();
+  }, [fetchRealTextbooks]);
+
   const filtered = approvedQuestions.filter((q) => {
     const matchSearch =
       q.question.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      q.chapter.toLowerCase().includes(searchQuery.toLowerCase());
+      q.chapter.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (q.textbookName && q.textbookName.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchBloom = selectedBloom === 'all' || q.bloomLevel === selectedBloom;
-    return matchSearch && matchBloom;
+    const matchTextbook =
+      selectedTextbook === 'all' ||
+      (q.textbookName && q.textbookName.toLowerCase() === selectedTextbook.toLowerCase());
+    return matchSearch && matchBloom && matchTextbook;
   });
 
   const handleToggleSelect = (id: string) => {
@@ -335,14 +464,62 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
             {/* Textbook Filter */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Giáo trình nguồn:
-              </label>
-              <select className="w-full p-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-slate-200">
-                <option className="bg-[#111827]">Tất cả giáo trình (12)</option>
-                <option className="bg-[#111827]">Kinh tế vi mô 2025</option>
-                <option className="bg-[#111827]">Nguyên lý kế toán</option>
-              </select>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Giáo trình nguồn:
+                </label>
+                {isLoadingTextbooks ? (
+                  <span className="text-[10px] text-blue-400 animate-pulse font-mono">Đang tải...</span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {availableTextbooks.length} giáo trình
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <select
+                  value={selectedTextbook}
+                  onChange={(e) => {
+                    const newTb = e.target.value;
+                    setSelectedTextbook(newTb);
+                    if (newTb !== 'all') {
+                      const cleanSubject = newTb.replace(/\.[^/.]+$/, '').replace(/_/g, ' ');
+                      setExamConfig((prev) => ({
+                        ...prev,
+                        subjectName: cleanSubject,
+                        examTitle: `ĐỀ THI KẾT THÚC HỌC PHẦN - ${cleanSubject.toUpperCase()}`
+                      }));
+                    }
+                  }}
+                  className="w-full p-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-slate-200 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="all" className="bg-[#111827]">
+                    {availableTextbooks.length === 0
+                      ? 'Chưa có giáo trình nguồn (0)'
+                      : `Tất cả giáo trình (${approvedQuestions.length} câu)`}
+                  </option>
+                  {availableTextbooks.map((tb) => (
+                    <option key={tb.id} value={tb.name} className="bg-[#111827]">
+                      {tb.name} ({tb.questionCount} câu)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {availableTextbooks.length > 0 && selectedTextbook !== 'all' && (
+                <div className="mt-2 flex items-center justify-between text-[11px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2.5 py-1.5 rounded-lg">
+                  <span className="truncate max-w-[170px]" title={selectedTextbook}>
+                    Đang lọc: <strong>{selectedTextbook}</strong>
+                  </span>
+                  <button
+                    onClick={() => setSelectedTextbook('all')}
+                    className="text-xs hover:text-white ml-1 font-bold"
+                    title="Bỏ lọc giáo trình"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -385,64 +562,94 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                   <th className="py-3.5 px-3 w-20">Mức độ</th>
                   <th className="py-3.5 px-4">Nội dung câu hỏi trắc nghiệm</th>
                   <th className="py-3.5 px-4">Đáp án chuẩn</th>
-                  <th className="py-3.5 px-4">Chương mục</th>
+                  <th className="py-3.5 px-4">Giáo trình & Chương mục</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/[0.04] text-slate-300">
-                {filtered.map((q) => {
-                  const isChecked = selectedIds.includes(q.id);
-                  const correctOpt = q.options.find((o) => o.id === q.correctAnswerId);
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center space-y-2">
+                        <BookOpen className="w-8 h-8 text-slate-600" />
+                        <p className="text-sm font-medium text-slate-300">Không tìm thấy câu hỏi nào phù hợp</p>
+                        <p className="text-xs text-slate-500">
+                          {selectedTextbook !== 'all'
+                            ? `Chưa có câu hỏi đã thẩm định nào thuộc giáo trình "${selectedTextbook}".`
+                            : 'Chưa có câu hỏi nào trong ngân hàng. Hãy tạo và thẩm định câu hỏi từ giáo trình nguồn.'}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((q) => {
+                    const isChecked = selectedIds.includes(q.id);
+                    const correctOpt = q.options.find((o) => o.id === q.correctAnswerId);
 
-                  return (
-                    <tr
-                      key={q.id}
-                      onClick={() => handleToggleSelect(q.id)}
-                      className={`hover:bg-white/[0.03] transition-colors cursor-pointer ${
-                        isChecked ? 'bg-blue-600/10' : ''
-                      }`}
-                    >
-                      <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => handleToggleSelect(q.id)}
-                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
-                        />
-                      </td>
+                    return (
+                      <tr
+                        key={q.id}
+                        onClick={() => handleToggleSelect(q.id)}
+                        className={`hover:bg-white/[0.03] transition-colors cursor-pointer ${
+                          isChecked ? 'bg-blue-600/10' : ''
+                        }`}
+                      >
+                        <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSelect(q.id)}
+                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                          />
+                        </td>
 
-                      <td className="py-4 px-3 font-semibold">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            q.bloomLevel === 'Nhận biết'
-                              ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
-                              : q.bloomLevel === 'Thông hiểu'
-                              ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
-                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                          }`}
-                        >
-                          {q.bloomLevel}
-                        </span>
-                      </td>
+                        <td className="py-4 px-3 font-semibold">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              q.bloomLevel === 'Nhận biết'
+                                ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                                : q.bloomLevel === 'Thông hiểu'
+                                ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                            }`}
+                          >
+                            {q.bloomLevel}
+                          </span>
+                        </td>
 
-                      <td className="py-4 px-4 max-w-md">
-                        <div className="font-semibold text-white text-xs leading-snug">
-                          {q.question}
-                        </div>
-                        <div className="text-[11px] text-slate-400 mt-1 truncate">
-                          A: {q.options[0]?.text} | B: {q.options[1]?.text}
-                        </div>
-                      </td>
+                        <td className="py-4 px-4 max-w-md">
+                          <div className="font-semibold text-white text-xs leading-snug">
+                            {q.question}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-1 truncate">
+                            A: {q.options[0]?.text} | B: {q.options[1]?.text}
+                          </div>
+                        </td>
 
-                      <td className="py-4 px-4 font-medium text-emerald-400">
-                        {correctOpt ? `${correctOpt.label}. ${correctOpt.text}` : '-'}
-                      </td>
+                        <td className="py-4 px-4 font-medium text-emerald-400">
+                          {correctOpt ? `${correctOpt.label}. ${correctOpt.text}` : '-'}
+                        </td>
 
-                      <td className="py-4 px-4 text-slate-400 text-[11px] font-mono">
-                        {q.chapter}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <td className="py-4 px-4 text-slate-400 text-[11px]">
+                          <div className="font-semibold text-slate-200 font-mono flex items-center space-x-1.5">
+                            <Layers className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <span className="truncate max-w-[170px]" title={q.chapter}>{q.chapter}</span>
+                          </div>
+                          {q.textbookName ? (
+                            <div className="text-[10px] text-emerald-400 flex items-center space-x-1 mt-1 truncate max-w-[170px]" title={q.textbookName}>
+                              <BookOpen className="w-3 h-3 text-emerald-400/80 shrink-0" />
+                              <span className="truncate">{q.textbookName}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-500 flex items-center space-x-1 mt-1 italic">
+                              <BookOpen className="w-3 h-3 text-slate-600 shrink-0" />
+                              <span>Chưa gắn giáo trình</span>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -584,7 +791,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                       <div className="flex items-center space-x-3 text-slate-400 text-[11px] font-medium flex-wrap">
                         <span>{exam.university || 'ĐẠI HỌC QUỐC GIA'}</span>
                         <span>•</span>
-                        <span>{exam.faculty || 'Khoa Kinh tế & Quản trị'}</span>
+                        <span>{exam.faculty || 'Khoa Công nghệ Thông tin'}</span>
                         <span>•</span>
                         <span>{exam.selectedQuestionIds?.length || 0} câu hỏi</span>
                         <span>•</span>
