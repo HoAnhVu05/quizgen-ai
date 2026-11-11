@@ -55,26 +55,7 @@ const DEFAULT_SYSTEM_ACCOUNTS: UserProfile[] = [
   },
 ];
 
-const DEFAULT_AUDIT_LOGS: SecurityAuditLog[] = [
-  {
-    id: 'audit-init-1',
-    timestamp: '11/11/2026 08:30:12',
-    actorEmail: 'admin@ut.edu.vn',
-    action: 'SYSTEM_STARTUP_CHECK',
-    detail: 'Khởi động cụm 8 Microservices & kiểm tra kết nối Vector DB Qdrant: 100% Healthy.',
-    severity: 'info',
-    ipAddress: '10.0.14.22 (Internal Gateway)',
-  },
-  {
-    id: 'audit-init-2',
-    timestamp: '11/11/2026 09:15:44',
-    actorEmail: 'lecturer@vnu.edu.vn',
-    action: 'RAG_DOCUMENT_INDEXED',
-    detail: 'Đã băm nhỏ và lập chỉ mục Vector cho giáo trình GiaoTrinh_KinhTeViMo_2025.pdf (42 chunks).',
-    severity: 'info',
-    ipAddress: '172.16.8.105',
-  },
-];
+const DEFAULT_AUDIT_LOGS: SecurityAuditLog[] = [];
 
 export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   currentUser,
@@ -115,7 +96,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     try {
       const savedLogs: SecurityAuditLog[] = JSON.parse(
         localStorage.getItem('quizgen_security_audit_logs') || '[]'
-      );
+      ).filter((l: any) => l && l.id !== 'audit-init-1' && l.id !== 'audit-init-2');
       setAuditLogs([...savedLogs, ...DEFAULT_AUDIT_LOGS]);
     } catch {
       setAuditLogs(DEFAULT_AUDIT_LOGS);
@@ -590,7 +571,12 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             </div>
 
             <div className="divide-y divide-slate-100 max-h-[480px] overflow-y-auto">
-              {auditLogs.map((log) => (
+              {auditLogs.length === 0 ? (
+                <div className="py-8 text-center text-slate-400 text-xs">
+                  Chưa có bản ghi nhật ký kiểm toán nào.
+                </div>
+              ) : (
+                auditLogs.map((log) => (
                 <div
                   key={log.id}
                   className={`p-4 flex items-start justify-between gap-4 text-xs ${
@@ -625,7 +611,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                     {log.timestamp}
                   </span>
                 </div>
-              ))}
+              )))}
             </div>
           </div>
         </div>

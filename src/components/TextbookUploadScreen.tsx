@@ -31,28 +31,7 @@ interface TextbookUploadScreenProps {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 const MAX_UPLOAD_SIZE_MB = 25;
 
-const DEFAULT_TEXTBOOKS: TextbookFile[] = [
-  {
-    id: 'doc-kinh-te-vi-mo-2025',
-    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    size: '14.2 MB',
-    totalPages: 184,
-    chaptersCount: 5,
-    status: 'ready',
-    progress: 100,
-    uploadedAt: '10/11/2026 09:30',
-  },
-  {
-    id: 'doc-tri-tue-nhan-tao-2026',
-    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-    size: '18.6 MB',
-    totalPages: 240,
-    chaptersCount: 4,
-    status: 'ready',
-    progress: 100,
-    uploadedAt: '11/11/2026 08:15',
-  },
-];
+const DEFAULT_TEXTBOOKS: TextbookFile[] = [];
 
 const formatUploadedAt = (input?: string): string => {
   if (!input) {
@@ -122,8 +101,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       const list = Array.isArray(payload) ? payload.map(normalizeTextbook) : [];
       const savedLocal: TextbookFile[] = JSON.parse(
         localStorage.getItem('quizgen_uploaded_documents') || '[]'
-      );
-      const merged = [...savedLocal, ...list, ...DEFAULT_TEXTBOOKS];
+      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+      const merged = [...savedLocal, ...list];
       const unique = merged.filter(
         (doc, idx, arr) => idx === arr.findIndex((d) => d.id === doc.id)
       );
@@ -131,8 +110,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     } catch {
       const savedLocal: TextbookFile[] = JSON.parse(
         localStorage.getItem('quizgen_uploaded_documents') || '[]'
-      );
-      const merged = [...savedLocal, ...DEFAULT_TEXTBOOKS];
+      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+      const merged = [...savedLocal];
       const unique = merged.filter(
         (doc, idx, arr) => idx === arr.findIndex((d) => d.id === doc.id)
       );
@@ -211,8 +190,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
 
       try {
         const savedLocal: TextbookFile[] = JSON.parse(
-          localStorage.getItem('quizgen_uploaded_documents') || '[]'
-        );
+        localStorage.getItem('quizgen_uploaded_documents') || '[]'
+      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
         savedLocal.unshift(uploadedDoc);
         localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(savedLocal.slice(0, 20)));
         localStorage.setItem('quizgen_selected_book_id', uploadedDoc.id);
@@ -238,8 +217,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       };
       try {
         const savedLocal: TextbookFile[] = JSON.parse(
-          localStorage.getItem('quizgen_uploaded_documents') || '[]'
-        );
+        localStorage.getItem('quizgen_uploaded_documents') || '[]'
+      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
         savedLocal.unshift(fallbackDoc);
         localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(savedLocal.slice(0, 20)));
         localStorage.setItem('quizgen_selected_book_id', fallbackDoc.id);
