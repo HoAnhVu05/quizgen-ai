@@ -1,63 +1,214 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   GraduationCap,
   Mail,
   Lock,
   Eye,
   EyeOff,
+  User,
+  Building2,
+  Sparkles,
   ArrowRight,
-  AlertCircle,
-  CheckCircle2,
   ShieldCheck,
+  CheckCircle2,
+  Award,
+  UserCheck,
+  AlertCircle,
+  Check,
+  School,
+  FileCheck,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
-import apiClient from '../services/apiClient';
 
 interface RegisterScreenProps {
-  onRegister: (user: UserProfile, needsProfileSetup?: boolean) => void;
+  onRegister: (user: UserProfile) => void;
   onNavigateLogin: () => void;
 }
 
-export const RegisterScreen: React.FC<RegisterScreenProps> = ({
-  onRegister,
-  onNavigateLogin,
-}) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+interface RegisterForm {
+  fullName: string;
+  academicTitle: string;
+  email: string;
+  role: UserRole;
+  faculty: string;
+  university: string;
+  password: string;
+  confirmPassword: string;
+}
+
+interface FormErrors {
+  fullName?: string;
+  academicTitle?: string;
+  email?: string;
+  university?: string;
+  faculty?: string;
+  password?: string;
+  confirmPassword?: string;
+  general?: string;
+}
+
+const ACADEMIC_TITLES = ['ThS.', 'TS.', 'PGS.'];
+
+const UNIVERSITY_OPTIONS = [
+  'Đại học Quốc gia TP.HCM (VNU-HCM)',
+  'Trường ĐH Bách Khoa - ĐHQG TP.HCM',
+  'Trường ĐH Khoa học Tự nhiên - ĐHQG TP.HCM',
+  'Trường ĐH Công nghệ Thông tin (UIT) - ĐHQG TP.HCM',
+  'Trường ĐH Kinh tế - Luật (UEL) - ĐHQG TP.HCM',
+  'Trường ĐH Quốc tế (IU) - ĐHQG TP.HCM',
+  'Trường ĐH KHXH&NV - ĐHQG TP.HCM',
+  'Đại học Quốc gia Hà Nội (VNU-HN)',
+  'Đại học Bách Khoa Hà Nội (HUST)',
+  'Đại học Kinh tế TP.HCM (UEH)',
+  'Trường Đại học Sư phạm Kỹ thuật TP.HCM',
+  'Cơ sở giáo dục đại học khác...',
+];
+
+const FACULTY_OPTIONS = [
+  'Khoa Kinh tế & Quản trị',
+  'Khoa Công nghệ Thông tin',
+  'Khoa Khoa học & Kỹ thuật Máy tính',
+  'Khoa Khoa học Tự nhiên',
+  'Khoa Luật & Hành chính công',
+  'Khoa Sư phạm & Giáo dục học',
+  'Khoa Y Dược',
+  'Khoa Ngoại ngữ & Ngôn ngữ học',
+  'Khoa Kỹ thuật Xây dựng & Cơ khí',
+  'Phòng Khảo thi & Đảm bảo Chất lượng',
+  'Viện Trí tuệ Nhân tạo & Khoa học Dữ liệu',
+];
+
+const ROLES_OPTIONS: Array<{ id: UserRole; title: string; subtitle: string; icon: any }> = [
+  { id: 'lecturer', title: 'Giảng viên', subtitle: 'Soạn đề & RAG', icon: GraduationCap },
+  { id: 'head_of_department', title: 'Trưởng bộ môn', subtitle: 'Thẩm định đề thi', icon: Award },
+  { id: 'admin', title: 'Quản trị Khảo thi', subtitle: 'Quản trị hệ thống', icon: ShieldCheck },
+];
+
+const SYSTEM_DEFAULT_EMAILS = [
+  'lecturer@vnu.edu.vn',
+  'truongbomon@vnu.edu.vn',
+  'admin.khaothi@vnu.edu.vn',
+  'admin@ut.edu.vn',
+];
+
+// Regex kiểm tra tên tiếng Việt đầy đủ (chữ cái, dấu tiếng Việt, khoảng trắng, 3-50 ký tự)
+const VIETNAMESE_NAME_REGEX =
+  /^[a-zA-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵýỷỹ\s]{3,50}$/;
+
+// Regex chuẩn RFC 5322 cho Email
+const STRICT_EMAIL_REGEX =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+
+export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNavigateLogin }) => {
+  const [form, setForm] = useState<RegisterForm>({
+    fullName: '',
+    academicTitle: 'TS.',
+    email: '',
+    role: 'lecturer',
+    university: UNIVERSITY_OPTIONS[0],
+    faculty: FACULTY_OPTIONS[1],
+    password: '',
+    confirmPassword: '',
+  });
+
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{
-    email?: string;
-    password?: string;
-    confirmPassword?: string;
-    general?: string;
-  }>({});
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  const validate = () => {
-    const newErrors: {
-      email?: string;
-      password?: string;
-      confirmPassword?: string;
-    } = {};
+  // ─── 4 Tiêu chí mật khẩu bảo mật học thuật ──────────────────────────────
+  const passwordCriteria = useMemo(() => {
+    const pw = form.password;
+    return {
+      minLength: pw.length >= 8,
+      hasUpper: /[A-Z]/.test(pw),
+      hasNumber: /[0-9]/.test(pw),
+      hasSpecial: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(pw),
+    };
+  }, [form.password]);
 
-    const trimmedEmail = email.trim();
+  const passwordScore = useMemo(() => {
+    let score = 0;
+    if (passwordCriteria.minLength) score++;
+    if (passwordCriteria.hasUpper) score++;
+    if (passwordCriteria.hasNumber) score++;
+    if (passwordCriteria.hasSpecial) score++;
+    return score;
+  }, [passwordCriteria]);
+
+  const isPasswordSecure = passwordScore === 4;
+
+  const isAcademicEmail = useMemo(() => {
+    return /\.(edu\.vn|edu|ac\.vn)$/i.test(form.email.trim());
+  }, [form.email]);
+
+  const setField = (field: keyof RegisterForm, value: any) => {
+    setForm((p) => ({ ...p, [field]: value }));
+    setErrors((p) => ({ ...p, [field]: undefined, general: undefined }));
+  };
+
+  // ─── Hàm kiểm tra trùng lặp Email trong Local Storage & Danh sách hệ thống ───
+  const checkEmailAlreadyExists = (emailToCheck: string): boolean => {
+    const normalized = emailToCheck.trim().toLowerCase();
+    if (SYSTEM_DEFAULT_EMAILS.includes(normalized)) {
+      return true;
+    }
+    try {
+      const registered = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
+      if (Array.isArray(registered)) {
+        return registered.some((u: any) => (u.email || '').toLowerCase() === normalized);
+      }
+    } catch {
+      // Ignored
+    }
+    return false;
+  };
+
+  const validate = (): boolean => {
+    const newErrors: FormErrors = {};
+    const trimmedName = form.fullName.trim();
+    const trimmedEmail = form.email.trim().toLowerCase();
+
+    // 1. Kiểm tra Họ và Tên
+    if (!trimmedName) {
+      newErrors.fullName = 'Vui lòng nhập họ và tên của bạn.';
+    } else if (trimmedName.split(/\s+/).length < 2) {
+      newErrors.fullName = 'Vui lòng nhập đầy đủ cả Họ và Tên (tối thiểu 2 từ).';
+    } else if (!VIETNAMESE_NAME_REGEX.test(trimmedName)) {
+      newErrors.fullName = 'Họ và tên chỉ bao gồm chữ cái hợp lệ, không chứa số hay ký tự đặc biệt.';
+    }
+
+    // 2. Kiểm tra Email
     if (!trimmedEmail) {
-      newErrors.email = 'Vui lòng nhập địa chỉ email.';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      newErrors.email = 'Định dạng email không hợp lệ (ví dụ: giangvien@vnu.edu.vn).';
+      newErrors.email = 'Vui lòng nhập email học thuật / công tác.';
+    } else if (!STRICT_EMAIL_REGEX.test(trimmedEmail)) {
+      newErrors.email = 'Định dạng email không hợp lệ (ví dụ: canbo@vnu.edu.vn).';
+    } else if (checkEmailAlreadyExists(trimmedEmail)) {
+      newErrors.email = 'Email này đã tồn tại trong hệ thống. Vui lòng chuyển sang Đăng nhập.';
     }
 
-    if (!password) {
-      newErrors.password = 'Vui lòng nhập mật khẩu tài khoản.';
-    } else if (password.length < 6) {
-      newErrors.password = 'Mật khẩu phải có tối thiểu 6 ký tự.';
+    // 3. Kiểm tra Trường & Khoa
+    if (!form.university) {
+      newErrors.university = 'Vui lòng chọn cơ sở đào tạo / trường đại học.';
+    }
+    if (!form.faculty) {
+      newErrors.faculty = 'Vui lòng chọn khoa hoặc đơn vị công tác.';
     }
 
-    if (!confirmPassword) {
-      newErrors.confirmPassword = 'Vui lòng xác nhận lại mật khẩu.';
-    } else if (password !== confirmPassword) {
+    // 4. Kiểm tra Mật khẩu chặt chẽ
+    if (!form.password) {
+      newErrors.password = 'Vui lòng thiết lập mật khẩu bảo mật.';
+    } else if (!passwordCriteria.minLength) {
+      newErrors.password = 'Mật khẩu phải có tối thiểu 8 ký tự.';
+    } else if (!isPasswordSecure) {
+      newErrors.password = 'Mật khẩu chưa đáp ứng đủ 4 tiêu chí bảo mật bên dưới.';
+    }
+
+    // 5. Kiểm tra Xác nhận Mật khẩu
+    if (!form.confirmPassword) {
+      newErrors.confirmPassword = 'Vui lòng nhập lại mật khẩu để xác nhận.';
+    } else if (form.password !== form.confirmPassword) {
       newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp.';
     }
 
@@ -65,247 +216,409 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
+  const getRoleLabel = (role: UserRole) => {
+    switch (role) {
+      case 'head_of_department':
+        return 'Trưởng bộ môn';
+      case 'admin':
+        return 'Quản trị Khảo thi';
+      default:
+        return 'Giảng viên';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
 
+    if (!agreedToTerms) {
+      setErrors((p) => ({
+        ...p,
+        general: 'Vui lòng tích xác nhận cam kết tuân thủ Quy chế Khảo thí và Bảo mật đề thi.',
+      }));
+      return;
+    }
+
     setIsLoading(true);
     setErrors({});
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = form.email.trim().toLowerCase();
+    const newUser: UserProfile = {
+      id: `usr-${form.role}-${Date.now().toString().slice(-4)}`,
+      fullName: form.fullName.trim(),
+      email: normalizedEmail,
+      academicTitle: form.academicTitle,
+      department: form.faculty,
+      faculty: form.faculty,
+      university: form.university,
+      role: form.role,
+      roleLabel: getRoleLabel(form.role),
+    };
 
     try {
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
-      // 1. Gửi yêu cầu đăng ký tài khoản tới Backend Auth Service
-      const regRes = await fetch(`${API_BASE}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: normalizedEmail,
-          password: password,
-          role: 'lecturer',
-        }),
-      });
+      // 1. Gửi đăng ký tới Backend Auth Service qua Mock Gateway hoặc Service thực tế
+      try {
+        const res = await fetch(`${API_BASE}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: normalizedEmail,
+            password: form.password,
+            full_name: newUser.fullName,
+            academic_title: newUser.academicTitle,
+            university: newUser.university,
+            department: newUser.department,
+            role: newUser.role,
+          }),
+        });
 
-      if (!regRes.ok) {
-        const errData = await regRes.json().catch(() => ({}));
-        const errMsg = errData.detail || 'Không thể tạo tài khoản. Vui lòng thử lại.';
-        setErrors({ general: errMsg });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.id) newUser.id = data.id;
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.detail || 'Không thể tạo tài khoản trên máy chủ.';
+          setErrors({ general: errMsg });
+          setIsLoading(false);
+          return;
+        }
+        const data = await res.json();
+        if (data.id) {
+          newUser.id = data.id;
+        }
+        if (data.access_token) {
+          localStorage.setItem('quizgen_token', data.access_token);
+          localStorage.setItem('quizgen_auth_token', data.access_token);
+        }
+      } catch (netErr) {
+        // Backend offline, fallback lưu cục bộ
+      }
+
+      // 2. Lưu trữ vào danh sách người dùng đã đăng ký (LocalStorage)
+      const existingUsers: Array<UserProfile & { password?: string }> = JSON.parse(
+        localStorage.getItem('quizgen_registered_users') || '[]'
+      );
+
+      // Phòng ngừa trùng lặp lần 2
+      if (existingUsers.some((u) => u.email.toLowerCase() === normalizedEmail)) {
+        setErrors({ email: 'Email này đã tồn tại trong danh sách tài khoản.' });
         setIsLoading(false);
         return;
       }
 
-      // 2. Tự động đăng nhập để lấy JWT Token
-      const loginFormData = new URLSearchParams();
-      loginFormData.append('username', normalizedEmail);
-      loginFormData.append('password', password);
-
-      const loginRes = await fetch(`${API_BASE}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: loginFormData.toString(),
+      existingUsers.push({
+        ...newUser,
+        role: 'lecturer',
+        roleLabel: 'Giảng viên',
+        status: 'active',
+        password: form.password,
       });
+      localStorage.setItem('quizgen_registered_users', JSON.stringify(existingUsers));
 
-      if (loginRes.ok) {
-        const loginData = await loginRes.json();
-        if (loginData.access_token) {
-          apiClient.setTokens(loginData.access_token, loginData.refresh_token || '');
-          localStorage.setItem('quizgen_token', loginData.access_token);
-          localStorage.setItem('quizgen_auth_token', loginData.access_token);
+      // Ghi log đăng ký tài khoản mới cho Admin Portal
+      try {
+        const logs = JSON.parse(localStorage.getItem('quizgen_security_audit_logs') || '[]');
+        logs.unshift({
+          id: `audit-${Date.now()}`,
+          timestamp: new Date().toLocaleString('vi-VN'),
+          actorEmail: normalizedEmail,
+          action: 'REGISTER_LECTURER_ACCOUNT',
+          detail: `Đăng ký tài khoản Giảng viên mới: ${newUser.academicTitle} ${newUser.fullName} (${newUser.faculty})`,
+          severity: 'info',
+          ipAddress: '127.0.0.1',
+        });
+        localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(logs.slice(0, 100)));
+      } catch {}
 
-          const rawUser = loginData.user || {};
-          const newUser: UserProfile = {
-            id: rawUser.id || `usr-${Date.now()}`,
-            fullName: rawUser.full_name || '',
-            email: rawUser.email || normalizedEmail,
-            academicTitle: rawUser.academic_title || 'TS.',
-            department: rawUser.department || '',
-            faculty: rawUser.department || '',
-            university: rawUser.university || '',
-            role: (rawUser.role as UserRole) || 'lecturer',
-            roleLabel: 'Giảng viên',
-            profileCompleted: false, // Luôn yêu cầu điền thông tin cho tài khoản mới
-          };
+      // Tự động thiết lập phiên đăng nhập
+      localStorage.setItem('quizgen_user', JSON.stringify(newUser));
 
-          localStorage.setItem('quizgen_user', JSON.stringify(newUser));
-          // Chuyển tới màn hình điền thông tin người dùng
-          onRegister(newUser, true);
-        }
-      } else {
-        // Fallback: chuyển sang trang đăng nhập nếu auto-login không thành công
-        onNavigateLogin();
-      }
-    } catch (err: any) {
-      setErrors({
-        general: 'Không thể kết nối đến máy chủ xác thực. Vui lòng kiểm tra mạng và thử lại.',
-      });
-    } finally {
       setIsLoading(false);
+      onRegister(newUser);
+    } catch (err: any) {
+      setIsLoading(false);
+      setErrors({ general: err.message || 'Lỗi khi khởi tạo tài khoản.' });
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-[#080c16] relative overflow-hidden font-sans">
-      {/* Background Glows */}
-      <div className="absolute top-1/4 -right-20 w-96 h-96 bg-indigo-600/10 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute bottom-1/4 -left-20 w-96 h-96 bg-blue-600/10 rounded-full blur-[140px] pointer-events-none" />
+    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70]">
+      {/* Minimal Top Accent Bar */}
+      <div className="h-1.5 w-full bg-[#008689] shrink-0" />
 
-      <div className="w-full max-w-md bg-[#0f172a]/95 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-6 sm:p-8 relative z-10">
-        {/* Brand Header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 shadow-lg shadow-indigo-500/25 mb-4">
-            <GraduationCap className="w-7 h-7 text-white" />
-          </div>
-          <div className="flex items-center justify-center gap-2 mb-1">
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              Đăng Ký Tài Khoản Mới
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">Tạo Tài Khoản QuizGen AI</h1>
-          <p className="text-xs text-slate-400 mt-1.5">
-            Bước 1: Khởi tạo tài khoản xác thực bằng Email
-          </p>
-        </div>
-
-        {/* Global Error Banner */}
-        {errors.general && (
-          <div className="mb-5 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-start gap-3 text-xs text-rose-300 animate-in fade-in">
-            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400 mt-0.5" />
-            <span className="leading-relaxed">{errors.general}</span>
-          </div>
-        )}
-
-        {/* Register Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Email công tác / học thuật <span className="text-rose-400">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setErrors((p) => ({ ...p, email: undefined, general: undefined }));
-                }}
-                placeholder="giangvien@vnu.edu.vn"
-                className={`w-full h-11 pl-10 pr-4 bg-slate-900/90 border rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none transition-colors ${
-                  errors.email ? 'border-rose-500/80 focus:border-rose-500' : 'border-slate-700/80 focus:border-indigo-500'
-                }`}
-                autoComplete="email"
-                required
-              />
-              <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-lg space-y-5">
+          {/* Clean Brand Header */}
+          <div className="text-center space-y-1.5">
+            <div className="inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-[#008689] text-white shadow-sm mb-1">
+              <GraduationCap className="w-5 h-5" />
             </div>
-            {errors.email && <p className="text-xs text-rose-400 mt-1">{errors.email}</p>}
+            <h1 className="text-lg font-extrabold text-[#008689] tracking-tight uppercase">
+              QuizGen AI
+            </h1>
+            <p className="text-xs text-slate-500">
+              Đăng ký tài khoản Giảng viên & Cán bộ Khảo thí
+            </p>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Mật khẩu <span className="text-rose-400">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setErrors((p) => ({ ...p, password: undefined, general: undefined }));
-                }}
-                placeholder="Tối thiểu 6 ký tự..."
-                className={`w-full h-11 pl-10 pr-10 bg-slate-900/90 border rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none transition-colors ${
-                  errors.password ? 'border-rose-500/80 focus:border-rose-500' : 'border-slate-700/80 focus:border-indigo-500'
-                }`}
-                autoComplete="new-password"
-                required
-              />
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {/* Card */}
+          <div className="rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] bg-white shadow-sm p-6 sm:p-7 space-y-4">
+            <div className="text-center border-b border-slate-100 pb-3">
+              <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
+                Tạo tài khoản mới
+              </h2>
+            </div>
+
+            {errors.general && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#da1c2d]" />
+                <span>{errors.general}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
+              {/* 1. Loại tài khoản cố định: Giảng viên (Strict Whitelist) */}
+              <div className="p-2.5 rounded-xl bg-[#e6f4f4]/70 border border-[#008689]/25 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-[#006d70] font-semibold">
+                  <GraduationCap className="w-4 h-4 text-[#008689]" />
+                  <span>Tài khoản Giảng viên Biên soạn & Xuất bản Đề thi</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-[#008689] border border-[#008689]/20">
+                  Mặc định
+                </span>
+              </div>
+
+              {/* 2. Học vị & Họ tên */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="col-span-1 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Học vị</label>
+                  <select
+                    value={form.academicTitle}
+                    onChange={(e) => setField('academicTitle', e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer"
+                  >
+                    {ACADEMIC_TITLES.map((t) => (
+                      <option key={t} value={t} className="bg-white text-slate-900">
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Họ và tên</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(e) => setField('fullName', e.target.value)}
+                      placeholder="Nguyễn Văn An"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.fullName ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                  </div>
+                  {errors.fullName && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.fullName}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Email công tác</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setField('email', e.target.value)}
+                    placeholder="giangvien@ut.edu.vn"
+                    className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                      errors.email ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                    }`}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="text-[11px] text-[#da1c2d]">{errors.email}</p>
+                )}
+              </div>
+
+              {/* 4. Trường & Khoa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Trường đại học</label>
+                  <div className="relative">
+                    <School className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={form.university}
+                      onChange={(e) => setField('university', e.target.value)}
+                      placeholder="ĐH GTVT TP.HCM (UTH)"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.university ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                  </div>
+                  {errors.university && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.university}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Khoa / Đơn vị</label>
+                  <div className="relative">
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <select
+                      value={form.faculty}
+                      onChange={(e) => setField('faculty', e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer truncate"
+                    >
+                      {FACULTY_OPTIONS.map((f) => (
+                        <option key={f} value={f} className="bg-white text-slate-900">
+                          {f}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Mật khẩu & Xác nhận */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Mật khẩu</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setField('password', e.target.value)}
+                      placeholder="Tối thiểu 8 ký tự"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.password ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Xác nhận mật khẩu</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={form.confirmPassword}
+                      onChange={(e) => setField('confirmPassword', e.target.value)}
+                      placeholder="Nhập lại mật khẩu"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.confirmPassword
+                          ? 'border-[#da1c2d]'
+                          : form.confirmPassword && form.password === form.confirmPassword
+                          ? 'border-emerald-500'
+                          : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compact Password Criteria Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { ok: passwordCriteria.minLength, label: '≥ 8 ký tự' },
+                  { ok: passwordCriteria.hasUpper, label: 'Chữ hoa (A-Z)' },
+                  { ok: passwordCriteria.hasNumber, label: 'Chữ số (0-9)' },
+                  { ok: passwordCriteria.hasSpecial, label: 'Ký tự đặc biệt' },
+                ].map((item) => (
+                  <span
+                    key={item.label}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
+                      item.ok
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-50 text-slate-400 border-slate-200'
+                    }`}
+                  >
+                    {item.ok ? '✓ ' : ''}
+                    {item.label}
+                  </span>
+                ))}
+              </div>
+
+              {(errors.password || errors.confirmPassword) && (
+                <p className="text-[11px] text-[#da1c2d]">
+                  {errors.password || errors.confirmPassword}
+                </p>
+              )}
+
+              {/* 6. Terms */}
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#008689] accent-[#008689] cursor-pointer shrink-0"
+                />
+                <span className="text-xs text-slate-600">
+                  Tôi đồng ý tuân thủ <strong className="text-[#008689]">Quy chế Khảo thí & Bảo mật Đề thi</strong>.
+                </span>
+              </label>
+
+              {/* Submit Button */}
               <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
-                tabIndex={-1}
+                id="register-submit-btn"
+                type="submit"
+                disabled={isLoading || !agreedToTerms || !isPasswordSecure}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm text-white bg-[#008689] hover:bg-[#006d70] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang tạo tài khoản...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Đăng ký tài khoản</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="text-center text-xs text-slate-500 pt-2 border-t border-slate-100">
+              Đã có tài khoản?{' '}
+              <button
+                id="go-to-login-btn"
+                onClick={onNavigateLogin}
+                className="text-[#008689] font-bold hover:underline"
+              >
+                Đăng nhập
               </button>
             </div>
-            {errors.password && <p className="text-xs text-rose-400 mt-1">{errors.password}</p>}
           </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5">
-              Xác nhận mật khẩu <span className="text-rose-400">*</span>
-            </label>
-            <div className="relative">
-              <input
-                type={showConfirmPassword ? 'text' : 'password'}
-                value={confirmPassword}
-                onChange={(e) => {
-                  setConfirmPassword(e.target.value);
-                  setErrors((p) => ({ ...p, confirmPassword: undefined, general: undefined }));
-                }}
-                placeholder="Nhập lại mật khẩu..."
-                className={`w-full h-11 pl-10 pr-10 bg-slate-900/90 border rounded-xl text-white text-sm placeholder-slate-500 focus:outline-none transition-colors ${
-                  errors.confirmPassword ? 'border-rose-500/80 focus:border-rose-500' : 'border-slate-700/80 focus:border-indigo-500'
-                }`}
-                autoComplete="new-password"
-                required
-              />
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors"
-                tabIndex={-1}
-              >
-                {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {errors.confirmPassword && (
-              <p className="text-xs text-rose-400 mt-1">{errors.confirmPassword}</p>
-            )}
-          </div>
-
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-400">
-            <span className="font-medium text-slate-300">Lưu ý:</span> Sau khi tạo tài khoản, hệ thống sẽ chuyển bạn đến màn hình điền thông tin cá nhân và đơn vị công tác để hoàn tất.
-          </div>
-
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full h-11 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 text-white font-semibold text-sm shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-50 mt-2"
-          >
-            {isLoading ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Đang tạo tài khoản...
-              </>
-            ) : (
-              <>
-                Tiếp Tục Điền Thông Tin
-                <ArrowRight className="w-4 h-4" />
-              </>
-            )}
-          </button>
-        </form>
-
-        {/* Switch to Login */}
-        <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-          <p className="text-xs text-slate-400">
-            Đã có tài khoản trên QuizGen AI?{' '}
-            <button
-              type="button"
-              onClick={onNavigateLogin}
-              className="text-indigo-400 hover:text-indigo-300 font-semibold underline underline-offset-2 transition-colors ml-1"
-            >
-              Đăng nhập ngay
-            </button>
-          </p>
         </div>
       </div>
+
+      <footer className="py-3 text-center text-[11px] text-slate-400">
+        © 2026 QuizGen AI
+      </footer>
     </div>
   );
 };

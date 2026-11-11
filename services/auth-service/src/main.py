@@ -1,6 +1,10 @@
 import os
 import uuid
+import json
 import hashlib
+import urllib.request
+import urllib.parse
+import urllib.error
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 from fastapi import FastAPI, HTTPException, status, Depends, Header
@@ -471,3 +475,133 @@ def get_faculties(university_id: Optional[str] = None, db: Session = Depends(get
     if university_id:
         query = query.filter(FacultyDB.university_id == university_id)
     return query.all()
+
+
+class GoogleAuthRequest(BaseModel):
+    google_access_token: Optional[str] = None
+    access_token: Optional[str] = None
+    id_token: Optional[str] = None
+    credential: Optional[str] = None
+    client_id: Optional[str] = None
+    role: Optional[str] = "lecturer"
+    academic_title: Optional[str] = "ThS."
+    university: Optional[str] = "Đại học Quốc gia"
+    department: Optional[str] = "Khoa Công nghệ Thông tin"
+
+
+def _fetch_google_json(req_url: str, headers: Optional[dict] = None) -> dict:
+    req = urllib.request.Request(req_url, headers=headers or {})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token Google OAuth không hợp lệ hoặc đã hết hạn."
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Không thể kết nối máy chủ xác thực Google: {str(exc)}"
+        ) from exc
+
+
+@app.post("/google")
+def login_with_google(req_data: GoogleAuthRequest, db: Session = Depends(get_db)):
+    """Xác thực tài khoản qua Google OAuth 2.0 (kiểm tra trực tiếp với Google APIs)."""
+    google_access_token = (req_data.google_access_token or req_data.access_token or "").strip()
+    id_token = (req_data.id_token or req_data.credential or "").strip()
+    expected_client_id = (os.getenv("GOOGLE_CLIENT_ID") or req_data.client_id or "").strip()
+
+    if not google_access_token and not id_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Thiếu google_access_token hoặc id_token để xác thực Google OAuth 2.0."
+        )
+
+    if google_access_token:
+        token_info = _fetch_google_json(
+            f"https://www.googleapis.com/oauth2/v3/tokeninfo?access_token={urllib.parse.quote(google_access_token)}"
+        )
+        user_info = _fetch_google_json(
+            "https://www.googleapis.com/oauth2/v3/userinfo",
+            headers={"Authorization": f"Bearer {google_access_token}"}
+        )
+        token_aud = token_info.get("aud") or token_info.get("azp")
+        if expected_client_id and token_aud and token_aud != expected_client_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google Client ID không khớp.")
+        email = (user_info.get("email") or token_info.get("email") or "").strip().lower()
+        verified = user_info.get("email_verified") in (True, "true") or token_info.get("email_verified") in (True, "true")
+        full_name = (user_info.get("name") or user_info.get("given_name") or email.split("@")[0]).strip()
+        avatar_url = user_info.get("picture") or ""
+    else:
+        token_info = _fetch_google_json(
+            f"https://oauth2.googleapis.com/tokeninfo?id_token={urllib.parse.quote(id_token)}"
+        )
+        if expected_client_id and token_info.get("aud") and token_info.get("aud") != expected_client_id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Google ID token Client ID không khớp.")
+        email = (token_info.get("email") or "").strip().lower()
+        verified = token_info.get("email_verified") in (True, "true")
+        full_name = (token_info.get("name") or token_info.get("given_name") or email.split("@")[0]).strip()
+        avatar_url = token_info.get("picture") or ""
+
+    if not email or not verified:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email Google chưa được xác minh.")
+
+    user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+    if not user:
+        requested_role = req_data.role if req_data.role in ("lecturer", "head_of_department", "admin") else "lecturer"
+        user = UserDB(
+            id=f"usr-gg-{uuid.uuid4().hex[:8]}",
+            email=email,
+            full_name=full_name,
+            academic_title=req_data.academic_title or "ThS.",
+            university=req_data.university or "Đại học Quốc gia",
+            department=req_data.department or "Khoa Công nghệ Thông tin",
+            password_hash=pwd_context.hash(uuid.uuid4().hex),
+            role=requested_role,
+            is_active=True,
+            created_at=datetime.utcnow()
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản này hiện đang bị tạm khóa.")
+
+    access_token = create_access_token(user)
+    refresh_token, refresh_exp = create_refresh_token(user)
+    token_hash = hashlib.sha256(refresh_token.encode()).hexdigest()
+    db.add(UserTokenDB(
+        id=f"tok-{uuid.uuid4().hex[:12]}",
+        user_id=user.id,
+        token_hash=token_hash,
+        token_type="refresh",
+        device_info="google_oauth2",
+        expires_at=refresh_exp,
+        revoked=False
+    ))
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "auth_provider": "google",
+        "google_verified": True,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "academic_title": user.academic_title,
+            "university": user.university,
+            "department": user.department,
+            "role": user.role,
+            "avatar_url": avatar_url,
+            "auth_provider": "google",
+            "is_active": user.is_active,
+            "created_at": user.created_at,
+        }
+    }
