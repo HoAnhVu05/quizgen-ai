@@ -9,8 +9,8 @@ SET search_path TO rag, public;
 -- Lưu ý: Vector Embeddings thực tế được lưu tại ChromaDB collection 'textbook_chunks'
 CREATE TABLE IF NOT EXISTS rag.vector_indexes (
     id VARCHAR(50) PRIMARY KEY,                             -- ID format: 'idx-...'
-    document_id VARCHAR(50) NOT NULL,
-    user_id VARCHAR(50),                       -- ID tài liệu tương ứng
+    document_id VARCHAR(50) NOT NULL REFERENCES documents.documents(id) ON DELETE CASCADE,
+    user_id VARCHAR(50) REFERENCES auth.users(id) ON DELETE CASCADE,                       -- [SCRUM-62] ID giảng viên sở hữu
     collection_name VARCHAR(100) NOT NULL DEFAULT 'textbook_chunks',
     total_vectors INT NOT NULL DEFAULT 0,                   -- Tổng số vector đã nhúng
     embedding_model VARCHAR(100) NOT NULL DEFAULT 'all-MiniLM-L6-v2',
@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS rag.vector_indexes (
 CREATE TABLE IF NOT EXISTS rag.retrieval_logs (
     id VARCHAR(50) PRIMARY KEY,
     query_text TEXT NOT NULL,
-    document_id VARCHAR(50),
-    user_id VARCHAR(50),
+    document_id VARCHAR(50) REFERENCES documents.documents(id) ON DELETE CASCADE,
+    user_id VARCHAR(50) REFERENCES auth.users(id) ON DELETE CASCADE,                       -- [SCRUM-62] ID giảng viên truy vấn
     top_k INT NOT NULL DEFAULT 5,
     matched_chunks_count INT NOT NULL DEFAULT 0,
     top_relevance_score NUMERIC(5,2),
@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS rag.retrieval_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Chỉ mục
+-- Bổ sung cột user_id và ràng buộc khóa ngoại ON DELETE CASCADE nếu bảng đã tồn tại [SCRUM-62]
+ALTER TABLE rag.vector_indexes ADD COLUMN IF NOT EXISTS user_id VARCHAR(50);
+ALTER TABLE rag.retrieval_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(50);
+
+-- Chỉ mục B-Tree tối ưu tìm kiếm và JOIN [SCRUM-62]
 CREATE INDEX IF NOT EXISTS idx_vector_indexes_doc ON rag.vector_indexes(document_id);
+CREATE INDEX IF NOT EXISTS idx_vector_indexes_user ON rag.vector_indexes(user_id);
+CREATE INDEX IF NOT EXISTS idx_vector_indexes_status ON rag.vector_indexes(status);
+CREATE INDEX IF NOT EXISTS idx_vector_indexes_user_status ON rag.vector_indexes(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_vector_indexes_doc_status ON rag.vector_indexes(document_id, status);
+
 CREATE INDEX IF NOT EXISTS idx_retrieval_logs_doc ON rag.retrieval_logs(document_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_logs_user ON rag.retrieval_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_logs_user_doc ON rag.retrieval_logs(user_id, document_id);
