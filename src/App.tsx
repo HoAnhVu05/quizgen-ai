@@ -10,9 +10,8 @@ import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
-import { ProfileSetupScreen } from './components/ProfileSetupScreen';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
-import apiClient from './services/apiClient';
+import apiClient, { API_BASE } from './services/apiClient';
 
 const INITIAL_QUESTIONS: Question[] = [
   {
@@ -104,28 +103,15 @@ export const App: React.FC = () => {
     }
   });
 
-  const [authScreen, setAuthScreen] = useState<AuthScreenId>(() => {
-    try {
-      const saved = localStorage.getItem('quizgen_user');
-      if (saved) {
-        const u = JSON.parse(saved);
-        if (u && u.profileCompleted === false) return 'profile_setup';
-      }
-    } catch {}
-    return 'login';
-  });
-
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
-      const saved = localStorage.getItem('quizgen_user');
-      if (!token || !saved) return false;
-      const u = JSON.parse(saved);
-      return Boolean(u && u.profileCompleted !== false && u.fullName && u.fullName !== 'Chưa cập nhật');
+      return !!(localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_user'));
     } catch {
       return false;
     }
   });
+
+  const [authScreen, setAuthScreen] = useState<AuthScreenId>('login');
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
@@ -134,13 +120,10 @@ export const App: React.FC = () => {
 
   const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
-  // ─── Khởi động: Đọc quizgen_token và gọi GET /api/v1/auth/me để kiểm tra phiên ───
+  // ─── Khởi động: Đọc quizgen_token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
   useEffect(() => {
     const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
-    if (!token) {
-      setIsAuthenticated(false);
-      return;
-    }
+    if (!token) return;
 
     const verifySession = async () => {
       try {
@@ -154,19 +137,14 @@ export const App: React.FC = () => {
 
         if (res.ok) {
           const data = await res.json();
-          const isComplete = Boolean(
-            data.profile_completed ||
-            (data.full_name && data.full_name.trim() && data.full_name !== 'Chưa cập nhật' && data.university && data.department)
-          );
-
           const profile: UserProfile = {
             id: data.id || `usr-${Date.now()}`,
-            fullName: data.full_name || '',
+            fullName: data.full_name || data.fullName || 'Giảng viên',
             email: data.email,
-            academicTitle: data.academic_title || 'TS.',
-            department: data.department || '',
-            faculty: data.department || '',
-            university: data.university || '',
+            academicTitle: data.academic_title || data.academicTitle || 'TS.',
+            department: data.department || data.faculty || 'Khoa Kinh tế & Quản trị',
+            faculty: data.department || data.faculty || 'Khoa Kinh tế & Quản trị',
+            university: data.university || 'Đại học Quốc gia',
             role: (data.role as UserRole) || 'lecturer',
             roleLabel:
               data.role === 'head_of_department'
@@ -174,19 +152,12 @@ export const App: React.FC = () => {
                 : data.role === 'admin'
                 ? 'Quản trị Khảo thi'
                 : 'Giảng viên',
-            profileCompleted: isComplete,
             avatarUrl: data.avatar_url || data.avatarUrl,
             authProvider: data.auth_provider || data.authProvider,
           };
           setCurrentUser(profile);
+          setIsAuthenticated(true);
           localStorage.setItem('quizgen_user', JSON.stringify(profile));
-
-          if (!isComplete) {
-            setIsAuthenticated(false);
-            setAuthScreen('profile_setup');
-          } else {
-            setIsAuthenticated(true);
-          }
         } else if (res.status === 401) {
           // Token hết hạn hoặc không hợp lệ -> Thu hồi phiên
           localStorage.removeItem('quizgen_token');
@@ -194,10 +165,10 @@ export const App: React.FC = () => {
           localStorage.removeItem('quizgen_user');
           setCurrentUser(null);
           setIsAuthenticated(false);
-          setAuthScreen('login');
         }
       } catch (err) {
-        console.warn('[AUTH] Không thể kết nối /auth/me');
+        // Fallback duy trì session offline nếu còn dữ liệu trong localStorage
+        console.warn('[AUTH] Không thể kết nối /auth/me, duy trì phiên từ bộ nhớ cục bộ');
       }
     };
 
@@ -211,7 +182,7 @@ export const App: React.FC = () => {
   ) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newToast: ToastMessage = { id, type, title, message };
-    setToasts((prev) => [newToast, ...prev.slice(0, 3)]);
+    setToasts((prev) => [newToast, ...prev.slice(0, 3)]); // Giữ tối đa 4 toast mới nhất
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -231,12 +202,11 @@ export const App: React.FC = () => {
       handleShowToast(
         'warning',
         'Phiên làm việc hết hạn',
-        'Mã xác thực JWT đã hết hiệu lực. Vui lòng đăng nhập lại.'
+        'Mã xác thực JWT đã hết hiệu lực và không thể gia hạn. Vui lòng đăng nhập lại.'
       );
     });
     return unbind;
   }, [handleShowToast]);
-
   // Đồng bộ câu hỏi từ Backend Database nếu có sẵn
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -250,11 +220,11 @@ export const App: React.FC = () => {
           }
         }
       } catch (err) {
-        // Fallback tự nhiên
+        // Fallback tự nhiên về INITIAL_QUESTIONS
       }
     };
     fetchQuestions();
-  }, [isAuthenticated, API_BASE]);
+  }, [isAuthenticated]);
 
   const handleUpdateQuestion = async (updated: Question) => {
     setQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
@@ -300,19 +270,8 @@ export const App: React.FC = () => {
   };
 
   // ─── Auth Handlers ────────────────────────────────────────────────────────
-  const handleLogin = (user: UserProfile, needsProfileSetup = false) => {
+  const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
-    if (needsProfileSetup || !user.profileCompleted) {
-      setIsAuthenticated(false);
-      setAuthScreen('profile_setup');
-      handleShowToast(
-        'info',
-        'Hoàn tất thông tin',
-        'Tài khoản mới: Vui lòng điền thông tin cá nhân và đơn vị công tác để bắt đầu.'
-      );
-      return;
-    }
-
     setIsAuthenticated(true);
     if (user.role === 'admin') {
       setCurrentScreen('admin_portal');
@@ -327,35 +286,24 @@ export const App: React.FC = () => {
       handleShowToast(
         'success',
         'Đăng nhập thành công',
-        `Chào mừng ${title}${user.fullName} (${user.roleLabel || user.role}) trở lại Không gian Làm đề Giảng viên!`
+        `Chào mừng ${title}${user.fullName} trở lại Không gian Làm đề Giảng viên!`
       );
     }
   };
 
-  const handleRegister = (user: UserProfile, needsProfileSetup = true) => {
+  const handleRegister = (user: UserProfile) => {
     setCurrentUser(user);
-    setIsAuthenticated(false);
-    setAuthScreen('profile_setup');
+    setIsAuthenticated(true);
+    setCurrentScreen('dashboard');
     handleShowToast(
       'success',
       'Đăng ký tài khoản Giảng viên thành công',
-      'Vui lòng điền thông tin cá nhân và đơn vị công tác để hoàn tất hồ sơ.'
-    );
-  };
-
-  const handleProfileComplete = (updatedUser: UserProfile) => {
-    setCurrentUser(updatedUser);
-    setIsAuthenticated(true);
-    setCurrentScreen('dashboard');
-    const title = updatedUser.academicTitle ? `${updatedUser.academicTitle} ` : '';
-    handleShowToast(
-      'success',
-      'Hồ sơ đã hoàn tất',
-      `Chào mừng ${title}${updatedUser.fullName} (${updatedUser.roleLabel || updatedUser.role}) đã sẵn sàng sử dụng QuizGen AI!`
+      `Chào mừng ${user.fullName} đã gia nhập hệ thống QuizGen AI!`
     );
   };
 
   const handleLogout = async () => {
+    // 1. Thử gọi backend logout thu hồi token
     const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
     const refreshToken = apiClient.getRefreshToken();
     if (token || refreshToken) {
@@ -372,11 +320,11 @@ export const App: React.FC = () => {
       }
     }
 
+    // 2. Xóa toàn bộ phiên và token
     apiClient.clearAuth();
     localStorage.removeItem('quizgen_token');
     localStorage.removeItem('quizgen_auth_token');
     localStorage.removeItem('quizgen_user');
-    sessionStorage.clear();
     setCurrentUser(null);
     setIsAuthenticated(false);
     setAuthScreen('login');
@@ -384,37 +332,68 @@ export const App: React.FC = () => {
     handleShowToast('info', 'Đã đăng xuất', 'Bạn đã đăng xuất an toàn khỏi hệ thống QuizGen AI.');
   };
 
-  // ─── Multi-Role Switcher (Preserving actual user name & unit) ───────────────
+  // ─── Multi-Role Fast Switcher Handler ──────────────────────────────────────
   const handleRoleSwitch = (newRole: UserRole) => {
-    if (!currentUser) return;
-    const roleLabels: Record<UserRole, string> = {
-      lecturer: 'Giảng viên',
-      head_of_department: 'Trưởng bộ môn',
-      admin: 'Quản trị Khảo thí',
-    };
-    const updatedUser: UserProfile = {
-      ...currentUser,
-      role: newRole,
-      roleLabel: roleLabels[newRole] || 'Giảng viên',
-    };
+    let updatedUser: UserProfile;
+    if (newRole === 'head_of_department') {
+      updatedUser = {
+        id: 'usr-head-001',
+        fullName: 'Trần Thị Mai',
+        academicTitle: 'PGS. TS.',
+        email: 'truongbomon@vnu.edu.vn',
+        faculty: 'Bộ môn Hệ thống Thông tin',
+        department: 'Bộ môn Hệ thống Thông tin',
+        university: 'Đại học Quốc gia',
+        role: 'head_of_department',
+        roleLabel: 'Trưởng bộ môn',
+      };
+    } else if (newRole === 'admin') {
+      updatedUser = {
+        id: 'usr-adm-001',
+        fullName: 'Lê Hoàng Nam',
+        academicTitle: 'ThS.',
+        email: 'admin.khaothi@vnu.edu.vn',
+        faculty: 'Phòng Khảo thí & Đảm bảo Chất lượng',
+        department: 'Phòng Khảo thí & Đảm bảo Chất lượng',
+        university: 'Đại học Quốc gia',
+        role: 'admin',
+        roleLabel: 'Quản trị Khảo thí',
+      };
+    } else {
+      updatedUser = {
+        id: 'usr-lec-001',
+        fullName: 'Nguyễn Văn An',
+        academicTitle: 'TS.',
+        email: 'lecturer@vnu.edu.vn',
+        faculty: 'Khoa Công nghệ Thông tin',
+        department: 'Khoa Công nghệ Thông tin',
+        university: 'Đại học Quốc gia',
+        role: 'lecturer',
+        roleLabel: 'Giảng viên',
+      };
+    }
 
     setCurrentUser(updatedUser);
     localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+    apiClient.setTokens(
+      `mock-jwt-access-${newRole}-${Date.now()}`,
+      `mock-jwt-refresh-${newRole}-${Date.now()}`
+    );
     if (newRole !== 'lecturer' && (currentScreen === 'upload' || currentScreen === 'generate')) {
       setCurrentScreen('dashboard');
     }
     handleShowToast(
       'info',
       'Đã chuyển đổi vai trò',
-      `Hiện đang làm việc với quyền: ${updatedUser.roleLabel} (${updatedUser.department || updatedUser.university})`
+      `Hiện đang làm việc với quyền: ${updatedUser.roleLabel} (${updatedUser.department})`
     );
   };
 
   const pendingCount = questions.filter((q) => q.status === 'pending' || q.status === 'submitted_to_hod').length;
   const approvedCount = questions.filter((q) => q.status === 'approved' || q.status === 'locked_for_exam').length;
 
-  // ─── Render Auth Screens (Login / Register / Profile Setup) ────────────────
-  if (!isAuthenticated || authScreen === 'profile_setup') {
+  // ─── Render Auth Screens (Login / Register) ───────────────────────────────
+  if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#f3f7f8] text-slate-800 font-sans">
         <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
@@ -423,19 +402,11 @@ export const App: React.FC = () => {
             onLogin={handleLogin}
             onNavigateRegister={() => setAuthScreen('register')}
           />
-        ) : authScreen === 'register' ? (
+        ) : (
           <RegisterScreen
             onRegister={handleRegister}
             onNavigateLogin={() => setAuthScreen('login')}
           />
-        ) : (
-          currentUser && (
-            <ProfileSetupScreen
-              currentUser={currentUser}
-              onComplete={handleProfileComplete}
-              onLogout={handleLogout}
-            />
-          )
         )}
       </div>
     );

@@ -1,5 +1,5 @@
 export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank' | 'admin_portal';
-export type AuthScreenId = 'login' | 'register' | 'profile_setup';
+export type AuthScreenId = 'login' | 'register';
 
 export type UserRole = 'lecturer' | 'head_of_department' | 'admin';
 
@@ -23,7 +23,6 @@ export interface UserProfile {
   university?: string;
   role: UserRole;
   roleLabel?: string;
-  profileCompleted?: boolean;
   avatarUrl?: string;
   authProvider?: 'local' | 'google';
   status?: 'active' | 'locked';
