@@ -27,8 +27,45 @@ interface AIGenerationScreenProps {
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
 }
 
-const FALLBACK_DOCUMENTS: Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }> = [];
-const FALLBACK_CHAPTERS: Record<string, string[]> = {};
+const FALLBACK_DOCUMENTS: Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }> = [
+  {
+    id: 'doc-kinh-te-vi-mo-2025',
+    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    status: 'ready',
+    totalPages: 184,
+    chaptersCount: 5,
+  },
+  {
+    id: 'doc-tri-tue-nhan-tao-2026',
+    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    status: 'ready',
+    totalPages: 240,
+    chaptersCount: 4,
+  },
+];
+
+const DEFAULT_CUSTOM_CHAPTERS = [
+  'Chương 1: Tổng quan kiến thức học phần & Khái niệm cốt lõi',
+  'Chương 2: Cơ sở lý thuyết và Mô hình phân tích chuyên sâu',
+  'Chương 3: Quy trình vận dụng thực tiễn & Bài tập tình huống',
+  'Chương 4: Phân tích nâng cao & Đánh giá tổng hợp',
+];
+
+const FALLBACK_CHAPTERS: Record<string, string[]> = {
+  'doc-kinh-te-vi-mo-2025': [
+    'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
+    'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
+    'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
+    'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
+    'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
+  ],
+  'doc-tri-tue-nhan-tao-2026': [
+    'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
+    'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
+    'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
+    'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
+  ],
+};
 
 const normalizeGeneratedQuestion = (
   raw: any,
@@ -194,7 +231,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
       } catch {}
 
-      const combined = [...localUploadedDocs, ...list];
+      const combined = [...localUploadedDocs, ...list, ...FALLBACK_DOCUMENTS];
       const readyDocs = combined
         .filter((item: any) => item && (item.status === 'ready' || !item.status))
         .map((item: any) => ({
@@ -210,39 +247,32 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
       );
 
-      if (uniqueDocs.length > 0) {
-        setDocuments(uniqueDocs);
-        const savedId = localStorage.getItem('quizgen_selected_book_id');
-        if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
-          setSelectedBook(savedId);
-        } else {
-          setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
-        }
-        setIsUsingFallback(false);
-      } else {
-        setDocuments(FALLBACK_DOCUMENTS);
-        setIsUsingFallback(true);
+      setDocuments(uniqueDocs);
+      const savedId = localStorage.getItem('quizgen_selected_book_id');
+      if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+        setSelectedBook(savedId);
+      } else if (uniqueDocs.length > 0) {
+        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
       }
+      setIsUsingFallback(false);
     } catch {
-      // Offline fallback: check localStorage then fallback to sample documents
       let localUploadedDocs: any[] = [];
       try {
         localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
       } catch {}
 
-      if (localUploadedDocs.length > 0) {
-        const combined = [...localUploadedDocs, ...FALLBACK_DOCUMENTS];
-        setDocuments(combined);
-        setSelectedBook((prev) => (combined.some((d) => d.id === prev) ? prev : combined[0].id));
-      } else {
-        setDocuments(FALLBACK_DOCUMENTS);
+      const combined = [...localUploadedDocs, ...FALLBACK_DOCUMENTS];
+      const uniqueDocs = combined.filter(
+        (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
+      );
+      setDocuments(uniqueDocs);
+      const savedId = localStorage.getItem('quizgen_selected_book_id');
+      if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+        setSelectedBook(savedId);
+      } else if (uniqueDocs.length > 0) {
+        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
       }
       setIsUsingFallback(true);
-setDocuments([]);
-      if (!hasWarnedBackendRef.current) {
-        hasWarnedBackendRef.current = true;
-        onShowToast('info', 'Chế độ Demo (Backend ngoại tuyến)', 'Đang hiển thị tài liệu mẫu từ RAG Vector store.');
-      }
     } finally {
       setIsLoadingDocuments(false);
     }
@@ -259,7 +289,11 @@ setDocuments([]);
 
   const chaptersList = useMemo(() => {
     if (!selectedBook) return [];
-    return chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
+    return (
+      chaptersByDocument[selectedBook] ||
+      FALLBACK_CHAPTERS[selectedBook] ||
+      DEFAULT_CUSTOM_CHAPTERS
+    );
   }, [selectedBook, chaptersByDocument]);
 
   const handleSelectBook = (bookId: string) => {
@@ -673,46 +707,30 @@ setDocuments([]);
         </div>
       )}
 
-      {/* 1. Header */}
-      <div className="relative z-10 pb-4 border-b border-slate-200">
-        <div className="flex items-center space-x-2">
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#e0f7fa] text-[#008689] border border-[#008689]/25">
-            AI Exam Engineering
-          </span>
-        </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight mt-1.5">
-          Cấu hình Ma trận Đề thi AI
-        </h1>
-        <p className="text-xs md:text-sm text-slate-500 mt-1">
-          Thiết lập nguồn kiến thức giáo trình và ma trận độ khó sư phạm để sinh bộ câu hỏi trắc nghiệm chuẩn mực.
-        </p>
-      </div>
-
-      {/* Preset Quick Templates */}
-      <div className="glass-card p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-            <Zap className="w-4 h-4" />
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-slate-900">Khuôn mẫu ma trận chuẩn hóa Đại học</h4>
-            <p className="text-[11px] text-slate-500">Áp dụng nhanh tỷ lệ độ khó theo quy chế đào tạo tín chỉ</p>
-          </div>
+      {/* 1. Clean Header + Quick Presets */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+        <div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            Sinh câu hỏi AI
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Chọn giáo trình và phân bổ số lượng câu hỏi theo mức độ nhận thức Bloom.
+          </p>
         </div>
 
-        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {[
-            { id: 'giuaKy', label: 'Đề Giữa kỳ (20 câu)' },
-            { id: 'cuoiKy', label: 'Đề Cuối kỳ (20 câu)' },
+            { id: 'giuaKy', label: 'Giữa kỳ (20 câu)' },
+            { id: 'cuoiKy', label: 'Cuối kỳ (20 câu)' },
             { id: 'quiz15p', label: 'Kiểm tra 15p (10 câu)' },
           ].map((preset) => (
             <button
               key={preset.id}
               onClick={() => applyPreset(preset.id as any)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                 activePreset === preset.id
                   ? 'bg-[#008689] text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
               }`}
             >
               {preset.label}
@@ -721,131 +739,89 @@ setDocuments([]);
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Form: Parameters (2 Cols) */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-5">
           {/* Card 1: Chọn giáo trình & chương */}
-          <div className="glass-card p-6 rounded-2xl space-y-5">
-            <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100">
-              <BookOpen className="w-4 h-4 text-[#008689]" />
-              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                1. Nguồn tri thức giáo trình (RAG Knowledge)
-              </h2>
-            </div>
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
+            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              1. Chọn giáo trình & chương mục
+            </h2>
 
-            {/* Select Textbook */}
             <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Chọn giáo trình đã nạp:
-              </label>
               <select
                 value={selectedBook}
                 onChange={(e) => handleSelectBook(e.target.value)}
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
               >
                 {isLoadingDocuments && (
-                  <option value="" className="bg-white text-slate-800">Đang tải danh sách giáo trình...</option>
+                  <option value="">Đang tải danh sách giáo trình...</option>
                 )}
                 {!isLoadingDocuments && documents.length === 0 && (
-                  <option value="" className="bg-white text-slate-800">Chưa có giáo trình sẵn sàng</option>
+                  <option value="">Chưa có giáo trình sẵn sàng</option>
                 )}
                 {documents.map((doc) => (
-                  <option key={doc.id} value={doc.id} className="bg-white text-slate-800">
+                  <option key={doc.id} value={doc.id}>
                     {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Chapters Multi-select */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Phạm vi chương mục kiến thức cần lấy câu hỏi:
-              </label>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {chaptersList.length === 0 && (
-                  <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500">
-                    Tài liệu này chưa có danh sách chương. Hãy đảm bảo tài liệu đã ở trạng thái sẵn sàng.
-                  </div>
-                )}
-                {chaptersList.map((ch) => {
-                  const isChecked = selectedChapters.includes(ch);
-                  return (
+            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+              {chaptersList.length === 0 && (
+                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400">
+                  Chưa có danh sách chương mục cho tài liệu này.
+                </div>
+              )}
+              {chaptersList.map((ch) => {
+                const isChecked = selectedChapters.includes(ch);
+                return (
+                  <div
+                    key={ch}
+                    onClick={() => handleToggleChapter(ch)}
+                    className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-colors flex items-center justify-between ${
+                      isChecked
+                        ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold'
+                        : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    <span className="text-xs truncate pr-2">{ch}</span>
                     <div
-                      key={ch}
-                      onClick={() => handleToggleChapter(ch)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                        isChecked
-                          ? 'bg-[#e0f7fa]/70 border-[#008689]/40 text-[#006d70] font-semibold'
-                          : 'bg-slate-50/80 border-slate-200 text-slate-600 hover:bg-white hover:border-[#008689]/30'
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                        isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
                       }`}
                     >
-                      <span className="text-xs font-medium">{ch}</span>
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                        isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
-                      }`}>
-                        {isChecked && <Check className="w-3 h-3 text-white" />}
-                      </div>
+                      {isChecked && <Check className="w-3 h-3 text-white" />}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Card 2: Thang đo Bloom */}
-          <div className="glass-card p-6 rounded-2xl space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center space-x-2.5">
-                <Sliders className="w-4 h-4 text-[#008689]" />
-                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                  2. Ma trận Độ khó Nhận thức (Bloom's Taxonomy)
-                </h2>
-              </div>
-              <span className="text-xs font-mono font-bold text-[#008689] bg-[#e0f7fa] px-2.5 py-1 rounded-lg border border-[#008689]/25">
-                Tổng: {totalQuestions} câu hỏi
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                2. Phân bổ mức độ nhận thức Bloom
+              </h2>
+              <span className="text-xs font-mono font-bold text-[#008689]">
+                Tổng: {totalQuestions} câu
               </span>
             </div>
 
-            {/* Sliders */}
-            <div className="space-y-5">
+            <div className="space-y-4">
               {[
-                {
-                  key: 'nhanBiet' as const,
-                  label: 'Mức 1: Nhận biết (Remembering)',
-                  desc: 'Hỏi định nghĩa, quy luật, công thức cơ bản trích nguyên từ giáo trình.',
-                  color: 'text-sky-700',
-                  accent: 'accent-sky-500',
-                },
-                {
-                  key: 'thongHieu' as const,
-                  label: 'Mức 2: Thông hiểu (Understanding)',
-                  desc: 'Giải thích hiện tượng, so sánh khái niệm, phân biệt các trường phái.',
-                  color: 'text-[#008689]',
-                  accent: 'accent-teal-600',
-                },
-                {
-                  key: 'vanDung' as const,
-                  label: 'Mức 3: Vận dụng (Applying)',
-                  desc: 'Giải quyết bài toán thực tế, áp dụng công thức vào số liệu cụ thể.',
-                  color: 'text-amber-700',
-                  accent: 'accent-amber-500',
-                },
-                {
-                  key: 'phanTich' as const,
-                  label: 'Mức 4: Phân tích (Analyzing)',
-                  desc: 'Đánh giá chính sách, phân tích tác động đa chiều và tình huống thực tế.',
-                  color: 'text-indigo-700',
-                  accent: 'accent-indigo-600',
-                },
-              ].map(({ key, label, desc, color, accent }) => (
-                <div key={key} className="space-y-2">
+                { key: 'nhanBiet' as const, label: 'Mức 1: Nhận biết', accent: 'accent-sky-500' },
+                { key: 'thongHieu' as const, label: 'Mức 2: Thông hiểu', accent: 'accent-teal-600' },
+                { key: 'vanDung' as const, label: 'Mức 3: Vận dụng', accent: 'accent-amber-500' },
+                { key: 'phanTich' as const, label: 'Mức 4: Phân tích', accent: 'accent-indigo-600' },
+              ].map(({ key, label, accent }) => (
+                <div key={key} className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <div>
-                      <span className={`font-bold ${color}`}>{label}</span>
-                      <p className="text-[11px] text-slate-500 font-normal mt-0.5">{desc}</p>
-                    </div>
-                    <span className="font-mono text-base font-extrabold text-slate-900 bg-slate-100 px-3 py-1 rounded-xl border border-slate-200">
+                    <span className="font-semibold text-slate-700">{label}</span>
+                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg">
                       {bloomDistribution[key]} câu
                     </span>
                   </div>
@@ -869,95 +845,50 @@ setDocuments([]);
         </div>
 
         {/* Right Summary Sidebar (1 Col) */}
-        <div className="space-y-6">
-          <div className="glass-card p-6 rounded-2xl space-y-5 sticky top-8">
-            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                Tóm tắt cấu hình sinh đề
-              </h3>
-            </div>
+        <div>
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4 sticky top-6">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100">
+              Tóm tắt cấu hình
+            </h3>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-2.5 text-xs">
               <div className="flex justify-between text-slate-500">
-                <span>Số lượng câu hỏi:</span>
-                <span className="font-bold text-slate-900 font-mono text-sm">
-                  {totalQuestions} câu
-                </span>
+                <span>Tổng số câu:</span>
+                <span className="font-bold text-slate-900 font-mono">{totalQuestions} câu</span>
               </div>
               <div className="flex justify-between text-slate-500">
-                <span>Dạng thức:</span>
-                <span className="font-semibold text-slate-800">4 lựa chọn (A, B, C, D)</span>
-              </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Giáo trình nguồn:</span>
-                <span className="font-semibold text-slate-800 truncate max-w-[170px]" title={selectedDocument?.name || ''}>
+                <span>Giáo trình:</span>
+                <span className="font-semibold text-slate-800 truncate max-w-[160px]" title={selectedDocument?.name || ''}>
                   {selectedDocument?.name || 'Chưa chọn'}
                 </span>
               </div>
               <div className="flex justify-between text-slate-500">
-                <span>Minh chứng RAG:</span>
-                <span className="font-bold text-emerald-600">Bắt buộc trích dẫn</span>
-              </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Số chương đã chọn:</span>
-                <span className="font-semibold text-slate-800">
-                  {selectedChapters.length} chương
-                </span>
+                <span>Số chương:</span>
+                <span className="font-semibold text-slate-800">{selectedChapters.length} chương</span>
               </div>
             </div>
 
-            {/* Visual Balance Bar */}
             {totalQuestions > 0 && (
-              <div className="space-y-2 pt-3 border-t border-slate-100">
-                <div className="flex justify-between text-[11px] font-bold text-slate-700">
-                  <span>Tỷ lệ ma trận Bloom:</span>
-                  <span className="font-mono text-[#008689]">{totalQuestions} câu</span>
-                </div>
-                <div className="w-full h-3 rounded-full flex overflow-hidden bg-slate-200 p-0.5">
-                  <div style={{ width: `${(bloomDistribution.nhanBiet / totalQuestions) * 100}%` }} className="bg-sky-500 rounded-l-full" title="Nhận biết" />
-                  <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-[#008689]" title="Thông hiểu" />
-                  <div style={{ width: `${(bloomDistribution.vanDung / totalQuestions) * 100}%` }} className="bg-amber-500" title="Vận dụng" />
-                  <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-indigo-500 rounded-r-full" title="Phân tích" />
-                </div>
+              <div className="w-full h-2 rounded-full flex overflow-hidden bg-slate-100">
+                <div style={{ width: `${(bloomDistribution.nhanBiet / totalQuestions) * 100}%` }} className="bg-sky-500" />
+                <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-[#008689]" />
+                <div style={{ width: `${(bloomDistribution.vanDung / totalQuestions) * 100}%` }} className="bg-amber-500" />
+                <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-indigo-500" />
               </div>
             )}
 
-            <div className="p-3.5 bg-[#e0f7fa]/55 rounded-xl border border-[#008689]/25 text-xs text-slate-700 flex items-start space-x-2">
-              <AlertCircle className="w-4 h-4 text-[#008689] shrink-0 mt-0.5" />
-              <p>
-                Sau khi sinh, câu hỏi sẽ được chuyển vào <strong className="text-[#006d70]">Không gian Kiểm duyệt</strong> để đối chiếu trang sách gốc trước khi lưu vào ngân hàng đề.
-              </p>
-            </div>
-
-            {/* AI Generate Button */}
-            {isGenerating ? (
-              <div className="space-y-3">
-                <button
-                  disabled
-                  className="w-full py-3.5 bg-gradient-to-r from-[#008689] to-[#1d999d] text-white text-xs font-bold rounded-xl flex items-center justify-center space-x-2 shadow-md shadow-[#008689]/25 animate-pulse cursor-wait"
-                >
-                  <Cpu className="w-4 h-4 animate-spin text-white" />
-                  <span>AI đang bóc tách ngữ nghĩa & sinh đề...</span>
-                </button>
-                <p className="text-[11px] text-center text-[#008689] font-mono font-semibold animate-bounce">
-                  {generationStep}
-                </p>
-              </div>
-            ) : (
-              <button
-                onClick={handleStartGenerate}
-                disabled={totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
-                className={`w-full py-3.5 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all shadow-md ${
-                  totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none'
-                    : 'bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 text-white shadow-[#008689]/25'
-                }`}
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>Khởi tạo {totalQuestions} câu hỏi chuẩn Bloom</span>
-              </button>
-            )}
+            <button
+              onClick={handleStartGenerate}
+              disabled={isGenerating || totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
+              className={`w-full py-3 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-colors ${
+                totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-[#008689] hover:bg-[#006d70] text-white shadow-sm'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{isGenerating ? 'Đang sinh câu hỏi...' : `Sinh ${totalQuestions} câu hỏi`}</span>
+            </button>
           </div>
         </div>
       </div>

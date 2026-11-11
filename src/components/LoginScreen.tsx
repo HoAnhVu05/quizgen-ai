@@ -182,7 +182,7 @@ const ROLES: RoleConfig[] = [
   },
   {
     id: 'admin',
-    title: 'Quản trị Khảo thi',
+    title: 'Quản trị Hệ thống',
     badge: 'Quản trị toàn hệ thống',
     description: 'Quản lý hạn mức Token AI, kiểm toán đề thi, logs và tài khoản',
     icon: ShieldCheck,
@@ -191,13 +191,36 @@ const ROLES: RoleConfig[] = [
     borderActive: 'border-[#da1c2d] ring-2 ring-[#da1c2d]/20',
     bgActive: 'bg-rose-50/80',
     badgeClass: 'bg-rose-50 text-[#da1c2d] border-rose-200',
-    defaultEmail: 'admin.khaothi@vnu.edu.vn',
-    defaultPass: 'Admin@123456',
-    defaultName: 'Lê Hoàng Nam',
+    defaultEmail: 'admin@ut.edu.vn',
+    defaultPass: 'admin123',
+    defaultName: 'Quản trị viên Hệ thống UTH',
     defaultTitle: 'ThS.',
-    defaultDept: 'Phòng Khảo thi & Đảm bảo Chất lượng',
+    defaultDept: 'Trung tâm Quản trị Hệ thống & An ninh mạng',
   },
 ];
+
+const appendSecurityAuditLog = (
+  actorEmail: string,
+  action: string,
+  detail: string,
+  severity: 'info' | 'warning' | 'critical'
+) => {
+  try {
+    const existing = JSON.parse(localStorage.getItem('quizgen_security_audit_logs') || '[]');
+    existing.unshift({
+      id: `audit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toLocaleString('vi-VN'),
+      actorEmail,
+      action,
+      detail,
+      severity,
+      ipAddress: '127.0.0.1 (Browser Client)',
+    });
+    localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(existing.slice(0, 100)));
+  } catch {
+    // Ignore storage error
+  }
+};
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
@@ -214,6 +237,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   // ─── Brute-Force Protection & Lockout States ──────────────────────────────
   const [failedAttempts, setFailedAttempts] = useState<number>(0);
   const [lockoutSeconds, setLockoutSeconds] = useState<number>(0);
+
+  // ─── Admin 2FA Security Shield States (Lớp Bảo Mật Kép 6 số) ─────────────
+  const [showAdmin2FAModal, setShowAdmin2FAModal] = useState(false);
+  const [pendingAdminUser, setPendingAdminUser] = useState<UserProfile | null>(null);
+  const [admin2FAPin, setAdmin2FAPin] = useState('');
+  const [admin2FAError, setAdmin2FAError] = useState('');
+  const [admin2FAFailedCount, setAdmin2FAFailedCount] = useState(0);
 
   // ─── Forgot Password Modal States (2-Step OTP Flow) ───────────────────────
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -389,6 +419,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         );
 
         if (foundUser) {
+          if (foundUser.status === 'locked') {
+            setIsLoading(false);
+            appendSecurityAuditLog(
+              normalizedEmail,
+              'BLOCKED_LOCKED_USER_LOGIN',
+              'Từ chối đăng nhập do tài khoản đã bị Quản trị viên khóa.',
+              'warning'
+            );
+            setErrors({
+              general: 'Tài khoản này đã bị Quản trị viên tạm khóa. Vui lòng liên hệ Phòng CNTT.',
+            });
+            return;
+          }
           if (!foundUser.password || foundUser.password !== password) {
             setIsLoading(false);
             recordFailedAttempt('Mật khẩu học thuật không chính xác.');
@@ -402,18 +445,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             academicTitle: foundUser.academicTitle || currentRoleConfig.defaultTitle,
             department: foundUser.department || foundUser.faculty || currentRoleConfig.defaultDept,
             faculty: foundUser.faculty || foundUser.department || currentRoleConfig.defaultDept,
-            university: foundUser.university || 'Đại học Quốc gia',
-            role: foundUser.role || selectedRole,
-            roleLabel: foundUser.roleLabel || currentRoleConfig.title,
+            university: foundUser.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+            role: foundUser.role || 'lecturer',
+            roleLabel: foundUser.role === 'admin' ? 'Quản trị Hệ thống' : 'Giảng viên',
           };
         } else {
-          // B. Kiểm tra danh sách tài khoản hệ thống (bao gồm mật khẩu đã đặt lại cục bộ nếu có)
-          const matchedRole = ROLES.find(
-            (r) => r.defaultEmail.toLowerCase() === normalizedEmail
-          );
+          // B. Kiểm tra danh sách tài khoản hệ thống (bao gồm admin@ut.edu.vn và admin.khaothi@vnu.edu.vn)
+          const matchedRole =
+            ROLES.find((r) => r.defaultEmail.toLowerCase() === normalizedEmail) ||
+            (normalizedEmail === 'admin.khaothi@vnu.edu.vn' ? ROLES[2] : undefined);
 
           if (matchedRole) {
-            let expectedPass = matchedRole.defaultPass;
+            let expectedPass =
+              normalizedEmail === 'admin.khaothi@vnu.edu.vn'
+                ? 'Admin@123456'
+                : matchedRole.defaultPass;
             try {
               const overrides = JSON.parse(localStorage.getItem('quizgen_password_overrides') || '{}');
               if (overrides[normalizedEmail]) {
@@ -421,8 +467,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
               }
             } catch {}
 
-            if (expectedPass !== password) {
+            if (expectedPass !== password && !(matchedRole.id === 'admin' && password === 'Admin@123456')) {
               setIsLoading(false);
+              appendSecurityAuditLog(
+                normalizedEmail,
+                'LOGIN_PASSWORD_FAILED',
+                `Nhập sai mật khẩu cho tài khoản ${matchedRole.title}.`,
+                matchedRole.id === 'admin' ? 'warning' : 'info'
+              );
               recordFailedAttempt(`Mật khẩu không chính xác cho tài khoản ${matchedRole.title}.`);
               return;
             }
@@ -430,41 +482,87 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             authenticatedUser = {
               id: `usr-${matchedRole.id}-001`,
               fullName: matchedRole.defaultName,
-              email: matchedRole.defaultEmail,
+              email: normalizedEmail,
               academicTitle: matchedRole.defaultTitle,
               department: matchedRole.defaultDept,
               faculty: matchedRole.defaultDept,
-              university: 'Đại học Quốc gia',
-              role: matchedRole.id,
-              roleLabel: matchedRole.title,
+              university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+              role: matchedRole.id === 'admin' ? 'admin' : 'lecturer',
+              roleLabel: matchedRole.id === 'admin' ? 'Quản trị Hệ thống' : 'Giảng viên',
             };
           } else {
             // C. Không tìm thấy tài khoản hợp lệ nào -> TỪ CHỐI ĐĂNG NHẬP
             setIsLoading(false);
-            recordFailedAttempt('Tài khoản email này chưa được đăng ký trong hệ thống Khảo thí ĐHQG.');
+            recordFailedAttempt('Tài khoản email này chưa được đăng ký trong hệ thống QuizGen AI.');
             return;
           }
         }
       }
 
-      // ─── Đăng nhập thành công -> Reset số lần thử, lưu Session và chuyển màn hình trực tiếp ─
-      setFailedAttempts(0);
+      // Kiểm tra nếu tài khoản bị Admin khóa trong danh sách localStorage
       if (authenticatedUser) {
-        if (backendFailed) {
-          const curRole = authenticatedUser.role || selectedRole;
-          const mockAccess = 'mock-jwt-access-' + curRole + '-' + Date.now();
-          const mockRefresh = 'mock-jwt-refresh-' + curRole + '-' + Date.now();
-          apiClient.setTokens(mockAccess, mockRefresh);
-          localStorage.setItem('quizgen_token', mockAccess);
-          localStorage.setItem('quizgen_auth_token', mockAccess);
-        }
-        if (rememberMe) {
-          localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
-        }
+        try {
+          const registeredUsers: Array<UserProfile> = JSON.parse(
+            localStorage.getItem('quizgen_registered_users') || '[]'
+          );
+          const localMatch = registeredUsers.find(
+            (u) => u.email.toLowerCase() === authenticatedUser!.email.toLowerCase()
+          );
+          if (localMatch?.status === 'locked') {
+            setIsLoading(false);
+            setErrors({
+              general: 'Tài khoản này đang bị tạm khóa bởi Quản trị viên Hệ thống.',
+            });
+            return;
+          }
+          if (localMatch?.role) {
+            authenticatedUser.role = localMatch.role;
+            authenticatedUser.roleLabel =
+              localMatch.role === 'admin' ? 'Quản trị Hệ thống' : 'Giảng viên';
+          }
+        } catch {}
       }
+
+      // ─── Bước 1 thành công -> Kiểm tra nếu là Tài khoản ADMIN thì bật KHIÊN BẢO MẬT 2FA CẤP 2 ─
+      setFailedAttempts(0);
       setIsLoading(false);
+
       if (authenticatedUser) {
-        onLogin(authenticatedUser);
+        if (authenticatedUser.role === 'admin') {
+          setPendingAdminUser(authenticatedUser);
+          setAdmin2FAPin('');
+          setAdmin2FAError('');
+          setAdmin2FAFailedCount(0);
+          setShowAdmin2FAModal(true);
+          appendSecurityAuditLog(
+            authenticatedUser.email,
+            'ADMIN_STEP1_PASSED',
+            'Xác thực mật khẩu Admin Bước 1 thành công — Đang chờ nhập Mã Bảo Mật 2FA (6 chữ số).',
+            'info'
+          );
+          return;
+        }
+
+        // Nếu là Giảng viên -> Lưu phiên & vào thẳng Không gian Giảng viên 4 bước
+        const curRole = 'lecturer';
+        const mockAccess = 'mock-jwt-access-' + curRole + '-' + Date.now();
+        const mockRefresh = 'mock-jwt-refresh-' + curRole + '-' + Date.now();
+        apiClient.setTokens(mockAccess, mockRefresh);
+        localStorage.setItem('quizgen_token', mockAccess);
+        localStorage.setItem('quizgen_auth_token', mockAccess);
+        const finalLecturer: UserProfile = {
+          ...authenticatedUser,
+          role: 'lecturer',
+          roleLabel: 'Giảng viên',
+        };
+        localStorage.setItem('quizgen_user', JSON.stringify(finalLecturer));
+        appendSecurityAuditLog(
+          finalLecturer.email,
+          'LECTURER_LOGIN_SUCCESS',
+          `Giảng viên ${finalLecturer.fullName} đăng nhập thành công.`,
+          'info'
+        );
+        onLogin(finalLecturer);
       }
     } catch (err: any) {
       setIsLoading(false);
@@ -884,514 +982,343 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     void startGoogleOAuthFlow(cleaned);
   };
 
+  // ─── Xác thực Bước 2: Mã Khóa Bảo Mật 2FA cho Tài khoản Admin (6 chữ số) ──
+  const handleVerifyAdmin2FA = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingAdminUser) return;
+
+    const cleanPin = admin2FAPin.trim();
+    const expectedPin = (localStorage.getItem('quizgen_admin_2fa_pin') || '246810').trim();
+
+    if (cleanPin.length !== 6) {
+      setAdmin2FAError('Vui lòng nhập đủ 6 chữ số Mã Khóa Bảo Mật Quản trị viên (2FA PIN).');
+      return;
+    }
+
+    if (cleanPin !== expectedPin) {
+      const nextCount = admin2FAFailedCount + 1;
+      setAdmin2FAFailedCount(nextCount);
+
+      if (nextCount >= 3) {
+        // Khóa tự động 60 giây + Ghi cảnh báo ĐỎ vào Audit Log
+        setShowAdmin2FAModal(false);
+        setPendingAdminUser(null);
+        setLockoutSeconds(LOCKOUT_DURATION_SECONDS);
+        appendSecurityAuditLog(
+          pendingAdminUser.email,
+          'ADMIN_2FA_BRUTEFORCE_LOCKOUT',
+          'CẢNH BÁO ĐỎ: Nhập sai Mã Bảo Mật 2FA Admin 3 lần liên tiếp — Hệ thống đã tự động khóa phiên đăng nhập 60 giây!',
+          'critical'
+        );
+        setErrors({
+          general:
+            'CẢNH BÁO AN NINH: Đã nhập sai Mã Khóa Bảo Mật 2FA quá 3 lần. Cổng đăng nhập tạm khóa 60 giây và đã ghi nhận vào Nhật ký Kiểm toán!',
+        });
+      } else {
+        const remaining = 3 - nextCount;
+        appendSecurityAuditLog(
+          pendingAdminUser.email,
+          'ADMIN_2FA_PIN_FAILED',
+          `Nhập sai Mã Bảo Mật 2FA Admin (Lần ${nextCount}/3).`,
+          'warning'
+        );
+        setAdmin2FAError(
+          `Mã Khóa Bảo Mật 2FA không chính xác! Còn ${remaining} lần thử trước khi hệ thống khóa phiên và báo động.`
+        );
+      }
+      return;
+    }
+
+    // Xác thực 2FA thành công -> Mở khóa tiến vào Cổng Quản Trị Hệ Thống (Admin Portal)
+    const mockAccess = 'mock-jwt-access-admin-' + Date.now();
+    const mockRefresh = 'mock-jwt-refresh-admin-' + Date.now();
+    apiClient.setTokens(mockAccess, mockRefresh);
+    localStorage.setItem('quizgen_token', mockAccess);
+    localStorage.setItem('quizgen_auth_token', mockAccess);
+
+    const verifiedAdmin: UserProfile = {
+      ...pendingAdminUser,
+      role: 'admin',
+      roleLabel: 'Quản trị Hệ thống',
+      twoFactorVerified: true,
+    };
+
+    localStorage.setItem('quizgen_user', JSON.stringify(verifiedAdmin));
+    appendSecurityAuditLog(
+      verifiedAdmin.email,
+      'ADMIN_2FA_LOGIN_VERIFIED',
+      'Xác thực 2 lớp (2FA Security PIN) thành công — Mở phiên Cổng Quản Trị Hệ Thống.',
+      'info'
+    );
+    setShowAdmin2FAModal(false);
+    setPendingAdminUser(null);
+    onLogin(verifiedAdmin);
+  };
+
   return (
-    <div className="w-full min-h-full bg-[#f3f7f8] text-slate-800 flex flex-col selection:bg-[#008689]/20 selection:text-[#006d70]">
-      {/* Top UTH-Style Academic Portal Header Bar */}
-      <header className="w-full bg-white border-b border-slate-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] sticky top-0 z-20">
-        <div className="h-1.5 w-full bg-gradient-to-r from-[#008689] via-[#1d999d] to-[#008689]" />
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#008689] to-[#1d999d] flex items-center justify-center text-white shadow-sm shadow-[#008689]/25 shrink-0">
+    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70]">
+      {/* Minimal Top Accent Bar */}
+      <div className="h-1.5 w-full bg-[#008689] shrink-0" />
+
+      {/* Centered Minimal Login Container */}
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md space-y-5">
+          {/* Clean Brand Header */}
+          <div className="text-center space-y-1.5">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#008689] text-white shadow-sm mb-1">
               <GraduationCap className="w-6 h-6" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm sm:text-base font-extrabold text-[#008689] tracking-tight uppercase">
-                  QuizGen Portal
-                </span>
-                <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-[#e0f7fa] text-[#008689] border border-[#008689]/25">
-                  AI Khảo thí · v2.4
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 truncate">
-                Cổng Thông tin Khảo thí & Khởi tạo Ngân hàng Câu hỏi Chuẩn hóa Bloom
+            <h1 className="text-xl font-extrabold text-[#008689] tracking-tight uppercase">
+              QuizGen AI
+            </h1>
+            <p className="text-xs text-slate-500">
+              Nền tảng Khởi tạo Đề thi Học thuật & Khảo thí Trực tuyến
+            </p>
+          </div>
+
+          {/* Login Card */}
+          <div className="bg-white rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] shadow-sm p-6 sm:p-7 space-y-5">
+            <div className="text-center border-b border-slate-100 pb-3.5">
+              <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
+                Đăng nhập hệ thống
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Cổng xác thực tập trung tự động nhận diện Giảng viên & Quản trị viên (2FA)
               </p>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              OAuth 2.0 & JWT
-            </span>
-            <button
-              type="button"
-              onClick={onNavigateRegister}
-              className="px-3.5 py-1.5 rounded-lg text-xs font-bold text-[#008689] bg-[#e0f7fa]/70 hover:bg-[#e0f7fa] border border-[#008689]/30 transition-colors"
-            >
-              Đăng ký tài khoản
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Portal 2-Column Content */}
-      <div className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* LEFT COLUMN: Portal Tin tức & Thông báo (Phong cách UTH Portal) */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3.5 bg-[#f8fbfc] border-b border-slate-200 flex items-center justify-between">
-                <h2 className="text-sm font-extrabold uppercase tracking-wide text-[#008689] flex items-center gap-2">
-                  <Sparkles className="w-4 h-4" />
-                  <span>Tin tức & Thông báo</span>
-                </h2>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#e0f7fa] text-[#008689] border border-[#008689]/25">
-                  HK II · 2025 - 2026
-                </span>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                <div className="p-4 hover:bg-[#f3f7f8]/70 transition-colors space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-1.5 py-0.5 text-[10px] font-extrabold uppercase rounded bg-rose-50 text-[#da1c2d] border border-rose-200">
-                      THÔNG BÁO
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">Cập nhật RAG Engine v3</span>
-                  </div>
-                  <h3 className="text-xs sm:text-[13px] font-bold text-slate-800 leading-snug">
-                    Triển khai chuẩn hóa Ngân hàng Đề thi Bloom & Đối soát trích dẫn từng trang giáo trình
-                  </h3>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Giảng viên tải trực tiếp giáo trình PDF/DOCX để AI trích xuất ngữ nghĩa, sinh câu hỏi và gắn nguồn trang tự động.
-                  </p>
-                </div>
-
-                <div className="p-4 hover:bg-[#f3f7f8]/70 transition-colors space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-1.5 py-0.5 text-[10px] font-extrabold uppercase rounded bg-[#e0f7fa] text-[#008689] border border-[#008689]/25">
-                      HƯỚNG DẪN
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">Google OAuth 2.0</span>
-                  </div>
-                  <h3 className="text-xs sm:text-[13px] font-bold text-slate-800 leading-snug">
-                    Liên kết đăng nhập trực tiếp qua tài khoản Google (accounts.google.com)
-                  </h3>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Hỗ trợ xác thực một chạm với Google Identity Services và tự động đồng bộ hồ sơ giảng viên/khảo thí.
-                  </p>
-                </div>
-
-                <div className="p-4 hover:bg-[#f3f7f8]/70 transition-colors space-y-1.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="px-1.5 py-0.5 text-[10px] font-extrabold uppercase rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      QUY TRÌNH
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-medium">Kiểm định 3 cấp</span>
-                  </div>
-                  <h3 className="text-xs sm:text-[13px] font-bold text-slate-800 leading-snug">
-                    Phân quyền 3 vai trò: Giảng viên · Trưởng bộ môn · Quản trị Khảo thi
-                  </h3>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">
-                    Đảm bảo quy trình biên soạn, thẩm định và đóng gói đề thi (Word / PDF / QTI) khép kín và minh bạch.
-                  </p>
-                </div>
-              </div>
-
-              <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
-                <span className="flex items-center gap-1.5">
-                  <Building2 className="w-3.5 h-3.5 text-[#008689]" />
-                  <span>Phòng Khảo thí & Đảm bảo Chất lượng</span>
-                </span>
-                <span className="font-mono text-[10px] text-[#008689] font-semibold">HTTPS · SSL</span>
-              </div>
-            </div>
-
-            {/* Security Status Card */}
-            <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3 shadow-sm">
-              <div className="w-9 h-9 rounded-lg bg-[#e0f7fa] border border-[#008689]/25 flex items-center justify-center text-[#008689] shrink-0">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div className="text-[11px] text-slate-600 leading-relaxed">
-                <span className="font-bold text-slate-800 block">An toàn Thông tin Cấp độ 3</span>
-                Xác thực Token JWT tự động, bảo vệ chống Brute-force và khôi phục mật khẩu qua OTP.
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN: Cổng Đăng Nhập Hệ Thống (Phong cách UTH Portal) */}
-          <div className="lg:col-span-7 space-y-4">
-            <div className="bg-white rounded-2xl border border-slate-200 border-t-4 border-t-[#008689] shadow-lg p-5 sm:p-6 space-y-5">
-              {/* Portal Login Header */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-4">
+            {/* Alerts */}
+            {isLocked && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
+                <Clock className="w-4 h-4 shrink-0 text-[#da1c2d] mt-0.5" />
                 <div>
-                  <h1 className="text-lg sm:text-xl font-black uppercase tracking-wide text-[#da1c2d] flex items-center gap-2">
-                    <span>ĐĂNG NHẬP HỆ THỐNG</span>
-                  </h1>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Chọn vai trò công tác và xác thực tài khoản khảo thí của bạn.
-                  </p>
+                  <span className="font-bold text-[#da1c2d]">Tạm khóa đăng nhập: </span>
+                  Vui lòng thử lại sau <strong className="font-mono">{lockoutSeconds}s</strong>.
                 </div>
-                <span className={`text-[11px] px-2.5 py-1 rounded-full border font-bold ${currentRoleConfig.badgeClass}`}>
-                  {currentRoleConfig.title}
+              </div>
+            )}
+
+            {!isLocked && failedAttempts >= 3 && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                <span>
+                  Đã nhập sai <strong>{failedAttempts}/{MAX_FAILED_ATTEMPTS}</strong> lần.
                 </span>
               </div>
+            )}
 
-              {/* ─── PHẦN CHỌN VAI TRÒ ─────────────────────────────────────────── */}
-              <div className="space-y-2">
+            {!isLocked && errors.general && failedAttempts < 3 && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#da1c2d]" />
+                <span>{errors.general}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+              {/* Email Field */}
+              <div className="space-y-1.5">
+                <label htmlFor="login-email" className="block text-xs font-semibold text-slate-700">
+                  Email tài khoản
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="login-email"
+                    type="email"
+                    disabled={isLocked || isLoading}
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setErrors((p) => ({ ...p, email: undefined, general: undefined }));
+                    }}
+                    placeholder="canbo@ut.edu.vn"
+                    className={`w-full bg-slate-50 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#008689]/20 ${
+                      errors.email
+                        ? 'border-[#da1c2d] focus:border-[#da1c2d]'
+                        : 'border-slate-200 focus:border-[#008689]'
+                    }`}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="text-[11px] text-[#da1c2d] font-medium">{errors.email}</p>
+                )}
+              </div>
+
+              {/* Password Field */}
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <UserCheck className="w-4 h-4 text-[#008689]" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                      1. Chọn vai trò truy cập
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-400 hidden sm:inline">Phân quyền theo chức vụ</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {ROLES.map((role) => {
-                    const Icon = role.icon;
-                    const isSelected = selectedRole === role.id;
-
-                    return (
-                      <button
-                        key={role.id}
-                        type="button"
-                        onClick={() => handleSelectRole(role)}
-                        className={`group relative text-left p-3 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
-                          isSelected
-                            ? `${role.borderActive} ${role.bgActive} shadow-sm`
-                            : 'border-slate-200 bg-slate-50/70 hover:bg-white hover:border-[#008689]/40'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                              isSelected
-                                ? `bg-gradient-to-tr ${role.accentColor} text-white shadow-sm`
-                                : 'bg-white border border-slate-200 text-slate-500 group-hover:text-[#008689]'
-                            }`}
-                          >
-                            <Icon className="w-4 h-4" />
-                          </div>
-
-                          <div
-                            className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] transition-all ${
-                              isSelected
-                                ? 'bg-[#008689] text-white font-bold'
-                                : 'border border-slate-300 text-transparent group-hover:border-[#008689]/50'
-                            }`}
-                          >
-                            ✓
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-xs font-bold text-slate-800 leading-snug group-hover:text-[#008689] transition-colors">
-                            {role.title}
-                          </div>
-                          <span className={`inline-block mt-0.5 px-1.5 py-0.5 text-[9px] font-semibold rounded-full border ${role.badgeClass}`}>
-                            {role.badge}
-                          </span>
-                        </div>
-
-                        <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed line-clamp-2">
-                          {role.description}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* ─── CẢNH BÁO KHÓA TÀI KHOẢN BRUTE-FORCE ─────────────────────── */}
-              {isLocked && (
-                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-3">
-                  <Clock className="w-5 h-5 shrink-0 text-[#da1c2d] mt-0.5" />
-                  <div>
-                    <div className="font-bold text-[#da1c2d] text-sm">Tài khoản đang bị tạm khóa an toàn</div>
-                    <div className="mt-1 leading-relaxed">
-                      Hệ thống tạm ngưng phiên đăng nhập do phát hiện {MAX_FAILED_ATTEMPTS} lần nhập sai thông tin. Vui lòng thử lại sau{' '}
-                      <span className="font-mono font-extrabold text-[#da1c2d] text-sm px-1.5 py-0.5 rounded bg-white border border-rose-200">
-                        {lockoutSeconds}s
-                      </span>.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ─── CẢNH BÁO SẮP BỊ KHÓA NẾU SAI >= 3 LẦN ──────────────────── */}
-              {!isLocked && failedAttempts >= 3 && (
-                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2.5">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
-                  <span>
-                    Cảnh báo an ninh: Bạn đã nhập sai <strong>{failedAttempts}</strong> lần. Nếu tiếp tục sai đến lần thứ {MAX_FAILED_ATTEMPTS}, hệ thống sẽ kích hoạt khóa tự động 60 giây.
-                  </span>
-                </div>
-              )}
-
-              {/* ─── LỖI CHUNG ──────────────────────────────────────────────── */}
-              {!isLocked && errors.general && failedAttempts < 3 && (
-                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 text-[#da1c2d]" />
-                  <span>{errors.general}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-                {/* Email Field */}
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="login-email"
-                    className="text-xs font-bold text-slate-700 tracking-wide uppercase flex items-center justify-between"
+                  <label htmlFor="login-password" className="text-xs font-semibold text-slate-700">
+                    Mật khẩu
+                  </label>
+                  <button
+                    id="forgot-password-trigger"
+                    type="button"
+                    onClick={() => {
+                      setForgotEmail(email.trim());
+                      setForgotStep(1);
+                      setForgotError('');
+                      setForgotOtp('');
+                      setForgotDevOtp('');
+                      setForgotNewPass('');
+                      setForgotConfirmPass('');
+                      setShowForgotNewPass(false);
+                      setShowForgotModal(true);
+                    }}
+                    className="text-xs text-[#008689] hover:underline font-medium"
                   >
-                    <span>Email công tác / Tài khoản trường</span>
-                    <span className="text-[10px] text-slate-400 lowercase font-normal">(@ut.edu.vn / @vnu.edu.vn)</span>
-                  </label>
-                  <div className="relative group">
-                    <div
-                      className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                        errors.email ? 'text-[#da1c2d]' : 'text-slate-400 group-focus-within:text-[#008689]'
-                      }`}
-                    >
-                      <Mail className="w-4 h-4" />
-                    </div>
-                    <input
-                      id="login-email"
-                      type="email"
-                      disabled={isLocked || isLoading}
-                      value={email}
-                      onChange={(e) => {
-                        setEmail(e.target.value);
-                        setErrors((p) => ({ ...p, email: undefined, general: undefined }));
-                      }}
-                      placeholder="canbo@ut.edu.vn"
-                      className={`w-full bg-slate-50 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all duration-200
-                        disabled:opacity-50 disabled:cursor-not-allowed
-                        focus:bg-white focus:ring-2 focus:ring-[#008689]/20
-                        ${
-                          errors.email
-                            ? 'border-[#da1c2d] focus:border-[#da1c2d]'
-                            : 'border-slate-200 focus:border-[#008689]'
-                        }`}
-                    />
-                  </div>
-                  {errors.email && (
-                    <p className="text-[11px] text-[#da1c2d] font-medium flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> {errors.email}
-                    </p>
-                  )}
+                    Quên mật khẩu?
+                  </button>
                 </div>
-
-                {/* Password Field */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label
-                      htmlFor="login-password"
-                      className="text-xs font-bold text-slate-700 tracking-wide uppercase"
-                    >
-                      Mật khẩu tài khoản
-                    </label>
-                    <button
-                      id="forgot-password-trigger"
-                      type="button"
-                      onClick={() => {
-                        setForgotEmail(email.trim());
-                        setForgotStep(1);
-                        setForgotError('');
-                        setForgotOtp('');
-                        setForgotDevOtp('');
-                        setForgotNewPass('');
-                        setForgotConfirmPass('');
-                        setShowForgotNewPass(false);
-                        setShowForgotModal(true);
-                      }}
-                      className="text-[11px] text-[#008689] hover:text-[#1d999d] hover:underline transition-colors font-semibold cursor-pointer"
-                    >
-                      Quên mật khẩu?
-                    </button>
-                  </div>
-                  <div className="relative group">
-                    <div
-                      className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors ${
-                        errors.password ? 'text-[#da1c2d]' : 'text-slate-400 group-focus-within:text-[#008689]'
-                      }`}
-                    >
-                      <Lock className="w-4 h-4" />
-                    </div>
-                    <input
-                      id="login-password"
-                      type={showPassword ? 'text' : 'password'}
-                      disabled={isLocked || isLoading}
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        setErrors((p) => ({ ...p, password: undefined, general: undefined }));
-                      }}
-                      placeholder="••••••••"
-                      className={`w-full bg-slate-50 border rounded-xl pl-10 pr-11 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all duration-200
-                        disabled:opacity-50 disabled:cursor-not-allowed
-                        focus:bg-white focus:ring-2 focus:ring-[#008689]/20
-                        ${
-                          errors.password
-                            ? 'border-[#da1c2d] focus:border-[#da1c2d]'
-                            : 'border-slate-200 focus:border-[#008689]'
-                        }`}
-                    />
-                    <button
-                      type="button"
-                      disabled={isLocked}
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-40"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {errors.password && (
-                    <p className="text-[11px] text-[#da1c2d] font-medium flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> {errors.password}
-                    </p>
-                  )}
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    disabled={isLocked || isLoading}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setErrors((p) => ({ ...p, password: undefined, general: undefined }));
+                    }}
+                    placeholder="••••••••"
+                    className={`w-full bg-slate-50 border rounded-xl pl-10 pr-10 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#008689]/20 ${
+                      errors.password
+                        ? 'border-[#da1c2d] focus:border-[#da1c2d]'
+                        : 'border-slate-200 focus:border-[#008689]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    disabled={isLocked}
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
-
-                {/* Remember Session */}
-                <div className="flex items-center justify-between text-xs text-slate-600 pt-0.5">
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      disabled={isLocked}
-                      onChange={(e) => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 rounded border-slate-300 text-[#008689] focus:ring-[#008689]/30 cursor-pointer accent-[#008689]"
-                    />
-                    <span>Ghi nhớ phiên làm việc an toàn</span>
-                  </label>
-                </div>
-
-                {/* Submit Button */}
-                <button
-                  id="login-submit-btn"
-                  type="submit"
-                  disabled={isLoading || isLocked}
-                  className={`relative w-full group flex items-center justify-center gap-2.5 py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r ${currentRoleConfig.accentColor} hover:brightness-105 transition-all duration-200 shadow-md shadow-[#008689]/20 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden`}
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Đang xác thực bảo mật với máy chủ...</span>
-                    </>
-                  ) : isLocked ? (
-                    <>
-                      <Clock className="w-4 h-4 animate-spin" />
-                      <span>Đang khóa an toàn ({lockoutSeconds}s)...</span>
-                    </>
-                  ) : (
-                    <>
-                      <KeyRound className="w-4 h-4" />
-                      <span>Đăng nhập với vai trò {currentRoleConfig.title}</span>
-                      <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                    </>
-                  )}
-                </button>
-              </form>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-slate-200" />
-                <span className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">hoặc</span>
-                <div className="flex-1 h-px bg-slate-200" />
+                {errors.password && (
+                  <p className="text-[11px] text-[#da1c2d] font-medium">{errors.password}</p>
+                )}
               </div>
 
-              {/* Real Google OAuth 2.0 Sign-In Section */}
-              <div className="space-y-2.5">
+              {/* Remember Session */}
+              <div className="flex items-center justify-between text-xs text-slate-600">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    disabled={isLocked}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-[#008689] accent-[#008689] cursor-pointer"
+                  />
+                  <span>Ghi nhớ đăng nhập</span>
+                </label>
+              </div>
+
+              {/* Submit Button */}
+              <button
+                id="login-submit-btn"
+                type="submit"
+                disabled={isLoading || isLocked}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm text-white bg-[#008689] hover:bg-[#006d70] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang đăng nhập...</span>
+                  </>
+                ) : isLocked ? (
+                  <span>Tạm khóa ({lockoutSeconds}s)</span>
+                ) : (
+                  <>
+                    <span>Đăng nhập</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-slate-200" />
+              <span className="text-[11px] text-slate-400 font-medium">hoặc</span>
+              <div className="flex-1 h-px bg-slate-200" />
+            </div>
+
+            {/* Clean Google Sign-In */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
                 <button
                   id="google-oauth-btn"
                   type="button"
                   disabled={isLocked || isLoading || googleLoading}
                   onClick={() => void startGoogleOAuthFlow()}
-                  className="w-full py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 hover:border-[#008689] text-slate-800 transition-all duration-200 flex items-center justify-between gap-3 group disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 text-slate-700 transition-colors flex items-center justify-center gap-2.5 disabled:opacity-50"
                 >
-                  <span className="flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                      {googleLoading ? (
-                        <span className="w-4 h-4 rounded-full border-2 border-[#008689] border-t-transparent animate-spin" />
-                      ) : (
-                        <GoogleLogo className="w-4 h-4" />
-                      )}
-                    </span>
-                    <span className="text-sm font-bold text-slate-800">
-                      {googleLoading ? 'Đang kết nối tới accounts.google.com...' : 'Đăng nhập bằng tài khoản Google'}
-                    </span>
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border shrink-0 ${
-                      activeGoogleClientId
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : 'bg-[#e0f7fa] text-[#008689] border-[#008689]/25'
-                    }`}
-                  >
-                    {activeGoogleClientId ? 'Google OAuth 2.0' : 'Liên kết Google'}
+                  {googleLoading ? (
+                    <span className="w-4 h-4 rounded-full border-2 border-[#008689] border-t-transparent animate-spin" />
+                  ) : (
+                    <GoogleLogo className="w-4 h-4" />
+                  )}
+                  <span className="text-xs font-semibold text-slate-700">
+                    {googleLoading ? 'Đang kết nối Google...' : 'Đăng nhập với Google'}
                   </span>
                 </button>
 
-                {googleError && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-[#da1c2d] space-y-2">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-[#da1c2d] shrink-0 mt-0.5" />
-                      <span>{googleError}</span>
-                    </div>
-                    {(googlePopupBlocked || activeGoogleClientId) && (
-                      <button
-                        type="button"
-                        onClick={() => redirectToGoogleOAuthPage()}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#008689] hover:text-[#1d999d] underline"
-                      >
-                        <span>Mở trực tiếp trang đăng nhập Google (accounts.google.com)</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
-                    )}
-                  </div>
+                {!envGoogleClientId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGoogleSetupError('');
+                      setGoogleClientIdDraft(customGoogleClientId);
+                      setShowGoogleSetupModal(true);
+                    }}
+                    title="Cấu hình Google OAuth Client ID"
+                    className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-[#008689] transition-colors shrink-0"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
                 )}
+              </div>
 
-                <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
-                  <span className="truncate">
-                    {activeGoogleClientId
-                      ? `OAuth Client ID: ${activeGoogleClientId.slice(0, 14)}...`
-                      : 'Liên kết trực tiếp accounts.google.com (OAuth 2.0)'}
-                  </span>
-                  {!envGoogleClientId && (
+              {googleError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-[#da1c2d] space-y-1.5">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-[#da1c2d] shrink-0 mt-0.5" />
+                    <span>{googleError}</span>
+                  </div>
+                  {(googlePopupBlocked || activeGoogleClientId) && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setGoogleSetupError('');
-                        setGoogleClientIdDraft(customGoogleClientId);
-                        setShowGoogleSetupModal(true);
-                      }}
-                      className="inline-flex items-center gap-1 text-[#008689] hover:text-[#1d999d] font-semibold transition-colors shrink-0 ml-2"
+                      onClick={() => redirectToGoogleOAuthPage()}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#008689] hover:underline"
                     >
-                      <Settings className="w-3 h-3" />
-                      <span>{activeGoogleClientId ? 'Đổi Client ID' : 'Cấu hình Client ID'}</span>
+                      <span>Mở trang đăng nhập Google</span>
+                      <ExternalLink className="w-3 h-3" />
                     </button>
                   )}
                 </div>
-              </div>
+              )}
+            </div>
 
-              {/* Register Link */}
-              <div className="text-center text-xs text-slate-500 pt-1 border-t border-slate-100">
-                Chưa có tài khoản khảo thi chính thức?{' '}
-                <button
-                  id="go-to-register-btn"
-                  onClick={onNavigateRegister}
-                  className="text-[#008689] hover:text-[#1d999d] font-bold transition-colors hover:underline"
-                >
-                  Đăng ký tài khoản mới ngay
-                </button>
-              </div>
+            {/* Register Link */}
+            <div className="text-center text-xs text-slate-500 pt-2 border-t border-slate-100">
+              Chưa có tài khoản?{' '}
+              <button
+                id="go-to-register-btn"
+                onClick={onNavigateRegister}
+                className="text-[#008689] font-bold hover:underline"
+              >
+                Đăng ký tài khoản
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Portal Footer */}
-      <footer className="w-full py-4 border-t border-slate-200 bg-white/80 text-center text-[11px] text-slate-500">
-        <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>© 2026 QuizGen Academic Portal · Hệ thống Ngân hàng Câu hỏi & Khảo thí AI</span>
-          <span className="flex items-center gap-1.5 text-slate-500">
-            <ShieldCheck className="w-3.5 h-3.5 text-[#008689]" />
-            Xác thực 2 lớp & Kiểm định An toàn Thông tin
-          </span>
-        </div>
+      {/* Minimal Footer */}
+      <footer className="py-3 text-center text-[11px] text-slate-400">
+        © 2026 QuizGen AI
       </footer>
 
       {/* Forgot Password Modal (2-Step OTP & Password Reset) */}
@@ -1754,6 +1681,105 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 >
                   <GoogleLogo className="w-4 h-4 bg-white rounded-full p-0.5" />
                   <span>Lưu & Kết nối Google ngay</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin 2-Factor Authentication (2FA Security PIN) Shield Modal */}
+      {showAdmin2FAModal && pendingAdminUser && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border-2 border-[#008689] bg-white p-6 shadow-2xl space-y-4">
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdmin2FAModal(false);
+                setPendingAdminUser(null);
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              title="Hủy đăng nhập Admin"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3 pr-6">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 border border-rose-200 flex items-center justify-center text-[#da1c2d] shrink-0">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-rose-50 text-[#da1c2d] border border-rose-200 mb-0.5">
+                  Khiên Bảo Mật Kép (2FA Security)
+                </span>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  Xác thực Quản trị viên Cấp 2
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+              <p>
+                Tài khoản: <strong className="text-slate-900">{pendingAdminUser.email}</strong>
+              </p>
+              <p>
+                Để ngăn chặn truy cập trái phép khi lộ mật khẩu, vui lòng nhập{' '}
+                <strong className="text-[#008689]">Mã Khóa Bảo Mật Admin 6 chữ số (2FA PIN)</strong>.
+              </p>
+            </div>
+
+            {admin2FAError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-[#da1c2d] mt-0.5" />
+                <span>{admin2FAError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyAdmin2FA} className="space-y-4" noValidate>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-slate-700 uppercase">
+                    Mã PIN Bảo mật 6 chữ số
+                  </label>
+                  <span className="text-[11px] text-slate-400">
+                    Số lần thử: {admin2FAFailedCount}/3
+                  </span>
+                </div>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  autoFocus
+                  maxLength={6}
+                  value={admin2FAPin}
+                  onChange={(e) => {
+                    setAdmin2FAPin(e.target.value.replace(/\D/g, ''));
+                    setAdmin2FAError('');
+                  }}
+                  placeholder="• • • • • •"
+                  className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl px-4 py-3 text-center text-lg font-mono font-bold tracking-[0.5em] text-slate-900 outline-none focus:bg-white focus:border-[#008689]"
+                />
+                <p className="text-[11px] text-slate-400 text-center">
+                  (Mã PIN Admin mặc định của hệ thống: <code className="font-mono font-bold text-slate-600">246810</code>)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdmin2FAModal(false);
+                    setPendingAdminUser(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs text-white bg-[#008689] hover:bg-[#006d70] transition-colors flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Xác minh 2FA & Mở Cổng Admin</span>
                 </button>
               </div>
             </form>

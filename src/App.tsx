@@ -6,13 +6,91 @@ import { TextbookUploadScreen } from './components/TextbookUploadScreen';
 import { AIGenerationScreen } from './components/AIGenerationScreen';
 import { ReviewWorkspaceScreen } from './components/ReviewWorkspaceScreen';
 import { QuestionBankScreen } from './components/QuestionBankScreen';
+import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 
-const INITIAL_QUESTIONS: Question[] = [];
+const INITIAL_QUESTIONS: Question[] = [
+  {
+    id: 'q-init-1',
+    sourceChunkId: 'chunk-15-1',
+    textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    chapter: 'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
+    bloomLevel: 'Nhận biết',
+    question: 'Khái niệm "Chi phí cơ hội" (Opportunity Cost) trong phân tích kinh tế vi mô được định nghĩa là gì?',
+    options: [
+      { id: 'opt-a-1', label: 'A', text: 'Giá trị của phương án tốt nhất bị bỏ qua khi đưa ra một quyết định lựa chọn' },
+      { id: 'opt-b-1', label: 'B', text: 'Tổng số tiền mặt thực tế đã chi ra để thực hiện dự án' },
+      { id: 'opt-c-1', label: 'C', text: 'Khoản chi phí chìm không thể thu hồi được trong quá khứ' },
+      { id: 'opt-d-1', label: 'D', text: 'Lợi nhuận kế toán ghi nhận trên báo cáo tài chính hàng năm' },
+    ],
+    correctAnswerId: 'opt-a-1',
+    explanation: 'Chi phí cơ hội đo lường giá trị của cơ hội tốt nhất tiếp theo phải hy sinh để chọn phương án hiện tại.',
+    confidenceScore: 98,
+    status: 'approved',
+    createdAt: '11/11/2026',
+  },
+  {
+    id: 'q-init-2',
+    sourceChunkId: 'chunk-42-2',
+    textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
+    bloomLevel: 'Thông hiểu',
+    question: 'Nếu trà và cà phê là hai hàng hóa thay thế cho nhau, điều gì sẽ xảy ra khi giá cà phê trên thị trường tăng vọt?',
+    options: [
+      { id: 'opt-a-2', label: 'A', text: 'Cầu về mặt hàng trà sẽ có xu hướng tăng lên và đường cầu dịch chuyển sang phải' },
+      { id: 'opt-b-2', label: 'B', text: 'Lượng cầu về trà sẽ giảm sút nghiêm trọng' },
+      { id: 'opt-c-2', label: 'C', text: 'Đường cầu của cà phê dịch chuyển song song sang phải' },
+      { id: 'opt-d-2', label: 'D', text: 'Giá của cả hai mặt hàng sẽ lập tức giảm về 0' },
+    ],
+    correctAnswerId: 'opt-a-2',
+    explanation: 'Vì là hàng hóa thay thế, giá cà phê tăng làm người tiêu dùng chuyển sang dùng trà, làm tăng cầu về trà.',
+    confidenceScore: 96,
+    status: 'approved',
+    createdAt: '11/11/2026',
+  },
+  {
+    id: 'q-init-3',
+    sourceChunkId: 'chunk-42-3',
+    textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    chapter: 'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
+    bloomLevel: 'Vận dụng',
+    question: 'Một doanh nghiệp bán sản phẩm có hệ số co giãn của cầu theo giá là |PED| = 1.8. Để tối đa hóa tổng doanh thu, doanh nghiệp nên áp dụng chiến lược giá nào?',
+    options: [
+      { id: 'opt-a-3', label: 'A', text: 'Giảm nhẹ giá bán sản phẩm để kích thích lượng bán ra tăng mạnh hơn' },
+      { id: 'opt-b-3', label: 'B', text: 'Tăng giá bán sản phẩm lên gấp đôi' },
+      { id: 'opt-c-3', label: 'C', text: 'Giữ nguyên mức giá bất chấp biến động thị trường' },
+      { id: 'opt-d-3', label: 'D', text: 'Cắt giảm toàn bộ sản lượng cung ứng' },
+    ],
+    correctAnswerId: 'opt-a-3',
+    explanation: 'Khi cầu co giãn nhiều (|PED| > 1), giá và tổng doanh thu biến thiên ngược chiều; giảm giá giúp tăng tổng doanh thu.',
+    confidenceScore: 95,
+    status: 'pending',
+    createdAt: '11/11/2026',
+  },
+  {
+    id: 'q-init-4',
+    sourceChunkId: 'chunk-15-4',
+    textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    chapter: 'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
+    bloomLevel: 'Phân tích',
+    question: 'Khi phân tích sự khác biệt giữa kinh tế học thực chứng và kinh tế học chuẩn tắc, nhận định nào sau đây là chính xác?',
+    options: [
+      { id: 'opt-a-4', label: 'A', text: 'Kinh tế học thực chứng giải thích thế giới khách quan ("là gì"), trong khi kinh tế học chuẩn tắc đưa ra đánh giá chủ quan ("nên như thế nào")' },
+      { id: 'opt-b-4', label: 'B', text: 'Kinh tế học chuẩn tắc có thể được kiểm chứng trực tiếp bằng số liệu thực nghiệm' },
+      { id: 'opt-c-4', label: 'C', text: 'Kinh tế học thực chứng luôn chứa đựng quan điểm đạo đức của người nghiên cứu' },
+      { id: 'opt-d-4', label: 'D', text: 'Cả hai phương pháp đều chỉ áp dụng cho phân tích kinh tế vĩ mô' },
+    ],
+    correctAnswerId: 'opt-a-4',
+    explanation: 'Thực chứng (Positive) dựa trên thực tế có thể kiểm chứng; Chuẩn tắc (Normative) chứa đựng phán xét giá trị.',
+    confidenceScore: 94,
+    status: 'pending',
+    createdAt: '11/11/2026',
+  },
+];
 
 export const App: React.FC = () => {
   // ─── Authentication State ────────────────────────────────────────────────
@@ -195,13 +273,22 @@ export const App: React.FC = () => {
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
-    setCurrentScreen('dashboard');
-    const title = user.academicTitle ? `${user.academicTitle} ` : '';
-    handleShowToast(
-      'success',
-      'Đăng nhập thành công',
-      `Chào mừng ${title}${user.fullName} (${user.roleLabel || user.role}) trở lại QuizGen AI!`
-    );
+    if (user.role === 'admin') {
+      setCurrentScreen('admin_portal');
+      handleShowToast(
+        'success',
+        'Xác thực 2FA Thành công — Mở Cổng Admin',
+        `Chào mừng Quản trị viên ${user.fullName} vào Trung tâm Quản trị Hệ thống!`
+      );
+    } else {
+      setCurrentScreen('dashboard');
+      const title = user.academicTitle ? `${user.academicTitle} ` : '';
+      handleShowToast(
+        'success',
+        'Đăng nhập thành công',
+        `Chào mừng ${title}${user.fullName} trở lại Không gian Làm đề Giảng viên!`
+      );
+    }
   };
 
   const handleRegister = (user: UserProfile) => {
@@ -210,8 +297,8 @@ export const App: React.FC = () => {
     setCurrentScreen('dashboard');
     handleShowToast(
       'success',
-      'Đăng ký tài khoản thành công',
-      `Chào mừng ${user.fullName} đã gia nhập hệ thống Khảo thi ĐHQG!`
+      'Đăng ký tài khoản Giảng viên thành công',
+      `Chào mừng ${user.fullName} đã gia nhập hệ thống QuizGen AI!`
     );
   };
 
@@ -292,6 +379,9 @@ export const App: React.FC = () => {
       `mock-jwt-access-${newRole}-${Date.now()}`,
       `mock-jwt-refresh-${newRole}-${Date.now()}`
     );
+    if (newRole !== 'lecturer' && (currentScreen === 'upload' || currentScreen === 'generate')) {
+      setCurrentScreen('dashboard');
+    }
     handleShowToast(
       'info',
       'Đã chuyển đổi vai trò',
@@ -299,8 +389,8 @@ export const App: React.FC = () => {
     );
   };
 
-  const pendingCount = questions.filter((q) => q.status === 'pending').length;
-  const approvedCount = questions.filter((q) => q.status === 'approved').length;
+  const pendingCount = questions.filter((q) => q.status === 'pending' || q.status === 'submitted_to_hod').length;
+  const approvedCount = questions.filter((q) => q.status === 'approved' || q.status === 'locked_for_exam').length;
 
   // ─── Render Auth Screens (Login / Register) ───────────────────────────────
   if (!isAuthenticated) {
@@ -344,17 +434,27 @@ export const App: React.FC = () => {
           currentScreen={currentScreen}
           currentUser={currentUser}
           onLogout={handleLogout}
+          onNavigate={setCurrentScreen}
           onRoleSwitch={handleRoleSwitch}
           onShowToast={handleShowToast}
         />
 
         {/* Screen Content Viewport */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
+          {currentScreen === 'admin_portal' && (
+            <AdminPortalScreen
+              currentUser={currentUser}
+              onNavigate={setCurrentScreen}
+              onShowToast={handleShowToast}
+            />
+          )}
+
           {currentScreen === 'dashboard' && (
             <DashboardScreen
               onNavigate={setCurrentScreen}
               pendingReviewCount={pendingCount}
               approvedCount={approvedCount}
+              currentUser={currentUser}
             />
           )}
 
@@ -380,6 +480,7 @@ export const App: React.FC = () => {
               onBatchApprove={handleBatchApprove}
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 
@@ -387,6 +488,7 @@ export const App: React.FC = () => {
             <QuestionBankScreen
               questions={questions}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
         </div>
