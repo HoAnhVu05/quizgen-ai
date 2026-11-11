@@ -51,9 +51,12 @@ def main():
     for svc in SERVICES:
         cmd = [python_exe, "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", str(svc["port"])]
         print(f"[*] Starting {svc['name']:<18} on http://127.0.0.1:{svc['port']}...")
+        sub_env = dict(os.environ)
+        sub_env["PYTHONIOENCODING"] = "utf-8"
         p = subprocess.Popen(
             cmd,
-            cwd=svc["cwd"]
+            cwd=svc["cwd"],
+            env=sub_env
         )
         processes.append((svc["name"], p, svc["port"]))
         time.sleep(0.5)

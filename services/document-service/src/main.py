@@ -419,6 +419,7 @@ def list_documents(
     ]
 
 
+@app.get("/{document_id}")
 @app.get("/documents/{document_id}")
 def get_document(document_id: str, db: Session = Depends(get_db)):
     """Lấy thông tin chi tiết một giáo trình kèm danh sách các chương mục đã nhận diện"""
@@ -446,6 +447,7 @@ def get_document(document_id: str, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/{document_id}/download")
 @app.get("/documents/{document_id}/download")
 def download_document_file(document_id: str, db: Session = Depends(get_db)):
     """Tải xuống tệp giáo trình gốc (PDF/Word) từ máy chủ lưu trữ"""
@@ -461,26 +463,62 @@ def download_document_file(document_id: str, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/{document_id}/chunks")
 @app.get("/documents/{document_id}/chunks")
 def get_document_chunks(
-    document_id: str, 
-    limit: int = Query(default=20, ge=1, le=200), 
+    document_id: str,
+    page_start: Optional[int] = Query(None, description="Lọc từ số trang bắt đầu"),
+    page_end: Optional[int] = Query(None, description="Lọc đến số trang kết thúc"),
+    chapter: Optional[str] = Query(None, description="Lọc theo tên chương hoặc đề mục"),
+    keyword: Optional[str] = Query(None, description="Tìm kiếm từ khóa trong nội dung đoạn trích"),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db)
 ):
-    """Lấy danh sách các đoạn trích ngữ nghĩa để hiển thị lên Modal xem chi tiết ở Frontend"""
-    chunks = db.query(DocumentChunkDB).filter_by(document_id=document_id).limit(limit).all()
-    if not chunks:
-        doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-        if not doc:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Không tìm thấy tài liệu có mã {document_id}")
+    """
+    Truy xuất và xem trước danh sách các đoạn trích ngữ nghĩa (chunks):
+    - Hỗ trợ lọc theo dải trang (page_start, page_end)
+    - Hỗ trợ lọc theo chương/mục học phần
+    - Hỗ trợ tìm kiếm từ khóa full-text trong đoạn trích
+    - Hỗ trợ phân trang limit/offset
+    """
+    doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Không tìm thấy tài liệu có mã {document_id}")
+
+    query = db.query(DocumentChunkDB).filter_by(document_id=document_id)
+
+    if page_start is not None:
+        query = query.filter(DocumentChunkDB.page_number >= page_start)
+    if page_end is not None:
+        query = query.filter(DocumentChunkDB.page_number <= page_end)
+    if chapter:
+        query = query.filter(DocumentChunkDB.chapter.ilike(f"%{chapter.strip()}%"))
+    if keyword:
+        query = query.filter(DocumentChunkDB.text_snippet.ilike(f"%{keyword.strip()}%"))
+
+    total_matched = query.count()
+    chunks = query.order_by(DocumentChunkDB.page_number.asc(), DocumentChunkDB.id.asc()).offset(offset).limit(limit).all()
+
     return {
         "documentId": document_id,
-        "totalChunks": len(chunks),
+        "totalChunks": total_matched,
+        "returnedChunks": len(chunks),
+        "limit": limit,
+        "offset": offset,
+        "filters": {
+            "pageStart": page_start,
+            "pageEnd": page_end,
+            "chapter": chapter,
+            "keyword": keyword
+        },
         "chunks": [
             {
                 "chunkId": c.id,
                 "pageNumber": c.page_number,
                 "chapter": c.chapter,
+                "charCount": c.char_count,
+                "text": c.text_snippet,
                 "textSnippet": c.text_snippet[:400]
             }
             for c in chunks

@@ -177,9 +177,10 @@ class RAGVectorStore:
                 {
                     "document_id": document_id,
                     "page_number": c["page_number"],
-                    "chapter": c["chapter"]
+                    "chapter": c["chapter"],
+                    "chunk_index": i + idx
                 }
-                for c in batch_slice
+                for idx, c in enumerate(batch_slice)
             ]
             self.collection.upsert(
                 ids=b_ids,
@@ -318,6 +319,114 @@ class RAGVectorStore:
         formatted.sort(key=lambda x: x["relevanceScore"], reverse=True)
         return formatted
 
+    @staticmethod
+    def _compute_jaccard_similarity(text_a: str, text_b: str) -> float:
+        """Tính hệ số tương đồng Jaccard giữa hai chuỗi văn bản dựa trên tập từ vựng (token sets)"""
+        tokens_a = set(LexicalScorer.tokenize(text_a))
+        tokens_b = set(LexicalScorer.tokenize(text_b))
+        if not tokens_a or not tokens_b:
+            return 0.0
+        intersection = tokens_a.intersection(tokens_b)
+        union = tokens_a.union(tokens_b)
+        return len(intersection) / len(union) if union else 0.0
+
+    def apply_mmr_rerank(
+        self,
+        candidates: List[Dict[str, Any]],
+        top_k: int,
+        lambda_param: float = 0.75
+    ) -> List[Dict[str, Any]]:
+        """
+        Maximal Marginal Relevance (MMR) Diversity Re-ranking:
+        Tối ưu hóa độ đa dạng và giảm thiểu sự trùng lặp (semantic redundancy).
+        MMR Score = lambda * Sim(Candidate, Query) - (1 - lambda) * Max(Sim(Candidate, Selected))
+        """
+        if not candidates or top_k <= 0:
+            return []
+        if len(candidates) <= top_k:
+            return candidates
+
+        selected: List[Dict[str, Any]] = []
+        remaining = list(candidates)
+
+        first_choice = remaining.pop(0)
+        first_choice["mmrScore"] = first_choice.get("relevanceScore", 100.0)
+        selected.append(first_choice)
+
+        while len(selected) < top_k and remaining:
+            best_score = -float("inf")
+            best_idx = -1
+
+            for idx, cand in enumerate(remaining):
+                sim1 = (cand.get("relevanceScore", 0.0)) / 100.0
+                cand_text = cand.get("textSnippet") or cand.get("text") or ""
+
+                max_sim2 = 0.0
+                for sel in selected:
+                    sel_text = sel.get("textSnippet") or sel.get("text") or ""
+                    sim = self._compute_jaccard_similarity(cand_text, sel_text)
+                    if sim > max_sim2:
+                        max_sim2 = sim
+
+                mmr_val = (lambda_param * sim1) - ((1.0 - lambda_param) * max_sim2)
+                if mmr_val > best_score:
+                    best_score = mmr_val
+                    best_idx = idx
+
+            if best_idx >= 0:
+                chosen = remaining.pop(best_idx)
+                chosen["mmrScore"] = round(best_score * 100, 2)
+                selected.append(chosen)
+            else:
+                break
+
+        return selected
+
+    def _expand_chunk_contexts(self, document_id: Optional[str], chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Context Window Expansion: Mở rộng cửa sổ ngữ cảnh cho từng chunk kết quả
+        bằng cách tìm kiếm các đoạn trích lân cận trong cùng tài liệu để LLM nhận diện trọn vẹn ngữ cảnh.
+        """
+        if not chunks:
+            return chunks
+
+        for item in chunks:
+            cid = item.get("chunkId") or item.get("chunk_id")
+            meta = item.get("metadata", {})
+            doc_id = document_id or meta.get("document_id")
+            page_num = meta.get("page_number", item.get("pageNumber", 1))
+            current_text = item.get("textSnippet") or item.get("text") or ""
+
+            expanded_parts = []
+            if doc_id:
+                try:
+                    nearby = self.collection.get(
+                        where={"$and": [{"document_id": doc_id}, {"page_number": page_num}]},
+                        include=["documents", "metadatas"]
+                    )
+                    n_ids = nearby.get("ids", [])
+                    n_docs = nearby.get("documents", [])
+                    if n_ids and cid in n_ids:
+                        cur_pos = n_ids.index(cid)
+                        prev_text = n_docs[cur_pos - 1] if cur_pos > 0 else ""
+                        next_text = n_docs[cur_pos + 1] if cur_pos + 1 < len(n_docs) else ""
+
+                        if prev_text and prev_text != current_text:
+                            expanded_parts.append(f"[Đoạn trước]: {prev_text[:200]}...")
+                        expanded_parts.append(current_text)
+                        if next_text and next_text != current_text:
+                            expanded_parts.append(f"[Đoạn sau]: {next_text[:200]}...")
+                except Exception as e:
+                    logger.debug(f"[RAGVectorStore] Could not expand context for chunk {cid}: {e}")
+
+            if expanded_parts:
+                item["expandedText"] = "\n\n".join(expanded_parts)
+            else:
+                item["expandedText"] = current_text
+            item["contextExpanded"] = True
+
+        return chunks
+
     def _query_single_chapter(
         self,
         query_embeddings: List[List[float]],
@@ -352,7 +461,10 @@ class RAGVectorStore:
         document_id: Optional[str] = None,
         chapter: Optional[str] = None,
         chapters: Optional[List[str]] = None,
-        top_k: int = 5
+        top_k: int = 5,
+        use_mmr: bool = True,
+        lambda_param: float = 0.75,
+        expand_context: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Truy vấn tương đồng ngữ nghĩa hybrid top-k đa chương đồng thời:
@@ -418,7 +530,10 @@ class RAGVectorStore:
                     unique_candidates.append(item)
 
             unique_candidates.sort(key=lambda x: x["relevanceScore"], reverse=True)
-            final_results = unique_candidates[:top_k]
+            if use_mmr:
+                final_results = self.apply_mmr_rerank(unique_candidates, top_k=top_k, lambda_param=lambda_param)
+            else:
+                final_results = unique_candidates[:top_k]
             is_concurrent = True
 
         else:
@@ -435,15 +550,22 @@ class RAGVectorStore:
             elif len(conditions) > 1:
                 where_filter = {"$and": conditions}
 
-            candidate_fetch_k = max(top_k * 2, 10)
+            candidate_fetch_k = max(top_k * 3, 15)
             raw_results = self.collection.query(
                 query_embeddings=query_embeddings,
                 n_results=candidate_fetch_k,
                 where=where_filter
             )
             scored_candidates = self._format_raw_results(raw_results, query_text=query_text)
-            final_results = scored_candidates[:top_k]
+            if use_mmr:
+                final_results = self.apply_mmr_rerank(scored_candidates, top_k=top_k, lambda_param=lambda_param)
+            else:
+                final_results = scored_candidates[:top_k]
             is_concurrent = False
+
+        # 5. Mở rộng cửa sổ ngữ cảnh (Context Window Expansion) nếu được kích hoạt
+        if expand_context:
+            final_results = self._expand_chunk_contexts(document_id, final_results)
 
         search_time_ms = round((time.perf_counter() - t_search_start) * 1000, 2)
         total_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
@@ -458,6 +580,8 @@ class RAGVectorStore:
             "isHybrid": True,
             "denseWeight": 0.70,
             "lexicalWeight": 0.30,
+            "useMmr": use_mmr,
+            "expandContext": expand_context,
             "chaptersCount": len(target_chapters),
             "retrievedCount": len(final_results)
         }

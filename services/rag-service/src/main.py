@@ -74,6 +74,12 @@ class QueryContextRequest(BaseModel):
     chapters: Optional[List[str]] = None
     top_k: int = Field(default=DEFAULT_TOP_K, ge=1)
     topK: Optional[int] = None
+    use_mmr: Optional[bool] = True
+    useMmr: Optional[bool] = None
+    lambda_param: Optional[float] = 0.75
+    lambdaParam: Optional[float] = None
+    expand_context: Optional[bool] = False
+    expandContext: Optional[bool] = None
 
     @field_validator("query")
     @classmethod
@@ -89,6 +95,27 @@ class QueryContextRequest(BaseModel):
 
     def get_top_k(self) -> int:
         return self.topK or self.top_k or DEFAULT_TOP_K
+
+    def should_use_mmr(self) -> bool:
+        if self.useMmr is not None:
+            return self.useMmr
+        if self.use_mmr is not None:
+            return self.use_mmr
+        return True
+
+    def should_expand_context(self) -> bool:
+        if self.expandContext is not None:
+            return self.expandContext
+        if self.expand_context is not None:
+            return self.expand_context
+        return False
+
+    def get_lambda_param(self) -> float:
+        if self.lambdaParam is not None:
+            return self.lambdaParam
+        if self.lambda_param is not None:
+            return self.lambda_param
+        return 0.75
 
 
 @app.get("/health")
@@ -264,6 +291,9 @@ def query_context(
             chapter=req.chapter,
             chapters=req.chapters,
             top_k=top_k,
+            use_mmr=req.should_use_mmr(),
+            lambda_param=req.get_lambda_param(),
+            expand_context=req.should_expand_context(),
         )
         # Lưu vào cache nếu có doc_id
         if doc_id and contexts:
@@ -298,6 +328,9 @@ def query_context(
             "total_retrieved": len(contexts),
             "latencyMs": latency_ms,
             "latency_ms": exact_latency_ms,
+            "meetsSla200ms": perf_metrics.get("meetsSla200ms", True),
+            "mmrApplied": req.should_use_mmr(),
+            "contextExpanded": req.should_expand_context(),
             "meetsSla200ms": exact_latency_ms < 200.0,
             "performance": perf_metrics,
             "contexts": contexts,
@@ -450,7 +483,7 @@ def get_stats(db: Session = Depends(get_db)):
 
 @app.get("/quotas")
 def get_user_quota(user_id: Optional[str] = Depends(get_optional_user_id), db: Session = Depends(get_db)):
-    """Tra cứu hạn ngạch RAG và lượng token đã sử dụng thực tế (100% Real Data, Zero Mock)"""
+    """Tra cứu hạn ngạch RAG và lượng token đã sử dụng thực tế (100% Real Data, Zero Mock) kèm cảnh báo ngưỡng sử dụng"""
     target_user = user_id or "lec-001"
     quota = db.query(UsageQuotaDB).filter(UsageQuotaDB.user_id == target_user).first()
     if not quota:
@@ -463,15 +496,30 @@ def get_user_quota(user_id: Optional[str] = Depends(get_optional_user_id), db: S
             "usedTokens": 0,
             "totalChunks": actual_chunks,
             "remainingTokens": 1000000,
-            "percentageUsed": 0.0
+            "percentageUsed": 0.0,
+            "quotaStatus": "optimal",
+            "warningMessage": None,
+            "isOverQuota": False
         }
+
+    pct_used = round((quota.used_tokens / quota.max_tokens) * 100, 1) if quota.max_tokens > 0 else 0.0
+    status_label = "critical" if pct_used >= 100.0 else ("warning" if pct_used >= 80.0 else "optimal")
+    warning_msg = None
+    if pct_used >= 100.0:
+        warning_msg = "Nguy cấp: Tài khoản đã vượt quá 100% hạn ngạch token RAG. Cần mở rộng gói tài nguyên."
+    elif pct_used >= 80.0:
+        warning_msg = "Cảnh báo: Tài khoản đã sử dụng trên 80% hạn ngạch token RAG. Vui lòng theo dõi dung lượng lưu trữ."
+
     return {
         "userId": quota.user_id,
         "maxTokens": quota.max_tokens,
         "usedTokens": quota.used_tokens,
         "totalChunks": quota.total_embeddings_count,
         "remainingTokens": max(0, quota.max_tokens - quota.used_tokens),
-        "percentageUsed": round((quota.used_tokens / quota.max_tokens) * 100, 1) if quota.max_tokens > 0 else 0.0
+        "percentageUsed": pct_used,
+        "quotaStatus": status_label,
+        "warningMessage": warning_msg,
+        "isOverQuota": pct_used >= 100.0
     }
 
 
