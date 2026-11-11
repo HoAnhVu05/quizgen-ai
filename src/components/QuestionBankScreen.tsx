@@ -265,7 +265,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
     setExamConfig((prev) => ({
       ...prev,
       format,
-      includeOmrSheet: format === 'pdf' || format === 'zip' ? true : false,
+      includeOmrSheet: format === 'pdf' || format === 'zip' || format === 'docx' ? true : false,
     }));
     setShowExportModal(true);
   };
@@ -344,7 +344,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
           format: exportFormat,
           selectedQuestionIds: selectedIds,
           questions: questionsToExport,
-          includeOmrSheet: (exportFormat === 'pdf' || exportFormat === 'zip') ? (examConfig.includeOmrSheet ?? true) : false,
+          includeOmrSheet: (exportFormat === 'pdf' || exportFormat === 'zip' || exportFormat === 'docx') ? (examConfig.includeOmrSheet ?? true) : false,
         }),
       });
 
@@ -902,7 +902,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setExportFormat('docx'); setExamConfig(c => ({ ...c, format: 'docx' })); }}
+                    onClick={() => { setExportFormat('docx'); setExamConfig(c => ({ ...c, format: 'docx', includeOmrSheet: true })); }}
                     className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
                       exportFormat === 'docx'
                         ? 'bg-blue-600/30 border-blue-500 text-blue-300 shadow-glow-sm'
@@ -1043,7 +1043,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                   <span>Xáo trộn ngẫu nhiên thứ tự các phương án A, B, C, D</span>
                 </label>
 
-                {(exportFormat === 'pdf' || exportFormat === 'zip') && (
+                {(exportFormat === 'pdf' || exportFormat === 'zip' || exportFormat === 'docx') && (
                   <label className="flex items-center space-x-2 cursor-pointer text-emerald-400">
                     <input
                       type="checkbox"

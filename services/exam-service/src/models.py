@@ -373,6 +373,8 @@ class ExportDocxRequest(BaseModel):
     include_answer_key: Optional[bool] = None
     includeExplanation: bool = False
     include_explanation: Optional[bool] = None
+    includeOmrSheet: bool = True
+    include_omr_sheet: Optional[bool] = None
 
     def get_title(self) -> str:
         return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
@@ -401,6 +403,11 @@ class ExportDocxRequest(BaseModel):
         if self.include_explanation is not None:
             return self.include_explanation
         return self.includeExplanation
+
+    def get_include_omr_sheet(self) -> bool:
+        if self.include_omr_sheet is not None:
+            return self.include_omr_sheet
+        return self.includeOmrSheet
 
 
 class ExportPdfRequest(BaseModel):
@@ -494,7 +501,7 @@ class UnifiedExportRequest(BaseModel):
     include_answer_key: Optional[bool] = None
     includeExplanation: Optional[bool] = False
     include_explanation: Optional[bool] = None
-    includeOmrSheet: Optional[bool] = False
+    includeOmrSheet: Optional[bool] = True
     include_omr_sheet: Optional[bool] = None
     format: Optional[str] = "docx" # docx | pdf | qti | zip | bundle
     baseExamCode: Optional[int] = 101
@@ -543,7 +550,9 @@ class UnifiedExportRequest(BaseModel):
     def get_include_omr_sheet(self) -> bool:
         if self.include_omr_sheet is not None:
             return self.include_omr_sheet
-        return self.includeOmrSheet if self.includeOmrSheet is not None else False
+        if self.includeOmrSheet is not None:
+            return self.includeOmrSheet
+        return True
 
 
 class ExportOmrRequest(BaseModel):

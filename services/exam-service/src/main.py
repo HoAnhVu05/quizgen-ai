@@ -943,7 +943,8 @@ def export_word(req: ExportDocxRequest, db: Session = Depends(get_db)):
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
         include_answer_key=req.get_include_answer_key(),
-        include_explanation=req.get_include_explanation()
+        include_explanation=req.get_include_explanation(),
+        include_omr_sheet=req.get_include_omr_sheet()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
@@ -1170,7 +1171,8 @@ def unified_export(
             faculty=faculty_name,
             duration_minutes=duration_minutes,
             include_answer_key=include_answer_key,
-            include_explanation=include_explanation
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
         )
         filename = f"De_Thi_{exam_code}_{timestamp}.docx"
         return Response(
@@ -1388,7 +1390,8 @@ def download_saved_exam(
             faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
             duration_minutes=exam.duration_minutes or 60,
             include_answer_key=True,
-            include_explanation=False
+            include_explanation=False,
+            include_omr_sheet=True
         )
         filename = f"De_Thi_{exam_code}_{timestamp}.docx"
         return Response(content=docx_bytes, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
