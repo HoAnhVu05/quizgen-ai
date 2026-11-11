@@ -1,6 +1,7 @@
 const http = require('http');
 const https = require('https');
 const url = require('url');
+const { sendOtpEmail } = require('./emailService.cjs');
 
 const PORT = 8000;
 
@@ -153,33 +154,17 @@ const MOCK_USERS_DB = new Map([
     },
   ],
   [
-    'admin.khaothi@vnu.edu.vn',
+    'quizgen.ai.team@gmail.com',
     {
-      id: 'admin-001',
-      email: 'admin.khaothi@vnu.edu.vn',
+      id: 'admin-quizgen-001',
+      email: 'quizgen.ai.team@gmail.com',
       password: 'Admin@123456',
-      full_name: 'ThS. Lê Hoàng Nam',
-      fullName: 'ThS. Lê Hoàng Nam',
-      academic_title: 'ThS.',
-      academicTitle: 'ThS.',
+      full_name: 'Ban Quản trị QuizGen AI',
+      fullName: 'Ban Quản trị QuizGen AI',
+      academic_title: 'Admin',
+      academicTitle: 'Admin',
       university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-      department: 'Trung tâm Quản trị Hệ thống & CNTT',
-      role: 'admin',
-      roleLabel: 'Quản trị Hệ thống',
-    },
-  ],
-  [
-    'admin@ut.edu.vn',
-    {
-      id: 'admin-uth-001',
-      email: 'admin@ut.edu.vn',
-      password: 'admin123',
-      full_name: 'Quản trị viên Hệ thống UTH',
-      fullName: 'Quản trị viên Hệ thống UTH',
-      academic_title: 'ThS.',
-      academicTitle: 'ThS.',
-      university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-      department: 'Trung tâm Quản trị Hệ thống & An ninh mạng',
+      department: 'Ban Quản trị Hệ thống QuizGen AI',
       role: 'admin',
       roleLabel: 'Quản trị Hệ thống',
     },
@@ -1189,6 +1174,10 @@ const server = http.createServer((req, res) => {
       PASSWORD_RESET_OTP_STORE.set(targetEmail, {
         otp,
         expiresAt: Date.now() + 10 * 60 * 1000, // 10 phút
+      });
+
+      sendOtpEmail(targetEmail, otp).catch((err) => {
+        console.error('[MockGateway] Lỗi gửi email OTP:', err);
       });
 
       res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -352,9 +352,11 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
         <div className="w-full max-w-lg space-y-5">
           {/* Clean Brand Header */}
           <div className="text-center space-y-1.5">
-            <div className="inline-flex items-center justify-center w-11 h-11 rounded-2xl bg-[#008689] text-white shadow-sm mb-1">
-              <GraduationCap className="w-5 h-5" />
-            </div>
+            <img
+              src="/logo.jpg"
+              alt="QuizGen AI Logo"
+              className="w-13 h-13 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
+            />
             <h1 className="text-lg font-extrabold text-[#008689] tracking-tight uppercase">
               QuizGen AI
             </h1>
