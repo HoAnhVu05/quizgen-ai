@@ -46,15 +46,15 @@ const BLOOM_LEVELS: BloomLevel[] = ['Nhận biết', 'Thông hiểu', 'Vận d�
 const getBloomBadgeColor = (level: BloomLevel) => {
   switch (level) {
     case 'Nhận biết':
-      return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+      return 'bg-sky-50 text-sky-700 border-sky-200';
     case 'Thông hiểu':
-      return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
+      return 'bg-[#e0f7fa] text-[#008689] border-[#008689]/25';
     case 'Vận dụng':
-      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+      return 'bg-amber-50 text-amber-700 border-amber-200';
     case 'Phân tích':
-      return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+      return 'bg-indigo-50 text-indigo-700 border-indigo-200';
     default:
-      return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+      return 'bg-slate-100 text-slate-700 border-slate-200';
   }
 };
 
@@ -284,53 +284,53 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   });
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0b0f19] text-slate-100 font-sans overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[#f7f9fb] text-slate-800 font-sans overflow-hidden">
       {/* ─── 1. Header Bar ────────────────────────────────────────────── */}
-      <header className="h-16 bg-[#0e1424] border-b border-white/[0.06] px-6 flex items-center justify-between z-10 shrink-0">
-        <div className="flex items-center space-x-4">
+      <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10 shrink-0 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+        <div className="flex items-center space-x-4 min-w-0">
           <button
             onClick={() => onNavigate('dashboard')}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+            className="p-2 rounded-xl text-slate-500 hover:text-[#008689] hover:bg-[#e0f7fa] transition-colors"
             title="Quay lại Bảng điều khiển"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="h-5 w-px bg-white/[0.08]" />
-          <div>
+          <div className="h-5 w-px bg-slate-200" />
+          <div className="min-w-0">
             <div className="flex items-center space-x-2">
-              <span className="font-bold text-white text-sm">
+              <span className="font-bold text-slate-900 text-sm truncate">
                 Không gian Đối chiếu & Kiểm duyệt RAG
               </span>
-<span
-                className="px-2.5 py-0.5 rounded text-[11px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/25 max-w-[280px] truncate"
+              <span
+                className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-[#e0f7fa] text-[#008689] border border-[#008689]/25 max-w-[260px] truncate"
                 title={activeQuestion?.chapter}
               >
                 {activeQuestion?.chapter || 'Chương mục RAG'}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5">
-<FileText className="w-3 h-3 text-slate-500" /> Nguồn: {activeQuestion?.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5 truncate">
+              <FileText className="w-3 h-3 text-slate-400 shrink-0" /> Nguồn: {activeQuestion?.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}
             </p>
           </div>
         </div>
 
         {/* Global Progress & Actions */}
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3 shrink-0">
           {/* Keyboard hint badge */}
-          <div className="hidden lg:flex items-center space-x-2 text-[10px] text-slate-400 font-mono bg-white/[0.04] px-2.5 py-1 rounded-lg border border-white/[0.06]">
-            <Keyboard className="w-3.5 h-3.5 text-blue-400" />
+          <div className="hidden xl:flex items-center space-x-2 text-[10px] text-slate-600 font-mono bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+            <Keyboard className="w-3.5 h-3.5 text-[#008689]" />
             <span>Phím tắt: [A] Duyệt • [R] Loại • [E] Sửa • [M] Modal RAG</span>
           </div>
 
-          <div className="hidden md:flex items-center space-x-2 text-xs">
-            <span className="flex items-center gap-1.5 font-medium text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Duyệt: {approvedCount}
+          <div className="hidden md:flex items-center space-x-1.5 text-xs">
+            <span className="flex items-center gap-1.5 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Duyệt: {approvedCount}
             </span>
-            <span className="flex items-center gap-1.5 font-medium text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Chờ: {pendingCount}
+            <span className="flex items-center gap-1.5 font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Chờ: {pendingCount}
             </span>
-            <span className="flex items-center gap-1.5 font-medium text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" /> Hủy: {rejectedCount}
+            <span className="flex items-center gap-1.5 font-semibold text-[#da1c2d] bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#da1c2d]" /> Hủy: {rejectedCount}
             </span>
           </div>
 
@@ -346,7 +346,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 }).catch(() => {});
                 onShowToast('success', 'Đã duyệt toàn bộ', 'Tất cả các câu hỏi đang chờ đã được thông qua');
               }}
-              className="px-3 py-1.5 text-xs font-semibold text-slate-200 bg-white/[0.05] border border-white/[0.1] rounded-xl hover:bg-white/[0.08] transition-colors"
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-[#008689]/40 transition-colors"
             >
               Duyệt tất cả
             </button>
@@ -355,7 +355,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
             <button
               onClick={() => handleExportExam('docx')}
               disabled={isExporting !== null}
-              className="flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-all"
+              className="flex items-center space-x-1 px-3 py-1.5 text-xs font-bold text-[#008689] bg-[#e0f7fa] border border-[#008689]/25 rounded-xl hover:bg-[#e0f7fa]/80 transition-all"
               title="Xuất bản đề thi chuẩn Bộ GD&ĐT dạng Word (.docx)"
             >
               <Download className={`w-3.5 h-3.5 ${isExporting === 'docx' ? 'animate-bounce' : ''}`} />
@@ -366,7 +366,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
             <button
               onClick={() => handleExportExam('pdf')}
               disabled={isExporting !== null}
-              className="hidden sm:flex items-center space-x-1 px-3 py-1.5 text-xs font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl hover:bg-rose-500/20 transition-all"
+              className="hidden sm:flex items-center space-x-1 px-3 py-1.5 text-xs font-bold text-[#da1c2d] bg-rose-50 border border-rose-200 rounded-xl hover:bg-rose-100 transition-all"
               title="Xuất bản đề thi định dạng PDF"
             >
               <Download className={`w-3.5 h-3.5 ${isExporting === 'pdf' ? 'animate-bounce' : ''}`} />
@@ -382,7 +382,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   'Đã lưu trữ toàn bộ các câu hỏi đã duyệt vào kho đề thi'
                 );
               }}
-              className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl hover:from-blue-500 hover:to-indigo-500 transition-all shadow-md shadow-blue-600/20"
+              className="flex items-center space-x-1.5 px-4 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-[#008689] to-[#1d999d] rounded-xl hover:brightness-105 transition-all shadow-md shadow-[#008689]/20"
             >
               <CheckCheck className="w-4 h-4" />
               <span>Chuyển vào Kho đề</span>
@@ -394,22 +394,22 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       {/* ─── 2. Main Workspace Split View ─────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">
         {/* LEFT PANE: RAG Grounding Source Text (Digital Paper Preview) */}
-        <div className="w-5/12 border-r border-white/[0.06] bg-[#0c1220] flex flex-col">
-          <div className="p-4 border-b border-white/[0.06] flex items-center justify-between bg-white/[0.02]">
+        <div className="w-5/12 border-r border-slate-200 bg-white flex flex-col">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
             <div className="flex items-center space-x-2">
-              <BookOpen className="w-4 h-4 text-blue-400" />
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+              <BookOpen className="w-4 h-4 text-[#008689]" />
+              <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
                 Minh chứng RAG (Ngữ cảnh gốc)
               </h2>
             </div>
             {activeChunk && (
               <div className="flex items-center gap-2">
-                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/20 font-mono font-bold">
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-[#e0f7fa] text-[#008689] border border-[#008689]/25 font-mono font-bold">
                   Trang {activeChunk.pageNumber}
                 </span>
                 <button
                   onClick={() => setCitationModalQuestion(activeQuestion)}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/30 flex items-center gap-1 transition-colors"
+                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 flex items-center gap-1 transition-colors"
                   title="Phóng to modal đối soát chi tiết"
                 >
                   <Maximize2 className="w-3 h-3" />
@@ -420,31 +420,31 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
           </div>
 
           {/* Source Text View */}
-          <div className="flex-1 p-6 overflow-y-auto leading-relaxed text-slate-300 text-xs md:text-sm space-y-4">
+          <div className="flex-1 p-6 overflow-y-auto leading-relaxed text-slate-700 text-xs md:text-sm space-y-4">
             {activeChunk ? (
               <>
-                <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-white/[0.06]">
-                  <span className="font-semibold text-white">{activeChunk.chapter}</span>
-                  <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 font-mono text-[11px]">
+                <div className="flex items-center justify-between text-xs text-slate-500 pb-2 border-b border-slate-100">
+                  <span className="font-bold text-slate-900">{activeChunk.chapter}</span>
+                  <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 font-mono text-[11px] font-semibold">
                     <Sparkles className="w-3 h-3" /> Khớp {activeChunk.relevanceScore}%
                   </span>
                 </div>
 
-                {/* Highlighted snippet (Yellow fluorescent marker look) */}
-                <div className="p-4 bg-amber-500/[0.08] border-l-4 border-amber-400 rounded-r-xl text-slate-200 text-xs md:text-sm leading-relaxed shadow-sm">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-amber-300/80 mb-1 flex items-center gap-1">
+                {/* Highlighted snippet */}
+                <div className="p-4 bg-amber-50 border-l-4 border-amber-400 rounded-r-xl text-slate-800 text-xs md:text-sm leading-relaxed shadow-sm">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-amber-800 font-bold mb-1 flex items-center gap-1">
                     <BookmarkCheck className="w-3 h-3" /> Đoạn bóc tách RAG (Trang {activeChunk.pageNumber})
                   </div>
-                  <p className="font-sans italic text-amber-100 leading-relaxed text-sm">
+                  <p className="font-sans italic text-slate-900 leading-relaxed text-sm">
                     "{activeChunk.textSnippet}"
                   </p>
                 </div>
 
-                <div className="p-3.5 bg-white/[0.02] rounded-xl text-xs text-slate-400 flex items-start space-x-2.5 border border-white/[0.06]">
-                  <AlertCircle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <div className="p-3.5 bg-slate-50 rounded-xl text-xs text-slate-600 flex items-start space-x-2.5 border border-slate-200">
+                  <AlertCircle className="w-4 h-4 text-[#008689] shrink-0 mt-0.5" />
                   <p className="leading-relaxed">
                     Đoạn văn bản trên được RAG Engine trích xuất trực tiếp từ trang{' '}
-                    <strong className="text-white font-mono">Trang {activeChunk.pageNumber}</strong> của giáo trình để làm minh
+                    <strong className="text-slate-900 font-mono">Trang {activeChunk.pageNumber}</strong> của giáo trình để làm minh
                     chứng. Giảng viên đối chiếu để tránh sai sót và hiện tượng AI ảo giác (Hallucination).
                   </p>
                 </div>
@@ -452,14 +452,14 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 {/* Nút hành động nhanh mở modal đối soát */}
                 <button
                   onClick={() => setCitationModalQuestion(activeQuestion)}
-                  className="w-full py-2.5 px-3.5 rounded-xl border border-blue-500/30 bg-blue-600/10 hover:bg-blue-600/20 text-blue-300 text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm group"
+                  className="w-full py-2.5 px-3.5 rounded-xl border border-[#008689]/30 bg-[#e0f7fa]/60 hover:bg-[#e0f7fa] text-[#006d70] text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm group"
                 >
-                  <Eye className="w-4 h-4 text-blue-400 group-hover:scale-110 transition-transform" />
+                  <Eye className="w-4 h-4 text-[#008689] group-hover:scale-110 transition-transform" />
                   <span>Mở Cửa sổ Đối soát Toàn diện & Trích dẫn Trang sách</span>
                 </button>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-500 text-xs">
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 text-xs">
                 <FileText className="w-8 h-8 mb-2 stroke-1" />
                 <p>Chọn câu hỏi bên phải để xem tài liệu đối chiếu</p>
               </div>
@@ -468,21 +468,21 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
         </div>
 
         {/* RIGHT PANE: Question Cards Feed */}
-        <div className="w-7/12 bg-[#080c16] flex flex-col">
+        <div className="w-7/12 bg-[#f7f9fb] flex flex-col">
           {/* Subheader / Filter */}
-          <div className="p-3.5 px-6 border-b border-white/[0.06] bg-white/[0.01] flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
+          <div className="p-3.5 px-6 border-b border-slate-200 bg-white/80 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+              <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1 mr-1">
                 <Filter className="w-3 h-3 text-slate-400" /> Lọc:
               </span>
               {(['all', 'pending', 'approved', 'rejected'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setFilter(mode)}
-                  className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all ${
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
                     filter === mode
-                      ? 'bg-blue-600 text-white shadow-glow-sm'
-                      : 'bg-white/[0.04] text-slate-400 hover:bg-white/[0.08] hover:text-white'
+                      ? 'bg-[#008689] text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
                   }`}
                 >
                   {mode === 'all' && `Tất cả (${totalCount})`}
@@ -493,13 +493,13 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               ))}
             </div>
 
-            <span className="text-[11px] text-slate-400 font-mono">
+            <span className="text-[11px] text-slate-500 font-mono">
               Bấm vào thẻ để đồng bộ RAG
             </span>
           </div>
 
           {/* Cards List */}
-          <div className="flex-1 p-6 overflow-y-auto space-y-5">
+          <div className="flex-1 p-6 overflow-y-auto space-y-5 pb-24">
             {filteredQuestions.map((q, index) => {
               const isSelected = q.id === selectedQuestionId;
               const isEditing = editingQuestionId === q.id;
@@ -511,14 +511,14 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   onClick={() => setSelectedQuestionId(q.id)}
                   className={`relative rounded-2xl border transition-all duration-200 p-5 ${
                     isSelected
-                      ? 'bg-[#11192b] border-blue-500/60 ring-2 ring-blue-500/20 shadow-xl'
-                      : 'bg-[#0e1424] border-white/[0.08] hover:border-white/[0.18]'
+                      ? 'bg-white border-[#008689] ring-2 ring-[#008689]/20 shadow-md'
+                      : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
                   }`}
                 >
                   {/* Header Thẻ Câu Hỏi */}
-                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-white/[0.06]">
-                    <div className="flex items-center space-x-2.5">
-                      <span className="font-mono text-xs font-bold text-slate-400">
+                  <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+                    <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
+                      <span className="font-mono text-xs font-bold text-slate-500">
                         #Câu {index + 1}
                       </span>
                       {isEditing ? (
@@ -529,25 +529,25 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                               prev ? { ...prev, bloomLevel: e.target.value as BloomLevel } : null
                             )
                           }
-                          className="bg-[#1a233a] border border-blue-500/40 text-blue-300 text-[11px] font-semibold rounded-lg px-2 py-0.5 outline-none"
+                          className="bg-white border border-[#008689] text-slate-900 text-[11px] font-semibold rounded-lg px-2 py-0.5 outline-none"
                         >
                           {BLOOM_LEVELS.map((lvl) => (
-                            <option key={lvl} value={lvl}>
+                            <option key={lvl} value={lvl} className="bg-white text-slate-900">
                               {lvl}
                             </option>
                           ))}
                         </select>
                       ) : (
                         <span
-                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${getBloomBadgeColor(
+                          className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${getBloomBadgeColor(
                             q.bloomLevel
                           )}`}
                         >
                           {q.bloomLevel}
                         </span>
                       )}
-                      <span className="text-[11px] text-slate-400 font-mono">
-                        Độ tin cậy: <strong className="text-emerald-400">{q.confidenceScore}%</strong>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        Độ tin cậy: <strong className="text-emerald-600">{q.confidenceScore}%</strong>
                       </span>
                     </div>
 
@@ -558,25 +558,25 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                           e.stopPropagation();
                           setCitationModalQuestion(q);
                         }}
-                        className="px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-blue-500/10 text-blue-300 border border-blue-500/25 hover:bg-blue-500/20 flex items-center gap-1 transition-colors"
+                        className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#e0f7fa] text-[#008689] border border-[#008689]/25 hover:bg-[#e0f7fa]/80 flex items-center gap-1 transition-colors"
                         title="Đối soát số trang và đoạn văn gốc"
                       >
-                        <BookOpen className="w-3 h-3 text-blue-400" />
+                        <BookOpen className="w-3 h-3 text-[#008689]" />
                         <span>Xem trang RAG</span>
                       </button>
 
                       {q.status === 'approved' && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Đã thẩm định
                         </span>
                       )}
                       {q.status === 'rejected' && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-400 bg-rose-500/10 px-2.5 py-0.5 rounded-full border border-rose-500/20">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#da1c2d] bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
                           <XCircle className="w-3.5 h-3.5" /> Đã loại bỏ
                         </span>
                       )}
                       {q.status === 'pending' && (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                           Chờ giảng viên duyệt
                         </span>
                       )}
@@ -587,7 +587,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   <div className="mb-4">
                     {isEditing ? (
                       <div className="space-y-1">
-                        <label className="text-[10px] uppercase font-bold text-slate-400">
+                        <label className="text-[10px] uppercase font-bold text-slate-500">
                           Nội dung câu hỏi:
                         </label>
                         <textarea
@@ -597,12 +597,12 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                               prev ? { ...prev, question: e.target.value } : null
                             )
                           }
-                          className="w-full p-2.5 text-xs md:text-sm font-medium bg-black/40 border border-blue-500/50 rounded-xl focus:outline-none focus:border-blue-400 text-white"
+                          className="w-full p-2.5 text-xs md:text-sm font-medium bg-slate-50 border border-[#008689]/50 rounded-xl focus:outline-none focus:bg-white focus:border-[#008689] text-slate-900"
                           rows={2}
                         />
                       </div>
                     ) : (
-                      <p className="text-xs md:text-sm font-semibold text-white leading-snug">
+                      <p className="text-xs md:text-sm font-bold text-slate-900 leading-snug">
                         {q.question}
                       </p>
                     )}
@@ -617,8 +617,8 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                           key={opt.id}
                           className={`flex items-center space-x-3 p-2.5 rounded-xl border text-xs md:text-sm transition-all ${
                             isCorrect
-                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200 font-medium'
-                              : 'bg-white/[0.02] border-white/[0.06] text-slate-300'
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-semibold'
+                              : 'bg-slate-50/80 border-slate-200 text-slate-700'
                           }`}
                         >
                           {/* Radio chọn đáp án đúng */}
@@ -640,9 +640,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                                 );
                               }
                             }}
-                            className="w-4 h-4 text-emerald-500 focus:ring-emerald-500 cursor-pointer accent-emerald-500 shrink-0"
+                            className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600 shrink-0"
                           />
-                          <span className="font-mono text-xs font-bold text-slate-400 shrink-0">
+                          <span className="font-mono text-xs font-bold text-slate-500 shrink-0">
                             {opt.label}.
                           </span>
 
@@ -659,14 +659,14 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                                   prev ? { ...prev, options: newOpts } : null
                                 );
                               }}
-                              className="flex-1 px-2.5 py-1 text-xs bg-black/40 border border-white/[0.1] rounded-lg text-white focus:outline-none focus:border-blue-500"
+                              className="flex-1 px-2.5 py-1 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:border-[#008689]"
                             />
                           ) : (
                             <span className="flex-1 text-xs leading-relaxed">{opt.text}</span>
                           )}
 
                           {isCorrect && (
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-md shrink-0">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md shrink-0">
                               Đáp án chuẩn
                             </span>
                           )}
@@ -676,8 +676,8 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   </div>
 
                   {/* Lời Giải Thích / Căn Cứ RAG */}
-                  <div className="p-3.5 bg-white/[0.02] rounded-xl border border-white/[0.06] mb-4 text-xs text-slate-300">
-                    <span className="font-semibold text-slate-200 block mb-1">
+                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 mb-4 text-xs text-slate-600">
+                    <span className="font-bold text-slate-800 block mb-1">
                       Căn cứ RAG & Lời giải thích học thuật:
                     </span>
                     {isEditing ? (
@@ -688,16 +688,16 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                             prev ? { ...prev, explanation: e.target.value } : null
                           )
                         }
-                        className="w-full p-2 text-xs bg-black/40 border border-white/[0.1] rounded-lg text-white outline-none focus:border-blue-500"
+                        className="w-full p-2 text-xs bg-white border border-slate-300 rounded-lg text-slate-900 outline-none focus:border-[#008689]"
                         rows={2}
                       />
                     ) : (
-                      <p className="italic text-slate-400 leading-relaxed">{q.explanation}</p>
+                      <p className="italic text-slate-600 leading-relaxed">{q.explanation}</p>
                     )}
                   </div>
 
                   {/* Thanh Thao Tác Chỉnh Sửa & Phê Duyệt */}
-                  <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                     <div className="flex items-center space-x-2">
                       {isEditing ? (
                         <>
@@ -706,7 +706,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                               e.stopPropagation();
                               saveEditing();
                             }}
-                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition-colors shadow-sm"
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#1d999d] transition-colors shadow-sm"
                           >
                             <Save className="w-3.5 h-3.5" />
                             <span>Lưu thay đổi</span>
@@ -716,7 +716,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                               e.stopPropagation();
                               cancelEditing();
                             }}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-400 hover:text-white bg-white/[0.05] transition-colors"
+                            className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 transition-colors"
                           >
                             <X className="w-3.5 h-3.5" />
                             <span>Hủy</span>
@@ -728,9 +728,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                             e.stopPropagation();
                             startEditing(q);
                           }}
-                          className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] transition-colors"
+                          className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:text-[#008689] bg-slate-50 border border-slate-200 hover:bg-[#e0f7fa]/60 transition-colors"
                         >
-                          <Edit3 className="w-3.5 h-3.5 text-blue-400" />
+                          <Edit3 className="w-3.5 h-3.5 text-[#008689]" />
                           <span>Chỉnh sửa câu hỏi</span>
                         </button>
                       )}
@@ -741,11 +741,11 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                           handleRegenerateSingle(q.id);
                         }}
                         disabled={isRegenerating === q.id}
-                        className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-400 hover:text-blue-400 bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+                        className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-600 hover:text-[#008689] bg-slate-50 border border-slate-200 hover:bg-[#e0f7fa]/60 transition-colors disabled:opacity-50"
                       >
                         <RefreshCw
                           className={`w-3.5 h-3.5 ${
-                            isRegenerating === q.id ? 'animate-spin text-blue-400' : ''
+                            isRegenerating === q.id ? 'animate-spin text-[#008689]' : ''
                           }`}
                         />
                         <span>{isRegenerating === q.id ? 'Đang sinh...' : 'Sinh lại AI'}</span>
@@ -759,10 +759,10 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                           onUpdateQuestion({ ...q, status: 'rejected' });
                           onShowToast('warning', 'Đã loại bỏ', `Đã từ chối câu hỏi #${index + 1}`);
                         }}
-                        className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                           q.status === 'rejected'
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                            : 'bg-white/[0.04] border border-white/[0.08] text-rose-400 hover:bg-rose-500/10'
+                            ? 'bg-rose-100 text-[#da1c2d] border border-rose-300'
+                            : 'bg-white border border-slate-200 text-[#da1c2d] hover:bg-rose-50'
                         }`}
                       >
                         <XCircle className="w-3.5 h-3.5" />
@@ -781,8 +781,8 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                         }}
                         className={`inline-flex items-center space-x-1 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
                           q.status === 'approved'
-                            ? 'bg-emerald-600 text-white shadow-glow-emerald'
-                            : 'bg-white/[0.04] border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/10'
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50'
                         }`}
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -799,22 +799,22 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
 
       {/* ─── 3. MODAL ĐỐI SOÁT TRÍCH DẪN RAG & SỐ TRANG SÁCH THỰC TẾ ───── */}
       {citationModalQuestion && modalChunk && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-3xl rounded-2xl border border-white/[0.12] bg-[#0c1220] shadow-2xl shadow-black/80 flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
             {/* Header Modal */}
-            <div className="p-5 border-b border-white/[0.08] flex items-center justify-between bg-white/[0.02]">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-[#f8fbfc]">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                <div className="w-10 h-10 rounded-xl bg-[#e0f7fa] border border-[#008689]/25 flex items-center justify-center text-[#008689]">
                   <BookOpen className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <span>Không gian Đối soát Minh chứng RAG & Căn cứ Học thuật</span>
-                    <span className="px-2 py-0.5 text-[10px] font-mono rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                       Khớp {modalChunk.relevanceScore}%
                     </span>
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Đối chiếu câu hỏi trắc nghiệm do Gemini sinh với trang tài liệu gốc trong giáo trình
                   </p>
                 </div>
@@ -822,71 +822,71 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
 
               <button
                 onClick={() => setCitationModalQuestion(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Nội dung Modal (Body) */}
-            <div className="flex-1 p-6 overflow-y-auto space-y-5 text-xs text-slate-300">
+            <div className="flex-1 p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
               {/* Thanh thông tin trích xuất RAG */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Giáo trình gốc:</span>
-                  <span className="font-semibold text-white truncate block" title={citationModalQuestion.textbookName}>
+                  <span className="font-bold text-slate-900 truncate block" title={citationModalQuestion.textbookName}>
                     {citationModalQuestion.textbookName || 'GiaoTrinh_KinhTeViMo_2025.pdf'}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Trang sách thực tế:</span>
-                  <span className="font-mono font-bold text-amber-300 text-sm flex items-center gap-1">
-                    <BookmarkCheck className="w-4 h-4 text-amber-400" />
+                  <span className="font-mono font-bold text-amber-700 text-sm flex items-center gap-1">
+                    <BookmarkCheck className="w-4 h-4 text-amber-600" />
                     Trang {modalChunk.pageNumber}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Cấp độ Bloom:</span>
-                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${getBloomBadgeColor(citationModalQuestion.bloomLevel)}`}>
+                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${getBloomBadgeColor(citationModalQuestion.bloomLevel)}`}>
                     {citationModalQuestion.bloomLevel}
                   </span>
                 </div>
                 <div>
                   <span className="text-slate-500 block text-[10px] uppercase font-bold">Mô hình AI:</span>
-                  <span className="font-mono text-blue-300 text-xs flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-blue-400" />
+                  <span className="font-mono text-[#008689] font-semibold text-xs flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-[#008689]" />
                     Gemini 2.5 Flash
                   </span>
                 </div>
               </div>
 
-              {/* Khung đoạn trích nguyên văn từ sách (High-visibility marker) */}
+              {/* Khung đoạn trích nguyên văn từ sách */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-amber-600" />
                     Đoạn văn bản trích xuất trực tiếp từ Trang {modalChunk.pageNumber}:
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400">
+                  <span className="text-[11px] font-mono text-slate-500">
                     Chunk ID: {modalChunk.id}
                   </span>
                 </div>
-                <div className="p-4 rounded-xl bg-amber-500/[0.08] border border-amber-400/30 text-amber-100 text-sm leading-relaxed font-sans italic shadow-inner">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-slate-900 text-sm leading-relaxed font-sans italic">
                   "{modalChunk.textSnippet}"
                 </div>
               </div>
 
               {/* Khung câu hỏi & Đáp án đối chiếu */}
-              <div className="p-4 rounded-xl bg-[#131b2e] border border-blue-500/30 space-y-3">
+              <div className="p-4 rounded-xl bg-[#f8fbfc] border border-[#008689]/30 space-y-3">
                 <div>
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 block mb-1">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-[#008689] block mb-1">
                     Câu hỏi đang đối soát:
                   </span>
-                  <p className="text-sm font-bold text-white">{citationModalQuestion.question}</p>
+                  <p className="text-sm font-bold text-slate-900">{citationModalQuestion.question}</p>
                 </div>
 
                 <div className="space-y-1.5">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 block">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 block">
                     Các phương án trả lời:
                   </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -897,14 +897,14 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                           key={opt.id}
                           className={`p-2.5 rounded-lg border text-xs flex items-center gap-2 ${
                             isCorrect
-                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200 font-semibold ring-1 ring-emerald-500/30'
-                              : 'bg-white/[0.02] border-white/[0.06] text-slate-300'
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-950 font-semibold ring-1 ring-emerald-200'
+                              : 'bg-white border-slate-200 text-slate-700'
                           }`}
                         >
-                          <span className="font-mono font-bold text-slate-400">{opt.label}.</span>
+                          <span className="font-mono font-bold text-slate-500">{opt.label}.</span>
                           <span className="flex-1">{opt.text}</span>
                           {isCorrect && (
-                            <span className="text-[9px] uppercase font-extrabold bg-emerald-500/30 text-emerald-300 px-1.5 py-0.5 rounded">
+                            <span className="text-[9px] uppercase font-extrabold bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded">
                               Chuẩn
                             </span>
                           )}
@@ -915,11 +915,11 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 </div>
 
                 {/* Luận điểm giải thích */}
-                <div className="pt-2 border-t border-white/[0.06]">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
+                <div className="pt-2 border-t border-slate-200">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">
                     Căn cứ giải thích học thuật:
                   </span>
-                  <p className="italic text-slate-300 leading-relaxed">
+                  <p className="italic text-slate-600 leading-relaxed">
                     {citationModalQuestion.explanation}
                   </p>
                 </div>
@@ -927,15 +927,15 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
             </div>
 
             {/* Footer Modal với các nút Thao tác */}
-            <div className="p-4 px-6 border-t border-white/[0.08] bg-white/[0.02] flex items-center justify-between">
-              <span className="text-[11px] text-slate-400">
-                Minh chứng đã được đối chiếu với trang <strong className="text-white">{modalChunk.pageNumber}</strong>
+            <div className="p-4 px-6 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Minh chứng đã được đối chiếu với trang <strong className="text-slate-900">{modalChunk.pageNumber}</strong>
               </span>
 
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setCitationModalQuestion(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-300 hover:text-white bg-white/[0.05] hover:bg-white/[0.1] rounded-xl transition-colors"
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-200 hover:bg-slate-300 rounded-xl transition-colors"
                 >
                   Đóng
                 </button>
@@ -944,7 +944,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                     startEditing(citationModalQuestion);
                     setCitationModalQuestion(null);
                   }}
-                  className="px-4 py-2 text-xs font-semibold text-blue-300 bg-blue-500/15 border border-blue-500/30 hover:bg-blue-500/25 rounded-xl transition-colors flex items-center gap-1.5"
+                  className="px-4 py-2 text-xs font-bold text-[#008689] bg-[#e0f7fa] border border-[#008689]/30 hover:bg-[#e0f7fa]/80 rounded-xl transition-colors flex items-center gap-1.5"
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>Sửa câu hỏi này</span>
@@ -959,7 +959,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                       'Đã phê duyệt câu hỏi dựa trên minh chứng trang sách thực tế'
                     );
                   }}
-                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-md shadow-emerald-600/30 flex items-center gap-1.5"
+                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-1.5"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Xác nhận & Phê duyệt câu hỏi</span>
@@ -971,26 +971,26 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       )}
 
       {/* ─── 4. Floating Keyboard Shortcuts Dock ───────────────────────── */}
-      <div className="fixed bottom-5 left-[calc(288px+50%)] -translate-x-1/2 z-40 dock-glass rounded-2xl px-5 py-3 flex items-center space-x-6 shadow-2xl animate-slideUp">
+      <div className="fixed bottom-5 left-[calc(144px+50%)] -translate-x-1/2 z-40 dock-glass rounded-2xl px-5 py-2.5 flex items-center space-x-5 shadow-xl animate-slideUp">
         <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
           Phím tắt nhanh
         </span>
-        <div className="h-4 w-px bg-white/10" />
+        <div className="h-4 w-px bg-slate-200" />
         {[
-          { key: 'A', label: 'Phê duyệt', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
-          { key: 'R', label: 'Từ chối', color: 'text-rose-400 bg-rose-500/10 border-rose-500/30' },
-          { key: 'E', label: 'Chỉnh sửa', color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
-          { key: 'M', label: 'Modal RAG', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30' },
+          { key: 'A', label: 'Phê duyệt', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+          { key: 'R', label: 'Từ chối', color: 'text-[#da1c2d] bg-rose-50 border-rose-200' },
+          { key: 'E', label: 'Chỉnh sửa', color: 'text-[#008689] bg-[#e0f7fa] border-[#008689]/25' },
+          { key: 'M', label: 'Modal RAG', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
         ].map(({ key, label, color }) => (
-          <div key={key} className="flex items-center space-x-2">
+          <div key={key} className="flex items-center space-x-1.5">
             <kbd className={`px-2 py-0.5 text-[11px] font-bold rounded-lg border font-mono ${color}`}>
               {key}
             </kbd>
-            <span className="text-[11px] text-slate-400 font-medium">{label}</span>
+            <span className="text-[11px] text-slate-600 font-semibold">{label}</span>
           </div>
         ))}
-        <div className="h-4 w-px bg-white/10" />
-        <span className="text-[10px] text-slate-500 font-mono">
+        <div className="h-4 w-px bg-slate-200" />
+        <span className="text-[10px] text-slate-500 font-mono font-semibold">
           {approvedCount}/{totalCount} đã duyệt
         </span>
       </div>

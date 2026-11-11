@@ -530,28 +530,24 @@ setDocuments([]);
   };
 
   return (
-    <div className="flex-1 p-8 overflow-y-auto space-y-8 bg-[#0b0f19] text-slate-100 relative">
+    <div className="flex-1 p-6 md:p-8 overflow-y-auto space-y-6 bg-[#f7f9fb] text-slate-800 relative">
       {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
       {isGenerating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-2xl bg-black/80 p-4">
-          {/* Ambient glows */}
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
-
-          <div className="relative glass-panel rounded-3xl p-8 sm:p-10 max-w-md w-full border border-white/[0.12] shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
+          <div className="relative bg-white rounded-3xl p-8 sm:p-10 max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden">
             {/* Shimmer wave bar at top */}
             <div className="absolute top-0 left-0 right-0 h-1 shimmer-bar" />
 
             {generationError ? (
               /* Error Display inside modal */
               <div className="text-center space-y-4 animate-fade-in">
-                <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-[#da1c2d]">
                   <AlertCircle className="w-8 h-8" />
                 </div>
 
                 <div className="space-y-1.5">
-                  <h3 className="text-lg font-bold text-white">Lỗi kết nối AI Service</h3>
-                  <p className="text-xs text-rose-300 leading-relaxed bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left">
+                  <h3 className="text-lg font-bold text-slate-900">Lỗi kết nối AI Service</h3>
+                  <p className="text-xs text-[#da1c2d] leading-relaxed bg-rose-50 p-3 rounded-xl border border-rose-200 text-left">
                     {generationError}
                   </p>
                 </div>
@@ -559,7 +555,7 @@ setDocuments([]);
                 <div className="space-y-2 pt-2">
                   <button
                     onClick={handleUseFallbackQuestions}
-                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
+                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 transition-all flex items-center justify-center gap-2 shadow-md shadow-[#008689]/25"
                   >
                     <Sparkles className="w-4 h-4" />
                     Tiếp tục bằng AI RAG Engine (Không cần chờ Backend)
@@ -567,7 +563,7 @@ setDocuments([]);
 
                   <button
                     onClick={handleStartGenerate}
-                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/[0.08]"
+                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-200"
                   >
                     <RefreshCw className="w-4 h-4" />
                     Thử lại gọi API Gateway (:8000)
@@ -578,7 +574,7 @@ setDocuments([]);
                       setIsGenerating(false);
                       setGenerationError(null);
                     }}
-                    className="text-xs text-slate-400 hover:text-white transition-colors pt-1"
+                    className="text-xs text-slate-500 hover:text-slate-800 transition-colors pt-1 font-medium"
                   >
                     Hủy bỏ
                   </button>
@@ -588,18 +584,15 @@ setDocuments([]);
               /* Normal Loading Progress */
               <div>
                 <div className="flex justify-center mb-5">
-                  <div className="relative">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-md">
-                      <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
-                    </div>
-                    <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl animate-pulse" />
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#008689] to-[#1d999d] flex items-center justify-center shadow-lg shadow-[#008689]/25">
+                    <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
                   </div>
                 </div>
 
-                <h2 className="text-center text-xl font-extrabold text-white mb-1.5 tracking-tight">
+                <h2 className="text-center text-xl font-extrabold text-slate-900 mb-1.5 tracking-tight">
                   Gemini AI đang sinh câu hỏi
                 </h2>
-                <p className="text-center text-xs text-slate-400 mb-6">
+                <p className="text-center text-xs text-slate-500 mb-6">
                   Đang xử lý {totalQuestions} câu hỏi theo Thang đo nhận thức Bloom qua API
                 </p>
 
@@ -622,35 +615,35 @@ setDocuments([]);
                         key={step}
                         className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-all duration-300 ${
                           isDone
-                            ? 'bg-emerald-500/10 border-emerald-500/25 opacity-70'
+                            ? 'bg-emerald-50 border-emerald-200'
                             : isActive
-                            ? 'bg-blue-500/15 border-blue-500/40 shadow-sm'
-                            : 'bg-white/[0.02] border-white/[0.06] opacity-40'
+                            ? 'bg-[#e0f7fa]/75 border-[#008689]/40 shadow-sm'
+                            : 'bg-slate-50 border-slate-200 opacity-60'
                         }`}
                       >
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold border transition-all ${
                             isDone
-                              ? 'bg-emerald-500 border-emerald-400 text-white'
+                              ? 'bg-emerald-500 border-emerald-600 text-white'
                               : isActive
-                              ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
-                              : 'bg-white/[0.05] border-white/[0.1] text-slate-500'
+                              ? 'bg-[#008689] border-[#006d70] text-white animate-pulse'
+                              : 'bg-white border-slate-300 text-slate-400'
                           }`}
                         >
                           {isDone ? '✓' : step}
                         </div>
                         <span
-                          className={`text-xs font-medium leading-snug flex-1 ${
-                            isActive ? 'text-blue-200' : isDone ? 'text-emerald-300' : 'text-slate-500'
+                          className={`text-xs font-semibold leading-snug flex-1 ${
+                            isActive ? 'text-[#006d70]' : isDone ? 'text-emerald-700' : 'text-slate-500'
                           }`}
                         >
                           {label}
                         </span>
                         {isActive && (
                           <div className="flex space-x-1 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '300ms' }} />
                           </div>
                         )}
                       </div>
@@ -659,19 +652,19 @@ setDocuments([]);
                 </div>
 
                 {/* Progress bar */}
-                <div className="mt-5 w-full bg-white/[0.06] h-2 rounded-full overflow-hidden">
+                <div className="mt-5 w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500"
+                    className="bg-gradient-to-r from-[#008689] to-[#1d999d] h-full rounded-full transition-all duration-500"
                     style={{ width: `${generationProgress}%` }}
                   />
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-400">
+                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-500">
                   <span className="truncate max-w-[200px]">{generationStep}</span>
-                  <span className="text-blue-400 font-bold shrink-0">{generationProgress}%</span>
+                  <span className="text-[#008689] font-bold shrink-0">{generationProgress}%</span>
                 </div>
 
-                <p className="text-center text-[10px] text-slate-500 font-mono mt-3">
+                <p className="text-center text-[10px] text-slate-400 font-mono mt-3">
                   POST /api/v1/ai/generate · Timeout: 60s
                 </p>
               </div>
@@ -680,20 +673,17 @@ setDocuments([]);
         </div>
       )}
 
-      {/* Background Glow */}
-      <div className="absolute top-20 right-1/4 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-
       {/* 1. Header */}
-      <div className="relative z-10 pb-2 border-b border-white/[0.06]">
+      <div className="relative z-10 pb-4 border-b border-slate-200">
         <div className="flex items-center space-x-2">
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#e0f7fa] text-[#008689] border border-[#008689]/25">
             AI Exam Engineering
           </span>
         </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight mt-1.5">
+        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight mt-1.5">
           Cấu hình Ma trận Đề thi AI
         </h1>
-        <p className="text-xs md:text-sm text-slate-400 mt-1">
+        <p className="text-xs md:text-sm text-slate-500 mt-1">
           Thiết lập nguồn kiến thức giáo trình và ma trận độ khó sư phạm để sinh bộ câu hỏi trắc nghiệm chuẩn mực.
         </p>
       </div>
@@ -701,16 +691,16 @@ setDocuments([]);
       {/* Preset Quick Templates */}
       <div className="glass-card p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+          <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
             <Zap className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-xs font-bold text-white">Khuôn mẫu ma trận chuẩn hóa Đại học</h4>
-            <p className="text-[11px] text-slate-400">Áp dụng nhanh tỷ lệ độ khó theo quy chế đào tạo tín chỉ</p>
+            <h4 className="text-xs font-bold text-slate-900">Khuôn mẫu ma trận chuẩn hóa Đại học</h4>
+            <p className="text-[11px] text-slate-500">Áp dụng nhanh tỷ lệ độ khó theo quy chế đào tạo tín chỉ</p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
           {[
             { id: 'giuaKy', label: 'Đề Giữa kỳ (20 câu)' },
             { id: 'cuoiKy', label: 'Đề Cuối kỳ (20 câu)' },
@@ -719,10 +709,10 @@ setDocuments([]);
             <button
               key={preset.id}
               onClick={() => applyPreset(preset.id as any)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activePreset === preset.id
-                  ? 'bg-blue-600 text-white shadow-glow-sm'
-                  : 'bg-white/[0.05] text-slate-300 hover:bg-white/[0.08] hover:text-white'
+                  ? 'bg-[#008689] text-white shadow-sm'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
               }`}
             >
               {preset.label}
@@ -736,31 +726,31 @@ setDocuments([]);
         <div className="lg:col-span-2 space-y-6">
           {/* Card 1: Chọn giáo trình & chương */}
           <div className="glass-card p-6 rounded-2xl space-y-5">
-            <div className="flex items-center space-x-2.5 pb-3 border-b border-white/[0.06]">
-              <BookOpen className="w-4 h-4 text-blue-400" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+            <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100">
+              <BookOpen className="w-4 h-4 text-[#008689]" />
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                 1. Nguồn tri thức giáo trình (RAG Knowledge)
               </h2>
             </div>
 
             {/* Select Textbook */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                 Chọn giáo trình đã nạp:
               </label>
               <select
                 value={selectedBook}
                 onChange={(e) => handleSelectBook(e.target.value)}
-                className="w-full p-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs font-medium text-slate-200 focus:outline-none focus:border-blue-500"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
               >
                 {isLoadingDocuments && (
-                  <option value="" className="bg-[#111827]">Đang tải danh sách giáo trình...</option>
+                  <option value="" className="bg-white text-slate-800">Đang tải danh sách giáo trình...</option>
                 )}
                 {!isLoadingDocuments && documents.length === 0 && (
-                  <option value="" className="bg-[#111827]">Chưa có giáo trình sẵn sàng</option>
+                  <option value="" className="bg-white text-slate-800">Chưa có giáo trình sẵn sàng</option>
                 )}
                 {documents.map((doc) => (
-                  <option key={doc.id} value={doc.id} className="bg-[#111827]">
+                  <option key={doc.id} value={doc.id} className="bg-white text-slate-800">
                     {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
                   </option>
                 ))}
@@ -769,12 +759,12 @@ setDocuments([]);
 
             {/* Chapters Multi-select */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2">
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">
                 Phạm vi chương mục kiến thức cần lấy câu hỏi:
               </label>
               <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {chaptersList.length === 0 && (
-                  <div className="p-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-xs text-slate-400">
+                  <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500">
                     Tài liệu này chưa có danh sách chương. Hãy đảm bảo tài liệu đã ở trạng thái sẵn sàng.
                   </div>
                 )}
@@ -786,13 +776,13 @@ setDocuments([]);
                       onClick={() => handleToggleChapter(ch)}
                       className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
                         isChecked
-                          ? 'bg-blue-600/10 border-blue-500/40 text-white'
-                          : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:bg-white/[0.04]'
+                          ? 'bg-[#e0f7fa]/70 border-[#008689]/40 text-[#006d70] font-semibold'
+                          : 'bg-slate-50/80 border-slate-200 text-slate-600 hover:bg-white hover:border-[#008689]/30'
                       }`}
                     >
                       <span className="text-xs font-medium">{ch}</span>
                       <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                        isChecked ? 'bg-blue-600 border-blue-600' : 'border-white/20'
+                        isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
                       }`}>
                         {isChecked && <Check className="w-3 h-3 text-white" />}
                       </div>
@@ -805,14 +795,14 @@ setDocuments([]);
 
           {/* Card 2: Thang đo Bloom */}
           <div className="glass-card p-6 rounded-2xl space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center space-x-2.5">
-                <Sliders className="w-4 h-4 text-indigo-400" />
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                <Sliders className="w-4 h-4 text-[#008689]" />
+                <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                   2. Ma trận Độ khó Nhận thức (Bloom's Taxonomy)
                 </h2>
               </div>
-              <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
+              <span className="text-xs font-mono font-bold text-[#008689] bg-[#e0f7fa] px-2.5 py-1 rounded-lg border border-[#008689]/25">
                 Tổng: {totalQuestions} câu hỏi
               </span>
             </div>
@@ -824,38 +814,38 @@ setDocuments([]);
                   key: 'nhanBiet' as const,
                   label: 'Mức 1: Nhận biết (Remembering)',
                   desc: 'Hỏi định nghĩa, quy luật, công thức cơ bản trích nguyên từ giáo trình.',
-                  color: 'text-sky-400',
+                  color: 'text-sky-700',
                   accent: 'accent-sky-500',
                 },
                 {
                   key: 'thongHieu' as const,
                   label: 'Mức 2: Thông hiểu (Understanding)',
                   desc: 'Giải thích hiện tượng, so sánh khái niệm, phân biệt các trường phái.',
-                  color: 'text-teal-400',
-                  accent: 'accent-teal-500',
+                  color: 'text-[#008689]',
+                  accent: 'accent-teal-600',
                 },
                 {
                   key: 'vanDung' as const,
                   label: 'Mức 3: Vận dụng (Applying)',
                   desc: 'Giải quyết bài toán thực tế, áp dụng công thức vào số liệu cụ thể.',
-                  color: 'text-amber-400',
+                  color: 'text-amber-700',
                   accent: 'accent-amber-500',
                 },
                 {
                   key: 'phanTich' as const,
                   label: 'Mức 4: Phân tích (Analyzing)',
                   desc: 'Đánh giá chính sách, phân tích tác động đa chiều và tình huống thực tế.',
-                  color: 'text-purple-400',
-                  accent: 'accent-purple-500',
+                  color: 'text-indigo-700',
+                  accent: 'accent-indigo-600',
                 },
               ].map(({ key, label, desc, color, accent }) => (
                 <div key={key} className="space-y-2">
                   <div className="flex justify-between items-center text-xs">
                     <div>
                       <span className={`font-bold ${color}`}>{label}</span>
-                      <p className="text-[11px] text-slate-400 font-normal mt-0.5">{desc}</p>
+                      <p className="text-[11px] text-slate-500 font-normal mt-0.5">{desc}</p>
                     </div>
-                    <span className="font-mono text-base font-extrabold text-white bg-white/[0.06] px-3 py-1 rounded-xl border border-white/[0.08]">
+                    <span className="font-mono text-base font-extrabold text-slate-900 bg-slate-100 px-3 py-1 rounded-xl border border-slate-200">
                       {bloomDistribution[key]} câu
                     </span>
                   </div>
@@ -870,7 +860,7 @@ setDocuments([]);
                         [key]: parseInt(e.target.value) || 0,
                       })
                     }
-                    className={`w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer ${accent}`}
+                    className={`w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer ${accent}`}
                   />
                 </div>
               ))}
@@ -881,37 +871,37 @@ setDocuments([]);
         {/* Right Summary Sidebar (1 Col) */}
         <div className="space-y-6">
           <div className="glass-card p-6 rounded-2xl space-y-5 sticky top-8">
-            <div className="flex items-center space-x-2 pb-3 border-b border-white/[0.06]">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+              <Sparkles className="w-4 h-4 text-amber-500" />
+              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
                 Tóm tắt cấu hình sinh đề
               </h3>
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-slate-500">
                 <span>Số lượng câu hỏi:</span>
-                <span className="font-bold text-white font-mono text-sm">
+                <span className="font-bold text-slate-900 font-mono text-sm">
                   {totalQuestions} câu
                 </span>
               </div>
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-slate-500">
                 <span>Dạng thức:</span>
-                <span className="font-semibold text-slate-200">4 lựa chọn (A, B, C, D)</span>
+                <span className="font-semibold text-slate-800">4 lựa chọn (A, B, C, D)</span>
               </div>
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-slate-500">
                 <span>Giáo trình nguồn:</span>
-                <span className="font-semibold text-slate-200 truncate max-w-[170px]" title={selectedDocument?.name || ''}>
+                <span className="font-semibold text-slate-800 truncate max-w-[170px]" title={selectedDocument?.name || ''}>
                   {selectedDocument?.name || 'Chưa chọn'}
                 </span>
               </div>
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-slate-500">
                 <span>Minh chứng RAG:</span>
-                <span className="font-semibold text-emerald-400">Bắt buộc trích dẫn</span>
+                <span className="font-bold text-emerald-600">Bắt buộc trích dẫn</span>
               </div>
-              <div className="flex justify-between text-slate-400">
+              <div className="flex justify-between text-slate-500">
                 <span>Số chương đã chọn:</span>
-                <span className="font-semibold text-slate-200">
+                <span className="font-semibold text-slate-800">
                   {selectedChapters.length} chương
                 </span>
               </div>
@@ -919,24 +909,24 @@ setDocuments([]);
 
             {/* Visual Balance Bar */}
             {totalQuestions > 0 && (
-              <div className="space-y-2 pt-3 border-t border-white/[0.06]">
-                <div className="flex justify-between text-[11px] font-bold text-slate-300">
+              <div className="space-y-2 pt-3 border-t border-slate-100">
+                <div className="flex justify-between text-[11px] font-bold text-slate-700">
                   <span>Tỷ lệ ma trận Bloom:</span>
-                  <span className="font-mono text-blue-400">{totalQuestions} câu</span>
+                  <span className="font-mono text-[#008689]">{totalQuestions} câu</span>
                 </div>
-                <div className="w-full h-3 rounded-full flex overflow-hidden bg-white/[0.06] p-0.5">
+                <div className="w-full h-3 rounded-full flex overflow-hidden bg-slate-200 p-0.5">
                   <div style={{ width: `${(bloomDistribution.nhanBiet / totalQuestions) * 100}%` }} className="bg-sky-500 rounded-l-full" title="Nhận biết" />
-                  <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-teal-500" title="Thông hiểu" />
+                  <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-[#008689]" title="Thông hiểu" />
                   <div style={{ width: `${(bloomDistribution.vanDung / totalQuestions) * 100}%` }} className="bg-amber-500" title="Vận dụng" />
-                  <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-purple-500 rounded-r-full" title="Phân tích" />
+                  <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-indigo-500 rounded-r-full" title="Phân tích" />
                 </div>
               </div>
             )}
 
-            <div className="p-3.5 bg-blue-500/[0.08] rounded-xl border border-blue-500/20 text-xs text-blue-200 flex items-start space-x-2">
-              <AlertCircle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="p-3.5 bg-[#e0f7fa]/55 rounded-xl border border-[#008689]/25 text-xs text-slate-700 flex items-start space-x-2">
+              <AlertCircle className="w-4 h-4 text-[#008689] shrink-0 mt-0.5" />
               <p>
-                Sau khi sinh, câu hỏi sẽ được chuyển vào <strong>Không gian Kiểm duyệt</strong> để đối chiếu trang sách gốc trước khi lưu vào ngân hàng đề.
+                Sau khi sinh, câu hỏi sẽ được chuyển vào <strong className="text-[#006d70]">Không gian Kiểm duyệt</strong> để đối chiếu trang sách gốc trước khi lưu vào ngân hàng đề.
               </p>
             </div>
 
@@ -945,12 +935,12 @@ setDocuments([]);
               <div className="space-y-3">
                 <button
                   disabled
-                  className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-xl flex items-center justify-center space-x-2 shadow-glow-md animate-pulse cursor-wait"
+                  className="w-full py-3.5 bg-gradient-to-r from-[#008689] to-[#1d999d] text-white text-xs font-bold rounded-xl flex items-center justify-center space-x-2 shadow-md shadow-[#008689]/25 animate-pulse cursor-wait"
                 >
-                  <Cpu className="w-4 h-4 animate-spin text-sky-200" />
+                  <Cpu className="w-4 h-4 animate-spin text-white" />
                   <span>AI đang bóc tách ngữ nghĩa & sinh đề...</span>
                 </button>
-                <p className="text-[11px] text-center text-blue-300 font-mono animate-bounce">
+                <p className="text-[11px] text-center text-[#008689] font-mono font-semibold animate-bounce">
                   {generationStep}
                 </p>
               </div>
@@ -958,10 +948,10 @@ setDocuments([]);
               <button
                 onClick={handleStartGenerate}
                 disabled={totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
-                className={`w-full py-3.5 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg ${
+                className={`w-full py-3.5 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all shadow-md ${
                   totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
-                    ? 'bg-white/[0.05] text-slate-500 cursor-not-allowed border border-white/[0.05]'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30 hover:scale-[1.01]'
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none'
+                    : 'bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 text-white shadow-[#008689]/25'
                 }`}
               >
                 <Sparkles className="w-4 h-4" />

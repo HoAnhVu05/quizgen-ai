@@ -74,6 +74,8 @@ export const App: React.FC = () => {
                 : data.role === 'admin'
                 ? 'Quản trị Khảo thi'
                 : 'Giảng viên',
+            avatarUrl: data.avatar_url || data.avatarUrl,
+            authProvider: data.auth_provider || data.authProvider,
           };
           setCurrentUser(profile);
           setIsAuthenticated(true);
@@ -303,7 +305,7 @@ export const App: React.FC = () => {
   // ─── Render Auth Screens (Login / Register) ───────────────────────────────
   if (!isAuthenticated) {
     return (
-      <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#080c16] font-sans">
+      <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#f3f7f8] text-slate-800 font-sans">
         <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
         {authScreen === 'login' ? (
           <LoginScreen
@@ -322,7 +324,7 @@ export const App: React.FC = () => {
 
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0b0f19] font-sans relative select-none">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
@@ -336,7 +338,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#0b0f19]">
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#f7f9fb]">
         {/* Unified Top Header Bar synchronized with User Account & Role */}
         <TopHeader
           currentScreen={currentScreen}

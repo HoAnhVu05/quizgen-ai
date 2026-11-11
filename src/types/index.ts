@@ -13,6 +13,8 @@ export interface UserProfile {
   university?: string;
   role: UserRole;
   roleLabel?: string;
+  avatarUrl?: string;
+  authProvider?: 'local' | 'google';
 }
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';

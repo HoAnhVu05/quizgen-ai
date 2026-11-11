@@ -205,28 +205,25 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
   const vanDungCount = selectedQuestions.filter((q) => q.bloomLevel === 'Vận dụng').length;
 
   return (
-    <div className="flex-1 p-8 overflow-y-auto space-y-6 bg-[#0b0f19] text-slate-100 relative pb-28">
-      {/* Background glow */}
-      <div className="absolute top-20 right-10 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-
+    <div className="flex-1 p-6 md:p-8 overflow-y-auto space-y-6 bg-[#f7f9fb] text-slate-800 relative pb-28">
       {/* 1. Header */}
-      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2 border-b border-white/[0.06]">
+      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center space-x-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               Exam Vault & Packaging
             </span>
           </div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight mt-1.5">
+          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight mt-1.5">
             Ngân hàng Đề thi & Xuất bản Chuẩn hóa
           </h1>
-          <p className="text-xs md:text-sm text-slate-400 mt-1">
+          <p className="text-xs md:text-sm text-slate-500 mt-1">
             Kho lưu trữ các câu hỏi trắc nghiệm đã được thẩm định. Chọn câu hỏi để đóng gói đề thi chuẩn.
           </p>
         </div>
 
         <div className="flex items-center space-x-3">
-          <span className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono">
+          <span className="text-xs font-bold px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono">
             {approvedQuestions.length} câu đã thẩm định
           </span>
         </div>
@@ -237,14 +234,14 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
         {/* Left Filter Column (1 Col) */}
         <div className="space-y-5">
           <div className="glass-card p-5 rounded-2xl space-y-4">
-            <div className="flex items-center space-x-2 pb-3 border-b border-white/[0.06]">
-              <Filter className="w-4 h-4 text-blue-400" />
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Bộ lọc ngân hàng</h3>
+            <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
+              <Filter className="w-4 h-4 text-[#008689]" />
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Bộ lọc ngân hàng</h3>
             </div>
 
             {/* Bloom Level */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
                 Thang đo Bloom:
               </label>
               <div className="space-y-1.5">
@@ -257,10 +254,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                   <button
                     key={item.id}
                     onClick={() => setSelectedBloom(item.id)}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold transition-all flex items-center justify-between ${
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${
                       selectedBloom === item.id
-                        ? 'bg-blue-600 text-white shadow-glow-sm'
-                        : 'text-slate-400 hover:bg-white/[0.04] hover:text-white'
+                        ? 'bg-[#008689] text-white shadow-sm'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
                     <span>{item.label}</span>
@@ -271,13 +268,13 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
             {/* Textbook Filter */}
             <div>
-              <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
                 Giáo trình nguồn:
               </label>
-              <select className="w-full p-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs text-slate-200">
-                <option className="bg-[#111827]">Tất cả giáo trình (12)</option>
-                <option className="bg-[#111827]">Kinh tế vi mô 2025</option>
-                <option className="bg-[#111827]">Nguyên lý kế toán</option>
+              <select className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:bg-white focus:border-[#008689]">
+                <option className="bg-white text-slate-800">Tất cả giáo trình (12)</option>
+                <option className="bg-white text-slate-800">Kinh tế vi mô 2025</option>
+                <option className="bg-white text-slate-800">Nguyên lý kế toán</option>
               </select>
             </div>
           </div>
@@ -286,7 +283,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
         {/* Right Questions Table (3 Cols) */}
         <div className="lg:col-span-3 glass-card rounded-2xl overflow-hidden flex flex-col">
           {/* Table Header Controls */}
-          <div className="p-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
+          <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
             <div className="relative flex-1 max-w-sm">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
               <input
@@ -294,12 +291,12 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Tìm nội dung câu hỏi hoặc từ khóa..."
-                className="w-full pl-8 pr-3.5 py-1.5 text-xs bg-white/[0.04] border border-white/[0.08] rounded-xl focus:outline-none focus:border-blue-500 text-white placeholder-slate-400"
+                className="w-full pl-8 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#008689] text-slate-900 placeholder-slate-400"
               />
             </div>
 
-            <div className="text-xs text-slate-400 font-mono">
-              Hiển thị <span className="font-bold text-white">{filtered.length}</span> câu
+            <div className="text-xs text-slate-500 font-mono">
+              Hiển thị <span className="font-bold text-slate-900">{filtered.length}</span> câu
             </div>
           </div>
 
@@ -307,7 +304,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-white/[0.02] border-b border-white/[0.06] text-slate-400 font-semibold uppercase tracking-wider text-[10px]">
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
                   <th className="py-3.5 px-4 w-10">
                     <input
                       type="checkbox"
@@ -315,16 +312,16 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                         filtered.length > 0 && selectedIds.length === filtered.length
                       }
                       onChange={handleSelectAll}
-                      className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                      className="w-4 h-4 rounded text-[#008689] focus:ring-[#008689] cursor-pointer accent-[#008689]"
                     />
                   </th>
-                  <th className="py-3.5 px-3 w-20">Mức độ</th>
+                  <th className="py-3.5 px-3 w-24">Mức độ</th>
                   <th className="py-3.5 px-4">Nội dung câu hỏi trắc nghiệm</th>
                   <th className="py-3.5 px-4">Đáp án chuẩn</th>
                   <th className="py-3.5 px-4">Chương mục</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/[0.04] text-slate-300">
+              <tbody className="divide-y divide-slate-100 text-slate-700">
                 {filtered.map((q) => {
                   const isChecked = selectedIds.includes(q.id);
                   const correctOpt = q.options.find((o) => o.id === q.correctAnswerId);
@@ -333,8 +330,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                     <tr
                       key={q.id}
                       onClick={() => handleToggleSelect(q.id)}
-                      className={`hover:bg-white/[0.03] transition-colors cursor-pointer ${
-                        isChecked ? 'bg-blue-600/10' : ''
+                      className={`hover:bg-[#f3f7f8] transition-colors cursor-pointer ${
+                        isChecked ? 'bg-[#e0f7fa]/55' : ''
                       }`}
                     >
                       <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
@@ -342,18 +339,18 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                           type="checkbox"
                           checked={isChecked}
                           onChange={() => handleToggleSelect(q.id)}
-                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                          className="w-4 h-4 rounded text-[#008689] focus:ring-[#008689] cursor-pointer accent-[#008689]"
                         />
                       </td>
 
                       <td className="py-4 px-3 font-semibold">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${
                             q.bloomLevel === 'Nhận biết'
-                              ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20'
+                              ? 'bg-sky-50 text-sky-700 border-sky-200'
                               : q.bloomLevel === 'Thông hiểu'
-                              ? 'bg-teal-500/10 text-teal-400 border border-teal-500/20'
-                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              ? 'bg-[#e0f7fa] text-[#008689] border-[#008689]/25'
+                              : 'bg-amber-50 text-amber-700 border-amber-200'
                           }`}
                         >
                           {q.bloomLevel}
@@ -361,19 +358,19 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                       </td>
 
                       <td className="py-4 px-4 max-w-md">
-                        <div className="font-semibold text-white text-xs leading-snug">
+                        <div className="font-bold text-slate-900 text-xs leading-snug">
                           {q.question}
                         </div>
-                        <div className="text-[11px] text-slate-400 mt-1 truncate">
+                        <div className="text-[11px] text-slate-500 mt-1 truncate">
                           A: {q.options[0]?.text} | B: {q.options[1]?.text}
                         </div>
                       </td>
 
-                      <td className="py-4 px-4 font-medium text-emerald-400">
+                      <td className="py-4 px-4 font-bold text-emerald-700">
                         {correctOpt ? `${correctOpt.label}. ${correctOpt.text}` : '-'}
                       </td>
 
-                      <td className="py-4 px-4 text-slate-400 text-[11px] font-mono">
+                      <td className="py-4 px-4 text-slate-500 text-[11px] font-mono">
                         {q.chapter}
                       </td>
                     </tr>
@@ -387,29 +384,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
       {/* 3. Floating Action Bar (Dynamic Glass Dock) */}
       {selectedIds.length > 0 && (
-        <div className="fixed bottom-6 left-72 right-8 glass-panel text-white p-4 rounded-2xl shadow-2xl border border-white/15 flex flex-col md:flex-row items-center justify-between gap-4 z-40 animate-slideUp">
+        <div className="fixed bottom-6 left-72 right-8 dock-glass text-slate-800 p-4 rounded-2xl shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4 z-40 animate-slideUp">
           <div className="flex items-center space-x-4">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-bold text-white text-base shadow-glow-sm">
+            <div className="w-10 h-10 rounded-xl bg-[#008689] flex items-center justify-center font-bold text-white text-base shadow-sm">
               {selectedIds.length}
             </div>
             <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-200">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-900">
                 Câu hỏi đã chọn vào Giỏ đề thi
               </div>
-              <div className="text-xs text-slate-400 flex items-center space-x-2 mt-0.5 font-mono">
-                <span>Nhận biết: <strong className="text-sky-300">{nhanBietCount}</strong></span>
+              <div className="text-xs text-slate-500 flex items-center space-x-2 mt-0.5 font-mono">
+                <span>Nhận biết: <strong className="text-sky-700">{nhanBietCount}</strong></span>
                 <span>•</span>
-                <span>Thông hiểu: <strong className="text-teal-300">{thongHieuCount}</strong></span>
+                <span>Thông hiểu: <strong className="text-[#008689]">{thongHieuCount}</strong></span>
                 <span>•</span>
-                <span>Vận dụng: <strong className="text-amber-300">{vanDungCount}</strong></span>
+                <span>Vận dụng: <strong className="text-amber-700">{vanDungCount}</strong></span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 flex-wrap gap-y-2">
             <button
               onClick={() => handleOpenExportModal('zip')}
-              className="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold transition-all shadow-md"
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-105 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
             >
               <Archive className="w-4 h-4" />
               <span>Trọn bộ ZIP (Đề + OMR)</span>
@@ -417,7 +414,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
             <button
               onClick={() => handleOpenExportModal('docx')}
-              className="flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold transition-all shadow-md"
+              className="flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
             >
               <FileText className="w-4 h-4" />
               <span>Word</span>
@@ -425,7 +422,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
             <button
               onClick={() => handleOpenExportModal('pdf')}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-white/[0.08] hover:bg-white/[0.12] text-white rounded-xl text-xs font-semibold transition-all border border-white/[0.1]"
+              className="flex items-center space-x-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all border border-slate-200"
             >
               <Printer className="w-4 h-4" />
               <span>In PDF</span>
@@ -433,7 +430,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
             <button
               onClick={() => handleOpenExportModal('qti')}
-              className="flex items-center space-x-1.5 px-4 py-2 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-xl text-xs font-semibold transition-all"
+              className="flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all"
             >
               <Sparkles className="w-4 h-4" />
               <span>Gói Canvas QTI</span>
@@ -442,7 +439,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
             <button
               onClick={handleDownloadStandaloneOmr}
               title="Tải riêng Phiếu tô trắc nghiệm OMR 50 câu chuẩn thi đại học"
-              className="flex items-center space-x-1 px-3 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-emerald-400 rounded-xl text-xs font-semibold transition-all border border-emerald-500/20"
+              className="flex items-center space-x-1 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl text-xs font-bold transition-all border border-emerald-200"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Phiếu OMR 50</span>
@@ -450,7 +447,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
             <button
               onClick={() => setSelectedIds([])}
-              className="p-2 text-slate-400 hover:text-white rounded-lg transition-colors ml-1"
+              className="p-2 text-slate-400 hover:text-slate-700 rounded-lg transition-colors ml-1"
             >
               <X className="w-4 h-4" />
             </button>
@@ -460,35 +457,35 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
 
       {/* 4. MODAL: Customize Exam Output */}
       {showExportModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="glass-panel w-full max-w-xl rounded-2xl shadow-2xl border border-white/[0.1] overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-white/[0.06] flex items-center justify-between bg-white/[0.02]">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-[#f8fbfc]">
               <div className="flex items-center space-x-2">
-                <Settings2 className="w-5 h-5 text-blue-400" />
-                <h3 className="font-bold text-white text-xs">
+                <Settings2 className="w-5 h-5 text-[#008689]" />
+                <h3 className="font-bold text-slate-900 text-xs">
                   Tùy chỉnh Đóng gói Đề thi ({selectedIds.length} câu đã chọn)
                 </h3>
               </div>
               <button
                 onClick={() => setShowExportModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.08]"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs text-slate-300">
+            <div className="p-6 space-y-4 text-xs text-slate-700 max-h-[75vh] overflow-y-auto">
               {/* Tabs chọn định dạng */}
               <div>
-                <label className="font-semibold block mb-1.5 text-slate-400">Định dạng xuất bản khảo thí:</label>
+                <label className="font-bold block mb-1.5 text-slate-600">Định dạng xuất bản khảo thí:</label>
                 <div className="grid grid-cols-4 gap-2">
                   <button
                     type="button"
                     onClick={() => { setExportFormat('zip'); setExamConfig(c => ({ ...c, format: 'zip', includeOmrSheet: true })); }}
                     className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
                       exportFormat === 'zip'
-                        ? 'bg-emerald-600/30 border-emerald-500 text-emerald-300 shadow-glow-sm'
-                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-sm'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     Trọn bộ ZIP
@@ -498,8 +495,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                     onClick={() => { setExportFormat('docx'); setExamConfig(c => ({ ...c, format: 'docx' })); }}
                     className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
                       exportFormat === 'docx'
-                        ? 'bg-blue-600/30 border-blue-500 text-blue-300 shadow-glow-sm'
-                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                        ? 'bg-[#e0f7fa] border-[#008689] text-[#006d70] shadow-sm'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     Word (.docx)
@@ -509,8 +506,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                     onClick={() => { setExportFormat('pdf'); setExamConfig(c => ({ ...c, format: 'pdf', includeOmrSheet: true })); }}
                     className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
                       exportFormat === 'pdf'
-                        ? 'bg-cyan-600/30 border-cyan-500 text-cyan-300 shadow-glow-sm'
-                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                        ? 'bg-sky-50 border-sky-500 text-sky-700 shadow-sm'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     PDF + OMR
@@ -520,8 +517,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                     onClick={() => { setExportFormat('qti'); setExamConfig(c => ({ ...c, format: 'qti' })); }}
                     className={`py-2 px-2 rounded-xl border text-center font-bold text-xs transition-all ${
                       exportFormat === 'qti'
-                        ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 shadow-glow-sm'
-                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.06]'
+                        ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm'
+                        : 'bg-slate-50 border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                     }`}
                   >
                     LMS QTI 2.1
@@ -530,98 +527,98 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
               </div>
 
               {exportFormat === 'zip' && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-xs leading-relaxed">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs leading-relaxed">
                   <strong>Đóng gói bộ đề thi đa định dạng (SCRUM-56):</strong> Tự động xuất nén các mã đề (.pdf & .docx), Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn thi đại học, Bảng ma trận đáp án so sánh chéo (.docx & .csv) và Gói LMS Canvas/Moodle IMS QTI 2.1 vào 1 tệp .ZIP duy nhất.
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold block mb-1 text-slate-400">Tên trường Đại học:</label>
+                  <label className="font-bold block mb-1 text-slate-600">Tên trường Đại học:</label>
                   <input
                     type="text"
                     value={examConfig.universityName}
                     onChange={(e) => setExamConfig({ ...examConfig, universityName: e.target.value })}
-                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:border-[#008689] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="font-semibold block mb-1 text-slate-400">Khoa / Bộ môn:</label>
+                  <label className="font-bold block mb-1 text-slate-600">Khoa / Bộ môn:</label>
                   <input
                     type="text"
                     value={examConfig.facultyName}
                     onChange={(e) => setExamConfig({ ...examConfig, facultyName: e.target.value })}
-                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:border-[#008689] outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="font-semibold block mb-1 text-slate-400">Tiêu đề đề thi:</label>
+                <label className="font-bold block mb-1 text-slate-600">Tiêu đề đề thi:</label>
                 <input
                   type="text"
                   value={examConfig.examTitle}
                   onChange={(e) => setExamConfig({ ...examConfig, examTitle: e.target.value })}
-                  className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white font-medium"
+                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-semibold focus:bg-white focus:border-[#008689] outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold block mb-1 text-slate-400">Môn học:</label>
+                  <label className="font-bold block mb-1 text-slate-600">Môn học:</label>
                   <input
                     type="text"
                     value={examConfig.subjectName}
                     onChange={(e) => setExamConfig({ ...examConfig, subjectName: e.target.value })}
-                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:border-[#008689] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="font-semibold block mb-1 text-slate-400">Số lượng mã đề đảo (101, 102...):</label>
+                  <label className="font-bold block mb-1 text-slate-600">Số lượng mã đề đảo (101, 102...):</label>
                   <select
                     value={examConfig.examCodeCount}
                     onChange={(e) => setExamConfig({ ...examConfig, examCodeCount: parseInt(e.target.value) })}
-                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 focus:bg-white focus:border-[#008689] outline-none"
                   >
-                    <option value={1} className="bg-[#111827]">1 mã đề gốc</option>
-                    <option value={2} className="bg-[#111827]">2 mã đề đảo (101, 102)</option>
-                    <option value={4} className="bg-[#111827]">4 mã đề chuẩn (101, 102, 103, 104)</option>
-                    <option value={8} className="bg-[#111827]">8 mã đề</option>
+                    <option value={1} className="bg-white text-slate-900">1 mã đề gốc</option>
+                    <option value={2} className="bg-white text-slate-900">2 mã đề đảo (101, 102)</option>
+                    <option value={4} className="bg-white text-slate-900">4 mã đề chuẩn (101, 102, 103, 104)</option>
+                    <option value={8} className="bg-white text-slate-900">8 mã đề</option>
                   </select>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-semibold block mb-1 text-slate-400">Thời gian làm bài (phút):</label>
+                  <label className="font-bold block mb-1 text-slate-600">Thời gian làm bài (phút):</label>
                   <input
                     type="number"
                     min={15}
                     max={180}
                     value={examConfig.durationMinutes || 60}
                     onChange={(e) => setExamConfig({ ...examConfig, durationMinutes: parseInt(e.target.value) || 60 })}
-                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-white font-mono"
+                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono focus:bg-white focus:border-[#008689] outline-none"
                   />
                 </div>
                 <div>
-                  <label className="font-semibold block mb-1 text-slate-400">Mã đề gốc:</label>
+                  <label className="font-bold block mb-1 text-slate-600">Mã đề gốc:</label>
                   <input
                     type="text"
                     defaultValue="101"
                     readOnly
-                    className="w-full p-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-slate-400 font-mono cursor-not-allowed"
+                    className="w-full p-2 bg-slate-100 border border-slate-200 rounded-lg text-slate-500 font-mono cursor-not-allowed"
                   />
                 </div>
               </div>
 
               {/* Toggles */}
-              <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+              <div className="space-y-2 pt-3 border-t border-slate-100">
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={examConfig.includeAnswerKey}
                     onChange={(e) => setExamConfig({ ...examConfig, includeAnswerKey: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded accent-blue-600"
+                    className="w-4 h-4 text-[#008689] rounded accent-[#008689]"
                   />
                   <span>Tự động tạo bảng ma trận đáp án ở trang cuối</span>
                 </label>
@@ -631,13 +628,13 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
                     type="checkbox"
                     checked={examConfig.shuffleOptions}
                     onChange={(e) => setExamConfig({ ...examConfig, shuffleOptions: e.target.checked })}
-                    className="w-4 h-4 text-blue-600 rounded accent-blue-600"
+                    className="w-4 h-4 text-[#008689] rounded accent-[#008689]"
                   />
                   <span>Xáo trộn ngẫu nhiên thứ tự các phương án A, B, C, D</span>
                 </label>
 
                 {(exportFormat === 'pdf' || exportFormat === 'zip') && (
-                  <label className="flex items-center space-x-2 cursor-pointer text-emerald-400">
+                  <label className="flex items-center space-x-2 cursor-pointer text-emerald-700 font-semibold">
                     <input
                       type="checkbox"
                       checked={examConfig.includeOmrSheet ?? true}
@@ -650,21 +647,21 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({ question
               </div>
             </div>
 
-            <div className="p-4 border-t border-white/[0.06] bg-white/[0.02] flex items-center justify-between">
-              <span className="text-xs text-slate-400 font-mono">
-                Định dạng: <strong className="text-blue-400 uppercase">{exportFormat}</strong>
+            <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-mono">
+                Định dạng: <strong className="text-[#008689] uppercase">{exportFormat}</strong>
               </span>
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => setShowExportModal(false)}
-                  className="px-4 py-2 border border-white/[0.1] rounded-xl text-xs font-semibold hover:bg-white/[0.05]"
+                  className="px-4 py-2 border border-slate-200 bg-white text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-100"
                 >
                   Hủy
                 </button>
                 <button
                   onClick={handleConfirmExport}
                   disabled={isExporting}
-                  className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-glow-sm flex items-center space-x-1.5"
+                  className="px-5 py-2 bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 text-white rounded-xl text-xs font-bold shadow-sm flex items-center space-x-1.5"
                 >
                   <Download className="w-4 h-4" />
                   <span>{isExporting ? 'Đang tạo tệp...' : 'Xác nhận & Tải tệp xuống'}</span>

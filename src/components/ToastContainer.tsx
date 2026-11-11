@@ -11,33 +11,33 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
   return (
     <div className="fixed top-5 right-5 z-50 flex flex-col space-y-3 pointer-events-none">
       {toasts.map((toast) => {
-        let bg = 'glass-panel text-slate-200 border-white/10 shadow-2xl';
-        let icon = <Info className="w-4 h-4 text-blue-400 shrink-0" />;
+        let bg = 'bg-white text-slate-800 border-slate-200 shadow-lg';
+        let icon = <Info className="w-4 h-4 text-[#008689] shrink-0" />;
 
         if (toast.type === 'success') {
-          bg = 'bg-[#0f241c] text-emerald-100 border-emerald-500/30 shadow-glow-emerald';
-          icon = <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />;
+          bg = 'bg-white text-slate-800 border-emerald-500/40 shadow-lg shadow-emerald-600/10';
+          icon = <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />;
         } else if (toast.type === 'warning') {
-          bg = 'bg-[#291b0d] text-amber-100 border-amber-500/30 shadow-2xl';
-          icon = <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />;
+          bg = 'bg-white text-slate-800 border-amber-500/40 shadow-lg shadow-amber-500/10';
+          icon = <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />;
         } else if (toast.type === 'error') {
-          bg = 'bg-[#2a0e14] text-rose-100 border-rose-500/30 shadow-2xl';
-          icon = <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />;
+          bg = 'bg-white text-slate-800 border-rose-500/40 shadow-lg shadow-rose-500/10';
+          icon = <AlertCircle className="w-4 h-4 text-[#da1c2d] shrink-0" />;
         }
 
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start space-x-3 p-4 rounded-xl border backdrop-blur-xl transition-all duration-300 max-w-sm min-w-[280px] animate-slideIn ${bg}`}
+            className={`pointer-events-auto flex items-start space-x-3 p-4 rounded-xl border transition-all duration-300 max-w-sm min-w-[280px] animate-slideIn ${bg}`}
           >
             {icon}
             <div className="flex-1 min-w-0">
-              <h4 className="text-xs font-bold leading-tight tracking-tight">{toast.title}</h4>
-              <p className="text-[11px] opacity-80 mt-0.5 leading-snug">{toast.message}</p>
+              <h4 className="text-xs font-bold leading-tight tracking-tight text-slate-900">{toast.title}</h4>
+              <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{toast.message}</p>
             </div>
             <button
               onClick={() => onDismiss(toast.id)}
-              className="opacity-60 hover:opacity-100 transition-opacity p-0.5 text-slate-300"
+              className="text-slate-400 hover:text-slate-700 transition-colors p-0.5"
             >
               <X className="w-3.5 h-3.5" />
             </button>

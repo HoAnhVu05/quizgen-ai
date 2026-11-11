@@ -58,24 +58,24 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       case 'admin':
         return {
           label: 'Quản trị Khảo thí',
-          badgeClass: 'text-amber-300 bg-amber-500/15 border-amber-500/30',
-          avatarGrad: 'from-amber-500 to-orange-600',
+          badgeClass: 'text-[#da1c2d] bg-rose-50 border-rose-200',
+          avatarGrad: 'from-[#da1c2d] to-rose-600',
           icon: ShieldCheck,
           roleScope: 'Toàn quyền kiểm toán & Quản trị Token Quota',
         };
       case 'head_of_department':
         return {
           label: 'Trưởng bộ môn',
-          badgeClass: 'text-purple-300 bg-purple-500/15 border-purple-500/30',
-          avatarGrad: 'from-purple-500 to-indigo-600',
+          badgeClass: 'text-indigo-700 bg-indigo-50 border-indigo-200',
+          avatarGrad: 'from-indigo-600 to-violet-600',
           icon: Award,
           roleScope: 'Thẩm định & Phê duyệt chất lượng ngân hàng đề',
         };
       default:
         return {
           label: 'Giảng viên',
-          badgeClass: 'text-blue-300 bg-blue-500/15 border-blue-500/30',
-          avatarGrad: 'from-blue-600 to-indigo-600',
+          badgeClass: 'text-[#008689] bg-[#e0f7fa] border-[#008689]/25',
+          avatarGrad: 'from-[#008689] to-[#1d999d]',
           icon: GraduationCap,
           roleScope: 'Soạn thảo đề thi & Nạp giáo trình RAG',
         };
@@ -127,33 +127,33 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   };
 
   return (
-    <header className="h-16 bg-[#0a0e1a]/95 backdrop-blur-md border-b border-white/[0.07] px-6 flex items-center justify-between z-30 shrink-0 select-none">
+    <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 flex items-center justify-between z-30 shrink-0 select-none shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
       {/* 1. Left Breadcrumb / Screen Title */}
       <div className="flex items-center space-x-3.5 min-w-0">
-        <div className="w-9 h-9 rounded-xl bg-blue-600/15 border border-blue-500/25 flex items-center justify-center text-blue-400 shrink-0 shadow-sm">
+        <div className="w-9 h-9 rounded-xl bg-[#e0f7fa] border border-[#008689]/25 flex items-center justify-center text-[#008689] shrink-0 shadow-sm">
           <ScreenIcon className="w-4 h-4" />
         </div>
         <div className="min-w-0">
           <div className="flex items-center space-x-2">
-            <h2 className="text-sm font-bold text-white tracking-tight truncate">
+            <h2 className="text-sm font-bold text-slate-900 tracking-tight truncate">
               {screenMeta.label}
             </h2>
-            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-white/[0.04] text-slate-400 border border-white/[0.06]">
+            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
               HK II (2025 - 2026)
             </span>
           </div>
-          <p className="text-[11px] text-slate-400 truncate hidden md:block">
+          <p className="text-[11px] text-slate-500 truncate hidden md:block">
             {screenMeta.subtitle}
           </p>
         </div>
       </div>
 
       {/* 2. Center Multi-Role Fast Switcher (Dành cho kiểm thử & chuyển đổi vai trò nhanh) */}
-      <div className="hidden xl:flex items-center space-x-1 p-1 bg-white/[0.03] rounded-xl border border-white/[0.06]">
+      <div className="hidden xl:flex items-center space-x-1 p-1 bg-slate-100/90 rounded-xl border border-slate-200">
         {[
-          { id: 'lecturer' as UserRole, label: 'Giảng viên', icon: GraduationCap, color: 'text-blue-400' },
-          { id: 'head_of_department' as UserRole, label: 'Trưởng bộ môn', icon: Award, color: 'text-purple-400' },
-          { id: 'admin' as UserRole, label: 'Quản trị Khảo thí', icon: ShieldCheck, color: 'text-amber-400' },
+          { id: 'lecturer' as UserRole, label: 'Giảng viên', icon: GraduationCap, color: 'text-[#008689]' },
+          { id: 'head_of_department' as UserRole, label: 'Trưởng bộ môn', icon: Award, color: 'text-indigo-600' },
+          { id: 'admin' as UserRole, label: 'Quản trị Khảo thí', icon: ShieldCheck, color: 'text-[#da1c2d]' },
         ].map((roleItem) => {
           const isActive = currentUser?.role === roleItem.id;
           const ItemIcon = roleItem.icon;
@@ -163,15 +163,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               onClick={() => onRoleSwitch && onRoleSwitch(roleItem.id)}
               className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all ${
                 isActive
-                  ? 'bg-blue-600/20 text-white border border-blue-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                  ? 'bg-white text-slate-900 border border-[#008689]/30 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
               }`}
               title={`Chuyển sang vai trò: ${roleItem.label}`}
             >
               <ItemIcon className={`w-3.5 h-3.5 ${roleItem.color}`} />
               <span>{roleItem.label}</span>
               {isActive && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" />
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5" />
               )}
             </button>
           );
@@ -184,41 +184,50 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <button
           onClick={handleManualRefreshToken}
           disabled={isRefreshing}
-          className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-white/[0.04] hover:bg-white/[0.07] border border-white/[0.08] text-slate-300 text-[11px] transition-all"
+          className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-xl bg-slate-50 hover:bg-[#e0f7fa]/60 border border-slate-200 hover:border-[#008689]/30 text-slate-700 text-[11px] transition-all"
           title="Tự động tái cấp mã truy cập (Auto Token Refresh) khi hết hạn"
         >
-          <RefreshCw className={`w-3 h-3 text-sky-400 ${isRefreshing ? 'animate-spin' : ''}`} />
-          <span className="font-mono text-[10px]">Auto-JWT</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+          <RefreshCw className={`w-3 h-3 text-[#008689] ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span className="font-mono text-[10px] font-semibold">Auto-JWT</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
         </button>
 
         {/* Synchronized Profile Pill */}
-        <div className="flex items-center space-x-3 pl-2 py-1 pr-1.5 rounded-2xl bg-white/[0.03] border border-white/[0.07] hover:border-white/[0.12] transition-colors">
+        <div className="flex items-center space-x-3 pl-2.5 py-1 pr-1.5 rounded-2xl bg-slate-50 border border-slate-200 hover:border-[#008689]/30 transition-colors">
           <div className="text-right hidden sm:block">
-            <div className="text-xs font-bold text-white flex items-center justify-end gap-1.5 leading-tight">
+            <div className="text-xs font-bold text-slate-900 flex items-center justify-end gap-1.5 leading-tight">
               <span className="truncate max-w-[150px]">{displayName}</span>
-              <RoleIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <RoleIcon className="w-3.5 h-3.5 text-[#008689] shrink-0" />
             </div>
             <div className="flex items-center justify-end gap-1.5 mt-0.5">
               <span className={`px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider rounded border ${roleConfig.badgeClass}`}>
                 {roleConfig.label}
               </span>
-              <span className="text-[10px] text-slate-400 truncate max-w-[120px]">
+              <span className="text-[10px] text-slate-500 truncate max-w-[120px]">
                 {displayDept}
               </span>
             </div>
           </div>
 
-          <div
-            className={`w-8 h-8 rounded-xl bg-gradient-to-br ${roleConfig.avatarGrad} flex items-center justify-center font-extrabold text-white text-xs border border-white/20 shadow-md shrink-0`}
-          >
-            {getInitials(currentUser?.fullName)}
-          </div>
+          {currentUser?.avatarUrl ? (
+            <img
+              src={currentUser.avatarUrl}
+              alt={displayName}
+              referrerPolicy="no-referrer"
+              className="w-8 h-8 rounded-xl object-cover border border-slate-200 shadow-sm shrink-0 bg-white"
+            />
+          ) : (
+            <div
+              className={`w-8 h-8 rounded-xl bg-gradient-to-br ${roleConfig.avatarGrad} flex items-center justify-center font-extrabold text-white text-xs border border-white shadow-sm shrink-0`}
+            >
+              {getInitials(currentUser?.fullName)}
+            </div>
+          )}
 
           <button
             onClick={onLogout}
             title="Đăng xuất khỏi hệ thống"
-            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors ml-0.5"
+            className="p-1.5 text-slate-400 hover:text-[#da1c2d] hover:bg-rose-50 rounded-lg transition-colors ml-0.5"
           >
             <LogOut className="w-3.5 h-3.5" />
           </button>
