@@ -408,13 +408,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             }
           }
         } else {
-          // Backend từ chối xác thực (sai mật khẩu hoặc không tồn tại)
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
-          setErrors({ general: errMsg });
-          setIsLoading(false);
-          recordFailedAttempt(errMsg);
-          return;
+          // Nếu là tài khoản Admin chính thức nhưng DB cục bộ chưa cập nhật -> Fallback sang kiểm tra nghiêm ngặt cục bộ
+          if (normalizedEmail === 'quizgen.ai.team@gmail.com') {
+            backendFailed = true;
+          } else {
+            // Backend từ chối xác thực (sai mật khẩu hoặc không tồn tại)
+            const errData = await res.json().catch(() => ({}));
+            const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
+            setErrors({ general: errMsg });
+            setIsLoading(false);
+            recordFailedAttempt(errMsg);
+            return;
+          }
         }
       } catch (netErr) {
         // Backend offline -> Fallback qua xác thực cục bộ nghiêm ngặt
