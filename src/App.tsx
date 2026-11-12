@@ -85,20 +85,34 @@ export const App: React.FC = () => {
 
         if (res.ok) {
           const data = await res.json();
+          const normalizedEmail = String(data.email || '').toLowerCase();
+          let savedGoogleProfile: { fullName?: string; academicTitle?: string; department?: string } | null = null;
+          try {
+            const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
+            savedGoogleProfile = profiles[normalizedEmail] || null;
+          } catch {}
+
+          const resolvedAcademicTitle =
+            savedGoogleProfile !== null && savedGoogleProfile.academicTitle !== undefined
+              ? savedGoogleProfile.academicTitle
+              : data.academic_title !== undefined
+              ? data.academic_title
+              : (data.academicTitle ?? '');
+
           const profile: UserProfile = {
             id: data.id || `usr-${Date.now()}`,
-            fullName: data.full_name || data.fullName || 'Giảng viên',
+            fullName: savedGoogleProfile?.fullName || data.full_name || data.fullName || 'Giảng viên',
             email: data.email,
-            academicTitle: data.academic_title || data.academicTitle || 'TS.',
-            department: data.department || data.faculty || 'Khoa Kinh tế & Quản trị',
-            faculty: data.department || data.faculty || 'Khoa Kinh tế & Quản trị',
-            university: data.university || 'Đại học Quốc gia',
+            academicTitle: resolvedAcademicTitle,
+            department: savedGoogleProfile?.department || data.department || data.faculty || 'Khoa Công nghệ Thông tin',
+            faculty: savedGoogleProfile?.department || data.department || data.faculty || 'Khoa Công nghệ Thông tin',
+            university: data.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
             role: (data.role as UserRole) || 'lecturer',
             roleLabel:
               data.role === 'head_of_department'
                 ? 'Trưởng bộ môn'
                 : data.role === 'admin'
-                ? 'Quản trị Khảo thi'
+                ? 'Quản trị Hệ thống'
                 : 'Giảng viên',
             avatarUrl: data.avatar_url || data.avatarUrl,
             authProvider: data.auth_provider || data.authProvider,
@@ -280,6 +294,56 @@ export const App: React.FC = () => {
     handleShowToast('info', 'Đã đăng xuất', 'Bạn đã đăng xuất an toàn khỏi hệ thống QuizGen AI.');
   };
 
+  const handleUpdateUserProfile = async (updates: {
+    fullName: string;
+    academicTitle: string;
+    department?: string;
+  }) => {
+    if (!currentUser) return;
+    const nextDept = updates.department?.trim() || currentUser.department || 'Khoa Công nghệ Thông tin';
+    const updatedUser: UserProfile = {
+      ...currentUser,
+      fullName: updates.fullName.trim() || currentUser.fullName,
+      academicTitle: updates.academicTitle.trim(),
+      department: nextDept,
+      faculty: nextDept,
+    };
+
+    setCurrentUser(updatedUser);
+    localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+
+    if (updatedUser.email) {
+      try {
+        const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
+        profiles[updatedUser.email.toLowerCase()] = {
+          fullName: updatedUser.fullName,
+          academicTitle: updatedUser.academicTitle || '',
+          department: nextDept,
+        };
+        localStorage.setItem('quizgen_google_profiles', JSON.stringify(profiles));
+      } catch {}
+
+      try {
+        await apiClient.fetch(`${API_BASE}/auth/profile`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: updatedUser.email,
+            full_name: updatedUser.fullName,
+            academic_title: updatedUser.academicTitle || '',
+            department: nextDept,
+          }),
+        });
+      } catch {}
+    }
+
+    handleShowToast(
+      'success',
+      'Đã cập nhật hồ sơ',
+      `Tên hiển thị mới: ${updatedUser.academicTitle ? updatedUser.academicTitle + ' ' : ''}${updatedUser.fullName}`
+    );
+  };
+
   // ─── Multi-Role Fast Switcher Handler ──────────────────────────────────────
   const handleRoleSwitch = (newRole: UserRole) => {
     let updatedUser: UserProfile;
@@ -373,6 +437,7 @@ export const App: React.FC = () => {
         pendingReviewCount={pendingCount}
         currentUser={currentUser}
         onLogout={handleLogout}
+        onUpdateProfile={handleUpdateUserProfile}
       />
 
       {/* Main Content Area */}

@@ -289,6 +289,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   const [googlePopupBlocked, setGooglePopupBlocked] = useState(false);
   const [copiedOrigin, setCopiedOrigin] = useState(false);
 
+  // ─── Google Post-Login Profile & Academic Title Modal ─────────────────────
+  const [showGoogleOnboardingModal, setShowGoogleOnboardingModal] = useState(false);
+  const [pendingGoogleUser, setPendingGoogleUser] = useState<UserProfile | null>(null);
+  const [googleFullNameDraft, setGoogleFullNameDraft] = useState('');
+  const [googleAcademicTitleDraft, setGoogleAcademicTitleDraft] = useState('');
+  const [googleDepartmentDraft, setGoogleDepartmentDraft] = useState('Khoa Công nghệ Thông tin');
+  const [googleOnboardingError, setGoogleOnboardingError] = useState('');
+
   const currentRoleConfig = ROLES.find((r) => r.id === selectedRole) || ROLES[0];
   const isLocked = lockoutSeconds > 0;
 
@@ -757,8 +765,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           body: JSON.stringify({
             google_access_token: googleAccessToken,
             client_id: clientIdUsed,
-            university: 'Đại học Quốc gia',
+            university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
             department: roleObj.defaultDept,
+            academic_title: '',
             role: targetRole,
           }),
         });
@@ -783,7 +792,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             id: u.id || `gg-${Date.now().toString(36)}`,
             fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : (u.full_name || 'Người dùng Google'),
             email: userEmail,
-            academicTitle: isProjectAdmin ? 'Admin' : (u.academic_title || 'ThS.'),
+            academicTitle: isProjectAdmin ? 'Admin' : (u.academic_title ?? ''),
             department: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : (u.department || roleObj.defaultDept),
             faculty: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : (u.department || roleObj.defaultDept),
             university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
@@ -828,11 +837,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         localStorage.setItem('quizgen_token', mockAccess);
         localStorage.setItem('quizgen_auth_token', mockAccess);
 
+        const vietnameseName =
+          gUser.family_name && gUser.given_name
+            ? `${gUser.family_name} ${gUser.given_name}`.trim()
+            : (gUser.name || gUser.given_name || gUser.email.split('@')[0]);
+
         authenticatedUser = {
           id: sessionId,
-          fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : (gUser.name || gUser.given_name || gUser.email.split('@')[0]),
+          fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : vietnameseName,
           email: userEmail,
-          academicTitle: isProjectAdmin ? 'Admin' : 'ThS.',
+          academicTitle: isProjectAdmin ? 'Admin' : '',
           department: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : roleObj.defaultDept,
           faculty: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : roleObj.defaultDept,
           university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
@@ -844,9 +858,38 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       }
 
       if (authenticatedUser) {
-        localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
         setShowGoogleSetupModal(false);
-        onLogin(authenticatedUser);
+
+        if (authenticatedUser.role !== 'admin') {
+          let savedProfile: { fullName?: string; academicTitle?: string; department?: string } | null = null;
+          try {
+            const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
+            savedProfile = profiles[authenticatedUser.email.toLowerCase()] || null;
+          } catch {}
+
+          if (savedProfile) {
+            const mergedUser: UserProfile = {
+              ...authenticatedUser,
+              fullName: savedProfile.fullName || authenticatedUser.fullName,
+              academicTitle: savedProfile.academicTitle ?? '',
+              department: savedProfile.department || authenticatedUser.department,
+              faculty: savedProfile.department || authenticatedUser.faculty,
+            };
+            localStorage.setItem('quizgen_user', JSON.stringify(mergedUser));
+            onLogin(mergedUser);
+          } else {
+            // Chưa từng xác nhận học vị -> Mở mục hỏi học vị & xác nhận họ tên ngay
+            setPendingGoogleUser(authenticatedUser);
+            setGoogleFullNameDraft(authenticatedUser.fullName);
+            setGoogleAcademicTitleDraft('');
+            setGoogleDepartmentDraft(authenticatedUser.department || 'Khoa Công nghệ Thông tin');
+            setGoogleOnboardingError('');
+            setShowGoogleOnboardingModal(true);
+          }
+        } else {
+          localStorage.setItem('quizgen_user', JSON.stringify(authenticatedUser));
+          onLogin(authenticatedUser);
+        }
       }
     } catch (err: any) {
       setGoogleError(err?.message || 'Xác thực Google OAuth 2.0 thất bại.');
@@ -1007,6 +1050,63 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     setCustomGoogleClientId(cleaned);
     setShowGoogleSetupModal(false);
     void startGoogleOAuthFlow(cleaned);
+  };
+
+  // ─── Xác nhận Học vị & Họ tên sau khi đăng nhập bằng Google ─────────────
+  const handleConfirmGoogleOnboarding = async (skipTitle = false) => {
+    if (!pendingGoogleUser) return;
+
+    const finalName = googleFullNameDraft.trim();
+    if (!finalName) {
+      setGoogleOnboardingError('Vui lòng nhập họ và tên hiển thị của bạn.');
+      return;
+    }
+
+    const finalTitle = skipTitle ? '' : googleAcademicTitleDraft.trim();
+    const finalDept = googleDepartmentDraft.trim() || pendingGoogleUser.department || 'Khoa Công nghệ Thông tin';
+
+    const finalizedUser: UserProfile = {
+      ...pendingGoogleUser,
+      fullName: finalName,
+      academicTitle: finalTitle,
+      department: finalDept,
+      faculty: finalDept,
+    };
+
+    try {
+      const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
+      profiles[finalizedUser.email.toLowerCase()] = {
+        fullName: finalName,
+        academicTitle: finalTitle,
+        department: finalDept,
+      };
+      localStorage.setItem('quizgen_google_profiles', JSON.stringify(profiles));
+    } catch {}
+
+    try {
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      await fetch(`${API_BASE}/auth/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: finalizedUser.email,
+          full_name: finalName,
+          academic_title: finalTitle,
+          department: finalDept,
+        }),
+      });
+    } catch {}
+
+    localStorage.setItem('quizgen_user', JSON.stringify(finalizedUser));
+    appendSecurityAuditLog(
+      finalizedUser.email,
+      'GOOGLE_PROFILE_CONFIRMED',
+      `Xác nhận hồ sơ Google: ${finalTitle ? finalTitle + ' ' : ''}${finalName} (${finalDept})`,
+      'info'
+    );
+    setShowGoogleOnboardingModal(false);
+    setPendingGoogleUser(null);
+    onLogin(finalizedUser);
   };
 
   // ─── Xác thực Bước 2: Mã Khóa Bảo Mật 2FA cho Tài khoản Admin (6 chữ số) ──
@@ -1822,6 +1922,158 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 >
                   <ShieldCheck className="w-4 h-4" />
                   <span>Xác minh 2FA & Mở Cổng Admin</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Google Post-Login Academic Title & Name Confirmation Modal */}
+      {showGoogleOnboardingModal && pendingGoogleUser && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-slideUp">
+          <div className="relative w-full max-w-md rounded-2xl border-2 border-[#008689] bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+              {pendingGoogleUser.avatarUrl ? (
+                <img
+                  src={pendingGoogleUser.avatarUrl}
+                  alt={pendingGoogleUser.fullName}
+                  referrerPolicy="no-referrer"
+                  className="w-11 h-11 rounded-xl object-cover border border-slate-200 shrink-0"
+                />
+              ) : (
+                <div className="w-11 h-11 rounded-xl bg-[#e0f7fa] border border-[#008689]/25 text-[#008689] flex items-center justify-center shrink-0">
+                  <GraduationCap className="w-6 h-6" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 mb-0.5">
+                  <CheckCircle2 className="w-3 h-3" />
+                  Đã đăng nhập Google
+                </span>
+                <h3 className="text-base font-extrabold text-slate-900 leading-tight">
+                  Chọn Học vị & Tên hiển thị
+                </h3>
+                <p className="text-[11px] text-slate-500 truncate">{pendingGoogleUser.email}</p>
+              </div>
+            </div>
+
+            {googleOnboardingError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{googleOnboardingError}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleConfirmGoogleOnboarding(false);
+              }}
+              className="space-y-4"
+            >
+              {/* Chọn Học vị */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Học vị của bạn
+                </label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { value: '', label: 'Không chọn' },
+                    { value: 'CN.', label: 'CN.' },
+                    { value: 'KS.', label: 'KS.' },
+                    { value: 'ThS.', label: 'ThS.' },
+                    { value: 'TS.', label: 'TS.' },
+                    { value: 'PGS. TS.', label: 'PGS. TS.' },
+                    { value: 'GS. TS.', label: 'GS. TS.' },
+                  ].map((item) => {
+                    const isSelected = googleAcademicTitleDraft === item.value;
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => setGoogleAcademicTitleDraft(item.value)}
+                        className={`py-2 px-2 rounded-xl text-xs font-bold border transition-all ${
+                          isSelected
+                            ? 'bg-[#008689] text-white border-[#008689] shadow-sm'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-[#008689]/50 hover:bg-white'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Xác nhận Họ và Tên chuẩn Việt Nam */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">
+                    Họ và tên hiển thị (Họ trước, Tên sau)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parts = googleFullNameDraft.trim().split(/\s+/);
+                      if (parts.length > 1) {
+                        setGoogleFullNameDraft(parts.reverse().join(' '));
+                      }
+                    }}
+                    className="text-[11px] font-semibold text-[#008689] hover:underline"
+                  >
+                    Đảo ngược tên
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={googleFullNameDraft}
+                  onChange={(e) => {
+                    setGoogleFullNameDraft(e.target.value);
+                    setGoogleOnboardingError('');
+                  }}
+                  placeholder="Ví dụ: Đàng Bảo Bích Hân"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/20 text-xs font-semibold text-slate-900 outline-none transition-all"
+                />
+              </div>
+
+              {/* Khoa / Đơn vị */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Khoa / Bộ môn công tác
+                </label>
+                <input
+                  type="text"
+                  value={googleDepartmentDraft}
+                  onChange={(e) => setGoogleDepartmentDraft(e.target.value)}
+                  placeholder="Khoa Công nghệ Thông tin"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/20 text-xs text-slate-900 outline-none transition-all"
+                />
+              </div>
+
+              {/* Live Preview */}
+              <div className="p-3 rounded-xl bg-[#e0f7fa]/60 border border-[#008689]/25 text-xs flex items-center justify-between">
+                <span className="text-slate-600">Tên sẽ hiển thị:</span>
+                <strong className="text-[#006d70]">
+                  {googleAcademicTitleDraft ? `${googleAcademicTitleDraft} ` : ''}
+                  {googleFullNameDraft.trim() || '...'}
+                </strong>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmGoogleOnboarding(true)}
+                  className="px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                >
+                  Bỏ qua học vị
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 px-4 rounded-xl font-bold text-xs text-white bg-[#008689] hover:bg-[#006d70] transition-colors flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <span>Xác nhận & Vào hệ thống</span>
+                  <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </form>

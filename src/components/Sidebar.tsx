@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard,
   UploadCloud,
   Sparkles,
   CheckSquare,
   Database,
-  GraduationCap,
   LogOut,
   ShieldCheck,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 
@@ -17,6 +18,11 @@ interface SidebarProps {
   pendingReviewCount: number;
   currentUser?: UserProfile | null;
   onLogout: () => void;
+  onUpdateProfile?: (updates: {
+    fullName: string;
+    academicTitle: string;
+    department?: string;
+  }) => void;
 }
 
 interface NavItem {
@@ -33,8 +39,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   pendingReviewCount,
   currentUser,
   onLogout,
+  onUpdateProfile,
 }) => {
   const activeRole: UserRole = currentUser?.role || 'lecturer';
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftDept, setDraftDept] = useState('');
+
+  const openProfileEditor = () => {
+    if (!currentUser) return;
+    setDraftName(currentUser.fullName || '');
+    setDraftTitle(currentUser.academicTitle || '');
+    setDraftDept(currentUser.department || currentUser.faculty || '');
+    setShowProfileModal(true);
+  };
 
   const filteredNavItems = useMemo<NavItem[]>(() => {
     const lecturerWorkflow: NavItem[] = [
@@ -199,16 +218,144 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <button
-            id="sidebar-logout-btn"
-            onClick={onLogout}
-            title="Đăng xuất"
-            className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center space-x-1 shrink-0">
+            {onUpdateProfile && currentUser && !isSystemAdmin && (
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                title="Đổi học vị & tên hiển thị"
+                className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              id="sidebar-logout-btn"
+              onClick={onLogout}
+              title="Đăng xuất"
+              className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Quick Profile & Academic Title Edit Modal */}
+      {showProfileModal && onUpdateProfile && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm select-text"
+          onClick={() => setShowProfileModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white border border-slate-200 shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">
+                Cập nhật Học vị & Tên hiển thị
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!draftName.trim()) return;
+                onUpdateProfile({
+                  fullName: draftName,
+                  academicTitle: draftTitle,
+                  department: draftDept,
+                });
+                setShowProfileModal(false);
+              }}
+              className="space-y-3"
+            >
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">Học vị</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { value: '', label: 'Không' },
+                    { value: 'CN.', label: 'CN.' },
+                    { value: 'KS.', label: 'KS.' },
+                    { value: 'ThS.', label: 'ThS.' },
+                    { value: 'TS.', label: 'TS.' },
+                    { value: 'PGS. TS.', label: 'PGS. TS.' },
+                    { value: 'GS. TS.', label: 'GS. TS.' },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => setDraftTitle(item.value)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
+                        draftTitle === item.value
+                          ? 'bg-[#008689] text-white border-[#008689]'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">Họ và tên</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parts = draftName.trim().split(/\s+/);
+                      if (parts.length > 1) setDraftName(parts.reverse().join(' '));
+                    }}
+                    className="text-[11px] font-semibold text-[#008689] hover:underline"
+                  >
+                    Đảo ngược tên
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Khoa / Đơn vị</label>
+                <input
+                  type="text"
+                  value={draftDept}
+                  onChange={(e) => setDraftDept(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70]"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };
