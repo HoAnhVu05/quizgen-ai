@@ -148,6 +148,57 @@ def startup_db():
             fac3 = FacultyDB(id="fac-qa", university_id="uni-vnu", code="QA", name="Phòng Khảo thí & Đảm bảo Chất lượng", dean_name="ThS. Lê Hoàng Nam")
             db.add_all([fac1, fac2, fac3])
             db.commit()
+        # 2. Nạp dữ liệu tài khoản 3 vai trò mẫu chuẩn mực
+        default_accounts = [
+            {
+                "id": "usr-lec-001",
+                "email": "lecturer@vnu.edu.vn",
+                "full_name": "Nguyễn Văn An",
+                "academic_title": "TS.",
+                "university": "Đại học Quốc gia",
+                "department": "Khoa Công nghệ Thông tin",
+                "password": "academic123",
+                "role": "lecturer"
+            },
+            {
+                "id": "usr-head-001",
+                "email": "truongbomon@vnu.edu.vn",
+                "full_name": "Trần Thị Mai",
+                "academic_title": "PGS. TS.",
+                "university": "Đại học Quốc gia",
+                "department": "Bộ môn Hệ thống Thông tin",
+                "password": "academic123",
+                "role": "head_of_department"
+            },
+            {
+                "id": "usr-adm-001",
+                "email": "quizgen.ai.team@gmail.com",
+                "full_name": "Ban Quản trị QuizGen AI",
+                "academic_title": "Admin",
+                "university": "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+                "department": "Ban Quản trị Hệ thống QuizGen AI",
+                "password": "Admin@123456",
+                "role": "admin"
+            }
+        ]
+
+        for acc in default_accounts:
+            existing = db.execute(select(UserDB).filter_by(email=acc["email"])).scalar_one_or_none()
+            if not existing:
+                user_obj = UserDB(
+                    id=acc["id"],
+                    email=acc["email"],
+                    full_name=acc["full_name"],
+                    academic_title=acc["academic_title"],
+                    university=acc["university"],
+                    department=acc["department"],
+                    password_hash=pwd_context.hash(acc["password"]),
+                    role=acc["role"],
+                    is_active=True,
+                    created_at=datetime.utcnow()
+                )
+                db.add(user_obj)
+        db.commit()
     except Exception as e:
         print(f"[AUTH-SERVICE] DB Init warning: {e}")
 

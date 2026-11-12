@@ -114,9 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Brand Header */}
       <div className="px-5 py-4 border-b border-slate-100 flex items-center space-x-3">
-        <div className="w-9 h-9 rounded-xl bg-[#008689] flex items-center justify-center text-white shrink-0">
-          <GraduationCap className="w-5 h-5" />
-        </div>
+        <img
+          src="/logo.jpg"
+          alt="QuizGen AI Logo"
+          className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+        />
         <div className="min-w-0">
           <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight">
             QuizGen AI
