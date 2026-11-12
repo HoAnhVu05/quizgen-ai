@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { DashboardScreen } from './components/DashboardScreen';
@@ -38,6 +39,7 @@ export const App: React.FC = () => {
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
+  const [adminTab, setAdminTab] = useState<string>('overview');
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
@@ -373,6 +375,8 @@ export const App: React.FC = () => {
         pendingReviewCount={pendingCount}
         currentUser={currentUser}
         onLogout={handleLogout}
+        adminTab={adminTab}
+        onAdminTabChange={setAdminTab}
       />
 
       {/* Main Content Area */}
@@ -394,6 +398,8 @@ export const App: React.FC = () => {
               currentUser={currentUser}
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
+              activeTab={adminTab}
+              onTabChange={setAdminTab}
             />
           )}
 
