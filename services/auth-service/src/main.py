@@ -123,7 +123,7 @@ def startup_db():
                 "role": "head_of_department"
             },
             {
-                "id": "usr-adm-001",
+                "id": "usr-adm-quizgen",
                 "email": "quizgen.ai.team@gmail.com",
                 "full_name": "Ban Quản trị QuizGen AI",
                 "academic_title": "Admin",
