@@ -909,7 +909,10 @@ def list_question_audit_logs(
 
 
 # EXAM VARIANT GENERATION (Fisher-Yates Shuffler)
+@app.post("/generate-variants")
+@app.post("/shuffle")
 @app.post("/exams/generate-variants")
+@app.post("/exams/shuffle")
 def generate_variants(req: GenerateVariantsRequest, db: Session = Depends(get_db)):
     target_ids = req.selectedQuestionIds or req.questionIds
     resolved_questions = _resolve_questions(req.questions, target_ids, db)
