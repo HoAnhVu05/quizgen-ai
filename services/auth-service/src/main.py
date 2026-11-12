@@ -185,19 +185,27 @@ def startup_db():
         for acc in default_accounts:
             existing = db.execute(select(UserDB).filter_by(email=acc["email"])).scalar_one_or_none()
             if not existing:
+                user_id = acc["id"]
+                existing_id = db.execute(select(UserDB).filter_by(id=user_id)).scalar_one_or_none()
+                if existing_id:
+                    user_id = f"{acc['id']}-{uuid.uuid4().hex[:6]}"
                 user_obj = UserDB(
-                    id=acc["id"],
+                    id=user_id,
                     email=acc["email"],
                     full_name=acc["full_name"],
                     academic_title=acc["academic_title"],
                     university=acc["university"],
                     department=acc["department"],
-                    password_hash=pwd_context.hash(acc["password"]),
+                    password_hash=hash_password(acc["password"]),
                     role=acc["role"],
                     is_active=True,
                     created_at=datetime.utcnow()
                 )
                 db.add(user_obj)
+            else:
+                existing.password_hash = hash_password(acc["password"])
+                existing.role = acc["role"]
+                existing.is_active = True
         db.commit()
     except Exception as e:
         print(f"[AUTH-SERVICE] DB Init warning: {e}")
@@ -610,7 +618,7 @@ def login_with_google(req_data: GoogleAuthRequest, db: Session = Depends(get_db)
             academic_title=req_data.academic_title or "ThS.",
             university=req_data.university or "Đại học Quốc gia",
             department=req_data.department or "Khoa Công nghệ Thông tin",
-            password_hash=pwd_context.hash(uuid.uuid4().hex),
+            password_hash=hash_password(uuid.uuid4().hex),
             role=requested_role,
             is_active=True,
             created_at=datetime.utcnow()
