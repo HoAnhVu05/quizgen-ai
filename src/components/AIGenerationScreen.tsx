@@ -535,7 +535,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   };
 
   return (
-    <div className="flex-1 p-6 md:p-8 overflow-y-auto space-y-6 bg-[#f7f9fb] text-slate-800 relative">
+    <div className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-4 sm:space-y-6 bg-[#f7f9fb] text-slate-800 relative">
       {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
@@ -679,9 +679,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       )}
 
       {/* 1. Clean Header + Quick Presets */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-3 sm:pb-4 border-b border-slate-200">
         <div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
             Sinh câu hỏi AI
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
@@ -689,7 +689,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto">
           {[
             { id: 'giuaKy', label: 'Giữa kỳ (20 câu)' },
             { id: 'cuoiKy', label: 'Cuối kỳ (20 câu)' },
@@ -698,7 +698,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             <button
               key={preset.id}
               onClick={() => applyPreset(preset.id as any)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`flex-1 sm:flex-initial text-center px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                 activePreset === preset.id
                   ? 'bg-[#008689] text-white shadow-sm'
                   : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
@@ -817,7 +817,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
         {/* Right Summary Sidebar (1 Col) */}
         <div>
-          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4 sticky top-6">
+          <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl space-y-4 sticky lg:top-6">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100">
               Tóm tắt cấu hình
             </h3>

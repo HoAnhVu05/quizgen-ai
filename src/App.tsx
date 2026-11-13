@@ -38,6 +38,7 @@ export const App: React.FC = () => {
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
@@ -433,23 +434,32 @@ export const App: React.FC = () => {
       {/* Persistent Academic Sidebar with User & Logout */}
       <Sidebar
         currentScreen={currentScreen}
-        onNavigate={setCurrentScreen}
+        onNavigate={(screen) => {
+          setCurrentScreen(screen);
+          setIsMobileMenuOpen(false);
+        }}
         pendingReviewCount={pendingCount}
         currentUser={currentUser}
         onLogout={handleLogout}
         onUpdateProfile={handleUpdateUserProfile}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#f7f9fb]">
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#f7f9fb] min-w-0">
         {/* Unified Top Header Bar synchronized with User Account & Role */}
         <TopHeader
           currentScreen={currentScreen}
           currentUser={currentUser}
           onLogout={handleLogout}
-          onNavigate={setCurrentScreen}
+          onNavigate={(screen) => {
+            setCurrentScreen(screen);
+            setIsMobileMenuOpen(false);
+          }}
           onRoleSwitch={handleRoleSwitch}
           onShowToast={handleShowToast}
+          onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 
         {/* Screen Content Viewport */}

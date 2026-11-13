@@ -23,6 +23,8 @@ interface SidebarProps {
     academicTitle: string;
     department?: string;
   }) => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 interface NavItem {
@@ -40,6 +42,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   currentUser,
   onLogout,
   onUpdateProfile,
+  isMobileOpen = false,
+  onCloseMobile,
 }) => {
   const activeRole: UserRole = currentUser?.role || 'lecturer';
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -127,68 +131,96 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const initials = getInitials(currentUser?.fullName, currentUser?.academicTitle);
 
   return (
-    <aside className="w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none relative z-20">
-      {/* Top UTH Accent Line */}
-      <div className="h-1 w-full bg-[#008689]" />
-
-      {/* Brand Header */}
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center space-x-3">
-        <img
-          src="/logo.jpg"
-          alt="QuizGen AI Logo"
-          className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300"
+          onClick={onCloseMobile}
         />
-        <div className="min-w-0">
-          <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight">
-            QuizGen AI
-          </h1>
-          <p className="text-[11px] text-slate-400 truncate">
-            {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Trợ lý Đề thi Giảng viên'}
-          </p>
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none transition-transform duration-300 ease-in-out md:static md:w-64 md:translate-x-0 ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Top UTH Accent Line */}
+        <div className="h-1 w-full bg-[#008689]" />
+
+        {/* Brand Header */}
+        <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center space-x-3 min-w-0">
+            <img
+              src="/logo.jpg"
+              alt="QuizGen AI Logo"
+              className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+            />
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight">
+                QuizGen AI
+              </h1>
+              <p className="text-[11px] text-slate-400 truncate">
+                {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Trợ lý Đề thi Giảng viên'}
+              </p>
+            </div>
+          </div>
+
+          {/* Close button on mobile drawer */}
+          <button
+            type="button"
+            onClick={onCloseMobile}
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+            title="Đóng menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-      </div>
 
-      {/* Navigation List */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {filteredNavItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentScreen === item.id;
+        {/* Navigation List */}
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {filteredNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentScreen === item.id;
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors ${
-                isActive
-                  ? 'bg-[#e0f7fa]/80 text-[#006d70] font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 min-w-0">
-                <Icon
-                  className={`w-4 h-4 shrink-0 ${
-                    isActive ? 'text-[#008689]' : 'text-slate-400'
-                  }`}
-                />
-                <div className="min-w-0">
-                  {item.stepTag && (
-                    <span className="block text-[9px] font-bold uppercase tracking-wider text-[#008689]">
-                      {item.stepTag}
-                    </span>
-                  )}
-                  <span className="text-xs truncate block">{item.label}</span>
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  onNavigate(item.id);
+                  onCloseMobile?.();
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors ${
+                  isActive
+                    ? 'bg-[#e0f7fa]/80 text-[#006d70] font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <Icon
+                    className={`w-4 h-4 shrink-0 ${
+                      isActive ? 'text-[#008689]' : 'text-slate-400'
+                    }`}
+                  />
+                  <div className="min-w-0">
+                    {item.stepTag && (
+                      <span className="block text-[9px] font-bold uppercase tracking-wider text-[#008689]">
+                        {item.stepTag}
+                      </span>
+                    )}
+                    <span className="text-xs truncate block">{item.label}</span>
+                  </div>
                 </div>
-              </div>
 
-              {item.badge !== undefined && (
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
+                {item.badge !== undefined && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
 
       {/* Clean Profile Footer */}
       <div className="p-3.5 border-t border-slate-100 bg-slate-50/50">
@@ -357,5 +389,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
     </aside>
+    </>
   );
 };
