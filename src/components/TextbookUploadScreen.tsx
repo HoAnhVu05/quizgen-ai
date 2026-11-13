@@ -103,11 +103,15 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         localStorage.getItem('quizgen_uploaded_documents') || '[]'
       ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
 
-      // Backend list lấy làm gốc, ghi đè toàn bộ các bản nháp cục bộ cũ
+      // Backend list lấy làm nguồn dữ liệu chuẩn (authoritative source)
       const listMap = new Map<string, TextbookFile>();
+      // Chỉ giữ lại những tài liệu offline thuần túy (không phải tb-* từ backend) chưa kịp đồng bộ
       savedLocal.forEach((doc) => {
-        listMap.set(doc.id, doc);
+        if (!doc.id.startsWith('tb-')) {
+          listMap.set(doc.id, doc);
+        }
       });
+      // Danh sách từ backend ghi đè và là chuẩn xác nhất
       list.forEach((doc) => {
         listMap.set(doc.id, doc);
         // Nếu đã có bản ghi backend hoàn tất cùng tên, xóa bỏ bản nháp pending cục bộ
@@ -345,19 +349,36 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
   };
 
   const handleDelete = async (id: string, name: string) => {
+    // 1. Lập tức xóa khỏi state và bộ nhớ cục bộ để giao diện phản hồi tức thì
+    setTextbooks((prev) => prev.filter((b) => b.id !== id));
+    try {
+      const savedLocal: TextbookFile[] = JSON.parse(
+        localStorage.getItem('quizgen_uploaded_documents') || '[]'
+      ).filter((d: any) => d && d.id !== id);
+      localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(savedLocal));
+
+      const selectedId = localStorage.getItem('quizgen_selected_book_id');
+      if (selectedId === id) {
+        localStorage.removeItem('quizgen_selected_book_id');
+        localStorage.removeItem('quizgen_selected_book_name');
+      }
+    } catch {}
+
+    // 2. Gọi backend DELETE
     try {
       const res = await apiClient.fetch(`${API_BASE}/documents/documents/${id}`, {
         method: 'DELETE',
       });
-      if (!res.ok) {
+      if (!res.ok && res.status !== 404) {
         throw new Error(await parseErrorMessage(res));
       }
 
       await fetchDocuments(true);
-      onShowToast('warning', 'Đã xóa tài liệu', `Đã loại bỏ ${name} khỏi kho RAG`);
+      onShowToast('warning', 'Đã xóa tài liệu', `Đã loại bỏ ${name} khỏi kho RAG và hệ thống.`);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Xóa tài liệu thất bại.';
       onShowToast('error', 'Không thể xóa tài liệu', msg);
+      await fetchDocuments(true);
     }
   };
 
