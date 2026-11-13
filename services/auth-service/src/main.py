@@ -86,6 +86,11 @@ def serialize_user(user: UserDB) -> dict:
         "department": user.department or "",
         "role": user.role or "lecturer",
         "is_active": user.is_active if user.is_active is not None else True,
+        "status": getattr(user, "status", None) or ("active" if getattr(user, "is_active", True) else "locked"),
+        "lock_type": getattr(user, "lock_type", None),
+        "lock_reason": getattr(user, "lock_reason", None),
+        "locked_until": getattr(user, "locked_until", None),
+        "locked_at": getattr(user, "locked_at", None),
         "profile_completed": has_info,
         "created_at": user.created_at or datetime.utcnow()
     }
@@ -222,6 +227,28 @@ def health():
     }
 
 
+def check_user_lock_or_raise(user: UserDB, db: Session):
+    """Kiểm tra tài khoản có bị khóa hay không, tự động mở khóa nếu hết hạn tạm khóa, hoặc ném 403 Forbidden kèm thông điệp chi tiết"""
+    user_status = getattr(user, "status", None) or ("active" if getattr(user, "is_active", True) else "locked")
+    if user_status == "locked" or not getattr(user, "is_active", True):
+        lock_until = getattr(user, "locked_until", None)
+        lock_type = getattr(user, "lock_type", "permanent")
+        if lock_type == "temporary" and lock_until and datetime.utcnow() >= lock_until:
+            user.is_active = True
+            user.status = "active"
+            user.lock_type = None
+            user.lock_reason = None
+            user.locked_until = None
+            db.commit()
+            return
+        lock_desc = "tạm khóa" if lock_type == "temporary" else "khóa vĩnh viễn"
+        reason_part = f" Lý do: {user.lock_reason}." if getattr(user, "lock_reason", None) else ""
+        until_part = f" Thời gian tự động mở khóa: {lock_until.strftime('%d/%m/%Y %H:%M')}." if (lock_type == "temporary" and lock_until) else ""
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Tài khoản của bạn đã bị {lock_desc} bởi Quản trị viên.{reason_part}{until_part} Vui lòng liên hệ Ban Quản trị UTH."
+        )
+
 @app.post("/register", response_model=LecturerResponse)
 def register(user_in: LecturerCreate, db: Session = Depends(get_db)):
     """
@@ -274,16 +301,18 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     """
     normalized_email = form_data.username.strip().lower()
     user = db.execute(select(UserDB).filter_by(email=normalized_email)).scalar_one_or_none()
-    if not user or not verify_password(form_data.password, user.password_hash):
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Email hoặc mật khẩu không chính xác."
         )
 
-    if not user.is_active:
+    check_user_lock_or_raise(user, db)
+
+    if not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tài khoản này hiện đang bị tạm khóa. Vui lòng liên hệ quản trị khảo thí."
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email hoặc mật khẩu không chính xác."
         )
 
     access_token = create_access_token(user)
@@ -450,11 +479,12 @@ def refresh_token_endpoint(
 
         email = payload.get("sub") or payload.get("email")
         user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
-        if not user or not user.is_active:
+        if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Tài khoản người dùng không tồn tại hoặc đã bị vô hiệu hóa."
+                detail="Tài khoản người dùng không tồn tại."
             )
+        check_user_lock_or_raise(user, db)
 
         # Cấp cặp Token mới
         new_access = create_access_token(user)
@@ -544,6 +574,7 @@ def get_me(
     if x_user_email and x_user_email.strip():
         user = db.execute(select(UserDB).filter_by(email=x_user_email.strip().lower())).scalar_one_or_none()
         if user:
+            check_user_lock_or_raise(user, db)
             return serialize_user(user)
 
     # 2. Hỗ trợ mock token cho môi trường phát triển & demo
@@ -557,6 +588,7 @@ def get_me(
         email = "quizgen.ai.team@gmail.com" if r_part == "admin" else ("hod.cntt@uth.edu.vn" if r_part == "head_of_department" else "nguyentann0804@gmail.com")
         user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
         if user:
+            check_user_lock_or_raise(user, db)
             return serialize_user(user)
         return {
             "id": "usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001"),
@@ -577,6 +609,7 @@ def get_me(
         if env in ["development", "dev", "local"]:
             fallback = db.execute(select(UserDB).filter_by(email="nguyentann0804@gmail.com")).scalar_one_or_none()
             if fallback:
+                check_user_lock_or_raise(fallback, db)
                 return serialize_user(fallback)
         raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization: Bearer <token>")
 
@@ -592,6 +625,10 @@ def get_me(
         user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=401, detail="Không tìm thấy người dùng.")
+
+        # Kiểm tra trạng thái khóa tài khoản
+        check_user_lock_or_raise(user, db)
+
         return serialize_user(user)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token đã hết hạn. Vui lòng gọi /refresh để lấy token mới.")

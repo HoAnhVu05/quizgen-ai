@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { DashboardScreen } from './components/DashboardScreen';
@@ -36,6 +36,10 @@ export const App: React.FC = () => {
   });
 
   const [authScreen, setAuthScreen] = useState<AuthScreenId>('login');
+  const [lockedAlert, setLockedAlert] = useState<{
+    isOpen: boolean;
+    message: string;
+  } | null>(null);
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
@@ -125,8 +129,39 @@ export const App: React.FC = () => {
           },
         });
 
+        if (res.status === 403) {
+          const errData = await res.json().catch(() => ({}));
+          const lockMsg = errData.detail || 'Tài khoản của bạn đã bị khóa bởi Quản trị viên.';
+          apiClient.clearAuth();
+          localStorage.removeItem('quizgen_token');
+          localStorage.removeItem('quizgen_auth_token');
+          localStorage.removeItem('quizgen_refresh_token');
+          localStorage.removeItem('quizgen_user');
+          setCurrentUser(null);
+          setIsAuthenticated(false);
+          setAuthScreen('login');
+          setLockedAlert({ isOpen: true, message: lockMsg });
+          return;
+        }
+
         if (res.ok) {
           const data = await res.json();
+          if (data.status === 'locked' || data.is_active === false) {
+            const reasonPart = data.lock_reason ? ` Lý do: ${data.lock_reason}.` : '';
+            const untilPart = data.locked_until ? ` Thời gian tự động mở khóa: ${data.locked_until}.` : '';
+            const lockMsg = `Tài khoản của bạn đã bị khóa bởi Quản trị viên.${reasonPart}${untilPart} Vui lòng liên hệ Ban Quản trị UTH.`;
+            apiClient.clearAuth();
+            localStorage.removeItem('quizgen_token');
+            localStorage.removeItem('quizgen_auth_token');
+            localStorage.removeItem('quizgen_refresh_token');
+            localStorage.removeItem('quizgen_user');
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+            setAuthScreen('login');
+            setLockedAlert({ isOpen: true, message: lockMsg });
+            return;
+          }
+
           const normalizedEmail = String(data.email || '').toLowerCase();
           let savedGoogleProfile: { fullName?: string; academicTitle?: string; department?: string } | null = null;
           try {
@@ -190,6 +225,80 @@ export const App: React.FC = () => {
 
     verifySession();
   }, [API_BASE]);
+
+  // ─── Real-time Lock Enforcement Heartbeat: Kiểm tra trạng thái khóa mỗi 3.5s ───
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const checkLockStatus = async () => {
+      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+      if (!token) return;
+
+      try {
+        const res = await fetch(`${API_BASE}/auth/me`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (res.status === 403) {
+          const errData = await res.json().catch(() => ({}));
+          const lockMsg = errData.detail || 'Tài khoản của bạn đã bị khóa bởi Quản trị viên.';
+          apiClient.clearAuth();
+          localStorage.removeItem('quizgen_token');
+          localStorage.removeItem('quizgen_auth_token');
+          localStorage.removeItem('quizgen_refresh_token');
+          localStorage.removeItem('quizgen_user');
+          setCurrentUser(null);
+          setIsAuthenticated(false);
+          setAuthScreen('login');
+          setLockedAlert({ isOpen: true, message: lockMsg });
+        } else if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'locked' || data.is_active === false) {
+            const reasonPart = data.lock_reason ? ` Lý do: ${data.lock_reason}.` : '';
+            const untilPart = data.locked_until ? ` Thời gian tự động mở khóa: ${data.locked_until}.` : '';
+            const lockMsg = `Tài khoản của bạn đã bị tạm khóa bởi Quản trị viên.${reasonPart}${untilPart} Vui lòng liên hệ Ban Quản trị UTH.`;
+            apiClient.clearAuth();
+            localStorage.removeItem('quizgen_token');
+            localStorage.removeItem('quizgen_auth_token');
+            localStorage.removeItem('quizgen_refresh_token');
+            localStorage.removeItem('quizgen_user');
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+            setAuthScreen('login');
+            setLockedAlert({ isOpen: true, message: lockMsg });
+          }
+        }
+      } catch {}
+    };
+
+    const intervalId = setInterval(checkLockStatus, 3500);
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, API_BASE]);
+
+  // ─── Lắng nghe sự kiện tài khoản bị khóa từ ApiClient ───────────────────────
+  useEffect(() => {
+    const handleAccountLocked = (e: any) => {
+      const lockMsg = e.detail || 'Tài khoản của bạn đã bị khóa bởi Quản trị viên.';
+      apiClient.clearAuth();
+      localStorage.removeItem('quizgen_token');
+      localStorage.removeItem('quizgen_auth_token');
+      localStorage.removeItem('quizgen_refresh_token');
+      localStorage.removeItem('quizgen_user');
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setAuthScreen('login');
+      setLockedAlert({ isOpen: true, message: lockMsg });
+    };
+
+    window.addEventListener('quizgen:account-locked', handleAccountLocked);
+    return () => {
+      window.removeEventListener('quizgen:account-locked', handleAccountLocked);
+    };
+  }, []);
 
   const handleShowToast = useCallback((
     type: 'success' | 'info' | 'warning' | 'error',
@@ -486,6 +595,40 @@ export const App: React.FC = () => {
     return (
       <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#f3f7f8] text-slate-800 font-sans">
         <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+        {lockedAlert?.isOpen && (
+          <div className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white border-2 border-rose-300 rounded-3xl w-full max-w-lg p-6 sm:p-8 space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-[#da1c2d] shrink-0">
+                  <ShieldAlert className="w-7 h-7" />
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#da1c2d]">Cảnh Báo An Ninh Hệ Thống</span>
+                  <h2 className="text-lg font-black text-slate-900 tracking-tight">Tài Khoản Đã Bị Khóa</h2>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-2 text-xs leading-relaxed text-slate-800">
+                <p className="font-semibold text-rose-900">
+                  Tài khoản của bạn đã bị hạn chế quyền truy cập và bị thu hồi phiên đăng nhập ngay lập tức bởi Quản trị viên:
+                </p>
+                <div className="p-3 rounded-xl bg-white border border-rose-200/80 font-medium text-[#da1c2d] whitespace-pre-wrap">
+                  {lockedAlert.message}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Nếu bạn cho rằng đây là một sự nhầm lẫn, vui lòng liên hệ Ban Quản trị UTH hoặc Bộ môn để được hỗ trợ mở khóa.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setLockedAlert(null)}
+                className="w-full py-3 px-6 rounded-xl bg-[#da1c2d] hover:bg-[#b81725] text-white font-bold text-xs uppercase tracking-wide transition-all shadow-md hover:shadow-lg"
+              >
+                Tôi đã hiểu &amp; Xác nhận Đăng xuất
+              </button>
+            </div>
+          </div>
+        )}
         {authScreen === 'login' ? (
           <LoginScreen
             onLogin={handleLogin}
@@ -506,6 +649,42 @@ export const App: React.FC = () => {
     <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+
+      {/* Locked Alert Modal Layer */}
+      {lockedAlert?.isOpen && (
+        <div className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-rose-300 rounded-3xl w-full max-w-lg p-6 sm:p-8 space-y-5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-[#da1c2d] shrink-0">
+                <ShieldAlert className="w-7 h-7" />
+              </div>
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#da1c2d]">Cảnh Báo An Ninh Hệ Thống</span>
+                <h2 className="text-lg font-black text-slate-900 tracking-tight">Tài Khoản Đã Bị Khóa</h2>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-rose-50/70 border border-rose-200 space-y-2 text-xs leading-relaxed text-slate-800">
+              <p className="font-semibold text-rose-900">
+                Tài khoản của bạn đã bị hạn chế quyền truy cập và bị thu hồi phiên đăng nhập ngay lập tức bởi Quản trị viên:
+              </p>
+              <div className="p-3 rounded-xl bg-white border border-rose-200/80 font-medium text-[#da1c2d] whitespace-pre-wrap">
+                {lockedAlert.message}
+              </div>
+              <p className="text-[11px] text-slate-500">
+                Nếu bạn cho rằng đây là một sự nhầm lẫn, vui lòng liên hệ Ban Quản trị UTH hoặc Bộ môn để được hỗ trợ mở khóa.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setLockedAlert(null)}
+              className="w-full py-3 px-6 rounded-xl bg-[#da1c2d] hover:bg-[#b81725] text-white font-bold text-xs uppercase tracking-wide transition-all shadow-md hover:shadow-lg"
+            >
+              Tôi đã hiểu &amp; Xác nhận Đăng xuất
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Persistent Academic Sidebar with User & Logout */}
       <Sidebar

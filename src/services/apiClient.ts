@@ -197,6 +197,24 @@ class ApiClient {
       throw networkError;
     }
 
+    // Nếu tài khoản bị khóa (HTTP 403 Forbidden)
+    if (res.status === 403 && !isAuthEndpoint) {
+      try {
+        const cloned = res.clone();
+        const data = await cloned.json();
+        const msg = data?.detail || '';
+        if (
+          typeof msg === 'string' &&
+          (msg.includes('bị tạm khóa') || msg.includes('bị khóa') || msg.includes('khóa vĩnh viễn'))
+        ) {
+          this.clearAuth();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('quizgen:account-locked', { detail: msg }));
+          }
+        }
+      } catch {}
+    }
+
     // Nếu gặp 401 Unauthorized và không phải endpoint đăng nhập/làm mới
     if (res.status === 401 && !isAuthEndpoint) {
       const newToken = await this.refreshAccessToken();

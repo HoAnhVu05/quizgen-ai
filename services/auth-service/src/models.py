@@ -57,6 +57,11 @@ class UserDB(Base):
     department = Column(String(150), nullable=False, default="")
     role = Column(String(30), default="lecturer") # lecturer, head_of_department, admin
     is_active = Column(Boolean, default=True)
+    status = Column(String(20), default="active") # active, locked
+    lock_type = Column(String(20), nullable=True) # temporary, permanent
+    lock_reason = Column(Text, nullable=True)
+    locked_until = Column(DateTime, nullable=True)
+    locked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -145,6 +150,11 @@ class LecturerResponse(BaseModel):
     department: str = ""
     role: str = "lecturer"
     is_active: bool = True
+    status: Optional[str] = "active"
+    lock_type: Optional[str] = None
+    lock_reason: Optional[str] = None
+    locked_until: Optional[datetime] = None
+    locked_at: Optional[datetime] = None
     profile_completed: bool = False
     created_at: Optional[datetime] = None
 

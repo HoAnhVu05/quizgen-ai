@@ -187,7 +187,8 @@ async def audit_logs_proxy(request: Request, path: str = ""):
     return await proxy_request(settings.EXAM_SERVICE_URL, target or "/audit-logs", request)
 
 @app.api_route("/api/v1/admin", methods=METHODS)
+@app.api_route("/api/v1/admin", methods=METHODS)
 @app.api_route("/api/v1/admin/{path:path}", methods=METHODS)
 async def admin_proxy(request: Request, path: str = ""):
-    target = f"/{path}".rstrip("/") if not path else f"/{path}"
-    return await proxy_request(settings.ADMIN_SERVICE_URL, target or "/overview", request)
+    target = f"/{path}" if path else "/overview"
+    return await proxy_request(settings.ADMIN_SERVICE_URL, target, request)

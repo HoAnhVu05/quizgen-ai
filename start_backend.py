@@ -63,7 +63,8 @@ SERVICES = [
     }
 ]
 
-python_exe = sys.executable
+venv_python = os.path.abspath(os.path.join(os.path.dirname(__file__), ".venv", "Scripts", "python.exe"))
+python_exe = venv_python if os.path.exists(venv_python) else sys.executable
 
 def main():
     processes = []

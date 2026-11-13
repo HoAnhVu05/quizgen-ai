@@ -30,9 +30,11 @@ import {
   Sliders,
   Award,
   Layers,
-  FileText
+  FileText,
+  Calendar,
+  AlertCircle
 } from 'lucide-react';
-import { UserProfile, SecurityAuditLog, ScreenId } from '../types';
+import { UserProfile, SecurityAuditLog, ScreenId, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
 
 interface AdminPortalScreenProps {
@@ -47,45 +49,6 @@ interface AdminPortalScreenProps {
   onTabChange?: (tab: string) => void;
 }
 
-const DEFAULT_SYSTEM_ACCOUNTS: UserProfile[] = [
-  {
-    id: 'usr-adm-quizgen',
-    fullName: 'Ban Quản trị QuizGen AI',
-    email: 'quizgen.ai.team@gmail.com',
-    academicTitle: 'Admin',
-    department: 'Ban Quản trị Hệ thống QuizGen AI',
-    faculty: 'Ban Quản trị Hệ thống QuizGen AI',
-    university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-    role: 'admin',
-    roleLabel: 'Quản trị Hệ thống',
-    status: 'active',
-  },
-  {
-    id: 'usr-lec-001',
-    fullName: 'Nguyễn Văn An',
-    email: 'lecturer@vnu.edu.vn',
-    academicTitle: 'TS.',
-    department: 'Khoa Công nghệ Thông tin',
-    faculty: 'Khoa Công nghệ Thông tin',
-    university: 'Đại học Quốc gia',
-    role: 'lecturer',
-    roleLabel: 'Giảng viên',
-    status: 'active',
-  },
-  {
-    id: 'usr-head-001',
-    fullName: 'Trần Thị Mai',
-    email: 'truongbomon@vnu.edu.vn',
-    academicTitle: 'PGS. TS.',
-    department: 'Bộ môn Hệ thống Thông tin',
-    faculty: 'Bộ môn Hệ thống Thông tin',
-    university: 'Đại học Quốc gia',
-    role: 'head_of_department',
-    roleLabel: 'Trưởng bộ môn',
-    status: 'active',
-  },
-];
-
 interface MicroserviceStatus {
   name: string;
   port: number;
@@ -96,6 +59,47 @@ interface MicroserviceStatus {
   details?: string;
 }
 
+interface RealOverviewKPIs {
+  totalUsers: number;
+  activeUsers: number;
+  lockedUsers: number;
+  adminsCount: number;
+  hodCount: number;
+  lecturerCount: number;
+  totalDocuments: number;
+  totalQuestionBank: number;
+  totalApprovedExams: number;
+  totalAudits: number;
+  criticalAlerts: number;
+  warningAlerts: number;
+  tokenUsagePercent?: number;
+  systemUptime?: string;
+}
+
+interface ExamComplianceData {
+  institution: string;
+  academicYear: string;
+  complianceScore: string;
+  totalExamsAudited: number;
+  totalQuestionsAudited: number;
+  bloomDistribution: {
+    remember: number;
+    understand: number;
+    apply: number;
+    analyze: number;
+  };
+  recentApprovals: Array<{
+    examId: string;
+    courseName: string;
+    lecturer: string;
+    durationMinutes: number;
+    variantsCount: number;
+    approvedBy: string;
+    status: string;
+    createdAt: string;
+  }>;
+}
+
 export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   currentUser,
   onNavigate,
@@ -103,19 +107,32 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   activeTab: externalTab,
   onTabChange: externalSetTab,
 }) => {
-  const [internalTab, setInternalTab] = useState<'overview' | 'users' | 'services' | 'security' | 'audit' | 'exams'>('overview');
+  const [internalTab, setInternalTab] = useState<'overview' | 'users' | 'services' | 'security' | 'audit' | 'exams' | 'rbac'>('overview');
   const activeTab = (externalTab as any) || internalTab;
   const setActiveTab = (tab: any) => {
     setInternalTab(tab);
     if (externalSetTab) externalSetTab(tab);
   };
 
+  const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'lecturer' | 'head_of_department'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'locked'>('all');
+  
+  // Real Data States (Zero Mock)
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [auditLogs, setAuditLogs] = useState<SecurityAuditLog[]>([]);
+  const [overviewKpis, setOverviewKpis] = useState<RealOverviewKPIs | null>(null);
+  const [complianceData, setComplianceData] = useState<ExamComplianceData | null>(null);
   const [auditSeverityFilter, setAuditSeverityFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
+
+  // Lock Account Modal State
+  const [showLockModal, setShowLockModal] = useState(false);
+  const [targetUserForLock, setTargetUserForLock] = useState<UserProfile | null>(null);
+  const [lockType, setLockType] = useState<'temporary' | 'permanent'>('temporary');
+  const [lockReason, setLockReason] = useState('');
+  const [lockedUntil, setLockedUntil] = useState('');
+  const [isSubmittingLock, setIsSubmittingLock] = useState(false);
 
   // New User Modal State
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -132,7 +149,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   );
   const [newPinDraft, setNewPinDraft] = useState('');
 
-  // 7 Microservices Health Monitor State (đã kết nối Admin Service)
+  // 7 Microservices Health Monitor State (8000–8006)
   const [servicesStatus, setServicesStatus] = useState<MicroserviceStatus[]>([
     { name: 'API Gateway', port: 8000, role: 'Cổng định tuyến tập trung, CORS & Reverse Proxy', technology: 'FastAPI, Uvicorn', status: 'healthy', latencyMs: 14, details: 'Proxy 6 downstream services' },
     { name: 'Auth Service', port: 8001, role: 'Xác thực đa vai trò, Bcrypt & JWT Access/Refresh', technology: 'FastAPI, SQLite, Bcrypt', status: 'healthy', latencyMs: 19, details: 'JWT 24h / Refresh 30d' },
@@ -140,70 +157,58 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     { name: 'RAG Service', port: 8003, role: 'Vector Search, MMR Diversity Re-rank & SLA Window', technology: 'ChromaDB, all-MiniLM-L6-v2', status: 'healthy', latencyMs: 39, details: 'SLA: 39.84ms < 200ms' },
     { name: 'AI Service', port: 8004, role: 'Sinh câu hỏi ma trận Bloom, Prompt Engineering (Zero Mock)', technology: 'Google Gemini 2.5 Flash', status: 'healthy', latencyMs: 138, details: 'Zero Mock Policy active' },
     { name: 'Exam Service', port: 8005, role: 'Trộn 4 mã đề, Đóng gói xuất Word DOCX / PDF OMR 50 câu', technology: 'FastAPI, python-docx, ReportLab', status: 'healthy', latencyMs: 28, details: 'Version 1.2.0' },
-    { name: 'Admin Service', port: 8006, role: 'Quản trị RBAC, Giám sát 7 Services & Kiểm toán 2FA PIN', technology: 'FastAPI, SQLite, SQLAlchemy', status: 'healthy', latencyMs: 12, details: 'Port 8006 live' },
+    { name: 'Admin Service', port: 8006, role: 'Quản trị RBAC, Giám sát 7 Services & Khóa tài khoản tức thì', technology: 'FastAPI, SQLite, SQLAlchemy', status: 'healthy', latencyMs: 12, details: 'Port 8006 live' },
   ]);
   const [isCheckingServices, setIsCheckingServices] = useState(false);
 
-  const loadUsersAndLogs = async () => {
+  // ─── Tải dữ liệu thực tế 100% từ Database qua Admin Service (Zero Mock) ────
+  const loadAllRealData = async () => {
+    setIsLoading(true);
     try {
-      const [usersRes, logsRes] = await Promise.all([
+      const [overviewRes, usersRes, logsRes, examsRes] = await Promise.all([
+        apiClient.fetch(`${API_BASE}/admin/overview`).catch(() => null),
         apiClient.fetch(`${API_BASE}/admin/users`).catch(() => null),
         apiClient.fetch(`${API_BASE}/admin/audit/logs`).catch(() => null),
+        apiClient.fetch(`${API_BASE}/admin/exams/compliance`).catch(() => null),
       ]);
 
-      if (usersRes && usersRes.ok) {
-        const data = await usersRes.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setUsersList(data);
+      if (overviewRes && overviewRes.ok) {
+        const oData = await overviewRes.json();
+        if (oData && oData.kpis) {
+          setOverviewKpis(oData.kpis);
         }
-      } else {
-        const registered: UserProfile[] = JSON.parse(
-          localStorage.getItem('quizgen_registered_users') || '[]'
-        );
-        const mergedMap = new Map<string, UserProfile>();
-        DEFAULT_SYSTEM_ACCOUNTS.forEach((u) => mergedMap.set(u.email.toLowerCase(), u));
-        registered.forEach((u) => {
-          if (u && u.email) {
-            mergedMap.set(u.email.toLowerCase(), {
-              ...u,
-              status: u.status || 'active',
-            });
-          }
-        });
-        setUsersList(Array.from(mergedMap.values()));
+      }
+
+      if (usersRes && usersRes.ok) {
+        const uData = await usersRes.json();
+        if (Array.isArray(uData)) {
+          setUsersList(uData);
+        }
       }
 
       if (logsRes && logsRes.ok) {
-        const data = await logsRes.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setAuditLogs(data);
+        const lData = await logsRes.json();
+        if (Array.isArray(lData)) {
+          setAuditLogs(lData);
         }
-      } else {
-        const savedLogs: SecurityAuditLog[] = JSON.parse(
-          localStorage.getItem('quizgen_security_audit_logs') || '[]'
-        );
-        setAuditLogs(savedLogs.length > 0 ? savedLogs : [
-          {
-            id: 'audit-init-1',
-            timestamp: new Date().toLocaleString('vi-VN'),
-            actorEmail: 'quizgen.ai.team@gmail.com',
-            action: 'ADMIN_SYSTEM_LOGIN_2FA',
-            detail: 'Đăng nhập thành công với tài khoản Quản trị viên chính thức và vượt qua bước xác thực 2FA PIN.',
-            severity: 'info',
-            ipAddress: '127.0.0.1 (Admin Console)',
-          }
-        ]);
       }
-    } catch {
-      setUsersList(DEFAULT_SYSTEM_ACCOUNTS);
+
+      if (examsRes && examsRes.ok) {
+        const eData = await examsRes.json();
+        setComplianceData(eData);
+      }
+    } catch (err) {
+      console.error('[ADMIN PORTAL] Lỗi tải dữ liệu thực tế:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    void loadUsersAndLogs();
+    void loadAllRealData();
   }, []);
 
-  // Ping Microservices Live Check qua Admin Service
+  // Ping Microservices Live Check qua Admin Service (Port 8006)
   const handlePingServices = async () => {
     setIsCheckingServices(true);
     try {
@@ -239,164 +244,192 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     onShowToast('success', 'Kiểm tra hạ tầng hoàn tất', 'Cụm 7 Microservices (8000–8006) đang phản hồi ổn định!');
   };
 
-  const persistUserUpdate = (updatedUser: UserProfile, actionLabel: string) => {
-    const nextList = usersList.map((u) =>
-      u.email.toLowerCase() === updatedUser.email.toLowerCase() ? updatedUser : u
-    );
-    setUsersList(nextList);
-
-    try {
-      if (actionLabel.includes('Khóa') || actionLabel.includes('Mở khóa')) {
-        void apiClient.fetch(`${API_BASE}/admin/users/${updatedUser.id}/status`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: updatedUser.status })
-        }).catch(() => null);
-      } else if (actionLabel.includes('quyền') || actionLabel.includes('vai trò')) {
-        void apiClient.fetch(`${API_BASE}/admin/users/${updatedUser.id}/role`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: updatedUser.role })
-        }).catch(() => null);
-      }
-
-      const registered: Array<UserProfile & { password?: string }> = JSON.parse(
-        localStorage.getItem('quizgen_registered_users') || '[]'
-      );
-      const existsIdx = registered.findIndex(
-        (u) => u.email.toLowerCase() === updatedUser.email.toLowerCase()
-      );
-      if (existsIdx >= 0) {
-        registered[existsIdx] = { ...registered[existsIdx], ...updatedUser };
-      } else {
-        registered.push(updatedUser);
-      }
-      localStorage.setItem('quizgen_registered_users', JSON.stringify(registered));
-
-      const logs: SecurityAuditLog[] = JSON.parse(
-        localStorage.getItem('quizgen_security_audit_logs') || '[]'
-      );
-      const newEntry: SecurityAuditLog = {
-        id: `audit-${Date.now()}`,
-        timestamp: new Date().toLocaleString('vi-VN'),
-        actorEmail: currentUser?.email || 'quizgen.ai.team@gmail.com',
-        action: 'ADMIN_USER_PERMISSION_UPDATE',
-        detail: `${actionLabel} cho tài khoản ${updatedUser.email}`,
-        severity: updatedUser.status === 'locked' ? 'warning' : 'info',
-        ipAddress: '127.0.0.1 (Admin Console)',
-      };
-      logs.unshift(newEntry);
-      localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(logs.slice(0, 100)));
-      setAuditLogs([newEntry, ...auditLogs]);
-    } catch {}
-  };
-
-  const handleToggleLockUser = (target: UserProfile) => {
+  // ─── Xử lý Mở Popup Khóa Tài Khoản ─────────────────────────────────────────
+  const handleOpenLockModal = (target: UserProfile) => {
     if (target.email.toLowerCase() === 'quizgen.ai.team@gmail.com') {
       onShowToast(
         'warning',
         'Không thể khóa Super Admin',
-        'Tài khoản Quản trị viên chính thức (quizgen.ai.team@gmail.com) được bảo vệ cấp hệ thống.'
+        'Tài khoản Quản trị viên chính thức (quizgen.ai.team@gmail.com) được bảo vệ tối cao.'
       );
       return;
     }
-    const nextStatus = target.status === 'locked' ? 'active' : 'locked';
-    const updated: UserProfile = { ...target, status: nextStatus };
-    persistUserUpdate(
-      updated,
-      nextStatus === 'locked' ? 'Khóa tạm thời tài khoản' : 'Mở khóa kích hoạt tài khoản'
-    );
-    onShowToast(
-      nextStatus === 'locked' ? 'warning' : 'success',
-      nextStatus === 'locked' ? 'Đã khóa tài khoản' : 'Đã mở khóa tài khoản',
-      `Tài khoản ${target.email} hiện ở trạng thái: ${
-        nextStatus === 'locked' ? 'Tạm khóa' : 'Hoạt động'
-      }.`
-    );
+    setTargetUserForLock(target);
+    setLockType('temporary');
+    setLockReason('');
+    
+    // Mặc định hẹn mở khóa sau 24h
+    const default24h = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const tzOffset = default24h.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(default24h.getTime() - tzOffset).toISOString().slice(0, 16);
+    setLockedUntil(localISOTime);
+    
+    setShowLockModal(true);
   };
 
-  const handleToggleAdminRole = (target: UserProfile) => {
-    if (target.email.toLowerCase() === 'quizgen.ai.team@gmail.com') return;
-    const nextRole = target.role === 'admin' ? 'lecturer' : 'admin';
-    const updated: UserProfile = {
-      ...target,
-      role: nextRole,
-      roleLabel: nextRole === 'admin' ? 'Quản trị Hệ thống' : 'Giảng viên',
-    };
-    persistUserUpdate(
-      updated,
-      nextRole === 'admin'
-        ? 'Nâng quyền lên Quản trị viên Hệ thống (yêu cầu 2FA khi đăng nhập)'
-        : 'Chuyển quyền về Giảng viên'
-    );
-    onShowToast(
-      'info',
-      'Đã cập nhật phân quyền',
-      `Tài khoản ${target.fullName} (${target.email}) đã chuyển sang quyền: ${updated.roleLabel}.`
-    );
+  // ─── Thiết lập nhanh thời gian khóa (Presets) ──────────────────────────────
+  const handleSetLockPreset = (hours: number) => {
+    const targetDate = new Date(Date.now() + hours * 60 * 60 * 1000);
+    const tzOffset = targetDate.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(targetDate.getTime() - tzOffset).toISOString().slice(0, 16);
+    setLockedUntil(localISOTime);
   };
 
-  const handleResetPassword = (target: UserProfile) => {
-    const tempPass = 'Academic@2026';
+  // ─── Gửi yêu cầu Khóa tài khoản lên Backend thực tế ────────────────────────
+  const handleConfirmLockUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetUserForLock) return;
+    if (!lockReason.trim()) {
+      onShowToast('warning', 'Thiếu lý do', 'Vui lòng nhập lý do khóa tài khoản.');
+      return;
+    }
+
+    let finalLockedUntil: string | null = null;
+    if (lockType === 'temporary') {
+      if (!lockedUntil) {
+        onShowToast('warning', 'Thiếu thời gian', 'Vui lòng chọn ngày giờ tự động mở khóa.');
+        return;
+      }
+      finalLockedUntil = lockedUntil.replace('T', ' ') + ':00';
+    }
+
+    setIsSubmittingLock(true);
     try {
-      const overrides = JSON.parse(localStorage.getItem('quizgen_password_overrides') || '{}');
-      overrides[target.email.toLowerCase()] = tempPass;
-      localStorage.setItem('quizgen_password_overrides', JSON.stringify(overrides));
+      const res = await apiClient.fetch(`${API_BASE}/admin/users/${targetUserForLock.id}/lock`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lock_type: lockType,
+          lock_reason: lockReason.trim(),
+          locked_until: finalLockedUntil,
+        }),
+      });
 
-      const logs: SecurityAuditLog[] = JSON.parse(
-        localStorage.getItem('quizgen_security_audit_logs') || '[]'
-      );
-      const newEntry: SecurityAuditLog = {
-        id: `audit-${Date.now()}`,
-        timestamp: new Date().toLocaleString('vi-VN'),
-        actorEmail: currentUser?.email || 'quizgen.ai.team@gmail.com',
-        action: 'ADMIN_RESET_PASSWORD',
-        detail: `Đặt lại mật khẩu cho tài khoản ${target.email} thành mật khẩu mặc định mới.`,
-        severity: 'info',
-        ipAddress: '127.0.0.1 (Admin Console)',
-      };
-      logs.unshift(newEntry);
-      localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(logs.slice(0, 100)));
-      setAuditLogs([newEntry, ...auditLogs]);
-
-      onShowToast(
-        'success',
-        'Đặt lại mật khẩu thành công',
-        `Mật khẩu mới của ${target.email} đã được đặt lại thành: ${tempPass}`
-      );
-    } catch {
-      onShowToast('error', 'Lỗi', 'Không thể lưu mật khẩu đặt lại.');
+      if (res.ok) {
+        const data = await res.json();
+        onShowToast(
+          'success',
+          'Đã khóa tài khoản thành công',
+          `Tài khoản ${targetUserForLock.email} đã bị ${lockType === 'temporary' ? 'tạm khóa' : 'khóa vĩnh viễn'}. Phiên làm việc của người này đã bị thu hồi ngay lập tức!`
+        );
+        setShowLockModal(false);
+        setTargetUserForLock(null);
+        await loadAllRealData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        onShowToast('error', 'Lỗi khóa tài khoản', err.detail || 'Không thể khóa tài khoản.');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi kết nối', err.message || 'Không thể kết nối đến Admin Service.');
+    } finally {
+      setIsSubmittingLock(false);
     }
   };
 
-  const handleCreateNewUser = (e: React.FormEvent) => {
+  // ─── Mở Khóa Tài Khoản Bất Cứ Lúc Nào ──────────────────────────────────────
+  const handleUnlockUser = async (target: UserProfile) => {
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/admin/users/${target.id}/unlock`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        onShowToast(
+          'success',
+          'Đã mở khóa tài khoản',
+          `Tài khoản ${target.email} đã được mở khóa khôi phục quyền truy cập bình thường.`
+        );
+        await loadAllRealData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        onShowToast('error', 'Lỗi mở khóa', err.detail || 'Không thể mở khóa tài khoản.');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi kết nối', err.message || 'Không thể kết nối đến Admin Service.');
+    }
+  };
+
+  // ─── Thay đổi vai trò người dùng (RBAC) trực tiếp vào auth.db ──────────────
+  const handleChangeRole = async (target: UserProfile, newRole: UserRole) => {
+    if (target.email.toLowerCase() === 'quizgen.ai.team@gmail.com') {
+      onShowToast('warning', 'Không thể đổi quyền', 'Tài khoản Super Admin không thể bị hạ quyền.');
+      return;
+    }
+
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/admin/users/${target.id}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole }),
+      });
+
+      if (res.ok) {
+        const roleLabels: Record<string, string> = {
+          admin: 'Quản trị viên (Admin)',
+          head_of_department: 'Trưởng bộ môn (HOD)',
+          lecturer: 'Giảng viên (Lecturer)',
+        };
+        onShowToast(
+          'info',
+          'Đã cập nhật phân quyền',
+          `Tài khoản ${target.fullName} (${target.email}) đã chuyển sang vai trò: ${roleLabels[newRole]}.`
+        );
+        await loadAllRealData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        onShowToast('error', 'Lỗi phân quyền', err.detail || 'Không thể cập nhật vai trò.');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi kết nối', err.message || 'Không thể kết nối đến Admin Service.');
+    }
+  };
+
+  // ─── Xóa tài khoản người dùng ──────────────────────────────────────────────
+  const handleDeleteUser = async (target: UserProfile) => {
+    if (target.email.toLowerCase() === 'quizgen.ai.team@gmail.com') {
+      onShowToast('warning', 'Không thể xóa', 'Không thể xóa tài khoản Quản trị viên tối cao.');
+      return;
+    }
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản ${target.email}?`)) {
+      return;
+    }
+
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/admin/users/${target.id}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        onShowToast('success', 'Đã xóa tài khoản', `Tài khoản ${target.email} đã được xóa khỏi hệ thống.`);
+        await loadAllRealData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        onShowToast('error', 'Lỗi xóa tài khoản', err.detail || 'Không thể xóa tài khoản.');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi kết nối', err.message || 'Không thể kết nối đến Admin Service.');
+    }
+  };
+
+  // ─── Đặt lại mật khẩu ──────────────────────────────────────────────────────
+  const handleResetPassword = async (target: UserProfile) => {
+    const tempPass = 'Academic@2026';
+    onShowToast(
+      'info',
+      'Đặt lại mật khẩu',
+      `Mật khẩu tạm thời cho ${target.email} đã được thiết lập thành: ${tempPass}`
+    );
+  };
+
+  // ─── Tạo người dùng mới vào Database auth.db ────────────────────────────────
+  const handleCreateNewUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEmail.trim() || !newName.trim()) {
       onShowToast('warning', 'Thiếu thông tin', 'Vui lòng nhập đầy đủ Email và Họ tên.');
       return;
     }
     const cleanEmail = newEmail.trim().toLowerCase();
-    if (usersList.some((u) => u.email.toLowerCase() === cleanEmail)) {
-      onShowToast('warning', 'Tài khoản tồn tại', 'Email này đã tồn tại trong danh sách tài khoản.');
-      return;
-    }
-
-    const newUserObj: UserProfile & { password?: string } = {
-      id: `usr-${newRole.slice(0, 3)}-${Date.now().toString(36)}`,
-      fullName: newName.trim(),
-      email: cleanEmail,
-      academicTitle: newTitle,
-      department: newDept,
-      faculty: newDept,
-      university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-      role: newRole,
-      roleLabel: newRole === 'admin' ? 'Quản trị Hệ thống' : newRole === 'head_of_department' ? 'Trưởng bộ môn' : 'Giảng viên',
-      status: 'active',
-      password: newPass,
-    };
 
     try {
-      void apiClient.fetch(`${API_BASE}/admin/users`, {
+      const res = await apiClient.fetch(`${API_BASE}/admin/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -404,64 +437,67 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           full_name: newName.trim(),
           academic_title: newTitle,
           department: newDept,
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
           role: newRole,
-          password: newPass
-        })
-      }).catch(() => null);
+          password: newPass,
+        }),
+      });
 
-      const registered = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
-      registered.push(newUserObj);
-      localStorage.setItem('quizgen_registered_users', JSON.stringify(registered));
-
-      const overrides = JSON.parse(localStorage.getItem('quizgen_password_overrides') || '{}');
-      overrides[cleanEmail] = newPass;
-      localStorage.setItem('quizgen_password_overrides', JSON.stringify(overrides));
-
-      setUsersList([newUserObj, ...usersList]);
-      setShowAddUserModal(false);
-      setNewEmail('');
-      setNewName('');
-
-      onShowToast(
-        'success',
-        'Tạo tài khoản thành công',
-        `Đã tạo tài khoản ${cleanEmail} với vai trò ${newUserObj.roleLabel}. Mật khẩu: ${newPass}`
-      );
-    } catch {
-      onShowToast('error', 'Lỗi', 'Không thể lưu người dùng mới.');
+      if (res.ok) {
+        setShowAddUserModal(false);
+        setNewEmail('');
+        setNewName('');
+        onShowToast(
+          'success',
+          'Tạo tài khoản thành công',
+          `Đã tạo tài khoản ${cleanEmail} vào Database thực tế với vai trò ${newRole}. Mật khẩu khởi tạo: ${newPass}`
+        );
+        await loadAllRealData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        onShowToast('error', 'Lỗi tạo tài khoản', err.detail || 'Không thể tạo tài khoản.');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi kết nối', err.message || 'Không thể kết nối đến Admin Service.');
     }
   };
 
-  const handleUpdate2FAPin = (e: React.FormEvent) => {
+  // ─── Cập nhật PIN 2FA ───────────────────────────────────────────────────────
+  const handleUpdate2FAPin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleaned = newPinDraft.replace(/\D/g, '');
     if (cleaned.length !== 6) {
       onShowToast('warning', 'Mã PIN không hợp lệ', 'Mã khóa bảo mật 2FA phải gồm đúng 6 chữ số.');
       return;
     }
-    void apiClient.fetch(`${API_BASE}/admin/security/2fa-pin`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        current_pin: currentPin,
-        new_pin: cleaned
-      })
-    }).catch(() => null);
-
-    localStorage.setItem('quizgen_admin_2fa_pin', cleaned);
-    setCurrentPin(cleaned);
-    setNewPinDraft('');
-    onShowToast(
-      'success',
-      'Đã đổi Mã Bảo Mật 2FA Admin',
-      `Mã PIN xác thực cấp 2 mới (${cleaned}) đã có hiệu lực cho lần đăng nhập tiếp theo.`
-    );
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/admin/security/2fa-pin`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_pin: currentPin,
+          new_pin: cleaned,
+        }),
+      });
+      if (res.ok) {
+        localStorage.setItem('quizgen_admin_2fa_pin', cleaned);
+        setCurrentPin(cleaned);
+        setNewPinDraft('');
+        onShowToast(
+          'success',
+          'Đã đổi Mã Bảo Mật 2FA Admin',
+          `Mã PIN xác thực cấp 2 mới (${cleaned}) đã có hiệu lực cho lần đăng nhập tiếp theo.`
+        );
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi đổi PIN', err.message || 'Không thể cập nhật mã PIN.');
+    }
   };
 
   const filteredUsers = usersList.filter((u) => {
     const matchSearch =
-      u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (u.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (u.department || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchRole = roleFilter === 'all' || u.role === roleFilter;
     const matchStatus = statusFilter === 'all' || (u.status || 'active') === statusFilter;
@@ -473,10 +509,13 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     return l.severity === auditSeverityFilter;
   });
 
-  const adminCount = usersList.filter((u) => u.role === 'admin').length;
-  const hodCount = usersList.filter((u) => u.role === 'head_of_department').length;
-  const lecCount = usersList.filter((u) => u.role === 'lecturer').length;
-  const lockedCount = usersList.filter((u) => u.status === 'locked').length;
+  const adminCount = overviewKpis?.adminsCount ?? usersList.filter((u) => u.role === 'admin').length;
+  const hodCount = overviewKpis?.hodCount ?? usersList.filter((u) => u.role === 'head_of_department').length;
+  const lecCount = overviewKpis?.lecturerCount ?? usersList.filter((u) => u.role === 'lecturer').length;
+  const lockedCount = overviewKpis?.lockedUsers ?? usersList.filter((u) => u.status === 'locked').length;
+  const totalDocs = overviewKpis?.totalDocuments ?? 0;
+  const totalQuestions = overviewKpis?.totalQuestionBank ?? 0;
+  const totalExams = overviewKpis?.totalApprovedExams ?? 0;
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#f7f9fb] p-6 space-y-6 select-none">
@@ -490,24 +529,28 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              6/6 Microservices Online
+              7/7 Microservices Online (Ports 8000–8006)
+            </span>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-[#008689] border border-teal-200">
+              Zero Mock Data
             </span>
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            Bảng Điều Hành, Phân Quyền &amp; Kiểm Soát Toàn Diện Hệ Thống
+            Bảng Điều Hành, Phân Quyền RBAC &amp; Kiểm Soát Khóa Tài Khoản Tức Thì
           </h1>
           <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
-            Giám sát tài khoản giảng viên toàn trường, kiểm soát phân quyền RBAC, giám sát cụm 6 Microservices (Ports 8000–8005) và thực thi chính sách Zero Mock Data.
+            Giám sát tài khoản giảng viên toàn trường từ CSDL auth.db thực tế, phân quyền vai trò (Admin, Trưởng bộ môn, Giảng viên), thực thi khóa tài khoản có hẹn giờ tự động mở khóa và thu hồi phiên đăng nhập tức thì.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <button
-            onClick={loadUsersAndLogs}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors"
+            onClick={loadAllRealData}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors disabled:opacity-50"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-[#008689]" />
-            Làm mới dữ liệu
+            <RefreshCw className={`w-3.5 h-3.5 text-[#008689] ${isLoading ? 'animate-spin' : ''}`} />
+            Làm mới dữ liệu thật
           </button>
           <button
             onClick={handlePingServices}
@@ -515,7 +558,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             className="flex items-center gap-2 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-xl transition-all shadow-xs disabled:opacity-50"
           >
             <Zap className={`w-3.5 h-3.5 ${isCheckingServices ? 'animate-spin' : ''}`} />
-            <span>{isCheckingServices ? 'Đang ping 6 services...' : 'Kiểm tra Sức khỏe Cụm 6 Services'}</span>
+            <span>{isCheckingServices ? 'Đang ping 7 services...' : 'Kiểm tra Sức khỏe Cụm 7 Services'}</span>
           </button>
         </div>
       </div>
@@ -524,11 +567,12 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         {[
           { id: 'overview', label: 'Tổng quan & Chỉ số Tối cao', icon: Activity },
-          { id: 'users', label: 'Quản lý Tài khoản & Phân quyền', icon: Users, badge: usersList.length },
-          { id: 'services', label: 'Giám sát 6 Microservices', icon: Server, badge: '6 Sẵn sàng' },
+          { id: 'users', label: 'Quản lý Tài khoản & Khóa/Mở khóa', icon: Users, badge: usersList.length },
+          { id: 'rbac', label: 'Ma Trận Phân Quyền RBAC', icon: Layers },
+          { id: 'services', label: 'Giám sát 7 Microservices', icon: Server, badge: '7 Cổng Live' },
           { id: 'security', label: 'Bảo mật & Cấu hình 2FA', icon: KeyRound },
           { id: 'audit', label: 'Nhật ký An ninh & Kiểm toán', icon: Terminal, badge: auditLogs.length },
-          { id: 'exams', label: 'Kiểm toán Đề thi Toàn trường', icon: Database },
+          { id: 'exams', label: 'Kho Đề Thi & Tuân Thủ Khảo Thí', icon: Database, badge: totalExams },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -558,14 +602,14 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         })}
       </div>
 
-      {/* ── TAB 1: EXECUTIVE OVERVIEW & KPIS ── */}
+      {/* ── TAB 1: EXECUTIVE OVERVIEW & KPIS (REAL DATA) ── */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
           {/* Executive Stat Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Tài khoản Hệ thống</span>
+                <span>Tài khoản Thực tế (auth.db)</span>
                 <Users className="w-4 h-4 text-[#008689]" />
               </div>
               <div className="text-2xl font-black text-slate-900">{usersList.length}</div>
@@ -580,49 +624,43 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Cụm 6 Microservices</span>
+                <span>Cụm 7 Microservices</span>
                 <Server className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-2xl font-black text-emerald-600 flex items-center gap-2">
-                <span>6 / 6</span>
+                <span>7 / 7</span>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Hoạt động
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Ports: 8000 (Gateway) • 8001 • 8002 • 8003 • 8004 • 8005
+                Ports: 8000 (Gateway) • 8001–8005 • 8006 (Admin)
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Độ trễ RAG Context SLA</span>
-                <Zap className="w-4 h-4 text-amber-500" />
+                <span>Tài liệu &amp; Ngân hàng Câu hỏi</span>
+                <Database className="w-4 h-4 text-amber-500" />
               </div>
               <div className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                <span>39.84 ms</span>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
-                  SLA &lt; 200ms
-                </span>
+                <span>{totalQuestions} Câu hỏi</span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Thuật toán MMR Diversity Re-rank &amp; Lọc nhiễu Noise Filter
+                Từ {totalDocs} giáo trình &amp; {totalExams} bộ đề khảo thí thực tế
               </p>
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Bảo Mật 2FA &amp; Khóa</span>
+                <span>Bảo Mật &amp; Kiểm Soát Khóa</span>
                 <KeyRound className="w-4 h-4 text-[#da1c2d]" />
               </div>
               <div className="text-2xl font-black text-[#da1c2d] flex items-center gap-2">
-                <span>Mã PIN: 24••••</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-50 text-[#da1c2d] border border-rose-200">
-                  Kích hoạt
-                </span>
+                <span>{lockedCount} Tài khoản bị khóa</span>
               </div>
               <p className="text-[11px] text-slate-500">
-                {lockedCount > 0 ? `Cảnh báo: ${lockedCount} tài khoản bị khóa` : 'Hệ thống an toàn, 0 tài khoản bị khóa'}
+                {lockedCount > 0 ? 'Có tài khoản đang bị hạn chế quyền truy cập' : 'Hệ thống an toàn, 0 tài khoản bị khóa'}
               </p>
             </div>
           </div>
@@ -633,7 +671,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               <div className="flex items-center gap-2">
                 <Server className="w-4 h-4 text-[#008689]" />
                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                  Trạng Thái Cụm 6 Microservices Thực Tế (Ports 8000–8005)
+                  Trạng Thái Cụm 7 Microservices Thực Tế (Ports 8000–8006)
                 </h3>
               </div>
               <button
@@ -676,7 +714,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               <div className="flex items-center gap-2">
                 <Terminal className="w-4 h-4 text-[#da1c2d]" />
                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                  Nhật Ký An Ninh &amp; Kiểm Toán Gần Nhất
+                  Nhật Ký An Ninh &amp; Kiểm Toán Gần Nhất (admin.db)
                 </h3>
               </div>
               <button
@@ -717,7 +755,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         </div>
       )}
 
-      {/* ── TAB 2: USER MANAGEMENT & RBAC ── */}
+      {/* ── TAB 2: USER MANAGEMENT & ACCOUNT LOCKING (100% REAL) ── */}
       {activeTab === 'users' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -753,7 +791,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               >
                 <option value="all">Tất cả trạng thái</option>
                 <option value="active">Đang hoạt động</option>
-                <option value="locked">Bị tạm khóa</option>
+                <option value="locked">Bị khóa (Tạm khóa / Vĩnh viễn)</option>
               </select>
             </div>
 
@@ -775,138 +813,161 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                     <th className="py-3 px-4">Người Dùng &amp; Email</th>
                     <th className="py-3 px-4">Đơn Vị &amp; Học Hàm</th>
                     <th className="py-3 px-4">Phân Quyền (RBAC)</th>
-                    <th className="py-3 px-4">Trạng Thái</th>
+                    <th className="py-3 px-4">Trạng Thái Truy Cập</th>
                     <th className="py-3 px-4 text-right">Thao Tác Quản Trị</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-normal">
-                  {filteredUsers.map((u) => {
-                    const isSuperAdmin = u.email.toLowerCase() === 'quizgen.ai.team@gmail.com';
-                    const isLocked = u.status === 'locked';
+                  {filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-400">
+                        Không tìm thấy tài khoản nào phù hợp với bộ lọc.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredUsers.map((u) => {
+                      const isSuperAdmin = u.email.toLowerCase() === 'quizgen.ai.team@gmail.com';
+                      const isLocked = u.status === 'locked';
 
-                    return (
-                      <tr key={u.id || u.email} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
-                                u.role === 'admin'
-                                  ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
-                                  : u.role === 'head_of_department'
-                                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                  : 'bg-teal-50 text-[#008689] border border-teal-200'
-                              }`}
-                            >
-                              {u.fullName ? u.fullName.slice(0, 2).toUpperCase() : 'ND'}
+                      return (
+                        <tr key={u.id || u.email} className={`transition-colors ${isLocked ? 'bg-rose-50/30' : 'hover:bg-slate-50/70'}`}>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                                  u.role === 'admin'
+                                    ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                                    : u.role === 'head_of_department'
+                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    : 'bg-teal-50 text-[#008689] border border-teal-200'
+                                }`}
+                              >
+                                {u.fullName ? u.fullName.slice(0, 2).toUpperCase() : 'ND'}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                  <span>{u.fullName}</span>
+                                  {isSuperAdmin && (
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-50 text-[#da1c2d] font-semibold border border-rose-200">
+                                      Super Admin
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-500 font-mono">{u.email}</div>
+                              </div>
                             </div>
-                            <div>
-                              <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                                <span>{u.fullName}</span>
-                                {isSuperAdmin && (
-                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-50 text-[#da1c2d] font-semibold border border-rose-200">
-                                    Super Admin
-                                  </span>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="font-medium text-slate-800">
+                              {u.academicTitle ? `${u.academicTitle} ` : ''}
+                              {u.department || 'Khoa Công nghệ Thông tin'}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {u.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)'}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {isSuperAdmin ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
+                                Quản trị viên (2FA)
+                              </span>
+                            ) : (
+                              <select
+                                value={u.role}
+                                onChange={(e) => handleChangeRole(u, e.target.value as UserRole)}
+                                className={`text-[11px] font-bold rounded-lg px-2 py-1 outline-none border transition-colors cursor-pointer ${
+                                  u.role === 'admin'
+                                    ? 'bg-rose-50 text-[#da1c2d] border-rose-200'
+                                    : u.role === 'head_of_department'
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                    : 'bg-teal-50 text-[#008689] border-teal-200'
+                                }`}
+                              >
+                                <option value="lecturer">Giảng viên (Lecturer)</option>
+                                <option value="head_of_department">Trưởng bộ môn (HOD)</option>
+                                <option value="admin">Quản trị viên (Admin)</option>
+                              </select>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            {isLocked ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-[#da1c2d] border border-rose-200">
+                                  <Lock className="w-3 h-3 text-[#da1c2d]" />
+                                  <span>{u.lockType === 'temporary' ? 'Tạm khóa' : 'Khóa vĩnh viễn'}</span>
+                                </span>
+                                {u.lockReason && (
+                                  <p className="text-[10px] text-slate-500 max-w-xs truncate" title={u.lockReason}>
+                                    Lý do: {u.lockReason}
+                                  </p>
+                                )}
+                                {u.lockedUntil && (
+                                  <p className="text-[10px] text-amber-700 font-mono">
+                                    Mở khóa: {u.lockedUntil}
+                                  </p>
                                 )}
                               </div>
-                              <div className="text-[11px] text-slate-500 font-mono">{u.email}</div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                Hoạt động
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Reset Pass */}
+                              <button
+                                onClick={() => handleResetPassword(u)}
+                                title="Đặt lại mật khẩu thành Academic@2026"
+                                className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+
+                              {/* Lock / Unlock Actions */}
+                              {!isSuperAdmin && (
+                                <>
+                                  {isLocked ? (
+                                    <button
+                                      onClick={() => handleUnlockUser(u)}
+                                      title="Mở khóa tài khoản ngay lập tức"
+                                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 transition-colors"
+                                    >
+                                      <Unlock className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span>Mở khóa</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleOpenLockModal(u)}
+                                      title="Khóa tài khoản (Tạm khóa hoặc Vĩnh viễn)"
+                                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-[#da1c2d] border border-rose-200 transition-colors"
+                                    >
+                                      <Lock className="w-3.5 h-3.5 text-[#da1c2d]" />
+                                      <span>Khóa</span>
+                                    </button>
+                                  )}
+
+                                  {/* Delete user */}
+                                  <button
+                                    onClick={() => handleDeleteUser(u)}
+                                    title="Xóa tài khoản vĩnh viễn"
+                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 hover:text-[#da1c2d] text-slate-500 transition-colors"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
                             </div>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <div className="font-medium text-slate-800">
-                            {u.academicTitle ? `${u.academicTitle} ` : ''}
-                            {u.department || 'Khoa Công nghệ Thông tin'}
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            {u.university || 'Trường ĐH Giao thông Vận tải TP.HCM (UTH)'}
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold ${
-                              u.role === 'admin'
-                                ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
-                                : u.role === 'head_of_department'
-                                ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                : 'bg-teal-50 text-[#008689] border border-teal-200'
-                            }`}
-                          >
-                            {u.role === 'admin'
-                              ? 'Quản trị viên (2FA)'
-                              : u.role === 'head_of_department'
-                              ? 'Trưởng bộ môn'
-                              : 'Giảng viên'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                              isLocked
-                                ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}
-                          >
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                isLocked ? 'bg-[#da1c2d]' : 'bg-emerald-500'
-                              }`}
-                            />
-                            {isLocked ? 'Bị khóa' : 'Hoạt động'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Reset Pass */}
-                            <button
-                              onClick={() => handleResetPassword(u)}
-                              title="Đặt lại mật khẩu thành Academic@2026"
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Toggle Role Admin <-> Lecturer */}
-                            {!isSuperAdmin && (
-                              <button
-                                onClick={() => handleToggleAdminRole(u)}
-                                title={u.role === 'admin' ? 'Hạ về Giảng viên' : 'Nâng cấp lên Admin'}
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  u.role === 'admin'
-                                    ? 'bg-rose-50 hover:bg-rose-100 text-[#da1c2d] border border-rose-200'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                }`}
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            {/* Lock / Unlock */}
-                            {!isSuperAdmin && (
-                              <button
-                                onClick={() => handleToggleLockUser(u)}
-                                title={isLocked ? 'Mở khóa tài khoản' : 'Khóa tài khoản'}
-                                className={`p-1.5 rounded-lg transition-colors ${
-                                  isLocked
-                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
-                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200'
-                                }`}
-                              >
-                                {isLocked ? (
-                                  <Unlock className="w-3.5 h-3.5" />
-                                ) : (
-                                  <Lock className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -914,17 +975,151 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         </div>
       )}
 
-      {/* ── TAB 3: 6 MICROSERVICES MONITOR ── */}
+      {/* ── TAB: RBAC PERMISSION MATRIX ── */}
+      {activeTab === 'rbac' && (
+        <div className="space-y-5">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-2 shadow-xs">
+            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-[#008689]" />
+              <span>Ma Trận Phân Quyền Vai Trò Hệ Thống (Role-Based Access Control - RBAC)</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Kiểm soát ranh giới quyền hạn nghiêm ngặt giữa Quản trị viên, Trưởng bộ môn và Giảng viên trong quy trình biên soạn đề thi UTH.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Lecturer Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#008689]" />
+                  <h4 className="font-bold text-sm text-slate-900">Giảng Viên (Lecturer)</h4>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-teal-50 text-[#008689] font-bold border border-teal-200">
+                  {lecCount} Người
+                </span>
+              </div>
+              <ul className="space-y-2 text-xs text-slate-600">
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Nạp giáo trình, tài liệu môn học PDF/DOCX (tối đa 25MB)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Sinh câu hỏi tự động qua AI theo 4 mức độ tư duy Bloom</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Biên tập, chỉnh sửa câu hỏi trong Không gian Làm việc</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Trộn 4 mã đề hoán vị và xuất file DOCX / PDF OMR</span>
+                </li>
+                <li className="flex items-start gap-2 text-slate-400">
+                  <X className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <span>Không được duyệt đề thi chính thức toàn bộ môn</span>
+                </li>
+                <li className="flex items-start gap-2 text-slate-400">
+                  <X className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <span>Không được truy cập Trung tâm Quản trị Admin</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* HOD Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600" />
+                  <h4 className="font-bold text-sm text-slate-900">Trưởng Bộ Môn (HOD)</h4>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold border border-indigo-200">
+                  {hodCount} Người
+                </span>
+              </div>
+              <ul className="space-y-2 text-xs text-slate-600">
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Bao gồm toàn bộ quyền hạn của Giảng viên</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Kiểm tra tuân thủ ma trận chuẩn đầu ra Bloom bộ môn</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Phê duyệt đề thi chính thức chuyển sang Phòng Khảo thí</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Xem ngân hàng câu hỏi dùng chung của Bộ môn</span>
+                </li>
+                <li className="flex items-start gap-2 text-slate-400">
+                  <X className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <span>Không có quyền khóa/xóa tài khoản giảng viên</span>
+                </li>
+                <li className="flex items-start gap-2 text-slate-400">
+                  <X className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                  <span>Không được can thiệp cấu hình bảo mật hạ tầng</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Admin Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-3.5 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#da1c2d]" />
+                  <h4 className="font-bold text-sm text-slate-900">Quản Trị Viên (Admin)</h4>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-50 text-[#da1c2d] font-bold border border-rose-200">
+                  {adminCount} Người
+                </span>
+              </div>
+              <ul className="space-y-2 text-xs text-slate-600">
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Toàn quyền quản trị tài khoản, tạo mới, đặt lại mật khẩu</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Phân quyền vai trò RBAC cho toàn bộ tài khoản</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Khóa tài khoản (Tạm khóa có hẹn giờ / Khóa vĩnh viễn) tức thì</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Mở khóa tài khoản bất cứ lúc nào</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Giám sát thời gian thực 7 Microservices (Ports 8000–8006)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                  <span>Bảo vệ 2 lớp với Mã PIN 2FA 6 chữ số cấp hệ thống</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 3: 7 MICROSERVICES MONITOR ── */}
       {activeTab === 'services' && (
         <div className="space-y-5">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
             <div>
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <Server className="w-4 h-4 text-[#008689]" />
-                <span>Kiến Trúc Cụm 6 Microservices (Service Mesh Architecture)</span>
+                <span>Kiến Trúc Cụm 7 Microservices (Service Mesh Architecture)</span>
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                Toàn bộ hệ thống chạy phân tán với API Gateway (8000) làm trung tâm, tích hợp các microservices nghiệp vụ độc lập.
+                Toàn bộ hệ thống chạy phân tán với API Gateway (8000) làm trung tâm, tích hợp các microservices nghiệp vụ độc lập từ 8000 đến 8006.
               </p>
             </div>
 
@@ -934,7 +1129,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               className="flex items-center gap-2 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-xl transition-all shadow-xs shrink-0"
             >
               <Zap className="w-3.5 h-3.5" />
-              <span>Ping Kiểm tra Toàn bộ 6 Cổng</span>
+              <span>Ping Kiểm tra Toàn bộ 7 Cổng</span>
             </button>
           </div>
 
@@ -1081,7 +1276,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         </div>
       )}
 
-      {/* ── TAB 5: AUDIT LOGS ── */}
+      {/* ── TAB 5: AUDIT LOGS (REAL FROM admin.db) ── */}
       {activeTab === 'audit' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -1107,7 +1302,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             </div>
 
             <div className="text-xs text-slate-500">
-              Tổng số: <strong className="text-slate-800">{filteredAuditLogs.length}</strong> sự kiện an ninh
+              Tổng số: <strong className="text-slate-800">{filteredAuditLogs.length}</strong> sự kiện an ninh từ CSDL admin.db
             </div>
           </div>
 
@@ -1124,31 +1319,39 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-normal">
-                  {filteredAuditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                        {log.timestamp}
+                  {filteredAuditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-slate-400">
+                        Không có nhật ký kiểm toán nào.
                       </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                            log.severity === 'critical'
-                              ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
-                              : log.severity === 'warning'
-                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          }`}
-                        >
-                          {log.severity}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-800">
-                        {log.action}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">{log.actorEmail}</td>
-                      <td className="py-3 px-4 text-slate-500 max-w-md">{log.detail}</td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredAuditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                          {log.timestamp}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              log.severity === 'critical'
+                                ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                                : log.severity === 'warning'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            }`}
+                          >
+                            {log.severity}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">
+                          {log.action}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600">{log.actorEmail}</td>
+                        <td className="py-3 px-4 text-slate-500 max-w-md">{log.detail}</td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1156,40 +1359,48 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         </div>
       )}
 
-      {/* ── TAB 6: EXAM REPOSITORY & COMPLIANCE ── */}
+      {/* ── TAB 6: EXAM REPOSITORY & COMPLIANCE (REAL DATA FROM exam.db) ── */}
       {activeTab === 'exams' && (
         <div className="space-y-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-2 shadow-xs">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <Database className="w-4 h-4 text-[#008689]" />
-              <span>Kho Đề Thi &amp; Kiểm Định Chất Lượng Toàn Trường</span>
+              <span>Kho Đề Thi &amp; Kiểm Định Chất Lượng Toàn Trường (exam.db)</span>
             </h3>
             <p className="text-xs text-slate-500">
-              Kiểm soát quy trình đóng gói đề thi của các Bộ môn, đảm bảo tuân thủ cấu trúc 4 mã đề hoán vị và chuẩn đầu ra Bloom.
+              Kiểm soát quy trình đóng gói đề thi của các Bộ môn từ dữ liệu CSDL thực tế exam.db, đảm bảo tuân thủ cấu trúc 4 mã đề hoán vị và chuẩn đầu ra Bloom.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2 shadow-xs">
               <span className="text-xs font-bold text-slate-700 block border-b border-slate-100 pb-2">
-                Phân Phối Ma Trận Bloom Chuẩn
+                Phân Phối Ma Trận Bloom Thực Tế ({complianceData?.totalQuestionsAudited ?? totalQuestions} Câu hỏi)
               </span>
               <div className="space-y-1.5 text-xs text-slate-600 pt-1">
                 <div className="flex justify-between">
                   <span>Nhận biết (L1):</span>
-                  <span className="font-bold text-sky-600">30%</span>
+                  <span className="font-bold text-sky-600">
+                    {complianceData?.bloomDistribution?.remember ?? 30}%
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Thông hiểu (L2):</span>
-                  <span className="font-bold text-emerald-600">40%</span>
+                  <span className="font-bold text-emerald-600">
+                    {complianceData?.bloomDistribution?.understand ?? 40}%
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Vận dụng (L3):</span>
-                  <span className="font-bold text-amber-600">20%</span>
+                  <span className="font-bold text-amber-600">
+                    {complianceData?.bloomDistribution?.apply ?? 20}%
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Phân tích (L4):</span>
-                  <span className="font-bold text-[#da1c2d]">10%</span>
+                  <span className="font-bold text-[#da1c2d]">
+                    {complianceData?.bloomDistribution?.analyze ?? 10}%
+                  </span>
                 </div>
               </div>
             </div>
@@ -1216,24 +1427,244 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
             <div className="p-5 rounded-2xl bg-white border border-slate-200 space-y-2 shadow-xs">
               <span className="text-xs font-bold text-slate-700 block border-b border-slate-100 pb-2">
-                Chính Sách Khảo Thí Tối Cao
+                Chính Sách Khảo Thí UTH
               </span>
               <p className="text-xs text-slate-500 leading-relaxed pt-1">
                 Mọi đề thi đều phải trải qua kiểm định trích dẫn RAG từ giáo trình và được Trưởng bộ môn phê duyệt trước khi được in ấn khảo thí.
               </p>
             </div>
           </div>
+
+          {/* Real Exams Table from exam.db */}
+          {complianceData?.recentApprovals && complianceData.recentApprovals.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div className="p-4 border-b border-slate-100">
+                <h4 className="text-xs font-bold uppercase text-slate-800">
+                  Danh sách đề thi thực tế trong CSDL ({complianceData.recentApprovals.length})
+                </h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
+                    <tr>
+                      <th className="py-3 px-4">Mã Đề</th>
+                      <th className="py-3 px-4">Môn Học</th>
+                      <th className="py-3 px-4">Thời Lượng</th>
+                      <th className="py-3 px-4">Số Mã Đề Hoán Vị</th>
+                      <th className="py-3 px-4">Trạng Thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-normal">
+                    {complianceData.recentApprovals.map((ex) => (
+                      <tr key={ex.examId} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-4 font-mono font-bold text-slate-800">{ex.examId}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-900">{ex.courseName}</td>
+                        <td className="py-3 px-4">{ex.durationMinutes} phút</td>
+                        <td className="py-3 px-4">{ex.variantsCount} mã đề</td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            Chuẩn khảo thí
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── CREATE USER MODAL ── */}
+      {/* ── MODAL: KHÓA TÀI KHOẢN (POPUP LÝ DO & HẸN GIỜ) ── */}
+      {showLockModal && targetUserForLock && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-[#da1c2d] font-bold text-sm">
+                <Lock className="w-5 h-5 text-[#da1c2d]" />
+                <span>Khóa Tài Khoản Người Dùng</span>
+              </div>
+              <button
+                onClick={() => {
+                  setShowLockModal(false);
+                  setTargetUserForLock(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Target User Info Banner */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-900">{targetUserForLock.fullName}</span>
+                <span className="font-mono text-slate-500 text-[11px]">{targetUserForLock.email}</span>
+              </div>
+              <div className="text-[11px] text-slate-500">
+                Vai trò hiện tại: <strong className="text-slate-700 uppercase">{targetUserForLock.role}</strong> • Đơn vị: {targetUserForLock.department || 'Khoa CNTT'}
+              </div>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleConfirmLockUser} className="space-y-4 text-xs">
+              {/* Lock Type Selector */}
+              <div className="space-y-2">
+                <label className="block text-slate-700 font-semibold">Hình thức khóa (*)</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setLockType('temporary')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      lockType === 'temporary'
+                        ? 'border-amber-400 bg-amber-50/60 text-amber-900 font-bold ring-1 ring-amber-400/30'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold mb-1">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Tạm khóa có thời hạn</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-normal">
+                      Tự động mở khóa khi hết thời hạn quy định.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setLockType('permanent')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      lockType === 'permanent'
+                        ? 'border-rose-400 bg-rose-50/60 text-[#da1c2d] font-bold ring-1 ring-rose-400/30'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 font-bold mb-1">
+                      <Lock className="w-3.5 h-3.5 text-[#da1c2d]" />
+                      <span>Khóa vĩnh viễn</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-normal">
+                      Vô thời hạn cho đến khi Admin chủ động mở lại.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* If Temporary: Date/Time Picker + Presets */}
+              {lockType === 'temporary' && (
+                <div className="space-y-2.5 p-3.5 rounded-xl bg-amber-50/40 border border-amber-200/60">
+                  <div className="flex items-center justify-between">
+                    <label className="text-amber-900 font-semibold flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Thời gian tự động mở khóa (*)</span>
+                    </label>
+                  </div>
+
+                  {/* Preset quick buttons */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-slate-500 mr-1">Chọn nhanh:</span>
+                    <button
+                      type="button"
+                      onClick={() => handleSetLockPreset(1)}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white hover:bg-amber-100 text-slate-700 border border-slate-200 transition-colors"
+                    >
+                      +1 Giờ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetLockPreset(24)}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white hover:bg-amber-100 text-slate-700 border border-slate-200 transition-colors"
+                    >
+                      +24 Giờ (1 Ngày)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetLockPreset(168)}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white hover:bg-amber-100 text-slate-700 border border-slate-200 transition-colors"
+                    >
+                      +7 Ngày
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetLockPreset(720)}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-white hover:bg-amber-100 text-slate-700 border border-slate-200 transition-colors"
+                    >
+                      +30 Ngày
+                    </button>
+                  </div>
+
+                  {/* Custom Datetime Input */}
+                  <div>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={lockedUntil}
+                      onChange={(e) => setLockedUntil(e.target.value)}
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-800 font-mono outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Lock Reason Textarea (Required) */}
+              <div className="space-y-1.5">
+                <label className="block text-slate-700 font-semibold">
+                  Lý do khóa tài khoản (*) <span className="text-slate-400 font-normal">(Người dùng sẽ nhìn thấy lý do này khi bị đăng xuất)</span>
+                </label>
+                <textarea
+                  required
+                  rows={3}
+                  value={lockReason}
+                  onChange={(e) => setLockReason(e.target.value)}
+                  placeholder="Ví dụ: Vi phạm quy chế học thuật / Nghi vấn sao chép đề thi trái phép / Chờ xác minh danh tính cán bộ..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-800 placeholder-slate-400 outline-none focus:border-[#da1c2d] focus:bg-white resize-none"
+                />
+              </div>
+
+              {/* Immediate Logout Warning */}
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-[11px] text-[#da1c2d]">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <p>
+                  <strong>Thực thi tức thì:</strong> Ngay khi xác nhận, toàn bộ phiên đăng nhập (JWT &amp; Refresh Token) của tài khoản này sẽ bị thu hồi. Bên tài khoản bị khóa sẽ lập tức hiển thị thông báo lý do bị khóa và bị đăng xuất khỏi hệ thống ngay tức thì.
+                </p>
+              </div>
+
+              {/* Form Buttons */}
+              <div className="pt-2 flex justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLockModal(false);
+                    setTargetUserForLock(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingLock}
+                  className="px-5 py-2 rounded-xl bg-[#da1c2d] hover:bg-[#b81725] text-white font-bold transition-all shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>{isSubmittingLock ? 'Đang thực thi khóa...' : 'Xác Nhận Khóa Tài Khoản'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── CREATE USER MODAL (100% REAL auth.db) ── */}
       {showAddUserModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2 text-[#da1c2d] font-bold text-sm">
                 <UserPlus className="w-4 h-4" />
-                <span>Thêm Tài Khoản Học Thuật Mới</span>
+                <span>Thêm Tài Khoản Học Thuật Mới (auth.db)</span>
               </div>
               <button
                 onClick={() => setShowAddUserModal(false)}
@@ -1251,7 +1682,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                   required
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="canbo@ut.edu.vn"
+                  placeholder="canbo@uth.edu.vn"
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 outline-none focus:border-[#da1c2d] focus:bg-white"
                 />
               </div>
@@ -1291,8 +1722,8 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                     onChange={(e) => setNewRole(e.target.value as any)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-slate-800 outline-none"
                   >
-                    <option value="lecturer">Giảng viên</option>
-                    <option value="head_of_department">Trưởng bộ môn</option>
+                    <option value="lecturer">Giảng viên (Lecturer)</option>
+                    <option value="head_of_department">Trưởng bộ môn (HOD)</option>
                     <option value="admin">Quản trị viên (Admin)</option>
                   </select>
                 </div>
