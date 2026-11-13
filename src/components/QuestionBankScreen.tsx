@@ -410,6 +410,124 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     window.URL.revokeObjectURL(url);
   };
 
+  const handlePrintExamPaper = () => {
+    if (activeVariantQuestions.length === 0) {
+      onShowToast('warning', 'Không có câu hỏi để in', 'Vui lòng nạp hoặc tạo câu hỏi trước khi in tờ đề.');
+      return;
+    }
+
+    const printElement = document.getElementById('printable-exam-paper');
+    if (!printElement) {
+      window.print();
+      return;
+    }
+
+    // Xóa iframe in cũ nếu có
+    const oldFrame = document.getElementById('quizgen-exam-print-frame');
+    if (oldFrame) oldFrame.remove();
+
+    // Tạo iframe ẩn độc lập để chỉ in toàn bộ nội dung tờ đề A4
+    const printFrame = document.createElement('iframe');
+    printFrame.id = 'quizgen-exam-print-frame';
+    printFrame.style.position = 'fixed';
+    printFrame.style.right = '0';
+    printFrame.style.bottom = '0';
+    printFrame.style.width = '0';
+    printFrame.style.height = '0';
+    printFrame.style.border = '0';
+    printFrame.style.zIndex = '-9999';
+    document.body.appendChild(printFrame);
+
+    const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
+    if (!frameDoc) {
+      window.print();
+      return;
+    }
+
+    // Thu thập stylesheet hiện hành của trang
+    const styleTags = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map((el) => el.outerHTML)
+      .join('\n');
+
+    frameDoc.open();
+    frameDoc.write(`
+      <!DOCTYPE html>
+      <html lang="vi">
+        <head>
+          <meta charset="utf-8" />
+          <title>${examTitle || 'Đề thi'} - Mã đề ${activeExamCode}</title>
+          ${styleTags}
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 15mm 15mm 15mm 15mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              background: #ffffff !important;
+              color: #0f172a !important;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              line-height: 1.5 !important;
+            }
+            .no-print {
+              display: none !important;
+            }
+            .exam-paper-container {
+              width: 100% !important;
+              max-width: 100% !important;
+              margin: 0 auto !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+            }
+            .exam-header-box {
+              border: 2px solid #0f172a !important;
+              padding: 12px 16px !important;
+              border-radius: 6px !important;
+              margin-bottom: 20px !important;
+            }
+            .exam-question-item {
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+              margin-bottom: 14px !important;
+            }
+            .exam-footer-note {
+              margin-top: 24px !important;
+              padding-top: 12px !important;
+              border-top: 1px solid #cbd5e1 !important;
+              text-align: center !important;
+              font-size: 11px !important;
+              font-weight: bold !important;
+              color: #64748b !important;
+              text-transform: uppercase !important;
+              break-inside: avoid !important;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="exam-paper-container">
+            ${printElement.innerHTML}
+          </div>
+        </body>
+      </html>
+    `);
+    frameDoc.close();
+
+    // Mở hộp thoại in và tự dọn dẹp
+    setTimeout(() => {
+      printFrame.contentWindow?.focus();
+      printFrame.contentWindow?.print();
+      setTimeout(() => {
+        printFrame.remove();
+      }, 2000);
+    }, 300);
+  };
+
   const buildFallbackBlob = (format: 'docx' | 'pdf' | 'qti') => {
     const lines = [
       `${universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'}`,
@@ -558,7 +676,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-5">
       {/* Top Studio Header & 4-Format Direct Output Bar for Lecturer */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#008689] bg-[#e6f4f4] px-2.5 py-0.5 rounded-md">
@@ -808,8 +926,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left: A4 Exam Paper Preview */}
           <div className="lg:col-span-8 bg-white rounded-xl border border-slate-300 shadow-sm p-6 sm:p-8 space-y-6">
-            {/* Code Switcher Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
+            {/* Code Switcher Bar (Ẩn khi in) */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200 no-print">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-500 uppercase">
                   Chọn Mã Đề Xem Trước:
@@ -830,96 +948,100 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               </div>
 
               <button
-                onClick={() => window.print()}
+                onClick={handlePrintExamPaper}
                 disabled={activeVariantQuestions.length === 0}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                title="In trực tiếp tờ đề hiện tại ra máy in hoặc lưu file PDF (Chỉ in nội dung tờ đề)"
               >
                 <Printer className="w-3.5 h-3.5 text-[#008689]" />
                 In trực tiếp tờ đề này
               </button>
             </div>
 
-            {/* Official University Header on A4 Paper */}
-            <div className="border-2 border-slate-800 p-4 rounded-lg">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center border-b border-slate-300 pb-3">
-                <div className="space-y-0.5">
-                  <p className="text-[11px] font-bold uppercase text-slate-700">
-                    {universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM'}
-                  </p>
-                  <p className="text-xs font-extrabold uppercase text-slate-900">
-                    {facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}
-                  </p>
+            {/* Printable Exam Paper Container: Chỉ in toàn bộ nội dung trong tờ đề này */}
+            <div id="printable-exam-paper" className="space-y-6">
+              {/* Official University Header on A4 Paper */}
+              <div className="border-2 border-slate-800 p-4 rounded-lg exam-header-box">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center border-b border-slate-300 pb-3">
+                  <div className="space-y-0.5">
+                    <p className="text-[11px] font-bold uppercase text-slate-700">
+                      {universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM'}
+                    </p>
+                    <p className="text-xs font-extrabold uppercase text-slate-900">
+                      {facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}
+                    </p>
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-extrabold uppercase text-slate-900">{examTitle}</p>
+                    <p className="text-[11px] font-semibold text-slate-700">
+                      Học phần:{' '}
+                      <span className="font-bold text-slate-900">
+                        {subjectName || (selectedSubject !== 'all' ? selectedSubject.replace(/\.[^/.]+$/, '') : targetExamQuestions[0]?.textbookName?.replace(/\.[^/.]+$/, '') || 'Chưa đặt tên học phần')}
+                      </span>
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      Thời gian làm bài: <strong>{examDuration} phút</strong> (Không kể thời gian phát đề)
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs font-extrabold uppercase text-slate-900">{examTitle}</p>
-                  <p className="text-[11px] font-semibold text-slate-700">
-                    Học phần:{' '}
-                    <span className="font-bold text-slate-900">
-                      {subjectName || (selectedSubject !== 'all' ? selectedSubject.replace(/\.[^/.]+$/, '') : targetExamQuestions[0]?.textbookName?.replace(/\.[^/.]+$/, '') || 'Chưa đặt tên học phần')}
-                    </span>
-                  </p>
-                  <p className="text-[11px] text-slate-600">
-                    Thời gian làm bài: <strong>{examDuration} phút</strong> (Không kể thời gian phát đề)
-                  </p>
+
+                <div className="pt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
+                  <div>
+                    Họ và tên sinh viên: ..........................................................
+                    MSSV: ..........................
+                  </div>
+                  <div className="px-3 py-1 border-2 border-slate-900 font-extrabold text-slate-900 uppercase">
+                    MÃ ĐỀ: {activeExamCode}
+                  </div>
                 </div>
               </div>
 
-              <div className="pt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
-                <div>
-                  Họ và tên sinh viên: ..........................................................
-                  MSSV: ..........................
+              {/* Shuffled Questions List on A4 Paper or Empty State */}
+              {activeVariantQuestions.length === 0 ? (
+                <div className="py-12 px-4 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-teal-50 text-[#008689] flex items-center justify-center mx-auto">
+                    <FileQuestion className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1 max-w-md mx-auto">
+                    <h4 className="text-sm font-bold text-slate-800">
+                      Chưa có câu hỏi nào trong đề thi
+                    </h4>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                      Hệ thống đã dọn dẹp sạch toàn bộ dữ liệu câu hỏi ảo. Để xuất đề thi, vui lòng tải lên tài liệu giáo trình tại <strong>Bước 1</strong> và thực hiện tạo câu hỏi tại <strong>Bước 2 & Bước 3</strong>.
+                    </p>
+                  </div>
                 </div>
-                <div className="px-3 py-1 border-2 border-slate-900 font-extrabold text-slate-900 uppercase">
-                  MÃ ĐỀ: {activeExamCode}
-                </div>
-              </div>
-            </div>
-
-            {/* Shuffled Questions List on A4 Paper or Empty State */}
-            {activeVariantQuestions.length === 0 ? (
-              <div className="py-12 px-4 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-3">
-                <div className="w-12 h-12 rounded-full bg-teal-50 text-[#008689] flex items-center justify-center mx-auto">
-                  <FileQuestion className="w-6 h-6" />
-                </div>
-                <div className="space-y-1 max-w-md mx-auto">
-                  <h4 className="text-sm font-bold text-slate-800">
-                    Chưa có câu hỏi nào trong đề thi
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    Hệ thống đã dọn dẹp sạch toàn bộ dữ liệu câu hỏi ảo. Để xuất đề thi, vui lòng tải lên tài liệu giáo trình tại <strong>Bước 1</strong> và thực hiện tạo câu hỏi tại <strong>Bước 2 & Bước 3</strong>.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-5 pt-2">
-                  {activeVariantQuestions.map((q, index) => (
-                    <div key={`${activeExamCode}-${q.id}`} className="space-y-2 text-sm text-slate-900">
-                      <p className="font-semibold leading-relaxed">
-                        <span className="font-extrabold">Câu {index + 1}: </span>
-                        {q.question}
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
-                        {q.options.map((opt) => (
-                          <div key={opt.id} className="text-xs sm:text-sm text-slate-800">
-                            <span className="font-bold">{opt.label}. </span>
-                            <span>{opt.text}</span>
-                          </div>
-                        ))}
+              ) : (
+                <>
+                  <div className="space-y-5 pt-2">
+                    {activeVariantQuestions.map((q, index) => (
+                      <div key={`${activeExamCode}-${q.id}`} className="space-y-2 text-sm text-slate-900 exam-question-item">
+                        <p className="font-semibold leading-relaxed">
+                          <span className="font-extrabold">Câu {index + 1}: </span>
+                          {q.question}
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
+                          {q.options.map((opt) => (
+                            <div key={opt.id} className="text-xs sm:text-sm text-slate-800">
+                              <span className="font-bold">{opt.label}. </span>
+                              <span>{opt.text}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
 
-                <div className="pt-4 border-t border-slate-200 text-center text-xs font-bold text-slate-500 uppercase">
-                  — HẾT (Sinh viên không được sử dụng tài liệu) —
-                </div>
-              </>
-            )}
+                  <div className="pt-4 border-t border-slate-200 text-center text-xs font-bold text-slate-500 uppercase exam-footer-note">
+                    — HẾT (Sinh viên không được sử dụng tài liệu) —
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Right: OMR Answer Sheet Preview & Quick Answer Key */}
-          <div className="lg:col-span-4 space-y-4">
+          {/* Right: OMR Answer Sheet Preview & Quick Answer Key (Không in) */}
+          <div className="lg:col-span-4 space-y-4 no-print">
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
@@ -1233,7 +1355,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
       {/* ===== MODAL: KHO ĐỀ THI ĐÃ SINH & LỊCH SỬ ĐÓNG GÓI ===== */}
       {isExamHistoryOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4 no-print">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-fade-in">
             {/* Modal Header */}
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
