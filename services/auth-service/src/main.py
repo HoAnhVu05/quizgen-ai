@@ -148,6 +148,7 @@ def startup_db():
             fac3 = FacultyDB(id="fac-qa", university_id="uni-vnu", code="QA", name="Phòng Khảo thí & Đảm bảo Chất lượng", dean_name="ThS. Lê Hoàng Nam")
             db.add_all([fac1, fac2, fac3])
             db.commit()
+
         # 2. Nạp dữ liệu tài khoản 3 vai trò mẫu chuẩn mực
         default_accounts = [
             {
