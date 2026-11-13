@@ -3,8 +3,9 @@ QuizGen AI - Central Redis Cache & Broker Client
 Implements Specification Section 5 of DATABASE_SPECIFICATION.md:
 1. JWT Blacklist:    jwt:revoked:{token_hash}                (TTL: 24h)
 2. Tiến trình Upload: task:upload:progress:{document_id}       (Hash, TTL: 2h)
-3. Cache RAG Chunks: rag:cache:{document_id}:{chapter_hash}  (List/JSON, TTL: 6h)
-4. AI Rate Limiter:  ratelimit:ai:generate:{user_id}         (Counter, TTL: 1m)
+3. Cache RAG Chunks: rag:cache:{document_id}:{target_hash}   (List/JSON, TTL: 6h)
+4. AI Rate Limiter:  ratelimit:{action}:{user_id}            (Counter, TTL: 1m)
+5. Cache Purge:      Xóa sạch toàn bộ cache khi xóa giáo trình
 
 Graceful Fallback:
 If Redis is unreachable or redis-py is not installed, seamlessly falls back to
@@ -168,17 +169,17 @@ class RedisCacheClient:
         return None
 
     # -------------------------------------------------------------
-    # 3. RAG Chunks Cache (rag:cache:{document_id}:{chapter_hash}) - TTL 6h
+    # 3. RAG Chunks Cache (rag:cache:{document_id}:{target_hash}) - TTL 6h
     # -------------------------------------------------------------
     def cache_rag_chunks(
         self,
         document_id: str,
-        chapter: str,
+        target: str,
         chunks: List[dict],
         ttl: int = 21600
     ) -> bool:
-        chapter_hash = hashlib.md5(chapter.strip().lower().encode("utf-8")).hexdigest()[:12]
-        key = f"rag:cache:{document_id}:{chapter_hash}"
+        target_hash = hashlib.md5(target.strip().lower().encode("utf-8")).hexdigest()[:12]
+        key = f"rag:cache:{document_id}:{target_hash}"
         try:
             json_val = json.dumps(chunks, ensure_ascii=False)
             if self.is_connected and self.client:
@@ -189,9 +190,9 @@ class RedisCacheClient:
         self._mem_set(key, chunks, ttl=ttl)
         return True
 
-    def get_cached_rag_chunks(self, document_id: str, chapter: str) -> Optional[List[dict]]:
-        chapter_hash = hashlib.md5(chapter.strip().lower().encode("utf-8")).hexdigest()[:12]
-        key = f"rag:cache:{document_id}:{chapter_hash}"
+    def get_cached_rag_chunks(self, document_id: str, target: str) -> Optional[List[dict]]:
+        target_hash = hashlib.md5(target.strip().lower().encode("utf-8")).hexdigest()[:12]
+        key = f"rag:cache:{document_id}:{target_hash}"
         try:
             if self.is_connected and self.client:
                 cached = self.client.get(key)
@@ -206,19 +207,63 @@ class RedisCacheClient:
         return None
 
     # -------------------------------------------------------------
-    # 4. Rate Limiter (ratelimit:ai:generate:{user_id}) - TTL 1m
+    # 4. Cache Cleanup: Làm sạch cache khi xóa tài liệu
     # -------------------------------------------------------------
-    def check_ai_rate_limit(
+    def clear_document_cache(self, document_id: str) -> int:
+        """
+        Làm sạch toàn bộ cache liên quan đến tài liệu (ChromaDB & Redis):
+        - rag:cache:{document_id}:*
+        - rag:query:{document_id}:*
+        - task:upload:progress:{document_id}
+        """
+        cleared_count = 0
+        patterns = [
+            f"rag:cache:{document_id}:*",
+            f"rag:query:{document_id}:*",
+            f"task:upload:progress:{document_id}"
+        ]
+        try:
+            if self.is_connected and self.client:
+                for pat in patterns:
+                    keys = list(self.client.scan_iter(match=pat, count=100))
+                    if keys:
+                        deleted = self.client.delete(*keys)
+                        cleared_count += deleted if isinstance(deleted, int) else len(keys)
+                progress_key = f"task:upload:progress:{document_id}"
+                if self.client.exists(progress_key):
+                    if self.client.delete(progress_key):
+                        cleared_count += 1
+        except Exception as e:
+            logger.warning(f"[CACHE] Redis clear_document_cache error: {e}")
+
+        # Xóa trong in-memory store
+        to_del = [
+            k for k in list(self._memory_store.keys())
+            if k.startswith(f"rag:cache:{document_id}:")
+            or k.startswith(f"rag:query:{document_id}:")
+            or k == f"task:upload:progress:{document_id}"
+        ]
+        for k in to_del:
+            self._memory_store.pop(k, None)
+            cleared_count += 1
+
+        return cleared_count
+
+    # -------------------------------------------------------------
+    # 5. Rate Limiter (ratelimit:{action}:{user_id}) - TTL 1m
+    # -------------------------------------------------------------
+    def check_rate_limit(
         self,
         user_id: str,
-        limit: int = 5,
-        window_seconds: int = 60
+        limit: int = 60,
+        window_seconds: int = 60,
+        action: str = "rag:query"
     ) -> Tuple[bool, int]:
         """
-        Kiểm tra số lượt gọi sinh đề AI.
+        Kiểm tra giới hạn tần suất gọi API theo user_id.
         Trả về (allowed, remaining_calls)
         """
-        key = f"ratelimit:ai:generate:{user_id}"
+        key = f"ratelimit:{action}:{user_id}"
         try:
             if self.is_connected and self.client:
                 count = self.client.incr(key)
@@ -234,6 +279,15 @@ class RedisCacheClient:
         allowed = count <= limit
         remaining = max(0, limit - count)
         return allowed, remaining
+
+    def check_ai_rate_limit(
+        self,
+        user_id: str,
+        limit: int = 5,
+        window_seconds: int = 60
+    ) -> Tuple[bool, int]:
+        """Kiểm tra số lượt gọi sinh đề AI. Trả về (allowed, remaining_calls)"""
+        return self.check_rate_limit(user_id=user_id, limit=limit, window_seconds=window_seconds, action="ai:generate")
 
 # Singleton instance
     def reset_ai_rate_limit(self, user_id: str) -> bool:

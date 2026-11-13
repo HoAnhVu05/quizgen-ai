@@ -1,4 +1,13 @@
 import os
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Depends
@@ -25,7 +34,8 @@ from .auth import get_current_user_id, get_optional_user_id
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
 
-RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8003")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://127.0.0.1:8003")
+DOCUMENT_SERVICE_URL = os.getenv("DOCUMENT_SERVICE_URL", "http://127.0.0.1:8002")
 
 @app.on_event("startup")
 def startup_db():
@@ -103,9 +113,29 @@ async def generate_questions(
     db.add(job)
     db.commit()
 
-    # 2. Truy xuất ngữ cảnh RAG từ RAG Service
-    query_text = " ".join(req.chapters) if req.chapters else "kinh tế học vi mô quy luật cung cầu"
-    primary_chapter = req.chapters[0] if req.chapters else "Chương 3: Cung - Cầu và Cơ chế cân bằng giá cả thị trường"
+    # 2. Lấy tên giáo trình thực tế từ CSDL
+    from sqlalchemy import text
+    textbook_name = getattr(req, "document_name", None) or getattr(req, "documentName", None) or ""
+    if not textbook_name:
+        try:
+            doc_row = db.execute(text("SELECT name FROM documents.documents WHERE id = :did"), {"did": document_id}).fetchone()
+            if doc_row and doc_row[0]:
+                textbook_name = doc_row[0]
+        except Exception:
+            pass
+    if not textbook_name:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                d_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}")
+                if d_res.status_code == 200:
+                    textbook_name = d_res.json().get("name", "")
+        except Exception:
+            pass
+    if not textbook_name:
+        textbook_name = f"Tài liệu #{document_id}"
+
+    query_text = " ".join(req.chapters) if req.chapters else (textbook_name or "kiến thức học thuật")
+    primary_chapter = req.chapters[0] if req.chapters else "Nội dung trích xuất"
     retrieved_chunks = []
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -114,24 +144,37 @@ async def generate_questions(
                 json={
                     "query": query_text,
                     "document_id": document_id,
-                    "top_k": 8
+                    "chapters": req.chapters,
+                    "top_k": 10
                 }
             )
             if res.status_code == 200:
                 retrieved_chunks = res.json().get("chunks", [])
-    except Exception:
-        retrieved_chunks = [
-            {
-                "chunk_id": "chunk-1",
-                "page_number": 42,
-                "text": "Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi (ceteris paribus), khi mức giá của một hàng hóa tăng lên thì lượng cầu về hàng hóa đó sẽ giảm xuống và ngược lại."
-            },
-            {
-                "chunk_id": "chunk-2",
-                "page_number": 68,
-                "text": "Độ co giãn của cầu theo giá đo lường mức độ phản ứng của lượng cầu trước sự thay đổi của giá cả. Khi cầu co giãn mạnh (|PED| > 1), việc giảm giá sẽ làm tăng tổng doanh thu."
-            }
-        ]
+    except Exception as e:
+        print(f"[AI-SERVICE] Cảnh báo kết nối RAG Service: {e}")
+
+    if not retrieved_chunks:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}/chunks?limit=50")
+                if c_res.status_code == 200:
+                    raw_chunks = c_res.json().get("chunks", [])
+                    if req.chapters:
+                        matched = [c for c in raw_chunks if any(ch.lower() in (c.get("chapter") or "").lower() for ch in req.chapters)]
+                        retrieved_chunks = matched if matched else raw_chunks
+                    else:
+                        retrieved_chunks = raw_chunks
+        except Exception as e:
+            print(f"[AI-SERVICE] Cảnh báo kết nối Document Service: {e}")
+
+    if not retrieved_chunks:
+        job.status = "failed"
+        job.error_message = f"Tài liệu '{textbook_name}' chưa có dữ liệu văn bản để sinh câu hỏi."
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không tìm thấy nội dung văn bản nào từ tài liệu '{textbook_name}' để sinh câu hỏi. Vui lòng kiểm tra lại tài liệu đã tải lên."
+        )
 
     # 3. Kích hoạt sinh câu hỏi bằng LLM Gemini hoặc Fallback ma trận chuẩn
     try:
@@ -139,7 +182,8 @@ async def generate_questions(
             chunks=retrieved_chunks,
             bloom_matrix=bloom_matrix,
             document_id=document_id,
-            chapter_name=primary_chapter
+            chapter_name=primary_chapter,
+            textbook_name=textbook_name
         )
 
         # Cập nhật kết quả Job vào DB
@@ -197,6 +241,36 @@ async def regenerate_question_endpoint(
         "success": True,
         "question": new_q
     }
+
+@app.get("/history")
+@app.get("/jobs")
+def get_generation_history(
+    limit: int = 30,
+    user_id: Optional[str] = Depends(get_optional_user_id),
+    db: Session = Depends(get_db)
+):
+    """Tra cứu danh sách lịch sử các đợt sinh câu hỏi AI"""
+    query = db.query(AIGenerationJobDB)
+    if user_id and user_id not in ["lec-001", "usr-adm-quizgen"]:
+        query = query.filter(AIGenerationJobDB.user_id == user_id)
+    jobs = query.order_by(AIGenerationJobDB.created_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": job.id,
+            "jobId": job.id,
+            "userId": job.user_id,
+            "documentId": job.document_id,
+            "chapters": job.chapters or [],
+            "bloomMatrix": job.bloom_matrix or {},
+            "totalRequested": job.total_requested,
+            "totalGenerated": job.total_generated,
+            "status": job.status,
+            "errorMessage": job.error_message,
+            "createdAt": job.created_at.isoformat() if job.created_at else None,
+            "completedAt": job.completed_at.isoformat() if job.completed_at else None,
+        }
+        for job in jobs
+    ]
 
 @app.get("/jobs/{job_id}")
 def get_job_status(job_id: str, db: Session = Depends(get_db)):

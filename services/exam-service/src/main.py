@@ -33,6 +33,8 @@ from .models import (
     ExportPdfRequest,
     UnifiedExportRequest,
     ExportQtiRequest,
+    ExportOmrRequest,
+    ExportBundleRequest,
     CreateExamRecordRequest,
     SubjectResponse,
     ActivityResponse
@@ -40,8 +42,11 @@ from .models import (
 from .exporters.word_exporter import WordExamExporter
 from .exporters.pdf_exporter import PDFExamExporter
 from .exporters.qti_exporter import QTIExporter
+from .exporters.bundle_exporter import ExamBundleExporter
 from .shuffler import ExamShuffler
 from .cache import RedisCacheClient
+from .auth import get_current_user_id, get_optional_user_id, get_current_user
+
 
 app = FastAPI(
     title="QuizGen AI - Exam & Question Bank Service",
@@ -59,9 +64,7 @@ app.add_middleware(
 
 cache_client = RedisCacheClient()
 
-# ====================================================================
 # SERIALIZATION & FORMATTING HELPERS
-# ====================================================================
 def format_question_response(q: QuestionDB) -> dict:
     opts = q.options if isinstance(q.options, list) else json.loads(q.options or "[]")
     return {
@@ -138,7 +141,7 @@ def record_question_audit_log(
     entry = QuestionAuditLogDB(
         id=log_id,
         question_id=question_id,
-        lecturer_id=lecturer_id or "lec-001",
+        lecturer_id=lecturer_id or "lecturer",
         action=action,
         previous_state=previous_state,
         new_state=new_state,
@@ -172,6 +175,10 @@ def _resolve_questions(
         db_questions = db.query(QuestionDB).limit(20).all()
     return [format_question_response(q) for q in db_questions]
 
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception:
+    pass
 
 # Thang đo chuẩn mực sư phạm Bloom (40% - 30% - 20% - 10%)
 BLOOM_LEVEL_STANDARDS = {
@@ -311,9 +318,7 @@ def calculate_bloom_taxonomy_stats(
     }
 
 
-# ====================================================================
 # DATABASE STARTUP & SEEDING
-# ====================================================================
 @app.on_event("startup")
 def startup_db():
     try:
@@ -331,93 +336,7 @@ def startup_db():
             db.add_all(subs)
             db.commit()
 
-        # 2. Seed Default Questions across all 4 Bloom levels
-        existing_q = db.execute(select(QuestionDB).filter_by(id="q-1")).scalar_one_or_none()
-        if not existing_q:
-            default_questions = [
-                QuestionDB(
-                    id="q-1",
-                    document_id="tb-001",
-                    source_chunk_id="chunk-1",
-                    textbook_name="GiaoTrinh_KinhTeViMo_2025.pdf",
-                    chapter="Chương 3: Cung - Cầu và Giá cả thị trường",
-                    bloom_level="Nhận biết",
-                    question_text="Theo quy luật cầu, trong điều kiện các yếu tố khác không đổi, phát biểu nào sau đây là chính xác?",
-                    options=[
-                        {"id": "opt-a", "label": "A", "text": "Khi giá hàng hóa tăng thì lượng cầu giảm xuống"},
-                        {"id": "opt-b", "label": "B", "text": "Khi giá hàng hóa tăng thì lượng cầu tăng lên"},
-                        {"id": "opt-c", "label": "C", "text": "Giá cả và lượng cầu luôn biến thiên cùng chiều"},
-                        {"id": "opt-d", "label": "D", "text": "Lượng cầu không chịu sự tác động của mức giá thị trường"}
-                    ],
-                    correct_answer_id="opt-a",
-                    explanation="Quy luật cầu chỉ rõ mối quan hệ tỷ lệ nghịch giữa giá và lượng cầu (giá tăng thì lượng cầu giảm và ngược lại).",
-                    confidence_score=99,
-                    status="approved",
-                    created_at=datetime.utcnow()
-                ),
-                QuestionDB(
-                    id="q-2",
-                    document_id="tb-001",
-                    source_chunk_id="chunk-2",
-                    textbook_name="GiaoTrinh_KinhTeViMo_2025.pdf",
-                    chapter="Chương 3: Cung - Cầu và Giá cả thị trường",
-                    bloom_level="Thông hiểu",
-                    question_text="Nếu trà và cà phê là hai hàng hóa thay thế cho nhau, điều gì sẽ xảy ra khi giá cà phê trên thị trường tăng vọt?",
-                    options=[
-                        {"id": "opt-a", "label": "A", "text": "Đường cầu của cà phê dịch chuyển sang phải"},
-                        {"id": "opt-b", "label": "B", "text": "Lượng cầu về trà sẽ giảm sút nghiêm trọng"},
-                        {"id": "opt-c", "label": "C", "text": "Cầu về mặt hàng trà sẽ có xu hướng tăng lên"},
-                        {"id": "opt-d", "label": "D", "text": "Giá của cả hai mặt hàng sẽ lập tức giảm về 0"}
-                    ],
-                    correct_answer_id="opt-c",
-                    explanation="Vì là hàng hóa thay thế, khi giá cà phê tăng, người tiêu dùng sẽ chuyển sang dùng trà, làm tăng nhu cầu về trà.",
-                    confidence_score=95,
-                    status="pending",
-                    created_at=datetime.utcnow()
-                ),
-                QuestionDB(
-                    id="q-3",
-                    document_id="tb-001",
-                    source_chunk_id="chunk-3",
-                    textbook_name="GiaoTrinh_KinhTeViMo_2025.pdf",
-                    chapter="Chương 3: Cung - Cầu và Giá cả thị trường",
-                    bloom_level="Vận dụng",
-                    question_text="Một doanh nghiệp bán sản phẩm có hệ số co giãn của cầu theo giá là |PED| = 1.8. Để tối đa hóa tổng doanh thu, doanh nghiệp này nên áp dụng chiến lược giá nào?",
-                    options=[
-                        {"id": "opt-a", "label": "A", "text": "Tăng giá bán sản phẩm"},
-                        {"id": "opt-b", "label": "B", "text": "Giảm nhẹ giá bán sản phẩm"},
-                        {"id": "opt-c", "label": "C", "text": "Giữ nguyên giá bán và cắt giảm 50% sản lượng"},
-                        {"id": "opt-d", "label": "D", "text": "Tăng giá bán gấp đôi kết hợp giảm chi phí"}
-                    ],
-                    correct_answer_id="opt-b",
-                    explanation="Khi cầu co giãn nhiều (|PED| > 1), tỷ lệ % thay đổi của lượng cầu lớn hơn tỷ lệ % thay đổi của giá. Do đó, giảm giá sẽ kích cầu mạnh và tăng tổng doanh thu.",
-                    confidence_score=92,
-                    status="pending",
-                    created_at=datetime.utcnow()
-                ),
-                QuestionDB(
-                    id="q-4",
-                    document_id="tb-001",
-                    source_chunk_id="chunk-4",
-                    textbook_name="GiaoTrinh_KinhTeViMo_2025.pdf",
-                    chapter="Chương 4: Lý thuyết hành vi người tiêu dùng",
-                    bloom_level="Phân tích",
-                    question_text="Khi giá một hàng hóa thông thường giảm xuống, phân tích tác động thay thế (Substitution Effect) và tác động thu nhập (Income Effect) lên lượng cầu:",
-                    options=[
-                        {"id": "opt-a", "label": "A", "text": "Cả tác động thay thế và tác động thu nhập đều cùng chiều làm tăng lượng cầu"},
-                        {"id": "opt-b", "label": "B", "text": "Tác động thay thế làm tăng cầu, tác động thu nhập làm giảm cầu"},
-                        {"id": "opt-c", "label": "C", "text": "Tác động thu nhập lấn át hoàn toàn và triệt tiêu tác động thay thế"},
-                        {"id": "opt-d", "label": "D", "text": "Không thể xác định vì phụ thuộc vào mức thuế suất chính phủ"}
-                    ],
-                    correct_answer_id="opt-a",
-                    explanation="Đối với hàng hóa thông thường, giá giảm làm tăng sức mua thực tế (tác động thu nhập dương) đồng thời làm hàng hóa tương đối rẻ hơn so với hàng thay thế (tác động thay thế dương), cả hai cùng củng cố làm tăng lượng cầu.",
-                    confidence_score=96,
-                    status="approved",
-                    created_at=datetime.utcnow()
-                )
-            ]
-            db.add_all(default_questions)
-            db.commit()
+        # 2. Không nạp câu hỏi mẫu giả định - Hệ thống bắt đầu ở trạng thái sạch, sẵn sàng nạp từ giáo trình thực tế.
 
         # 3. Seed System Activities if empty
         existing_act = db.execute(select(SystemActivityDB).filter_by(id="act-001")).scalar_one_or_none()
@@ -485,9 +404,7 @@ def startup_db():
         print(f"[EXAM-SERVICE] DB Startup Warning: {e}")
 
 
-# ====================================================================
 # HEALTH CHECK
-# ====================================================================
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     db_status = "connected"
@@ -504,9 +421,7 @@ def health(db: Session = Depends(get_db)):
     }
 
 
-# ====================================================================
 # QUESTION BANK & CRUD WITH FULL AUDIT LOGGING
-# ====================================================================
 @app.get("/questions")
 @app.get("/bank")
 def list_questions(
@@ -548,7 +463,11 @@ def list_questions(
 
 
 @app.post("/questions", status_code=status.HTTP_201_CREATED)
-def create_question(payload: QuestionCreateSchema, db: Session = Depends(get_db)):
+def create_question(
+    payload: QuestionCreateSchema,
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     qid = payload.id or f"q-{uuid.uuid4().hex[:8]}"
     options_data = [opt.dict() for opt in payload.options]
 
@@ -565,7 +484,7 @@ def create_question(payload: QuestionCreateSchema, db: Session = Depends(get_db)
         explanation=payload.explanation or "",
         confidence_score=payload.get_confidence_score(),
         status=payload.status or "pending",
-        created_by=payload.created_by or "lec-001"
+        created_by=payload.created_by or current_user_id
     )
     db.add(new_q)
     db.commit()
@@ -672,7 +591,7 @@ def update_question(
         summary = "Hiệu chỉnh và xác nhận nội dung câu hỏi"
 
     # 5. Lưu vào question_audit_logs
-    lecturer = payload.get_lecturer_id() or x_user_id or "lec-001"
+    lecturer = payload.get_lecturer_id() or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
@@ -724,7 +643,7 @@ def update_status(
         act_action = "status_change"
         summary = f"Chuyển trạng thái câu hỏi từ '{old_status}' sang '{payload.status}'"
 
-    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or "lec-001"
+    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
@@ -793,7 +712,7 @@ def review_question(
         field_changes["bloomLevel"] = {"old": old_bloom, "new": new_bloom}
         q.bloom_level = new_bloom
 
-    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or "lec-001"
+    lecturer = payload.lecturer_id or payload.lecturerId or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     reason = payload.edit_reason or payload.editReason or payload.comment or "Đánh giá chuyên môn từ giảng viên"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
@@ -831,7 +750,7 @@ def batch_approve(
 ):
     """[SCRUM-58] Phê duyệt hàng loạt câu hỏi và lưu vết audit log cho từng câu hỏi"""
     target_ids = payload.get_ids()
-    lecturer = payload.lecturerId or x_user_id or "lec-001"
+    lecturer = payload.lecturerId or x_user_id or get_optional_user_id(authorization=request.headers.get("Authorization"), x_user_id=x_user_id) or "lecturer"
     client_ip = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
 
@@ -858,9 +777,7 @@ def batch_approve(
     return {"message": f"Đã phê duyệt thành công {updated_count} câu hỏi.", "approvedIds": target_ids}
 
 
-# ====================================================================
 # [SCRUM-58] QUESTION AUDIT TRAIL & REVISION HISTORY ENDPOINTS
-# ====================================================================
 @app.get("/questions/{question_id}/audit-logs")
 def get_question_audit_logs(question_id: str, db: Session = Depends(get_db)):
     """[SCRUM-58] Lấy toàn bộ lịch sử chỉnh sửa và vết khảo thí của một câu hỏi cụ thể"""
@@ -905,10 +822,11 @@ def list_question_audit_logs(
     }
 
 
-# ====================================================================
 # EXAM VARIANT GENERATION (Fisher-Yates Shuffler)
-# ====================================================================
+@app.post("/generate-variants")
+@app.post("/shuffle")
 @app.post("/exams/generate-variants")
+@app.post("/exams/shuffle")
 def generate_variants(req: GenerateVariantsRequest, db: Session = Depends(get_db)):
     target_ids = req.selectedQuestionIds or req.questionIds
     resolved_questions = _resolve_questions(req.questions, target_ids, db)
@@ -926,9 +844,7 @@ def generate_variants(req: GenerateVariantsRequest, db: Session = Depends(get_db
     return variants_data
 
 
-# ====================================================================
 # EXPORT ENDPOINTS (Word, PDF, QTI, Unified)
-# ====================================================================
 @app.post("/export/word")
 def export_word(req: ExportDocxRequest, db: Session = Depends(get_db)):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
@@ -943,8 +859,9 @@ def export_word(req: ExportDocxRequest, db: Session = Depends(get_db)):
         university=req.get_university(),
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
-        include_answer_key=req.includeAnswerKey,
-        include_explanation=req.includeExplanation
+        include_answer_key=req.get_include_answer_key(),
+        include_explanation=req.get_include_explanation(),
+        include_omr_sheet=req.get_include_omr_sheet()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx"
@@ -969,8 +886,9 @@ def export_pdf(req: ExportPdfRequest, db: Session = Depends(get_db)):
         university=req.get_university(),
         faculty=req.get_faculty(),
         duration_minutes=req.get_duration(),
-        include_answer_key=req.includeAnswerKey,
-        include_omr_sheet=req.includeOmrSheet
+        include_answer_key=req.get_include_answer_key(),
+        include_explanation=req.get_include_explanation(),
+        include_omr_sheet=req.get_include_omr_sheet()
     )
 
     filename = f"De_Thi_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
@@ -980,27 +898,95 @@ def export_pdf(req: ExportPdfRequest, db: Session = Depends(get_db)):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+@app.post("/export/omr")
+@app.post("/exams/export/omr")
+@app.post("/api/v1/exams/export/omr")
+def export_omr_sheet(req: ExportOmrRequest):
+    """Xuất riêng Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn thi đại học (PDF vector)."""
+    pdf_bytes = PDFExamExporter.generate_omr_50_pdf(
+        university=req.get_university(),
+        faculty=req.get_faculty(),
+        subject=req.get_subject(),
+        exam_code=req.get_code()
+    )
+    filename = f"Phieu_Tra_Loi_OMR_50_Cau_{req.get_code()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 
+@app.post("/export/bundle")
+@app.post("/exams/bundle")
+@app.post("/exams/export/bundle")
+@app.post("/api/v1/exams/export/bundle")
+def export_exam_bundle(req: ExportBundleRequest, db: Session = Depends(get_db)):
+    """Đóng gói toàn bộ tài nguyên khảo thí (PDF, DOCX, OMR 50 câu, Ma trận đáp án, LMS QTI 2.1) thành file ZIP."""
+    questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Danh sách câu hỏi không được rỗng.")
+
+    zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+        exam_title=req.get_title(),
+        subject=req.get_subject(),
+        questions=questions,
+        university=req.get_university(),
+        faculty=req.get_faculty(),
+        duration_minutes=req.get_duration(),
+        exam_code_count=req.get_exam_code_count(),
+        base_exam_code=req.get_base_code(),
+        shuffle_questions=req.shuffleQuestions if req.shuffleQuestions is not None else True,
+        shuffle_options=req.shuffleOptions if req.shuffleOptions is not None else True,
+        include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
+        include_explanation=req.includeExplanation if req.includeExplanation is not None else True,
+        include_omr_sheet=req.includeOmrSheet if req.includeOmrSheet is not None else True
+    )
+
+    filename = f"Bo_De_Thi_Khao_Thi_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
 @app.post("/export/qti")
+@app.post("/exams/export/qti")
+@app.post("/api/v1/exams/export/qti")
 def export_qti(req: ExportQtiRequest, db: Session = Depends(get_db)):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
     if not questions:
         raise HTTPException(status_code=400, detail="Danh sách câu hỏi không được rỗng.")
 
-    xml_content = QTIExporter.export_canvas_moodle_xml(title=req.title, questions=questions)
-    filename = f"quiz_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xml"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    qti_format = (req.format or "zip").lower()
 
-    return Response(
-        content=xml_content,
-        media_type="application/xml",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
+    if qti_format in ("zip", "package", "bundle"):
+        # Xuất gói IMS QTI 2.1 Content Package chuẩn LMS
+        zip_bytes = QTIExporter.export_qti21_package_zip(title=req.title, questions=questions)
+        filename = f"Goi_LMS_QTI_2.1_{timestamp}.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    else:
+        # Xuất file Moodle XML trực tiếp
+        xml_content = QTIExporter.export_canvas_moodle_xml(title=req.title, questions=questions)
+        filename = f"quiz_export_{timestamp}.xml"
+        return Response(
+            content=xml_content,
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 
 @app.post("/export/unified")
 @app.post("/export")
 @app.post("/exams/export")
-def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
+def unified_export(
+    req: UnifiedExportRequest,
+    current_user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     questions = _resolve_questions(req.questions, req.selectedQuestionIds, db)
     if not questions:
         raise HTTPException(status_code=400, detail="Danh sách câu hỏi trống.")
@@ -1012,7 +998,7 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
         act_id = f"act-{uuid.uuid4().hex[:8]}"
         db.add(SystemActivityDB(
             id=act_id,
-            user_id="lec-001",
+            user_id=current_user_id,
             action_type="export_exam",
             title=f"Xuất bản đề thi ({export_fmt.upper()})",
             detail=f"{req.subjectName or 'Đề thi'} - {len(questions)} câu - {req.examCodeCount or 1} mã đề",
@@ -1024,80 +1010,170 @@ def unified_export(req: UnifiedExportRequest, db: Session = Depends(get_db)):
     except Exception:
         pass
 
-    if export_fmt == "pdf":
-        pdf_bytes = PDFExamExporter.generate_pdf(
-            exam_title=req.examTitle or "ĐỀ THI KẾT THÚC HỌC PHẦN",
-            subject=req.subjectName or "Kinh tế vi mô",
-            exam_code="101",
+    university_name = req.get_university()
+    faculty_name = req.get_faculty()
+    exam_title = req.get_title()
+    subject_name = req.get_subject()
+    exam_code = req.get_code()
+    duration_minutes = req.get_duration()
+    include_answer_key = req.get_include_answer_key()
+    include_explanation = req.get_include_explanation()
+    include_omr = req.get_include_omr_sheet()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    if export_fmt in ("zip", "bundle"):
+        zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+            exam_title=exam_title,
+            subject=subject_name,
             questions=questions,
-            university=req.universityName or "ĐẠI HỌC QUỐC GIA",
-            faculty=req.facultyName or "Khoa Kinh tế & Quản trị",
-            duration_minutes=req.durationMinutes or 60,
-            include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
-            include_omr_sheet=req.includeOmrSheet if req.includeOmrSheet is not None else False
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            exam_code_count=req.get_exam_code_count(),
+            base_exam_code=req.get_base_code(),
+            shuffle_questions=req.shuffleQuestions if req.shuffleQuestions is not None else True,
+            shuffle_options=req.shuffleOptions if req.shuffleOptions is not None else True,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
         )
+        filename = f"Bo_De_Thi_{exam_code}_{timestamp}.zip"
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    elif export_fmt == "pdf":
+        pdf_bytes = PDFExamExporter.generate_pdf(
+            exam_title=exam_title,
+            subject=subject_name,
+            exam_code=exam_code,
+            questions=questions,
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
+        )
+        filename = f"De_Thi_{exam_code}_{timestamp}.pdf"
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="De_Thi_101.pdf"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     elif export_fmt == "qti":
-        xml_content = QTIExporter.export_canvas_moodle_xml(
-            title=req.examTitle or "Quiz Canvas LMS",
+        # Mặc định export QTI trả về gói IMS Content Package ZIP
+        zip_bytes = QTIExporter.export_qti21_package_zip(
+            title=exam_title,
             questions=questions
         )
+        filename = f"Goi_LMS_QTI_2.1_{exam_code}_{timestamp}.zip"
         return Response(
-            content=xml_content,
-            media_type="application/xml",
-            headers={"Content-Disposition": f'attachment; filename="exam_qti.xml"'}
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
     else:
         docx_bytes = WordExamExporter.generate_docx(
-            exam_title=req.examTitle or "ĐỀ THI KẾT THÚC HỌC PHẦN",
-            subject=req.subjectName or "Kinh tế vi mô",
-            exam_code="101",
+            exam_title=exam_title,
+            subject=subject_name,
+            exam_code=exam_code,
             questions=questions,
-            university=req.universityName or "ĐẠI HỌC QUỐC GIA",
-            faculty=req.facultyName or "Khoa Kinh tế & Quản trị",
-            duration_minutes=req.durationMinutes or 60,
-            include_answer_key=req.includeAnswerKey if req.includeAnswerKey is not None else True,
-            include_explanation=req.includeExplanation if req.includeExplanation is not None else False
+            university=university_name,
+            faculty=faculty_name,
+            duration_minutes=duration_minutes,
+            include_answer_key=include_answer_key,
+            include_explanation=include_explanation,
+            include_omr_sheet=include_omr
         )
+        filename = f"De_Thi_{exam_code}_{timestamp}.docx"
         return Response(
             content=docx_bytes,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": f'attachment; filename="De_Thi_101.docx"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
 
 
-# ====================================================================
-# EXAM RECORD ARCHIVE & HISTORY
-# ====================================================================
+# EXAM RECORD ARCHIVE & HISTORY (POST /api/v1/exams/save)
+@app.post("/api/v1/exams/save", status_code=status.HTTP_201_CREATED)
+@app.post("/exams/save", status_code=status.HTTP_201_CREATED)
+@app.post("/save", status_code=status.HTTP_201_CREATED)
 @app.post("/exams", status_code=status.HTTP_201_CREATED)
-def create_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(get_db)):
+def save_exam_record(
+    payload: CreateExamRecordRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     eid = payload.id or f"exam-{uuid.uuid4().hex[:8]}"
+    user_id = payload.get_user_id() or current_user["user_id"]
+    title = payload.get_title()
+    subject = payload.get_subject()
+    faculty = payload.get_faculty()
+    university = payload.get_university()
+    duration = payload.get_duration()
+    codes = payload.get_exam_codes()
+    q_ids = payload.get_question_ids()
+    export_fmt = payload.format or "docx"
+
+    # 1. Lưu bài thi đã kiểm duyệt vào DB exams.exams
     new_exam = ExamDB(
         id=eid,
-        user_id=payload.get_user_id(),
-        title=payload.title,
-        subject=payload.subject,
-        faculty=payload.faculty or "Khoa Kinh tế & Quản trị",
-        university=payload.university or "ĐẠI HỌC QUỐC GIA",
-        duration_minutes=payload.get_duration(),
-        exam_codes=payload.get_exam_codes(),
-        selected_question_ids=payload.get_question_ids(),
-        format=payload.format or "docx"
+        user_id=user_id,
+        title=title,
+        subject=subject,
+        faculty=faculty,
+        university=university,
+        duration_minutes=duration,
+        exam_codes=codes,
+        selected_question_ids=q_ids,
+        format=export_fmt,
+        created_at=datetime.utcnow()
     )
     db.add(new_exam)
 
-    # Ghi nhận exam audit log
+    # 2. Lưu chi tiết các biến thể mã đề vào DB exams.exam_variants
+    variants_to_save = payload.variants
+    if not variants_to_save and payload.questions and len(codes) > 1:
+        try:
+            shuffled = ExamShuffler.generate_variants(
+                questions=payload.questions,
+                exam_code_count=len(codes),
+                base_exam_code=int(codes[0]) if codes[0].isdigit() else 101
+            )
+            variants_to_save = shuffled.get("variants", [])
+        except Exception as e:
+            print(f"[EXAM-SERVICE] Shuffler warning: {e}")
+
+    if variants_to_save:
+        for v in variants_to_save:
+            var_id = f"var-{uuid.uuid4().hex[:8]}"
+            var_code = str(v.get("examCode") or v.get("exam_code") or "101")
+            var_questions = v.get("questions", [])
+            q_seq = [q.get("id") for q in var_questions] if var_questions else q_ids
+            ans_keys = v.get("answerKey") or v.get("answer_keys") or []
+            
+            db_variant = ExamVariantDB(
+                id=var_id,
+                exam_id=eid,
+                exam_code=var_code,
+                question_sequence=q_seq,
+                options_permutation=[{q.get("id"): [opt.get("id") for opt in q.get("options", [])]} for q in var_questions] if var_questions else [],
+                answer_keys=ans_keys,
+                created_at=datetime.utcnow()
+            )
+            db.add(db_variant)
+
+    # 3. Ghi log kiểm toán exam_audit_logs
     try:
         exam_audit = ExamAuditLogDB(
             id=f"exam-audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}",
             exam_id=eid,
-            user_id=payload.get_user_id(),
+            user_id=user_id,
             action="create",
             details={"title": payload.title, "exam_codes": payload.get_exam_codes(), "question_count": len(payload.get_question_ids())},
             performed_at=datetime.utcnow()
@@ -1106,20 +1182,46 @@ def create_exam_record(payload: CreateExamRecordRequest, db: Session = Depends(g
     except Exception:
         pass
 
+    # 4. Ghi log hoạt động khảo thí vào DB system_activities
+    try:
+        act_id = f"act-{uuid.uuid4().hex[:8]}"
+        db.add(SystemActivityDB(
+            id=act_id,
+            user_id=user_id,
+            action_type="save_exam",
+            title=f"Lưu đề thi kiểm duyệt: {title}",
+            detail=f"{subject} - {len(q_ids)} câu hỏi - {len(codes)} mã đề ({export_fmt.upper()})",
+            icon_name="CheckCircle2",
+            badge_color="text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+            created_at=datetime.utcnow()
+        ))
+    except Exception:
+        pass
+
     db.commit()
     db.refresh(new_exam)
-    return format_exam_response(new_exam)
+
+    return {
+        "status": "success",
+        "message": "Đã lưu bài thi đã kiểm duyệt thành công vào CSDL exams.exams.",
+        "exam": format_exam_response(new_exam),
+        "savedAt": new_exam.created_at.isoformat()
+    }
 
 
 @app.get("/exams")
+@app.get("/api/v1/exams")
 def list_exams(
-    user_id: Optional[str] = Query("lec-001"),
+    user_id: Optional[str] = Query(None, description="Lọc theo mã định danh giảng viên"),
     limit: int = Query(20, ge=1, le=100),
+    current_user: Dict[str, Any] = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(ExamDB)
-    if user_id:
-        query = query.filter(ExamDB.user_id == user_id)
+    role = current_user.get("role", "lecturer")
+    target_user_id = user_id or (current_user["user_id"] if role == "lecturer" else None)
+    if target_user_id:
+        query = query.filter(ExamDB.user_id == target_user_id)
     exams = query.order_by(desc(ExamDB.created_at)).limit(limit).all()
     return [format_exam_response(e) for e in exams]
 
@@ -1129,7 +1231,141 @@ def get_exam(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
     if not exam:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi gói đề thi.")
-    return format_exam_response(exam)
+    res = format_exam_response(exam)
+    # Trả về chi tiết các biến thể mã đề và câu hỏi kèm theo để Frontend tái tạo trực quan
+    variants = db.query(ExamVariantDB).filter(ExamVariantDB.exam_id == exam_id).all()
+    res["variants"] = [
+        {
+            "id": v.id,
+            "examCode": v.exam_code,
+            "questionSequence": v.question_sequence if isinstance(v.question_sequence, list) else json.loads(v.question_sequence or "[]"),
+            "answerKey": v.answer_key if isinstance(v.answer_key, list) else json.loads(v.answer_key or "[]")
+        }
+        for v in variants
+    ]
+    q_ids = res.get("selectedQuestionIds", [])
+    if q_ids:
+        q_rows = db.query(QuestionDB).filter(QuestionDB.id.in_(q_ids)).all()
+        q_map = {q.id: format_question_response(q) for q in q_rows}
+        res["questions"] = [q_map[qid] for qid in q_ids if qid in q_map]
+    else:
+        res["questions"] = []
+    return res
+
+@app.get("/exams/{exam_id}/download")
+@app.get("/api/v1/exams/{exam_id}/download")
+def download_saved_exam(
+    exam_id: str,
+    format: str = Query("zip", pattern="^(zip|pdf|docx|qti)$"),
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Tải lại bộ đề thi đã lưu trữ theo định dạng yêu cầu (zip, pdf, docx, qti)."""
+    exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài thi với ID tương ứng.")
+
+    role = current_user.get("role", "lecturer")
+    if role == "lecturer" and exam.user_id != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền tải đề thi của giảng viên khác.")
+
+    q_ids = exam.selected_question_ids or []
+    questions = _resolve_questions(None, q_ids, db)
+    if not questions:
+        raise HTTPException(status_code=400, detail="Không tìm thấy câu hỏi thuộc gói đề thi này.")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_fmt = format.lower()
+    exam_code = (exam.exam_codes[0] if exam.exam_codes else "101")
+
+    if export_fmt in ("zip", "bundle"):
+        zip_bytes = ExamBundleExporter.generate_exam_bundle_zip(
+            exam_title=exam.title,
+            subject=exam.subject,
+            questions=questions,
+            university=exam.university or "ĐẠI HỌC QUỐC GIA",
+            faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
+            duration_minutes=exam.duration_minutes or 60,
+            exam_code_count=len(exam.exam_codes) if exam.exam_codes else 4,
+            base_exam_code=int(exam_code) if exam_code.isdigit() else 101,
+            include_answer_key=True,
+            include_explanation=True,
+            include_omr_sheet=True
+        )
+        filename = f"Bo_De_Thi_{exam_id}_{timestamp}.zip"
+        return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif export_fmt == "pdf":
+        pdf_bytes = PDFExamExporter.generate_pdf(
+            exam_title=exam.title,
+            subject=exam.subject,
+            exam_code=exam_code,
+            questions=questions,
+            university=exam.university or "ĐẠI HỌC QUỐC GIA",
+            faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
+            duration_minutes=exam.duration_minutes or 60,
+            include_answer_key=True,
+            include_explanation=False,
+            include_omr_sheet=True
+        )
+        filename = f"De_Thi_{exam_code}_{timestamp}.pdf"
+        return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    elif export_fmt == "qti":
+        zip_bytes = QTIExporter.export_qti21_package_zip(title=exam.title, questions=questions)
+        filename = f"Goi_LMS_QTI_2.1_{exam_code}_{timestamp}.zip"
+        return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    else:
+        docx_bytes = WordExamExporter.generate_docx(
+            exam_title=exam.title,
+            subject=exam.subject,
+            exam_code=exam_code,
+            questions=questions,
+            university=exam.university or "ĐẠI HỌC QUỐC GIA",
+            faculty=exam.faculty or "Khoa Kinh tế & Quản trị",
+            duration_minutes=exam.duration_minutes or 60,
+            include_answer_key=True,
+            include_explanation=False,
+            include_omr_sheet=True
+        )
+        filename = f"De_Thi_{exam_code}_{timestamp}.docx"
+        return Response(content=docx_bytes, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.delete("/exams/{exam_id}")
+@app.delete("/api/v1/exams/{exam_id}")
+def delete_saved_exam(
+    exam_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Xóa bản ghi gói đề thi với kiểm soát phân quyền (RBAC)."""
+    exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
+    if not exam:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài thi cần xóa.")
+
+    role = current_user.get("role", "lecturer")
+    if role == "lecturer" and exam.user_id != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="Bạn không có quyền xóa đề thi của giảng viên khác.")
+
+    try:
+        exam_audit = ExamAuditLogDB(
+            id=f"exam-audit-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}",
+            exam_id=exam_id,
+            user_id=current_user["user_id"],
+            action="delete",
+            details={"title": exam.title, "subject": exam.subject},
+            performed_at=datetime.utcnow()
+        )
+        db.add(exam_audit)
+    except Exception:
+        pass
+
+    db.delete(exam)
+    db.commit()
+    return {"status": "success", "message": f"Đã xóa thành công bài thi {exam_id}."}
+
 
 
 @app.get("/exams/analytics")
@@ -1161,9 +1397,7 @@ def get_analytics(db: Session = Depends(get_db)):
     }
 
 
-# ====================================================================
 # [SCRUM-58] ANALYTICS & BLOOM TAXONOMY ENDPOINTS
-# ====================================================================
 @app.get("/analytics/bloom")
 @app.get("/questions/statistics/bloom")
 def get_bloom_taxonomy_analytics(
@@ -1210,10 +1444,24 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
             for a in activities
         ]
 
+        total_textbooks = 0
+        try:
+            doc_service_url = os.getenv("DOCUMENT_SERVICE_URL", "http://127.0.0.1:8002")
+            if "document-service" in doc_service_url and not os.path.exists("/.dockerenv"):
+                doc_service_url = "http://127.0.0.1:8002"
+            with httpx.Client(timeout=3.0) as client:
+                res = client.get(f"{doc_service_url}/documents")
+                if res.status_code == 200:
+                    doc_list = res.json()
+                    if isinstance(doc_list, list):
+                        total_textbooks = len(doc_list)
+        except Exception:
+            pass
+
         return {
-            "totalTextbooks": 12,
-            "totalApprovedQuestions": approved_count + 348 if approved_count == 0 else approved_count,
-            "totalExamsPackaged": max(total_exams, 28),
+            "totalTextbooks": total_textbooks,
+            "totalApprovedQuestions": approved_count,
+            "totalExamsPackaged": total_exams,
             "pendingReviewCount": pending_count,
             "bloomDistribution": {
                 "nhanBiet": bloom_stats["distribution"]["nhanBiet"],
@@ -1232,15 +1480,15 @@ def get_dashboard_analytics(db: Session = Depends(get_db)):
         }
     except Exception as e:
         return {
-            "totalTextbooks": 12,
-            "totalApprovedQuestions": 348,
-            "totalExamsPackaged": 28,
-            "pendingReviewCount": 2,
+            "totalTextbooks": 0,
+            "totalApprovedQuestions": 0,
+            "totalExamsPackaged": 0,
+            "pendingReviewCount": 0,
             "bloomDistribution": {
-                "nhanBiet": {"count": 142, "percentage": 40},
-                "thongHieu": {"count": 120, "percentage": 34},
-                "vanDung": {"count": 65, "percentage": 18},
-                "phanTich": {"count": 24, "percentage": 8}
+                "nhanBiet": {"count": 0, "percentage": 0},
+                "thongHieu": {"count": 0, "percentage": 0},
+                "vanDung": {"count": 0, "percentage": 0},
+                "phanTich": {"count": 0, "percentage": 0}
             },
             "recentActivities": []
         }

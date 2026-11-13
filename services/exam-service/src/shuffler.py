@@ -27,7 +27,10 @@ class ExamShuffler:
         rng = random.Random(seed) if seed is not None else random.Random()
 
         for i in range(exam_code_count):
-            variant_code = str(base_exam_code + i)
+            try:
+                variant_code = str(int(base_exam_code) + i)
+            except Exception:
+                variant_code = f"{base_exam_code}_{i+1}"
             is_master_variant = (i == 0)
 
             # 1. Hoán vị câu hỏi

@@ -16,10 +16,36 @@ import {
   Cpu,
   RefreshCw,
   XCircle,
+  History,
+  Clock,
+  RotateCcw,
+  Eye,
+  Trash2,
+  Calendar,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
 import apiClient from '../services/apiClient';
+
+export interface GenerationHistoryRecord {
+  id: string;
+  jobId?: string;
+  documentId: string;
+  documentName: string;
+  chapters: string[];
+  bloomDistribution: {
+    nhanBiet: number;
+    thongHieu: number;
+    vanDung: number;
+    phanTich: number;
+  };
+  totalQuestions: number;
+  questions: Question[];
+  createdAt: string;
+  status: 'success' | 'failed' | 'completed';
+}
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -27,38 +53,16 @@ interface AIGenerationScreenProps {
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
 }
 
-const FALLBACK_DOCUMENTS = [
-  {
-    id: 'doc-kinh-te-vi-mo-2025',
-    name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-    status: 'ready',
-    totalPages: 184,
-    chaptersCount: 5,
-  },
-  {
-    id: 'doc-tri-tue-nhan-tao-2026',
-    name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-    status: 'ready',
-    totalPages: 240,
-    chaptersCount: 4,
-  },
+const FALLBACK_DOCUMENTS: Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }> = [];
+
+const DEFAULT_CUSTOM_CHAPTERS = [
+  'Chương 1: Tổng quan kiến thức học phần & Khái niệm cốt lõi',
+  'Chương 2: Cơ sở lý thuyết và Mô hình phân tích chuyên sâu',
+  'Chương 3: Quy trình vận dụng thực tiễn & Bài tập tình huống',
+  'Chương 4: Phân tích nâng cao & Đánh giá tổng hợp',
 ];
 
-const FALLBACK_CHAPTERS: Record<string, string[]> = {
-  'doc-kinh-te-vi-mo-2025': [
-    'Chương 1: Khái quát về Kinh tế học vi mô và Các nguyên lý nền tảng',
-    'Chương 2: Cung - Cầu và Cơ chế cân bằng giá cả thị trường',
-    'Chương 3: Lý thuyết hành vi người tiêu dùng và Lợi ích biên',
-    'Chương 4: Lý thuyết sản xuất, Chi phí và Tối đa hóa lợi nhuận',
-    'Chương 5: Cấu trúc thị trường: Cạnh tranh hoàn hảo và Độc quyền',
-  ],
-  'doc-tri-tue-nhan-tao-2026': [
-    'Chương 1: Tổng quan về Trí tuệ nhân tạo & Intelligent Agents',
-    'Chương 2: Không gian trạng thái và Thuật toán tìm kiếm Heuristic (A*, IDA*)',
-    'Chương 3: Cơ sở Học máy và Mạng nơ-ron nhân tạo',
-    'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
-  ],
-};
+const FALLBACK_CHAPTERS: Record<string, string[]> = {};
 
 const normalizeGeneratedQuestion = (
   raw: any,
@@ -170,10 +174,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   onGenerateSuccess,
   onShowToast,
 }) => {
-  const [selectedBook, setSelectedBook] = useState(FALLBACK_DOCUMENTS[0].id);
-  const [selectedChapters, setSelectedChapters] = useState<string[]>([
-    FALLBACK_CHAPTERS['doc-kinh-te-vi-mo-2025'][1],
-  ]);
+  const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
+  const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [bloomDistribution, setBloomDistribution] = useState({
     nhanBiet: 4,
     thongHieu: 4,
@@ -185,13 +187,83 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<string>('giuaKy');
-  const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>(FALLBACK_DOCUMENTS);
-  const [chaptersByDocument, setChaptersByDocument] = useState<Record<string, string[]>>(FALLBACK_CHAPTERS);
+  const [activeMainTab, setActiveMainTab] = useState<'generate' | 'history'>('generate');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [previewHistoryRecord, setPreviewHistoryRecord] = useState<GenerationHistoryRecord | null>(null);
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const [generationHistory, setGenerationHistory] = useState<GenerationHistoryRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('quizgen_generation_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveHistoryRecord = useCallback((record: GenerationHistoryRecord) => {
+    setGenerationHistory((prev) => {
+      const next = [record, ...prev.filter((r) => r.id !== record.id)].slice(0, 50);
+      try {
+        localStorage.setItem('quizgen_generation_history', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  const deleteHistoryRecord = useCallback((id: string) => {
+    setGenerationHistory((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      try {
+        localStorage.setItem('quizgen_generation_history', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    onShowToast('info', 'Đã xóa bản ghi', 'Đã xóa bản ghi khỏi lịch sử sinh câu hỏi.');
+  }, [onShowToast]);
+
+  const loadHistoryFromApi = useCallback(async () => {
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/ai/history`);
+      if (res.ok) {
+        const jobs = await res.json();
+        if (Array.isArray(jobs) && jobs.length > 0) {
+          setGenerationHistory((prev) => {
+            const map = new Map<string, GenerationHistoryRecord>();
+            prev.forEach((r) => map.set(r.id, r));
+            jobs.forEach((j: any) => {
+              const jid = j.id || j.jobId;
+              if (!map.has(jid)) {
+                map.set(jid, {
+                  id: jid,
+                  jobId: jid,
+                  documentId: j.documentId || '',
+                  documentName: `Tài liệu #${j.documentId}`,
+                  chapters: j.chapters || [],
+                  bloomDistribution: j.bloomMatrix || { nhanBiet: 0, thongHieu: 0, vanDung: 0, phanTich: 0 },
+                  totalQuestions: j.totalGenerated || j.totalRequested || 0,
+                  questions: [],
+                  createdAt: j.createdAt ? new Date(j.createdAt).toLocaleString('vi-VN') : 'Gần đây',
+                  status: j.status === 'completed' ? 'success' : j.status || 'success',
+                });
+              }
+            });
+            return Array.from(map.values()).sort((a, b) => (b.id > a.id ? 1 : -1));
+          });
+        }
+      }
+    } catch {}
+  }, [API_BASE]);
+
+  useEffect(() => {
+    loadHistoryFromApi();
+  }, [loadHistoryFromApi]);
+
+  const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
+  const [chaptersByDocument, setChaptersByDocument] = useState<Record<string, string[]>>({});
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
 
   const hasWarnedBackendRef = useRef(false);
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
   const parseErrorMessage = async (res: Response): Promise<string> => {
     try {
@@ -223,10 +295,10 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       // Merge with localStorage custom uploaded documents
       let localUploadedDocs: any[] = [];
       try {
-        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]').filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
       } catch {}
 
-      const combined = [...localUploadedDocs, ...list];
+      const combined = [...localUploadedDocs, ...list, ...FALLBACK_DOCUMENTS];
       const readyDocs = combined
         .filter((item: any) => item && (item.status === 'ready' || !item.status))
         .map((item: any) => ({
@@ -242,33 +314,32 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
       );
 
-      if (uniqueDocs.length > 0) {
-        setDocuments(uniqueDocs);
+      setDocuments(uniqueDocs);
+      const savedId = localStorage.getItem('quizgen_selected_book_id');
+      if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+        setSelectedBook(savedId);
+      } else if (uniqueDocs.length > 0) {
         setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
-        setIsUsingFallback(false);
-      } else {
-        setDocuments(FALLBACK_DOCUMENTS);
-        setIsUsingFallback(true);
       }
+      setIsUsingFallback(false);
     } catch {
-      // Offline fallback: check localStorage then fallback to sample documents
       let localUploadedDocs: any[] = [];
       try {
-        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]').filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
       } catch {}
 
-      if (localUploadedDocs.length > 0) {
-        const combined = [...localUploadedDocs, ...FALLBACK_DOCUMENTS];
-        setDocuments(combined);
-        setSelectedBook((prev) => (combined.some((d) => d.id === prev) ? prev : combined[0].id));
-      } else {
-        setDocuments(FALLBACK_DOCUMENTS);
+      const combined = [...localUploadedDocs, ...FALLBACK_DOCUMENTS];
+      const uniqueDocs = combined.filter(
+        (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
+      );
+      setDocuments(uniqueDocs);
+      const savedId = localStorage.getItem('quizgen_selected_book_id');
+      if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+        setSelectedBook(savedId);
+      } else if (uniqueDocs.length > 0) {
+        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
       }
       setIsUsingFallback(true);
-      if (!hasWarnedBackendRef.current) {
-        hasWarnedBackendRef.current = true;
-        onShowToast('info', 'Chế độ Demo (Backend ngoại tuyến)', 'Đang hiển thị tài liệu mẫu từ RAG Vector store.');
-      }
     } finally {
       setIsLoadingDocuments(false);
     }
@@ -285,11 +356,16 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
   const chaptersList = useMemo(() => {
     if (!selectedBook) return [];
-    return chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
+    return (
+      chaptersByDocument[selectedBook] ||
+      FALLBACK_CHAPTERS[selectedBook] ||
+      DEFAULT_CUSTOM_CHAPTERS
+    );
   }, [selectedBook, chaptersByDocument]);
 
   const handleSelectBook = (bookId: string) => {
     setSelectedBook(bookId);
+    localStorage.setItem('quizgen_selected_book_id', bookId);
     const available = chaptersByDocument[bookId] || FALLBACK_CHAPTERS[bookId] || [];
     if (available.length > 0) {
       setSelectedChapters([available[0]]);
@@ -324,7 +400,10 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
-        const res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        let res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        if (!res.ok) {
+          res = await apiClient.fetch(`${API_BASE}/documents/${selectedBook}`);
+        }
         if (!res.ok) {
           throw new Error(await parseErrorMessage(res));
         }
@@ -334,12 +413,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
           setSelectedChapters([chapters[0]]);
         } else {
-          const defaultCh = ['Chương 1: Nội dung tổng quát'];
+          const defaultCh = ['Toàn bộ nội dung tài liệu'];
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
           setSelectedChapters(defaultCh);
         }
       } catch {
-        const defaultCh = ['Chương 1: Nội dung tổng quát'];
+        const defaultCh = ['Toàn bộ nội dung tài liệu'];
         setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
         setSelectedChapters(defaultCh);
       }
@@ -394,7 +473,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setGenerationStep('Đang kết nối API Gateway và truy xuất ngữ cảnh RAG từ tài liệu...');
 
     const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const defaultChapter = selectedChapters[0] || 'Chương tổng hợp';
 
     // Timeout Controller (60 giây cho các đề thi lớn)
@@ -425,6 +504,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       const payload = {
         documentId: selectedBook,
         document_id: selectedBook,
+        document_name: selectedDoc?.name || '',
+        documentName: selectedDoc?.name || '',
         chapters: selectedChapters,
         bloomMatrix: bloomDistribution,
         bloom_matrix: bloomDistribution,
@@ -495,6 +576,21 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         normalizeGeneratedQuestion(item, bookName, defaultChapter, index)
       );
 
+      // Lưu lịch sử đợt sinh câu hỏi thành công
+      const newRecord: GenerationHistoryRecord = {
+        id: `gen-${Date.now()}`,
+        jobId: data?.jobId,
+        documentId: selectedBook,
+        documentName: bookName,
+        chapters: [...selectedChapters],
+        bloomDistribution: { ...bloomDistribution },
+        totalQuestions: mappedQuestions.length,
+        questions: mappedQuestions,
+        createdAt: new Date().toLocaleString('vi-VN'),
+        status: 'success',
+      };
+      saveHistoryRecord(newRecord);
+
       setGenerationProgress(100);
 
       setTimeout(() => {
@@ -541,8 +637,22 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setIsGenerating(false);
     setGenerationError(null);
     const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
+    // Lưu lịch sử đợt sinh câu hỏi dự phòng
+    const newRecord: GenerationHistoryRecord = {
+      id: `gen-fb-${Date.now()}`,
+      documentId: selectedBook,
+      documentName: bookName,
+      chapters: [...selectedChapters],
+      bloomDistribution: { ...bloomDistribution },
+      totalQuestions: fallbackQuestions.length,
+      questions: fallbackQuestions,
+      createdAt: new Date().toLocaleString('vi-VN'),
+      status: 'success',
+    };
+    saveHistoryRecord(newRecord);
+
     onShowToast(
       'info',
       'Đã nạp bộ câu hỏi dự phòng',
@@ -552,48 +662,46 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     onNavigate('review');
   };
 
+  const filteredHistory = useMemo(() => {
+    if (!historySearchQuery.trim()) return generationHistory;
+    const q = historySearchQuery.toLowerCase();
+    return generationHistory.filter(
+      (h) =>
+        h.documentName.toLowerCase().includes(q) ||
+        h.chapters.some((c) => c.toLowerCase().includes(q))
+    );
+  }, [generationHistory, historySearchQuery]);
+
   return (
-    <div className="flex-1 p-8 overflow-y-auto space-y-8 bg-[#0b0f19] text-slate-100 relative">
+    <div className="flex-1 p-6 md:p-8 overflow-y-auto space-y-6 bg-[#f7f9fb] text-slate-800 relative">
       {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
       {isGenerating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-2xl bg-black/80 p-4">
-          {/* Ambient glows */}
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-          <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1s' }} />
-
-          <div className="relative glass-panel rounded-3xl p-8 sm:p-10 max-w-md w-full border border-white/[0.12] shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
+          <div className="relative bg-white rounded-3xl p-8 sm:p-10 max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden">
             {/* Shimmer wave bar at top */}
             <div className="absolute top-0 left-0 right-0 h-1 shimmer-bar" />
 
             {generationError ? (
               /* Error Display inside modal */
               <div className="text-center space-y-4 animate-fade-in">
-                <div className="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-[#da1c2d]">
                   <AlertCircle className="w-8 h-8" />
                 </div>
 
                 <div className="space-y-1.5">
-                  <h3 className="text-lg font-bold text-white">Lỗi kết nối AI Service</h3>
-                  <p className="text-xs text-rose-300 leading-relaxed bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left">
+                  <h3 className="text-lg font-bold text-slate-900">Lỗi kết nối AI Service</h3>
+                  <p className="text-xs text-[#da1c2d] leading-relaxed bg-rose-50 p-3 rounded-xl border border-rose-200 text-left">
                     {generationError}
                   </p>
                 </div>
 
                 <div className="space-y-2 pt-2">
                   <button
-                    onClick={handleUseFallbackQuestions}
-                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Tiếp tục bằng AI RAG Engine (Không cần chờ Backend)
-                  </button>
-
-                  <button
                     onClick={handleStartGenerate}
-                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-300 bg-white/[0.06] hover:bg-white/10 hover:text-white transition-colors flex items-center justify-center gap-2 border border-white/[0.08]"
+                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 transition-all flex items-center justify-center gap-2 shadow-md shadow-[#008689]/25"
                   >
                     <RefreshCw className="w-4 h-4" />
-                    Thử lại gọi API Gateway (:8000)
+                    Thử lại gọi mô hình AI
                   </button>
 
                   <button
@@ -601,9 +709,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                       setIsGenerating(false);
                       setGenerationError(null);
                     }}
-                    className="text-xs text-slate-400 hover:text-white transition-colors pt-1"
+                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-200"
                   >
-                    Hủy bỏ
+                    Đóng và cấu hình lại
                   </button>
                 </div>
               </div>
@@ -611,18 +719,15 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
               /* Normal Loading Progress */
               <div>
                 <div className="flex justify-center mb-5">
-                  <div className="relative">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-glow-md">
-                      <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
-                    </div>
-                    <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl animate-pulse" />
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#008689] to-[#1d999d] flex items-center justify-center shadow-lg shadow-[#008689]/25">
+                    <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
                   </div>
                 </div>
 
-                <h2 className="text-center text-xl font-extrabold text-white mb-1.5 tracking-tight">
+                <h2 className="text-center text-xl font-extrabold text-slate-900 mb-1.5 tracking-tight">
                   Gemini AI đang sinh câu hỏi
                 </h2>
-                <p className="text-center text-xs text-slate-400 mb-6">
+                <p className="text-center text-xs text-slate-500 mb-6">
                   Đang xử lý {totalQuestions} câu hỏi theo Thang đo nhận thức Bloom qua API
                 </p>
 
@@ -645,35 +750,35 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                         key={step}
                         className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-all duration-300 ${
                           isDone
-                            ? 'bg-emerald-500/10 border-emerald-500/25 opacity-70'
+                            ? 'bg-emerald-50 border-emerald-200'
                             : isActive
-                            ? 'bg-blue-500/15 border-blue-500/40 shadow-sm'
-                            : 'bg-white/[0.02] border-white/[0.06] opacity-40'
+                            ? 'bg-[#e0f7fa]/75 border-[#008689]/40 shadow-sm'
+                            : 'bg-slate-50 border-slate-200 opacity-60'
                         }`}
                       >
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold border transition-all ${
                             isDone
-                              ? 'bg-emerald-500 border-emerald-400 text-white'
+                              ? 'bg-emerald-500 border-emerald-600 text-white'
                               : isActive
-                              ? 'bg-blue-600 border-blue-400 text-white animate-pulse'
-                              : 'bg-white/[0.05] border-white/[0.1] text-slate-500'
+                              ? 'bg-[#008689] border-[#006d70] text-white animate-pulse'
+                              : 'bg-white border-slate-300 text-slate-400'
                           }`}
                         >
                           {isDone ? '✓' : step}
                         </div>
                         <span
-                          className={`text-xs font-medium leading-snug flex-1 ${
-                            isActive ? 'text-blue-200' : isDone ? 'text-emerald-300' : 'text-slate-500'
+                          className={`text-xs font-semibold leading-snug flex-1 ${
+                            isActive ? 'text-[#006d70]' : isDone ? 'text-emerald-700' : 'text-slate-500'
                           }`}
                         >
                           {label}
                         </span>
                         {isActive && (
                           <div className="flex space-x-1 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '300ms' }} />
                           </div>
                         )}
                       </div>
@@ -682,19 +787,19 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 </div>
 
                 {/* Progress bar */}
-                <div className="mt-5 w-full bg-white/[0.06] h-2 rounded-full overflow-hidden">
+                <div className="mt-5 w-full bg-slate-200 h-2 rounded-full overflow-hidden">
                   <div
-                    className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500"
+                    className="bg-gradient-to-r from-[#008689] to-[#1d999d] h-full rounded-full transition-all duration-500"
                     style={{ width: `${generationProgress}%` }}
                   />
                 </div>
 
-                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-400">
+                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-500">
                   <span className="truncate max-w-[200px]">{generationStep}</span>
-                  <span className="text-blue-400 font-bold shrink-0">{generationProgress}%</span>
+                  <span className="text-[#008689] font-bold shrink-0">{generationProgress}%</span>
                 </div>
 
-                <p className="text-center text-[10px] text-slate-500 font-mono mt-3">
+                <p className="text-center text-[10px] text-slate-400 font-mono mt-3">
                   POST /api/v1/ai/generate · Timeout: 60s
                 </p>
               </div>
@@ -703,182 +808,327 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         </div>
       )}
 
-      {/* Background Glow */}
-      <div className="absolute top-20 right-1/4 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
-
-      {/* 1. Header */}
-      <div className="relative z-10 pb-2 border-b border-white/[0.06]">
-        <div className="flex items-center space-x-2">
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            AI Exam Engineering
-          </span>
-        </div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight mt-1.5">
-          Cấu hình Ma trận Đề thi AI
-        </h1>
-        <p className="text-xs md:text-sm text-slate-400 mt-1">
-          Thiết lập nguồn kiến thức giáo trình và ma trận độ khó sư phạm để sinh bộ câu hỏi trắc nghiệm chuẩn mực.
-        </p>
-      </div>
-
-      {/* Preset Quick Templates */}
-      <div className="glass-card p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 relative z-10">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
-            <Zap className="w-4 h-4" />
+      {/* 1. Header with Mode Tabs: Cấu hình mới & Lịch sử sinh câu hỏi */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+              Bước 2/4 • Sinh Câu Hỏi AI (Bloom)
+            </span>
           </div>
-          <div>
-            <h4 className="text-xs font-bold text-white">Khuôn mẫu ma trận chuẩn hóa Đại học</h4>
-            <p className="text-[11px] text-slate-400">Áp dụng nhanh tỷ lệ độ khó theo quy chế đào tạo tín chỉ</p>
-          </div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
+            Sinh câu hỏi AI theo Ma trận Bloom
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Chọn giáo trình, cấu hình ma trận Bloom hoặc tra cứu lại lịch sử các đợt sinh câu hỏi AI.
+          </p>
         </div>
 
-        <div className="flex items-center space-x-2">
-          {[
-            { id: 'giuaKy', label: 'Đề Giữa kỳ (20 câu)' },
-            { id: 'cuoiKy', label: 'Đề Cuối kỳ (20 câu)' },
-            { id: 'quiz15p', label: 'Kiểm tra 15p (10 câu)' },
-          ].map((preset) => (
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Main Tab Switcher */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
-              key={preset.id}
-              onClick={() => applyPreset(preset.id as any)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                activePreset === preset.id
-                  ? 'bg-blue-600 text-white shadow-glow-sm'
-                  : 'bg-white/[0.05] text-slate-300 hover:bg-white/[0.08] hover:text-white'
+              onClick={() => setActiveMainTab('generate')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeMainTab === 'generate'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {preset.label}
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Cấu hình sinh mới</span>
             </button>
-          ))}
+
+            <button
+              onClick={() => setActiveMainTab('history')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeMainTab === 'history'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Lịch sử sinh câu hỏi</span>
+              {generationHistory.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-extrabold bg-blue-800 text-white">
+                  {generationHistory.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {activeMainTab === 'generate' && (
+            <div className="flex items-center gap-1.5">
+              {[
+                { id: 'giuaKy', label: 'Giữa kỳ (20 câu)' },
+                { id: 'cuoiKy', label: 'Cuối kỳ (20 câu)' },
+                { id: 'quiz15p', label: '15p (10 câu)' },
+              ].map((preset) => (
+                <button
+                  key={preset.id}
+                  onClick={() => applyPreset(preset.id as any)}
+                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                    activePreset === preset.id
+                      ? 'bg-[#008689] text-white shadow-sm'
+                      : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
-        {/* Left Form: Parameters (2 Cols) */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Card 1: Chọn giáo trình & chương */}
-          <div className="glass-card p-6 rounded-2xl space-y-5">
-            <div className="flex items-center space-x-2.5 pb-3 border-b border-white/[0.06]">
-              <BookOpen className="w-4 h-4 text-blue-400" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-                1. Nguồn tri thức giáo trình (RAG Knowledge)
-              </h2>
+      {/* 2. BODY CONTENT: Tùy theo tab đang chọn */}
+      {activeMainTab === 'history' ? (
+        <div className="space-y-4">
+          {/* Header & Filter Search for History */}
+          <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                Lịch sử các đợt sinh câu hỏi AI ({filteredHistory.length})
+              </span>
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={historySearchQuery}
+                onChange={(e) => setHistorySearchQuery(e.target.value)}
+                placeholder="Tìm theo giáo trình hoặc chương..."
+                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:border-[#008689] outline-none"
+              />
+              <button
+                onClick={() => setActiveMainTab('generate')}
+                className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Sinh câu hỏi mới
+              </button>
+            </div>
+          </div>
 
-            {/* Select Textbook */}
+          {filteredHistory.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+                <History className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-800">
+                Chưa có lịch sử sinh câu hỏi nào
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                Sau khi bạn thực hiện sinh câu hỏi bằng mô hình AI, các đợt sinh cùng toàn bộ danh sách câu hỏi đã tạo sẽ được lưu trữ tự động tại đây để bạn kiểm tra lại hoặc nạp lại bất cứ lúc nào.
+              </p>
+              <button
+                onClick={() => setActiveMainTab('generate')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#008689] text-white text-xs font-bold hover:bg-[#006f72] transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Bắt đầu sinh câu hỏi ngay
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredHistory.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-[#008689]/40 hover:shadow-sm transition-all space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-teal-50 text-[#008689] flex items-center justify-center font-bold">
+                        <BookOpen className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">
+                          {item.documentName}
+                        </h4>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                          <Clock className="w-3 h-3 text-slate-400" />
+                          <span>{item.createdAt}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {item.totalQuestions} câu hỏi đã sinh
+                      </span>
+                      <button
+                        onClick={() => deleteHistoryRecord(item.id)}
+                        title="Xóa đợt sinh này khỏi lịch sử"
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chapters */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-slate-500 font-medium">Chương áp dụng:</span>
+                    {item.chapters.map((ch, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold"
+                      >
+                        {ch}
+                      </span>
+                    ))}
+                  </div>
+
+                  {/* Bloom Breakdown */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-xs text-slate-500 font-medium">Ma trận Bloom:</span>
+                    <span className="px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-200">
+                      Nhận biết: {item.bloomDistribution?.nhanBiet ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-teal-50 text-teal-700 text-[11px] font-bold border border-teal-200">
+                      Thông hiểu: {item.bloomDistribution?.thongHieu ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-bold border border-amber-200">
+                      Vận dụng: {item.bloomDistribution?.vanDung ?? 0}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">
+                      Phân tích: {item.bloomDistribution?.phanTich ?? 0}
+                    </span>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      onClick={() => {
+                        setSelectedBook(item.documentId);
+                        setSelectedChapters(item.chapters);
+                        setBloomDistribution(item.bloomDistribution);
+                        setActiveMainTab('generate');
+                        onShowToast('info', 'Đã tải cấu hình', `Đã áp dụng cấu hình sinh câu hỏi từ ${item.documentName}.`);
+                      }}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-[#008689]" />
+                      Dùng lại cấu hình này
+                    </button>
+
+                    {item.questions && item.questions.length > 0 && (
+                      <button
+                        onClick={() => setPreviewHistoryRecord(item)}
+                        className="px-3 py-1.5 rounded-xl border border-[#008689] text-[#008689] bg-[#e6f4f4]/40 hover:bg-[#e6f4f4] text-xs font-bold transition-colors flex items-center gap-1.5"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Xem chi tiết câu hỏi ({item.questions.length})
+                      </button>
+                    )}
+
+                    {item.questions && item.questions.length > 0 && (
+                      <button
+                        onClick={() => {
+                          onGenerateSuccess(item.questions);
+                          onShowToast(
+                            'success',
+                            'Đã nạp bộ câu hỏi',
+                            `Đã nạp ${item.questions.length} câu hỏi vào Không gian Kiểm duyệt.`
+                          );
+                          onNavigate('review');
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5" />
+                        Nạp vào Bước 3 (Kiểm duyệt)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left Form: Parameters (2 Cols) */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Card 1: Chọn giáo trình & chương */}
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
+            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+              1. Chọn giáo trình & chương mục
+            </h2>
+
             <div>
-              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Chọn giáo trình đã nạp:
-              </label>
               <select
                 value={selectedBook}
                 onChange={(e) => handleSelectBook(e.target.value)}
-                className="w-full p-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-xs font-medium text-slate-200 focus:outline-none focus:border-blue-500"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
               >
                 {isLoadingDocuments && (
-                  <option value="" className="bg-[#111827]">Đang tải danh sách giáo trình...</option>
+                  <option value="">Đang tải danh sách giáo trình...</option>
                 )}
                 {!isLoadingDocuments && documents.length === 0 && (
-                  <option value="" className="bg-[#111827]">Chưa có giáo trình sẵn sàng</option>
+                  <option value="">Chưa có giáo trình sẵn sàng</option>
                 )}
                 {documents.map((doc) => (
-                  <option key={doc.id} value={doc.id} className="bg-[#111827]">
+                  <option key={doc.id} value={doc.id}>
                     {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Chapters Multi-select */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Phạm vi chương mục kiến thức cần lấy câu hỏi:
-              </label>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                {chaptersList.length === 0 && (
-                  <div className="p-3 rounded-xl border border-white/[0.08] bg-white/[0.02] text-xs text-slate-400">
-                    Tài liệu này chưa có danh sách chương. Hãy đảm bảo tài liệu đã ở trạng thái sẵn sàng.
-                  </div>
-                )}
-                {chaptersList.map((ch) => {
-                  const isChecked = selectedChapters.includes(ch);
-                  return (
+            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+              {chaptersList.length === 0 && (
+                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400">
+                  Chưa có danh sách chương mục cho tài liệu này.
+                </div>
+              )}
+              {chaptersList.map((ch) => {
+                const isChecked = selectedChapters.includes(ch);
+                return (
+                  <div
+                    key={ch}
+                    onClick={() => handleToggleChapter(ch)}
+                    className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-colors flex items-center justify-between ${
+                      isChecked
+                        ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold'
+                        : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    <span className="text-xs truncate pr-2">{ch}</span>
                     <div
-                      key={ch}
-                      onClick={() => handleToggleChapter(ch)}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                        isChecked
-                          ? 'bg-blue-600/10 border-blue-500/40 text-white'
-                          : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:bg-white/[0.04]'
+                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                        isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
                       }`}
                     >
-                      <span className="text-xs font-medium">{ch}</span>
-                      <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                        isChecked ? 'bg-blue-600 border-blue-600' : 'border-white/20'
-                      }`}>
-                        {isChecked && <Check className="w-3 h-3 text-white" />}
-                      </div>
+                      {isChecked && <Check className="w-3 h-3 text-white" />}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Card 2: Thang đo Bloom */}
-          <div className="glass-card p-6 rounded-2xl space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-              <div className="flex items-center space-x-2.5">
-                <Sliders className="w-4 h-4 text-indigo-400" />
-                <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-                  2. Ma trận Độ khó Nhận thức (Bloom's Taxonomy)
-                </h2>
-              </div>
-              <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
-                Tổng: {totalQuestions} câu hỏi
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                2. Phân bổ mức độ nhận thức Bloom
+              </h2>
+              <span className="text-xs font-mono font-bold text-[#008689]">
+                Tổng: {totalQuestions} câu
               </span>
             </div>
 
-            {/* Sliders */}
-            <div className="space-y-5">
+            <div className="space-y-4">
               {[
-                {
-                  key: 'nhanBiet' as const,
-                  label: 'Mức 1: Nhận biết (Remembering)',
-                  desc: 'Hỏi định nghĩa, quy luật, công thức cơ bản trích nguyên từ giáo trình.',
-                  color: 'text-sky-400',
-                  accent: 'accent-sky-500',
-                },
-                {
-                  key: 'thongHieu' as const,
-                  label: 'Mức 2: Thông hiểu (Understanding)',
-                  desc: 'Giải thích hiện tượng, so sánh khái niệm, phân biệt các trường phái.',
-                  color: 'text-teal-400',
-                  accent: 'accent-teal-500',
-                },
-                {
-                  key: 'vanDung' as const,
-                  label: 'Mức 3: Vận dụng (Applying)',
-                  desc: 'Giải quyết bài toán thực tế, áp dụng công thức vào số liệu cụ thể.',
-                  color: 'text-amber-400',
-                  accent: 'accent-amber-500',
-                },
-                {
-                  key: 'phanTich' as const,
-                  label: 'Mức 4: Phân tích (Analyzing)',
-                  desc: 'Đánh giá chính sách, phân tích tác động đa chiều và tình huống thực tế.',
-                  color: 'text-purple-400',
-                  accent: 'accent-purple-500',
-                },
-              ].map(({ key, label, desc, color, accent }) => (
-                <div key={key} className="space-y-2">
+                { key: 'nhanBiet' as const, label: 'Mức 1: Nhận biết', accent: 'accent-sky-500' },
+                { key: 'thongHieu' as const, label: 'Mức 2: Thông hiểu', accent: 'accent-teal-600' },
+                { key: 'vanDung' as const, label: 'Mức 3: Vận dụng', accent: 'accent-amber-500' },
+                { key: 'phanTich' as const, label: 'Mức 4: Phân tích', accent: 'accent-indigo-600' },
+              ].map(({ key, label, accent }) => (
+                <div key={key} className="space-y-1.5">
                   <div className="flex justify-between items-center text-xs">
-                    <div>
-                      <span className={`font-bold ${color}`}>{label}</span>
-                      <p className="text-[11px] text-slate-400 font-normal mt-0.5">{desc}</p>
-                    </div>
-                    <span className="font-mono text-base font-extrabold text-white bg-white/[0.06] px-3 py-1 rounded-xl border border-white/[0.08]">
+                    <span className="font-semibold text-slate-700">{label}</span>
+                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg">
                       {bloomDistribution[key]} câu
                     </span>
                   </div>
@@ -893,7 +1143,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                         [key]: parseInt(e.target.value) || 0,
                       })
                     }
-                    className={`w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer ${accent}`}
+                    className={`w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer ${accent}`}
                   />
                 </div>
               ))}
@@ -902,98 +1152,159 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         </div>
 
         {/* Right Summary Sidebar (1 Col) */}
-        <div className="space-y-6">
-          <div className="glass-card p-6 rounded-2xl space-y-5 sticky top-8">
-            <div className="flex items-center space-x-2 pb-3 border-b border-white/[0.06]">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                Tóm tắt cấu hình sinh đề
-              </h3>
-            </div>
+        <div>
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4 sticky top-6">
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100">
+              Tóm tắt cấu hình
+            </h3>
 
-            <div className="space-y-3 text-xs">
-              <div className="flex justify-between text-slate-400">
-                <span>Số lượng câu hỏi:</span>
-                <span className="font-bold text-white font-mono text-sm">
-                  {totalQuestions} câu
-                </span>
+            <div className="space-y-2.5 text-xs">
+              <div className="flex justify-between text-slate-500">
+                <span>Tổng số câu:</span>
+                <span className="font-bold text-slate-900 font-mono">{totalQuestions} câu</span>
               </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Dạng thức:</span>
-                <span className="font-semibold text-slate-200">4 lựa chọn (A, B, C, D)</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Giáo trình nguồn:</span>
-                <span className="font-semibold text-slate-200 truncate max-w-[170px]" title={selectedDocument?.name || ''}>
+              <div className="flex justify-between text-slate-500">
+                <span>Giáo trình:</span>
+                <span className="font-semibold text-slate-800 truncate max-w-[160px]" title={selectedDocument?.name || ''}>
                   {selectedDocument?.name || 'Chưa chọn'}
                 </span>
               </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Minh chứng RAG:</span>
-                <span className="font-semibold text-emerald-400">Bắt buộc trích dẫn</span>
-              </div>
-              <div className="flex justify-between text-slate-400">
-                <span>Số chương đã chọn:</span>
-                <span className="font-semibold text-slate-200">
-                  {selectedChapters.length} chương
-                </span>
+              <div className="flex justify-between text-slate-500">
+                <span>Số chương:</span>
+                <span className="font-semibold text-slate-800">{selectedChapters.length} chương</span>
               </div>
             </div>
 
-            {/* Visual Balance Bar */}
             {totalQuestions > 0 && (
-              <div className="space-y-2 pt-3 border-t border-white/[0.06]">
-                <div className="flex justify-between text-[11px] font-bold text-slate-300">
-                  <span>Tỷ lệ ma trận Bloom:</span>
-                  <span className="font-mono text-blue-400">{totalQuestions} câu</span>
-                </div>
-                <div className="w-full h-3 rounded-full flex overflow-hidden bg-white/[0.06] p-0.5">
-                  <div style={{ width: `${(bloomDistribution.nhanBiet / totalQuestions) * 100}%` }} className="bg-sky-500 rounded-l-full" title="Nhận biết" />
-                  <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-teal-500" title="Thông hiểu" />
-                  <div style={{ width: `${(bloomDistribution.vanDung / totalQuestions) * 100}%` }} className="bg-amber-500" title="Vận dụng" />
-                  <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-purple-500 rounded-r-full" title="Phân tích" />
-                </div>
+              <div className="w-full h-2 rounded-full flex overflow-hidden bg-slate-100">
+                <div style={{ width: `${(bloomDistribution.nhanBiet / totalQuestions) * 100}%` }} className="bg-sky-500" />
+                <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-[#008689]" />
+                <div style={{ width: `${(bloomDistribution.vanDung / totalQuestions) * 100}%` }} className="bg-amber-500" />
+                <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-indigo-500" />
               </div>
             )}
 
-            <div className="p-3.5 bg-blue-500/[0.08] rounded-xl border border-blue-500/20 text-xs text-blue-200 flex items-start space-x-2">
-              <AlertCircle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-              <p>
-                Sau khi sinh, câu hỏi sẽ được chuyển vào <strong>Không gian Kiểm duyệt</strong> để đối chiếu trang sách gốc trước khi lưu vào ngân hàng đề.
-              </p>
-            </div>
-
-            {/* AI Generate Button */}
-            {isGenerating ? (
-              <div className="space-y-3">
-                <button
-                  disabled
-                  className="w-full py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-bold rounded-xl flex items-center justify-center space-x-2 shadow-glow-md animate-pulse cursor-wait"
-                >
-                  <Cpu className="w-4 h-4 animate-spin text-sky-200" />
-                  <span>AI đang bóc tách ngữ nghĩa & sinh đề...</span>
-                </button>
-                <p className="text-[11px] text-center text-blue-300 font-mono animate-bounce">
-                  {generationStep}
-                </p>
-              </div>
-            ) : (
-              <button
-                onClick={handleStartGenerate}
-                disabled={totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
-                className={`w-full py-3.5 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all shadow-lg ${
-                  totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
-                    ? 'bg-white/[0.05] text-slate-500 cursor-not-allowed border border-white/[0.05]'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/30 hover:scale-[1.01]'
-                }`}
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>Khởi tạo {totalQuestions} câu hỏi chuẩn Bloom</span>
-              </button>
-            )}
+            <button
+              onClick={handleStartGenerate}
+              disabled={isGenerating || totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
+              className={`w-full py-3 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all ${
+                totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/25'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>{isGenerating ? 'Đang sinh câu hỏi...' : `Sinh ${totalQuestions} câu hỏi AI (Bước 2)`}</span>
+            </button>
           </div>
         </div>
       </div>
+      )}
+
+      {/* ===== MODAL: XEM CHI TIẾT BỘ CÂU HỎI LỊCH SỬ ===== */}
+      {previewHistoryRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden animate-fade-in">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008689] flex items-center justify-center font-bold">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Chi tiết đợt sinh: {previewHistoryRecord.documentName}
+                  </h3>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                    <span>{previewHistoryRecord.createdAt}</span>
+                    <span>•</span>
+                    <span className="font-semibold text-teal-700">
+                      {previewHistoryRecord.totalQuestions} câu hỏi
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setPreviewHistoryRecord(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Questions List */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              {previewHistoryRecord.questions.map((q, idx) => (
+                <div key={q.id || idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-bold text-slate-900 leading-relaxed">
+                      <span className="text-[#008689] font-extrabold mr-1">Câu {idx + 1}:</span>
+                      {q.question}
+                    </p>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 text-slate-700 shrink-0">
+                      {q.bloomLevel}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {q.options.map((opt) => {
+                      const isCorrect = opt.id === q.correctAnswerId;
+                      return (
+                        <div
+                          key={opt.id}
+                          className={`p-2 rounded-lg text-xs flex items-start gap-1.5 ${
+                            isCorrect
+                              ? 'bg-emerald-50 border border-emerald-300 text-emerald-900 font-semibold'
+                              : 'bg-white border border-slate-200 text-slate-600'
+                          }`}
+                        >
+                          <span className="font-bold">{opt.label}.</span>
+                          <span>{opt.text}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {q.explanation && (
+                    <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">
+                      <strong className="text-slate-700">Giải thích: </strong>
+                      {q.explanation}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <button
+                onClick={() => setPreviewHistoryRecord(null)}
+                className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs"
+              >
+                Đóng
+              </button>
+
+              <button
+                onClick={() => {
+                  onGenerateSuccess(previewHistoryRecord.questions);
+                  setPreviewHistoryRecord(null);
+                  onShowToast(
+                    'success',
+                    'Đã nạp bộ câu hỏi',
+                    `Đã chuyển tiếp ${previewHistoryRecord.questions.length} câu hỏi vào Không gian Kiểm duyệt.`
+                  );
+                  onNavigate('review');
+                }}
+                className="px-4 py-2 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+              >
+                <ArrowRight className="w-3.5 h-3.5" />
+                Nạp bộ câu hỏi này vào Bước 3 (Kiểm duyệt)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

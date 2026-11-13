@@ -1,7 +1,17 @@
-export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank';
+export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank' | 'admin_portal';
 export type AuthScreenId = 'login' | 'register';
 
 export type UserRole = 'lecturer' | 'head_of_department' | 'admin';
+
+export interface SecurityAuditLog {
+  id: string;
+  timestamp: string;
+  actorEmail: string;
+  action: string;
+  detail: string;
+  severity: 'info' | 'warning' | 'critical';
+  ipAddress: string;
+}
 
 export interface UserProfile {
   id: string;
@@ -13,10 +23,23 @@ export interface UserProfile {
   university?: string;
   role: UserRole;
   roleLabel?: string;
+  avatarUrl?: string;
+  authProvider?: 'local' | 'google';
+  status?: 'active' | 'locked';
+  lockType?: 'temporary' | 'permanent';
+  lockReason?: string;
+  lockedUntil?: string;
+  lockedAt?: string;
+  twoFactorVerified?: boolean;
 }
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';
-export type QuestionStatus = 'pending' | 'approved' | 'rejected';
+export type QuestionStatus =
+  | 'pending'
+  | 'submitted_to_hod'
+  | 'approved'
+  | 'rejected'
+  | 'locked_for_exam';
 
 export interface SourceChunk {
   id: string;
@@ -45,9 +68,8 @@ export interface Question {
   confidenceScore: number;
   status: QuestionStatus;
   createdAt: string;
-  pageNumber?: number;
-  sourceChunk?: SourceChunk;
-  citation?: string;
+  hodFeedback?: string;
+  examCodes?: string[];
 }
 
 export interface TextbookFile {
@@ -69,8 +91,6 @@ export interface ToastMessage {
   message: string;
 }
 
-export type ExamExportFormat = 'docx' | 'pdf' | 'qti' | 'omr' | 'zip';
-
 export interface ExamExportConfig {
   universityName: string;
   facultyName: string;
@@ -78,11 +98,11 @@ export interface ExamExportConfig {
   examTitle: string;
   durationMinutes: number;
   examCodeCount: number; // e.g. 4 mã đề (101, 102, 103, 104)
-  examCode?: string;
   shuffleQuestions: boolean;
   shuffleOptions: boolean;
   includeAnswerKey: boolean;
   includeExplanation: boolean;
-  format: ExamExportFormat;
   includeOmrSheet?: boolean;
+  baseExamCode?: number;
+  format: 'docx' | 'pdf' | 'qti' | 'zip';
 }

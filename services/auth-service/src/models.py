@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, Integer
 from sqlalchemy.orm import relationship
 from .database import Base, DATABASE_URL
 
@@ -51,16 +51,38 @@ class UserDB(Base):
     id = Column(String(50), primary_key=True, index=True)
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    full_name = Column(String(100), nullable=False)
-    academic_title = Column(String(20), default="TS.")
-    university = Column(String(150), nullable=False)
-    department = Column(String(150), nullable=False)
+    full_name = Column(String(100), nullable=False, default="")
+    academic_title = Column(String(20), default="")
+    university = Column(String(150), nullable=False, default="")
+    department = Column(String(150), nullable=False, default="")
     role = Column(String(30), default="lecturer") # lecturer, head_of_department, admin
     is_active = Column(Boolean, default=True)
+    google_id = Column(String(100), unique=True, nullable=True, index=True) # [SCRUM-84]
+    avatar_url = Column(Text, nullable=True) # [SCRUM-84]
+    auth_provider = Column(String(30), default="local") # local, google [SCRUM-84]
+    status = Column(String(20), default="active") # active, locked
+    lock_type = Column(String(20), nullable=True) # temporary, permanent
+    lock_reason = Column(Text, nullable=True)
+    locked_until = Column(DateTime, nullable=True)
+    locked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     tokens = relationship("UserTokenDB", back_populates="user", cascade="all, delete-orphan")
+
+
+class PasswordResetTokenDB(Base):
+    __tablename__ = "password_reset_tokens"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(50), primary_key=True)
+    email = Column(String(100), nullable=False, index=True)
+    otp_code = Column(String(10), nullable=False)
+    otp_hash = Column(String(255), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Boolean, default=False)
+    attempts_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class UserTokenDB(Base):
@@ -97,6 +119,7 @@ class UniversityResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class FacultyResponse(BaseModel):
     id: str
     university_id: Optional[str] = None
@@ -107,25 +130,54 @@ class FacultyResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class LecturerBase(BaseModel):
     email: EmailStr
+    full_name: Optional[str] = ""
+    academic_title: Optional[str] = ""
+    university: Optional[str] = ""
+    department: Optional[str] = ""
+    role: Optional[str] = "lecturer"
+
+
+class LecturerCreate(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: Optional[str] = ""
+    academic_title: Optional[str] = ""
+    university: Optional[str] = ""
+    department: Optional[str] = ""
+    role: Optional[str] = "lecturer"
+
+
+class UpdateProfileRequest(BaseModel):
     full_name: str
-    academic_title: str  # e.g., "TS.", "PGS. TS.", "ThS."
+    academic_title: Optional[str] = "TS."
     university: str
     department: str
     role: Optional[str] = "lecturer"
 
-class LecturerCreate(LecturerBase):
-    password: str
 
-class LecturerResponse(LecturerBase):
+class LecturerResponse(BaseModel):
     id: str
+    email: EmailStr
+    full_name: str = ""
+    academic_title: Optional[str] = ""
+    university: str = ""
+    department: str = ""
     role: str = "lecturer"
     is_active: bool = True
-    created_at: datetime
+    status: Optional[str] = "active"
+    lock_type: Optional[str] = None
+    lock_reason: Optional[str] = None
+    locked_until: Optional[datetime] = None
+    locked_at: Optional[datetime] = None
+    profile_completed: bool = False
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -133,6 +185,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: LecturerResponse
+
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str

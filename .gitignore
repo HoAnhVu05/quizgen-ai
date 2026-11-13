@@ -37,6 +37,7 @@ MANIFEST
 # Local databases & storage
 data/
 chroma_data/
+backups/
 *.sqlite
 *.sqlite3
 client-web/
@@ -54,3 +55,5 @@ pip-log.txt
 .DS_Store
 Thumbs.db
 tempCodeRunnerFile.py
+
+test_outputs/

@@ -1,15 +1,20 @@
-﻿import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard,
   UploadCloud,
   Sparkles,
   CheckSquare,
   Database,
-  GraduationCap,
   LogOut,
   ShieldCheck,
-  Cpu,
-  Award,
+  Users,
+  Server,
+  KeyRound,
+  Terminal,
+  Activity,
+  Layers,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 
@@ -19,7 +24,87 @@ interface SidebarProps {
   pendingReviewCount: number;
   currentUser?: UserProfile | null;
   onLogout: () => void;
+  adminTab?: string;
+  onAdminTabChange?: (tab: string) => void;
+  onUpdateProfile?: (updates: {
+    fullName: string;
+    academicTitle: string;
+    department?: string;
+  }) => void;
 }
+
+interface NavItem {
+  id: ScreenId;
+  adminSubTab?: string;
+  label: string;
+  stepTag?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: number | string;
+}
+
+interface NavItemStyle {
+  stepTagClass: string;
+  activeContainer: string;
+  inactiveContainer: string;
+  activeIconBox: string;
+  inactiveIconBox: string;
+  activeText: string;
+}
+
+const NAV_ITEM_STYLES: Record<ScreenId, NavItemStyle> = {
+  upload: {
+    // Bước 1: Xanh ngọc (Teal)
+    stepTagClass: 'text-[#008689]',
+    activeContainer: 'bg-teal-50/90 text-[#006d70] font-bold border border-teal-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-teal-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-[#008689] text-white shadow-xs',
+    inactiveIconBox: 'bg-teal-50 text-[#008689] border border-teal-200/60 group-hover:bg-teal-100/70',
+    activeText: 'text-[#006d70]',
+  },
+  generate: {
+    // Bước 2: Xanh dương (Blue)
+    stepTagClass: 'text-blue-600',
+    activeContainer: 'bg-blue-50/90 text-blue-900 font-bold border border-blue-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-blue-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-blue-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-blue-50 text-blue-600 border border-blue-200/60 group-hover:bg-blue-100/70',
+    activeText: 'text-blue-900',
+  },
+  review: {
+    // Bước 3: Cam vàng (Amber)
+    stepTagClass: 'text-amber-600',
+    activeContainer: 'bg-amber-50/90 text-amber-950 font-bold border border-amber-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-amber-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-amber-500 text-white shadow-xs',
+    inactiveIconBox: 'bg-amber-50 text-amber-600 border border-amber-200/60 group-hover:bg-amber-100/70',
+    activeText: 'text-amber-950',
+  },
+  bank: {
+    // Bước 4: Tím (Purple)
+    stepTagClass: 'text-purple-600',
+    activeContainer: 'bg-purple-50/90 text-purple-900 font-bold border border-purple-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-purple-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-purple-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-purple-50 text-purple-600 border border-purple-200/60 group-hover:bg-purple-100/70',
+    activeText: 'text-purple-900',
+  },
+  dashboard: {
+    stepTagClass: 'text-slate-500',
+    activeContainer: 'bg-slate-100 text-slate-900 font-bold border border-slate-200 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium border border-transparent',
+    activeIconBox: 'bg-slate-800 text-white shadow-xs',
+    inactiveIconBox: 'bg-slate-100 text-slate-500 group-hover:bg-slate-200/80',
+    activeText: 'text-slate-900',
+  },
+  admin_portal: {
+    stepTagClass: 'text-[#da1c2d]',
+    activeContainer: 'bg-rose-50 text-[#da1c2d] font-bold border border-rose-200 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-rose-50/50 font-medium border border-transparent',
+    activeIconBox: 'bg-[#da1c2d] text-white shadow-xs',
+    inactiveIconBox: 'bg-rose-50 text-[#da1c2d] border border-rose-200 group-hover:bg-rose-100',
+    activeText: 'text-[#da1c2d]',
+  },
+};
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
@@ -27,47 +112,111 @@ export const Sidebar: React.FC<SidebarProps> = ({
   pendingReviewCount,
   currentUser,
   onLogout,
+  adminTab = 'overview',
+  onAdminTabChange,
+  onUpdateProfile,
 }) => {
-  const navItems = [
-    {
-      id: 'dashboard' as ScreenId,
-      label: 'Bảng điều khiển',
-      subtitle: 'Chỉ số & Ma trận Bloom',
-      icon: LayoutDashboard,
-      shortcut: '⌘1',
-    },
-    {
-      id: 'upload' as ScreenId,
-      label: 'Quản lý Giáo trình',
-      subtitle: 'Vector hóa & Bóc tách RAG',
-      icon: UploadCloud,
-      shortcut: '⌘2',
-    },
-    {
-      id: 'generate' as ScreenId,
-      label: 'Khởi tạo Đề thi AI',
-      subtitle: 'Cấu hình ma trận nhận thức',
-      icon: Sparkles,
-      shortcut: '⌘3',
-    },
-    {
-      id: 'review' as ScreenId,
-      label: 'Không gian Kiểm duyệt',
-      subtitle: 'Đối sánh minh chứng RAG',
-      icon: CheckSquare,
-      badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
-      shortcut: '⌘4',
-    },
-    {
-      id: 'bank' as ScreenId,
-      label: 'Ngân hàng & Đề thi',
-      subtitle: 'Kho câu hỏi & Xuất Word/PDF',
-      icon: Database,
-      shortcut: '⌘5',
-    },
-  ];
+  const activeRole: UserRole = currentUser?.role || 'lecturer';
+  const isSystemAdmin = activeRole === 'admin';
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftDept, setDraftDept] = useState('');
+
+  const openProfileEditor = () => {
+    if (!currentUser) return;
+    setDraftName(currentUser.fullName || '');
+    setDraftTitle(currentUser.academicTitle || '');
+    setDraftDept(currentUser.department || currentUser.faculty || '');
+    setShowProfileModal(true);
+  };
+
+  const filteredNavItems = useMemo<NavItem[]>(() => {
+    // Nếu là Quản trị viên: Hiển thị bộ chức năng Quản trị Tối cao chuyên biệt, không hiển thị quy trình của giảng viên
+    if (activeRole === 'admin') {
+      return [
+        {
+          id: 'admin_portal',
+          adminSubTab: 'overview',
+          label: 'Tổng quan & Chỉ số Tối cao',
+          icon: Activity,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'users',
+          label: 'Quản lý Tài khoản & Phân quyền',
+          icon: Users,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'services',
+          label: 'Giám sát 6 Microservices',
+          icon: Server,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'security',
+          label: 'Bảo mật & Cấu hình 2FA',
+          icon: KeyRound,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'audit',
+          label: 'Nhật ký An ninh (Audit)',
+          icon: Terminal,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'exams',
+          label: 'Kiểm soát Đề thi Toàn trường',
+          icon: Database,
+        },
+      ];
+    }
+
+    // Quy trình làm việc của Giảng viên / Trưởng bộ môn
+    return [
+      {
+        id: 'dashboard',
+        label: 'Tổng quan Học thuật',
+        icon: LayoutDashboard,
+      },
+      {
+        id: 'upload',
+        stepTag: 'Bước 1',
+        label: 'Kho Giáo trình Môn học',
+        icon: UploadCloud,
+      },
+      {
+        id: 'generate',
+        stepTag: 'Bước 2',
+        label: 'Sinh Câu hỏi AI (Bloom)',
+        icon: Sparkles,
+      },
+      {
+        id: 'review',
+        stepTag: 'Bước 3',
+        label: 'Đối soát & Biên tập Đề',
+        icon: CheckSquare,
+        badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
+      },
+      {
+        id: 'bank',
+        stepTag: 'Bước 4',
+        label: 'Đóng gói & Xuất Đề Thi',
+        icon: Database,
+      },
+    ];
+  }, [activeRole, pendingReviewCount]);
+
+  useEffect(() => {
+    if (isSystemAdmin && currentScreen !== 'admin_portal') {
+      onNavigate('admin_portal');
+    }
+  }, [isSystemAdmin, currentScreen, onNavigate]);
 
   const getInitials = (name?: string, title?: string) => {
+    if (title && title.includes('Admin')) return 'AD';
     if (title && title.includes('TS')) return 'TS';
     if (!name) return 'GV';
     const parts = name.trim().split(/\s+/);
@@ -75,185 +224,293 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  const getRoleStyle = (role?: UserRole) => {
-    switch (role) {
-      case 'admin':
-        return {
-          label: 'Quản trị Khảo thi',
-          badgeClass: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-          avatarGrad: 'from-amber-500 to-orange-600',
-          icon: ShieldCheck,
-        };
-      case 'head_of_department':
-        return {
-          label: 'Trưởng bộ môn',
-          badgeClass: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
-          avatarGrad: 'from-purple-500 to-indigo-600',
-          icon: Award,
-        };
-      default:
-        return {
-          label: 'Giảng viên',
-          badgeClass: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-          avatarGrad: 'from-blue-600 to-indigo-600',
-          icon: GraduationCap,
-        };
-    }
-  };
-
-  const roleStyle = getRoleStyle(currentUser?.role);
-  const RoleIcon = roleStyle.icon;
-
   const displayName = currentUser
     ? `${currentUser.academicTitle ? currentUser.academicTitle + ' ' : ''}${currentUser.fullName}`
-    : 'TS. Nguyễn Văn An';
-
-  const displayDept = currentUser
-    ? `${currentUser.faculty || currentUser.department || 'Khoa CNTT'}`
-    : 'Khoa Kinh tế & Quản trị';
+    : isSystemAdmin ? 'Ban Quản trị QuizGen AI' : 'TS. Nguyễn Văn An';
 
   const initials = getInitials(currentUser?.fullName, currentUser?.academicTitle);
 
   return (
-    <aside className="w-72 bg-[#090d16] text-slate-300 flex flex-col border-r border-white/[0.07] shrink-0 select-none relative z-20">
-      {/* Brand Header */}
-      <div className="p-5 border-b border-white/[0.06]">
-        <div className="flex items-center space-x-3.5">
-          <div className="relative group cursor-pointer">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-400 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300">
-              <GraduationCap className="w-5 h-5" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-500 border-2 border-[#090d16] rounded-full animate-pulse" />
-          </div>
+    <aside className="w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none relative z-20">
+      {/* Top UTH Accent Line */}
+      <div className={`h-1 w-full ${isSystemAdmin ? 'bg-gradient-to-r from-[#da1c2d] to-rose-600' : 'bg-[#008689]'}`} />
 
-          <div className="min-w-0">
-            <div className="flex items-center space-x-2">
-              <h1 className="font-extrabold text-white text-base tracking-tight">QuizGen</h1>
-              <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                PRO AI
+      {/* Brand Header */}
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center space-x-3">
+        <img
+          src="/logo.jpg"
+          alt="QuizGen AI Logo"
+          className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+        />
+        <div className="min-w-0">
+          <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight flex items-center gap-1.5">
+            <span>QuizGen AI</span>
+            {isSystemAdmin && (
+              <span className="text-[9px] px-1.5 py-0.2 rounded font-extrabold bg-rose-50 text-[#da1c2d] border border-rose-200 uppercase">
+                Admin
               </span>
-            </div>
-            <p className="text-[11px] text-slate-400 font-medium truncate">Khảo thi Đại học Quốc gia</p>
-          </div>
+            )}
+          </h1>
+          <p className="text-[11px] text-slate-400 truncate">
+            {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Trợ lý Đề thi Giảng viên'}
+          </p>
         </div>
+      </div>
+
+      {/* Role Title Section Header */}
+      <div className="px-4 pt-3 pb-1">
+        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+          {isSystemAdmin ? 'Phân Hệ Quản Trị Tối Cao' : 'Quy Trình Biên Soạn Đề'}
+        </span>
       </div>
 
       {/* Navigation List */}
-      <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        <div className="px-3 pb-2 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-          <span>Phân hệ tác vụ</span>
-          <span className="text-[10px] text-slate-400 font-mono">v2.4</span>
-        </div>
-
-        {navItems.map((item) => {
+      {/* Navigation List */}
+      <nav className="flex-1 py-2 px-3 space-y-1.5 overflow-y-auto">
+        {filteredNavItems.map((item) => {
           const Icon = item.icon;
-          const isActive = currentScreen === item.id;
+          const isActive = isSystemAdmin
+            ? currentScreen === 'admin_portal' && adminTab === item.adminSubTab
+            : currentScreen === item.id;
+          const theme = NAV_ITEM_STYLES[item.id] || NAV_ITEM_STYLES.dashboard;
 
           return (
             <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className={`w-full group relative flex items-center justify-between p-3 rounded-xl text-left transition-all duration-200 ${
+              key={item.adminSubTab || item.id}
+              onClick={() => {
+                if (isSystemAdmin) {
+                  onNavigate('admin_portal');
+                  if (item.adminSubTab && onAdminTabChange) {
+                    onAdminTabChange(item.adminSubTab);
+                  }
+                } else {
+                  onNavigate(item.id);
+                }
+              }}
+              className={`w-full group flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all duration-150 ${
                 isActive
-                  ? 'bg-gradient-to-r from-blue-600/15 via-indigo-600/10 to-transparent text-white border border-blue-500/30 shadow-sm'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                  ? isSystemAdmin
+                    ? 'bg-rose-50 text-[#da1c2d] font-bold border border-rose-200 shadow-2xs'
+                    : theme.activeContainer
+                  : isSystemAdmin
+                  ? 'text-slate-600 hover:text-slate-900 hover:bg-rose-50/50 font-medium border border-transparent'
+                  : theme.inactiveContainer
               }`}
             >
-              {/* Left active accent bar */}
-              {isActive && (
-                <div className="absolute left-0 top-2 bottom-2 w-1 bg-gradient-to-b from-blue-400 to-indigo-500 rounded-r-full shadow-glow-sm" />
-              )}
-
-              <div className="flex items-center space-x-3 min-w-0 pl-1">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
-                      : 'bg-white/[0.05] text-slate-400 group-hover:text-slate-200 group-hover:bg-white/[0.08]'
+                      ? isSystemAdmin
+                        ? 'bg-[#da1c2d] text-white shadow-xs'
+                        : theme.activeIconBox
+                      : isSystemAdmin
+                      ? 'bg-rose-50 text-[#da1c2d] border border-rose-200 group-hover:bg-rose-100'
+                      : theme.inactiveIconBox
                   }`}
                 >
-                  <Icon className="w-4 h-4 shrink-0" />
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
                 </div>
-
-                <div className="truncate">
-                  <div className={`text-xs font-semibold truncate leading-tight ${isActive ? 'text-white' : 'text-slate-300'}`}>
+                <div className="min-w-0">
+                  {item.stepTag && (
+                    <span
+                      className={`block text-[9px] font-extrabold uppercase tracking-wider ${theme.stepTagClass}`}
+                    >
+                      {item.stepTag}
+                    </span>
+                  )}
+                  <span
+                    className={`text-xs truncate block leading-snug ${
+                      isActive
+                        ? isSystemAdmin
+                          ? 'text-[#da1c2d]'
+                          : theme.activeText
+                        : 'text-slate-700'
+                    }`}
+                  >
                     {item.label}
-                  </div>
-                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                    {item.subtitle}
-                  </div>
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-center space-x-1.5 shrink-0 ml-2">
-                {item.badge !== undefined && (
-                  <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 animate-pulse">
-                    {item.badge}
-                  </span>
-                )}
-                <span className="hidden group-hover:inline-block text-[10px] font-mono text-slate-400 bg-white/[0.06] px-1.5 py-0.5 rounded">
-                  {item.shortcut}
+              {item.badge !== undefined && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                  {item.badge}
                 </span>
-              </div>
+              )}
             </button>
           );
         })}
-      </div>
+      </nav>
 
-      {/* RAG Engine Status Pill */}
-      <div className="px-3 pb-3">
-        <div className="p-3 rounded-xl bg-gradient-to-b from-white/[0.04] to-white/[0.01] border border-white/[0.06] space-y-2">
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-400 flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-blue-400" />
-              RAG Engine v3
-            </span>
-            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              Hoạt động
-            </span>
-          </div>
-          <div className="w-full bg-white/[0.06] h-1.5 rounded-full overflow-hidden">
-            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-full w-[42%]" />
-          </div>
-          <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-            <span>Quota Tokens</span>
-            <span>420k / 1M</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Profile Footer with Dynamic User, Role Badge & Logout */}
-      <div className="p-3.5 border-t border-white/[0.06] bg-[#070b13]">
-        <div className="flex items-center justify-between">
+      {/* Clean Profile Footer */}
+      <div className="p-3.5 border-t border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center space-x-2.5 min-w-0">
-            <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${roleStyle.avatarGrad} flex items-center justify-center font-bold text-white text-xs border border-white/20 shadow-md shrink-0`}>
-              {initials}
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-white truncate flex items-center gap-1">
-                <span className="truncate">{displayName}</span>
-                <RoleIcon className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+            {currentUser?.avatarUrl ? (
+              <img
+                src={currentUser.avatarUrl}
+                alt={displayName}
+                referrerPolicy="no-referrer"
+                className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0 bg-white"
+              />
+            ) : (
+              <div
+                className={`w-8 h-8 rounded-lg bg-gradient-to-br ${
+                  isSystemAdmin ? 'from-[#da1c2d] to-rose-700' : 'from-[#008689] to-[#1d999d]'
+                } flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-xs`}
+              >
+                {initials}
               </div>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className={`px-1.5 py-0.2 text-[9px] font-semibold rounded border ${roleStyle.badgeClass}`}>
-                  {roleStyle.label}
-                </span>
-                <span className="text-[10px] text-slate-400 truncate max-w-[90px]">{displayDept}</span>
+            )}
+            <div className="min-w-0">
+              <div className="text-xs font-bold text-slate-800 truncate">{displayName}</div>
+              <div className="text-[10px] text-slate-500 truncate">
+                {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Giảng viên Học thuật'}
               </div>
             </div>
           </div>
 
-          <button
-            id="sidebar-logout-btn"
-            onClick={onLogout}
-            title="Đăng xuất khỏi hệ thống"
-            className="text-slate-400 hover:text-rose-400 transition-colors p-1.5 rounded-lg hover:bg-rose-500/[0.1] shrink-0 ml-1"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center space-x-1 shrink-0">
+            {onUpdateProfile && currentUser && !isSystemAdmin && (
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                title="Đổi học vị & tên hiển thị"
+                className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              id="sidebar-logout-btn"
+              onClick={onLogout}
+              title="Đăng xuất"
+              className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Quick Profile & Academic Title Edit Modal */}
+      {showProfileModal && onUpdateProfile && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm select-text"
+          onClick={() => setShowProfileModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white border border-slate-200 shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">
+                Cập nhật Học vị & Tên hiển thị
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!draftName.trim()) return;
+                onUpdateProfile({
+                  fullName: draftName,
+                  academicTitle: draftTitle,
+                  department: draftDept,
+                });
+                setShowProfileModal(false);
+              }}
+              className="space-y-3"
+            >
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">Học vị</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { value: '', label: 'Không' },
+                    { value: 'CN.', label: 'CN.' },
+                    { value: 'KS.', label: 'KS.' },
+                    { value: 'ThS.', label: 'ThS.' },
+                    { value: 'TS.', label: 'TS.' },
+                    { value: 'PGS. TS.', label: 'PGS. TS.' },
+                    { value: 'GS. TS.', label: 'GS. TS.' },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => setDraftTitle(item.value)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
+                        draftTitle === item.value
+                          ? 'bg-[#008689] text-white border-[#008689]'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">Họ và tên</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parts = draftName.trim().split(/\s+/);
+                      if (parts.length > 1) setDraftName(parts.reverse().join(' '));
+                    }}
+                    className="text-[11px] font-semibold text-[#008689] hover:underline"
+                  >
+                    Đảo ngược tên
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Khoa / Đơn vị</label>
+                <input
+                  type="text"
+                  value={draftDept}
+                  onChange={(e) => setDraftDept(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70]"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };
+
+export default Sidebar;

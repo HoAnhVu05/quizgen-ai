@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   GraduationCap,
   Mail,
@@ -13,6 +13,10 @@ import {
   CheckCircle2,
   Award,
   UserCheck,
+  AlertCircle,
+  Check,
+  School,
+  FileCheck,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 
@@ -36,25 +40,42 @@ interface FormErrors {
   fullName?: string;
   academicTitle?: string;
   email?: string;
+  university?: string;
   faculty?: string;
   password?: string;
   confirmPassword?: string;
   general?: string;
 }
 
-const ACADEMIC_TITLES = ['TS.', 'ThS.', 'PGS. TS.', 'GS. TS.', 'Giảng viên', 'Chuyên viên Khảo thi'];
+const ACADEMIC_TITLES = ['ThS.', 'TS.', 'PGS.'];
+
+const UNIVERSITY_OPTIONS = [
+  'Đại học Quốc gia TP.HCM (VNU-HCM)',
+  'Trường ĐH Bách Khoa - ĐHQG TP.HCM',
+  'Trường ĐH Khoa học Tự nhiên - ĐHQG TP.HCM',
+  'Trường ĐH Công nghệ Thông tin (UIT) - ĐHQG TP.HCM',
+  'Trường ĐH Kinh tế - Luật (UEL) - ĐHQG TP.HCM',
+  'Trường ĐH Quốc tế (IU) - ĐHQG TP.HCM',
+  'Trường ĐH KHXH&NV - ĐHQG TP.HCM',
+  'Đại học Quốc gia Hà Nội (VNU-HN)',
+  'Đại học Bách Khoa Hà Nội (HUST)',
+  'Đại học Kinh tế TP.HCM (UEH)',
+  'Trường Đại học Sư phạm Kỹ thuật TP.HCM',
+  'Cơ sở giáo dục đại học khác...',
+];
 
 const FACULTY_OPTIONS = [
   'Khoa Kinh tế & Quản trị',
   'Khoa Công nghệ Thông tin',
+  'Khoa Khoa học & Kỹ thuật Máy tính',
   'Khoa Khoa học Tự nhiên',
-  'Khoa Luật',
-  'Khoa Sư phạm',
+  'Khoa Luật & Hành chính công',
+  'Khoa Sư phạm & Giáo dục học',
   'Khoa Y Dược',
-  'Khoa Ngoại ngữ',
-  'Khoa Kỹ thuật Xây dựng',
+  'Khoa Ngoại ngữ & Ngôn ngữ học',
+  'Khoa Kỹ thuật Xây dựng & Cơ khí',
   'Phòng Khảo thi & Đảm bảo Chất lượng',
-  'Viện Trí tuệ Nhân tạo & Dữ liệu',
+  'Viện Trí tuệ Nhân tạo & Khoa học Dữ liệu',
 ];
 
 const ROLES_OPTIONS: Array<{ id: UserRole; title: string; subtitle: string; icon: any }> = [
@@ -63,19 +84,20 @@ const ROLES_OPTIONS: Array<{ id: UserRole; title: string; subtitle: string; icon
   { id: 'admin', title: 'Quản trị Khảo thi', subtitle: 'Quản trị hệ thống', icon: ShieldCheck },
 ];
 
-const getPasswordStrength = (pw: string) => {
-  if (!pw) return 0;
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (/[A-Z]/.test(pw)) score++;
-  if (/[0-9]/.test(pw)) score++;
-  if (/[^A-Za-z0-9]/.test(pw)) score++;
-  return score;
-};
+const SYSTEM_DEFAULT_EMAILS = [
+  'lecturer@vnu.edu.vn',
+  'truongbomon@vnu.edu.vn',
+  'admin.khaothi@vnu.edu.vn',
+  'admin@ut.edu.vn',
+];
 
-const STRENGTH_LABELS = ['', 'Yếu (ngắn)', 'Trung bình', 'Khá an toàn', 'Rất mạnh (chuẩn bảo mật)'];
-const STRENGTH_COLORS = ['', 'bg-rose-500', 'bg-amber-500', 'bg-sky-500', 'bg-emerald-500'];
-const STRENGTH_TEXT_COLORS = ['', 'text-rose-400', 'text-amber-400', 'text-sky-400', 'text-emerald-400'];
+// Regex kiểm tra tên tiếng Việt đầy đủ (chữ cái, dấu tiếng Việt, khoảng trắng, 3-50 ký tự)
+const VIETNAMESE_NAME_REGEX =
+  /^[a-zA-ZÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵýỷỹ\s]{3,50}$/;
+
+// Regex chuẩn RFC 5322 cho Email
+const STRICT_EMAIL_REGEX =
+  /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNavigateLogin }) => {
   const [form, setForm] = useState<RegisterForm>({
@@ -83,8 +105,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
     academicTitle: 'TS.',
     email: '',
     role: 'lecturer',
-    faculty: 'Khoa Công nghệ Thông tin',
-    university: 'Đại học Quốc gia',
+    university: UNIVERSITY_OPTIONS[0],
+    faculty: FACULTY_OPTIONS[1],
     password: '',
     confirmPassword: '',
   });
@@ -95,41 +117,99 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
   const [errors, setErrors] = useState<FormErrors>({});
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  const strength = getPasswordStrength(form.password);
+  // ─── 4 Tiêu chí mật khẩu bảo mật học thuật ──────────────────────────────
+  const passwordCriteria = useMemo(() => {
+    const pw = form.password;
+    return {
+      minLength: pw.length >= 8,
+      hasUpper: /[A-Z]/.test(pw),
+      hasNumber: /[0-9]/.test(pw),
+      hasSpecial: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(pw),
+    };
+  }, [form.password]);
+
+  const passwordScore = useMemo(() => {
+    let score = 0;
+    if (passwordCriteria.minLength) score++;
+    if (passwordCriteria.hasUpper) score++;
+    if (passwordCriteria.hasNumber) score++;
+    if (passwordCriteria.hasSpecial) score++;
+    return score;
+  }, [passwordCriteria]);
+
+  const isPasswordSecure = passwordScore === 4;
+
+  const isAcademicEmail = useMemo(() => {
+    return /\.(edu\.vn|edu|ac\.vn)$/i.test(form.email.trim());
+  }, [form.email]);
 
   const setField = (field: keyof RegisterForm, value: any) => {
     setForm((p) => ({ ...p, [field]: value }));
     setErrors((p) => ({ ...p, [field]: undefined, general: undefined }));
   };
 
+  // ─── Hàm kiểm tra trùng lặp Email trong Local Storage & Danh sách hệ thống ───
+  const checkEmailAlreadyExists = (emailToCheck: string): boolean => {
+    const normalized = emailToCheck.trim().toLowerCase();
+    if (SYSTEM_DEFAULT_EMAILS.includes(normalized)) {
+      return true;
+    }
+    try {
+      const registered = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
+      if (Array.isArray(registered)) {
+        return registered.some((u: any) => (u.email || '').toLowerCase() === normalized);
+      }
+    } catch {
+      // Ignored
+    }
+    return false;
+  };
+
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
-    if (!form.fullName.trim()) {
-      newErrors.fullName = 'Vui lòng nhập họ và tên';
-    } else if (form.fullName.trim().length < 3) {
-      newErrors.fullName = 'Họ tên tối thiểu 3 ký tự';
+    const trimmedName = form.fullName.trim();
+    const trimmedEmail = form.email.trim().toLowerCase();
+
+    // 1. Kiểm tra Họ và Tên
+    if (!trimmedName) {
+      newErrors.fullName = 'Vui lòng nhập họ và tên của bạn.';
+    } else if (trimmedName.split(/\s+/).length < 2) {
+      newErrors.fullName = 'Vui lòng nhập đầy đủ cả Họ và Tên (tối thiểu 2 từ).';
+    } else if (!VIETNAMESE_NAME_REGEX.test(trimmedName)) {
+      newErrors.fullName = 'Họ và tên chỉ bao gồm chữ cái hợp lệ, không chứa số hay ký tự đặc biệt.';
     }
 
-    if (!form.email.trim()) {
-      newErrors.email = 'Vui lòng nhập email học thuật';
-    } else if (!/\S+@\S+\.\S+/.test(form.email)) {
-      newErrors.email = 'Email không đúng định dạng';
+    // 2. Kiểm tra Email
+    if (!trimmedEmail) {
+      newErrors.email = 'Vui lòng nhập email học thuật / công tác.';
+    } else if (!STRICT_EMAIL_REGEX.test(trimmedEmail)) {
+      newErrors.email = 'Định dạng email không hợp lệ (ví dụ: canbo@vnu.edu.vn).';
+    } else if (checkEmailAlreadyExists(trimmedEmail)) {
+      newErrors.email = 'Email này đã tồn tại trong hệ thống. Vui lòng chuyển sang Đăng nhập.';
     }
 
+    // 3. Kiểm tra Trường & Khoa
+    if (!form.university) {
+      newErrors.university = 'Vui lòng chọn cơ sở đào tạo / trường đại học.';
+    }
     if (!form.faculty) {
-      newErrors.faculty = 'Vui lòng chọn khoa hoặc bộ môn';
+      newErrors.faculty = 'Vui lòng chọn khoa hoặc đơn vị công tác.';
     }
 
+    // 4. Kiểm tra Mật khẩu chặt chẽ
     if (!form.password) {
-      newErrors.password = 'Vui lòng nhập mật khẩu';
-    } else if (form.password.length < 6) {
-      newErrors.password = 'Mật khẩu tối thiểu 6 ký tự';
+      newErrors.password = 'Vui lòng thiết lập mật khẩu bảo mật.';
+    } else if (!passwordCriteria.minLength) {
+      newErrors.password = 'Mật khẩu phải có tối thiểu 8 ký tự.';
+    } else if (!isPasswordSecure) {
+      newErrors.password = 'Mật khẩu chưa đáp ứng đủ 4 tiêu chí bảo mật bên dưới.';
     }
 
+    // 5. Kiểm tra Xác nhận Mật khẩu
     if (!form.confirmPassword) {
-      newErrors.confirmPassword = 'Vui lòng xác nhận mật khẩu';
+      newErrors.confirmPassword = 'Vui lòng nhập lại mật khẩu để xác nhận.';
     } else if (form.password !== form.confirmPassword) {
-      newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp';
+      newErrors.confirmPassword = 'Mật khẩu xác nhận không khớp.';
     }
 
     setErrors(newErrors);
@@ -150,18 +230,23 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
+
     if (!agreedToTerms) {
-      setErrors((p) => ({ ...p, general: 'Vui lòng đồng ý với Điều khoản dịch vụ và Chính sách bảo mật.' }));
+      setErrors((p) => ({
+        ...p,
+        general: 'Vui lòng tích xác nhận cam kết tuân thủ Quy chế Khảo thí và Bảo mật đề thi.',
+      }));
       return;
     }
 
     setIsLoading(true);
     setErrors({});
 
+    const normalizedEmail = form.email.trim().toLowerCase();
     const newUser: UserProfile = {
       id: `usr-${form.role}-${Date.now().toString().slice(-4)}`,
       fullName: form.fullName.trim(),
-      email: form.email.trim(),
+      email: normalizedEmail,
       academicTitle: form.academicTitle,
       department: form.faculty,
       faculty: form.faculty,
@@ -171,20 +256,21 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
     };
 
     try {
-      // 1. Thử gửi đăng ký tới backend auth-service nếu có
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+
+      // 1. Gửi đăng ký tới Backend Auth Service qua Mock Gateway hoặc Service thực tế
       try {
         const res = await fetch(`${API_BASE}/auth/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            email: form.email,
+            email: normalizedEmail,
             password: form.password,
-            full_name: form.fullName,
-            academic_title: form.academicTitle,
-            university: form.university,
-            department: form.faculty,
-            role: form.role,
+            full_name: newUser.fullName,
+            academic_title: newUser.academicTitle,
+            university: newUser.university,
+            department: newUser.department,
+            role: newUser.role,
           }),
         });
 
@@ -193,332 +279,348 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
           if (data.id) newUser.id = data.id;
         } else {
           const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.detail || 'Đăng ký tài khoản không thành công.';
+          const errMsg = errData.detail || 'Không thể tạo tài khoản trên máy chủ.';
           setErrors({ general: errMsg });
           setIsLoading(false);
           return;
         }
-      } catch (err) {
-        // Backend offline, fallback lưu local
+        const data = await res.json();
+        if (data.id) {
+          newUser.id = data.id;
+        }
+        if (data.access_token) {
+          localStorage.setItem('quizgen_token', data.access_token);
+          localStorage.setItem('quizgen_auth_token', data.access_token);
+        }
+      } catch (netErr) {
+        // Backend offline, fallback lưu cục bộ
       }
 
-      // 2. Lưu vào danh sách tài khoản đã đăng ký trong LocalStorage
-      const registeredUsers = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
-      registeredUsers.push({ ...newUser, password: form.password });
-      localStorage.setItem('quizgen_registered_users', JSON.stringify(registeredUsers));
+      // 2. Lưu trữ vào danh sách người dùng đã đăng ký (LocalStorage)
+      const existingUsers: Array<UserProfile & { password?: string }> = JSON.parse(
+        localStorage.getItem('quizgen_registered_users') || '[]'
+      );
 
-      // Tự động lưu phiên đăng nhập
+      // Phòng ngừa trùng lặp lần 2
+      if (existingUsers.some((u) => u.email.toLowerCase() === normalizedEmail)) {
+        setErrors({ email: 'Email này đã tồn tại trong danh sách tài khoản.' });
+        setIsLoading(false);
+        return;
+      }
+
+      existingUsers.push({
+        ...newUser,
+        role: 'lecturer',
+        roleLabel: 'Giảng viên',
+        status: 'active',
+        password: form.password,
+      });
+      localStorage.setItem('quizgen_registered_users', JSON.stringify(existingUsers));
+
+      // Ghi log đăng ký tài khoản mới cho Admin Portal
+      try {
+        const logs = JSON.parse(localStorage.getItem('quizgen_security_audit_logs') || '[]');
+        logs.unshift({
+          id: `audit-${Date.now()}`,
+          timestamp: new Date().toLocaleString('vi-VN'),
+          actorEmail: normalizedEmail,
+          action: 'REGISTER_LECTURER_ACCOUNT',
+          detail: `Đăng ký tài khoản Giảng viên mới: ${newUser.academicTitle} ${newUser.fullName} (${newUser.faculty})`,
+          severity: 'info',
+          ipAddress: '127.0.0.1',
+        });
+        localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(logs.slice(0, 100)));
+      } catch {}
+
+      // Tự động thiết lập phiên đăng nhập
       localStorage.setItem('quizgen_user', JSON.stringify(newUser));
 
-      setTimeout(() => {
-        setIsLoading(false);
-        onRegister(newUser);
-      }, 700);
+      setIsLoading(false);
+      onRegister(newUser);
     } catch (err: any) {
       setIsLoading(false);
-      setErrors({ general: err.message || 'Lỗi khi tạo tài khoản.' });
+      setErrors({ general: err.message || 'Lỗi khi khởi tạo tài khoản.' });
     }
   };
 
   return (
-    <div className="w-full min-h-full flex flex-col items-center justify-start sm:justify-center py-10 px-4 selection:bg-blue-500/30">
-      {/* Background Orbs */}
-      <div className="fixed top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-700/15 rounded-full blur-[120px] pointer-events-none" />
-      <div className="fixed bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-blue-700/15 rounded-full blur-[120px] pointer-events-none" />
-      <div className="fixed top-1/3 right-1/4 w-[400px] h-[400px] bg-purple-900/10 rounded-full blur-[100px] pointer-events-none" />
+    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70]">
+      {/* Minimal Top Accent Bar */}
+      <div className="h-1.5 w-full bg-[#008689] shrink-0" />
 
-      <div className="relative z-10 w-full max-w-xl mx-auto my-auto">
-        {/* Header */}
-        <div className="flex flex-col items-center mb-6">
-          <div className="relative group cursor-pointer mb-3">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-sky-400 flex items-center justify-center text-white shadow-2xl shadow-blue-500/30 group-hover:scale-105 transition-all">
-              <GraduationCap className="w-7 h-7" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-[#080c16] rounded-full animate-pulse" />
-          </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">
-            QuizGen <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">AI</span>
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">Đăng ký tài khoản hệ thống Khảo thi ĐHQG</p>
-        </div>
-
-        {/* Card */}
-        <div
-          className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl shadow-black/40 p-6 sm:p-8 space-y-5"
-          style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.05), 0 25px 50px rgba(0,0,0,0.5)' }}
-        >
-          <div>
-            <h2 className="text-lg font-bold text-white">Đăng ký tài khoản</h2>
-            <p className="text-xs text-slate-400">Tham gia hệ thống khởi tạo ngân hàng câu hỏi khảo thi thông minh.</p>
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-lg space-y-5">
+          {/* Clean Brand Header */}
+          <div className="text-center space-y-1.5">
+            <img
+              src="/logo.jpg"
+              alt="QuizGen AI Logo"
+              className="w-13 h-13 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
+            />
+            <h1 className="text-lg font-extrabold text-[#008689] tracking-tight uppercase">
+              QuizGen AI
+            </h1>
+            <p className="text-xs text-slate-500">
+              Đăng ký tài khoản Giảng viên & Cán bộ Khảo thí
+            </p>
           </div>
 
-          {errors.general && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2">
-              <span>⚠</span>
-              <span>{errors.general}</span>
+          {/* Card */}
+          <div className="rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] bg-white shadow-sm p-6 sm:p-7 space-y-4">
+            <div className="text-center border-b border-slate-100 pb-3">
+              <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
+                Tạo tài khoản mới
+              </h2>
             </div>
-          )}
 
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            {/* ─── CHỌN VAI TRÒ ĐĂNG KÝ ────────────────────────────── */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase flex items-center gap-1.5">
-                <UserCheck className="w-3.5 h-3.5 text-blue-400" />
-                <span>Bạn đăng ký với tư cách là ai?</span>
-              </label>
-
-              <div className="grid grid-cols-3 gap-2">
-                {ROLES_OPTIONS.map((r) => {
-                  const Icon = r.icon;
-                  const isSelected = form.role === r.id;
-                  return (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => setField('role', r.id)}
-                      className={`p-2.5 rounded-xl border text-left transition-all ${
-                        isSelected
-                          ? 'border-blue-500 bg-blue-500/15 shadow-sm'
-                          : 'border-white/10 bg-white/[0.02] hover:bg-white/[0.05]'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <Icon className={`w-4 h-4 ${isSelected ? 'text-blue-400' : 'text-slate-400'}`} />
-                        {isSelected && <span className="text-[10px] text-blue-400">✓</span>}
-                      </div>
-                      <div className={`text-xs font-bold leading-tight ${isSelected ? 'text-white' : 'text-slate-300'}`}>
-                        {r.title}
-                      </div>
-                      <div className="text-[9px] text-slate-400 truncate mt-0.5">{r.subtitle}</div>
-                    </button>
-                  );
-                })}
+            {errors.general && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-[#da1c2d] text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-[#da1c2d]" />
+                <span>{errors.general}</span>
               </div>
-            </div>
+            )}
 
-            {/* Họ tên & Học hàm/học vị */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="col-span-1 space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase">Học vị</label>
-                <div className="relative">
-                  <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-                    <Award className="w-4 h-4" />
-                  </div>
+            <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
+              {/* 1. Loại tài khoản cố định: Giảng viên (Strict Whitelist) */}
+              <div className="p-2.5 rounded-xl bg-[#e6f4f4]/70 border border-[#008689]/25 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2 text-[#006d70] font-semibold">
+                  <GraduationCap className="w-4 h-4 text-[#008689]" />
+                  <span>Tài khoản Giảng viên Biên soạn & Xuất bản Đề thi</span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-[#008689] border border-[#008689]/20">
+                  Mặc định
+                </span>
+              </div>
+
+              {/* 2. Học vị & Họ tên */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="col-span-1 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Học vị</label>
                   <select
                     value={form.academicTitle}
                     onChange={(e) => setField('academicTitle', e.target.value)}
-                    className="w-full bg-[#131b2e] border border-white/10 rounded-xl pl-8 pr-2 py-2.5 text-xs text-white outline-none focus:border-blue-500/50 cursor-pointer"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer"
                   >
                     {ACADEMIC_TITLES.map((t) => (
-                      <option key={t} value={t} className="bg-[#131b2e] text-white">
+                      <option key={t} value={t} className="bg-white text-slate-900">
                         {t}
                       </option>
                     ))}
                   </select>
                 </div>
+
+                <div className="col-span-2 space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Họ và tên</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(e) => setField('fullName', e.target.value)}
+                      placeholder="Nguyễn Văn An"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.fullName ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                  </div>
+                  {errors.fullName && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.fullName}</p>
+                  )}
+                </div>
               </div>
 
-              <div className="col-span-2 space-y-1.5">
-                <label className="text-xs font-semibold text-slate-300 uppercase">Họ và tên</label>
+              {/* 3. Email */}
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">Email công tác</label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                    <User className="w-4 h-4" />
-                  </div>
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
-                    type="text"
-                    value={form.fullName}
-                    onChange={(e) => setField('fullName', e.target.value)}
-                    placeholder="Nguyễn Văn An"
-                    className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                      ${errors.fullName ? 'border-rose-500/60' : 'border-white/10 focus:border-blue-500/50'}`}
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setField('email', e.target.value)}
+                    placeholder="giangvien@ut.edu.vn"
+                    className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                      errors.email ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                    }`}
                   />
                 </div>
-                {errors.fullName && <p className="text-[11px] text-rose-400">⚠ {errors.fullName}</p>}
-              </div>
-            </div>
-
-            {/* Email */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase">Email công tác</label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setField('email', e.target.value)}
-                  placeholder="canbo@vnu.edu.vn"
-                  className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-3 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                    ${errors.email ? 'border-rose-500/60' : 'border-white/10 focus:border-blue-500/50'}`}
-                />
-              </div>
-              {errors.email && <p className="text-[11px] text-rose-400">⚠ {errors.email}</p>}
-            </div>
-
-            {/* Khoa / Bộ môn */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase">Khoa / Đơn vị công tác</label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Building2 className="w-4 h-4" />
-                </div>
-                <select
-                  value={form.faculty}
-                  onChange={(e) => setField('faculty', e.target.value)}
-                  className="w-full bg-[#131b2e] border border-white/10 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white outline-none focus:border-blue-500/50 cursor-pointer"
-                >
-                  {FACULTY_OPTIONS.map((f) => (
-                    <option key={f} value={f} className="bg-[#131b2e] text-white">
-                      {f}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Password */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase">Mật khẩu</label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={(e) => setField('password', e.target.value)}
-                  placeholder="Ít nhất 6 ký tự, có số & chữ hoa"
-                  className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                    ${errors.password ? 'border-rose-500/60' : 'border-white/10 focus:border-blue-500/50'}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                {errors.email && (
+                  <p className="text-[11px] text-[#da1c2d]">{errors.email}</p>
+                )}
               </div>
 
-              {/* Password strength meter */}
-              {form.password && (
-                <div className="space-y-1 pt-1">
-                  <div className="flex gap-1 h-1">
-                    {[1, 2, 3, 4].map((step) => (
-                      <div
-                        key={step}
-                        className={`flex-1 rounded-full transition-all duration-300 ${
-                          step <= strength ? STRENGTH_COLORS[strength] : 'bg-white/10'
-                        }`}
-                      />
-                    ))}
+              {/* 4. Trường & Khoa */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Trường đại học</label>
+                  <div className="relative">
+                    <School className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={form.university}
+                      onChange={(e) => setField('university', e.target.value)}
+                      placeholder="ĐH GTVT TP.HCM (UTH)"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.university ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
                   </div>
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-400">Độ mạnh mật khẩu:</span>
-                    <span className={`font-semibold ${STRENGTH_TEXT_COLORS[strength]}`}>
-                      {STRENGTH_LABELS[strength]}
-                    </span>
+                  {errors.university && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.university}</p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Khoa / Đơn vị</label>
+                  <div className="relative">
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <select
+                      value={form.faculty}
+                      onChange={(e) => setField('faculty', e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer truncate"
+                    >
+                      {FACULTY_OPTIONS.map((f) => (
+                        <option key={f} value={f} className="bg-white text-slate-900">
+                          {f}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              )}
-              {errors.password && <p className="text-[11px] text-rose-400">⚠ {errors.password}</p>}
-            </div>
+              </div>
 
-            {/* Confirm Password */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-300 uppercase">Xác nhận mật khẩu</label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  <Lock className="w-4 h-4" />
+              {/* 5. Mật khẩu & Xác nhận */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Mật khẩu</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={form.password}
+                      onChange={(e) => setField('password', e.target.value)}
+                      placeholder="Tối thiểu 8 ký tự"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.password ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
                 </div>
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  value={form.confirmPassword}
-                  onChange={(e) => setField('confirmPassword', e.target.value)}
-                  placeholder="Nhập lại mật khẩu"
-                  className={`w-full bg-white/[0.04] border rounded-xl pl-9 pr-10 py-2.5 text-xs text-white placeholder-slate-500 outline-none transition-all
-                    ${
-                      errors.confirmPassword
-                        ? 'border-rose-500/60'
-                        : form.confirmPassword && form.password === form.confirmPassword
-                        ? 'border-emerald-500/50'
-                        : 'border-white/10 focus:border-blue-500/50'
+
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-700">Xác nhận mật khẩu</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={form.confirmPassword}
+                      onChange={(e) => setField('confirmPassword', e.target.value)}
+                      placeholder="Nhập lại mật khẩu"
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-9 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                        errors.confirmPassword
+                          ? 'border-[#da1c2d]'
+                          : form.confirmPassword && form.password === form.confirmPassword
+                          ? 'border-emerald-500'
+                          : 'border-slate-200 focus:border-[#008689]'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Compact Password Criteria Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { ok: passwordCriteria.minLength, label: '≥ 8 ký tự' },
+                  { ok: passwordCriteria.hasUpper, label: 'Chữ hoa (A-Z)' },
+                  { ok: passwordCriteria.hasNumber, label: 'Chữ số (0-9)' },
+                  { ok: passwordCriteria.hasSpecial, label: 'Ký tự đặc biệt' },
+                ].map((item) => (
+                  <span
+                    key={item.label}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium border transition-colors ${
+                      item.ok
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-50 text-slate-400 border-slate-200'
                     }`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+                  >
+                    {item.ok ? '✓ ' : ''}
+                    {item.label}
+                  </span>
+                ))}
               </div>
-              {form.confirmPassword && form.password === form.confirmPassword && (
-                <div className="flex items-center gap-1 text-[11px] text-emerald-400">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>Mật khẩu trùng khớp</span>
-                </div>
+
+              {(errors.password || errors.confirmPassword) && (
+                <p className="text-[11px] text-[#da1c2d]">
+                  {errors.password || errors.confirmPassword}
+                </p>
               )}
-              {errors.confirmPassword && <p className="text-[11px] text-rose-400">⚠ {errors.confirmPassword}</p>}
+
+              {/* 6. Terms */}
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-[#008689] accent-[#008689] cursor-pointer shrink-0"
+                />
+                <span className="text-xs text-slate-600">
+                  Tôi đồng ý tuân thủ <strong className="text-[#008689]">Quy chế Khảo thí & Bảo mật Đề thi</strong>.
+                </span>
+              </label>
+
+              {/* Submit Button */}
+              <button
+                id="register-submit-btn"
+                type="submit"
+                disabled={isLoading || !agreedToTerms || !isPasswordSecure}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm text-white bg-[#008689] hover:bg-[#006d70] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Đang tạo tài khoản...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Đăng ký tài khoản</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="text-center text-xs text-slate-500 pt-2 border-t border-slate-100">
+              Đã có tài khoản?{' '}
+              <button
+                id="go-to-login-btn"
+                onClick={onNavigateLogin}
+                className="text-[#008689] font-bold hover:underline"
+              >
+                Đăng nhập
+              </button>
             </div>
-
-            {/* Terms Checkbox */}
-            <label className="flex items-start gap-2.5 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={agreedToTerms}
-                onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded border-white/20 bg-white/5 text-blue-600 focus:ring-0 cursor-pointer"
-              />
-              <span className="text-[11px] text-slate-400 leading-tight">
-                Tôi cam kết thông tin đăng ký chính xác và đồng ý với{' '}
-                <span className="text-blue-400 hover:underline">Quy chế Khảo thi & Bảo mật dữ liệu</span>
-                {' '}của ĐHQG.
-              </span>
-            </label>
-
-            {/* Submit */}
-            <button
-              id="register-submit-btn"
-              type="submit"
-              disabled={isLoading || !agreedToTerms}
-              className="relative w-full group flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm text-white bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 transition-all duration-300 shadow-lg shadow-indigo-600/30 hover:scale-[1.01] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Đang khởi tạo tài khoản...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Hoàn tất đăng ký</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </form>
-
-          {/* Link sang Đăng nhập */}
-          <div className="text-center text-xs text-slate-400 pt-2 border-t border-white/[0.06]">
-            Đã có tài khoản?{' '}
-            <button
-              id="go-to-login-btn"
-              onClick={onNavigateLogin}
-              className="text-blue-400 hover:text-blue-300 font-semibold transition-colors hover:underline"
-            >
-              Đăng nhập ngay
-            </button>
           </div>
         </div>
-
-        {/* Security badge */}
-        <div className="flex items-center justify-center gap-2 mt-5 text-[11px] text-slate-500">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Dữ liệu mã hóa TLS 1.3 · Tuân thủ NDPC Việt Nam 2023</span>
-        </div>
       </div>
+
+      <footer className="py-3 text-center text-[11px] text-slate-400">
+        © 2026 QuizGen AI
+      </footer>
     </div>
   );
 };
