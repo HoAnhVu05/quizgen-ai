@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Search,
   Download,
@@ -18,9 +18,28 @@ import {
   Building2,
   GraduationCap,
   FileQuestion,
+  History,
+  X,
+  Save,
+  FolderOpen,
 } from 'lucide-react';
 import { Question, BloomLevel, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
+
+export interface SavedExamItem {
+  id: string;
+  title: string;
+  subject: string;
+  faculty?: string;
+  university?: string;
+  durationMinutes: number;
+  examCodeCount: number;
+  examCodes: string[];
+  questionCount: number;
+  questions?: Question[];
+  createdAt: string;
+  format?: string;
+}
 
 interface QuestionBankScreenProps {
   questions: Question[];
@@ -112,7 +131,162 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     return '';
   });
   const [examDuration, setExamDuration] = useState<number>(60);
-  const [activeExamCode, setActiveExamCode] = useState<'101' | '102' | '103' | '104'>('101');
+  const [examCodeCount, setExamCodeCount] = useState<number>(4);
+  const availableCodes = useMemo(() => {
+    const count = Math.max(1, Math.min(8, examCodeCount));
+    const list: string[] = [];
+    for (let i = 0; i < count; i++) {
+      list.push(String(101 + i));
+    }
+    return list;
+  }, [examCodeCount]);
+
+  const [activeExamCode, setActiveExamCode] = useState<string>('101');
+
+  useEffect(() => {
+    if (!availableCodes.includes(activeExamCode)) {
+      setActiveExamCode(availableCodes[0] || '101');
+    }
+  }, [availableCodes, activeExamCode]);
+
+  const [isExamHistoryOpen, setIsExamHistoryOpen] = useState(false);
+  const [savedExams, setSavedExams] = useState<SavedExamItem[]>(() => {
+    try {
+      const stored = localStorage.getItem('quizgen_saved_exams');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const fetchSavedExams = useCallback(async () => {
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/exams`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setSavedExams((prev) => {
+            const map = new Map<string, SavedExamItem>();
+            prev.forEach((e) => map.set(e.id, e));
+            data.forEach((e: any) => {
+              const eid = e.id;
+              if (!map.has(eid)) {
+                map.set(eid, {
+                  id: eid,
+                  title: e.title || 'Đề kiểm tra',
+                  subject: e.subject || 'Học phần',
+                  faculty: e.faculty || '',
+                  university: e.university || '',
+                  durationMinutes: e.durationMinutes || 60,
+                  examCodeCount: Array.isArray(e.examCodes) ? e.examCodes.length : 4,
+                  examCodes: Array.isArray(e.examCodes) ? e.examCodes : ['101', '102', '103', '104'],
+                  questionCount: e.questionCount || (Array.isArray(e.selectedQuestionIds) ? e.selectedQuestionIds.length : 0),
+                  createdAt: e.createdAt ? new Date(e.createdAt).toLocaleString('vi-VN') : 'Gần đây',
+                  format: e.format || 'docx',
+                });
+              }
+            });
+            return Array.from(map.values()).sort((a, b) => (b.id > a.id ? 1 : -1));
+          });
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchSavedExams();
+  }, [fetchSavedExams]);
+
+  const saveExamToStorageAndApi = async (exportFormat: string) => {
+    const newExamId = `exam-${Date.now()}`;
+    const newRecord: SavedExamItem = {
+      id: newExamId,
+      title: examTitle,
+      subject: subjectName || 'Chưa đặt tên học phần',
+      faculty: facultyName,
+      university: universityName,
+      durationMinutes: examDuration,
+      examCodeCount,
+      examCodes: availableCodes,
+      questionCount: targetExamQuestions.length,
+      questions: targetExamQuestions,
+      createdAt: new Date().toLocaleString('vi-VN'),
+      format: exportFormat,
+    };
+
+    setSavedExams((prev) => {
+      const next = [newRecord, ...prev.filter((e) => e.id !== newRecord.id)].slice(0, 50);
+      try {
+        localStorage.setItem('quizgen_saved_exams', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    try {
+      await apiClient.fetch(`${API_BASE}/exams/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: newExamId,
+          title: examTitle,
+          subject: subjectName || 'Chưa đặt tên học phần',
+          faculty: facultyName,
+          university: universityName,
+          durationMinutes: examDuration,
+          examCodes: availableCodes,
+          selectedQuestionIds: targetExamQuestions.map((q) => q.id),
+          format: exportFormat,
+          questions: targetExamQuestions,
+        }),
+      });
+    } catch {}
+  };
+
+  const handleLoadSavedExam = async (item: SavedExamItem) => {
+    setExamTitle(item.title);
+    setSubjectName(item.subject);
+    if (item.university) setUniversityName(item.university);
+    if (item.faculty) setFacultyName(item.faculty);
+    if (item.durationMinutes) setExamDuration(item.durationMinutes);
+    if (item.examCodeCount) setExamCodeCount(item.examCodeCount);
+    else if (item.examCodes?.length) setExamCodeCount(item.examCodes.length);
+
+    if (item.questions && item.questions.length > 0) {
+      setSelectedIds(item.questions.map((q) => q.id));
+    } else {
+      try {
+        const res = await apiClient.fetch(`${API_BASE}/exams/${item.id}`);
+        if (res.ok) {
+          const detail = await res.json();
+          if (Array.isArray(detail?.questions) && detail.questions.length > 0) {
+            setSelectedIds(detail.questions.map((q: any) => q.id));
+          }
+        }
+      } catch {}
+    }
+
+    setIsExamHistoryOpen(false);
+    onShowToast(
+      'success',
+      'Đã nạp đề thi thành công',
+      `Đề "${item.title}" (${item.subject}) đã sẵn sàng để in và xuất bản.`
+    );
+  };
+
+  const handleDeleteSavedExam = async (id: string) => {
+    setSavedExams((prev) => {
+      const next = prev.filter((e) => e.id !== id);
+      try {
+        localStorage.setItem('quizgen_saved_exams', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+    try {
+      await apiClient.fetch(`${API_BASE}/exams/${id}`, { method: 'DELETE' });
+    } catch {}
+    onShowToast('info', 'Đã xóa bản ghi đề thi', 'Đã xóa đề thi khỏi danh sách đã lưu.');
+  };
+
   const [shuffleCounter, setShuffleCounter] = useState<number>(1);
 
   React.useEffect(() => {
@@ -156,9 +330,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       : filteredQuestions;
   }, [filteredQuestions, selectedIds]);
 
-  // Generate 4 shuffled exam variants (101, 102, 103, 104) with shuffled questions & options
+  // Generate shuffled exam variants with dynamic codes (101..10N) and shuffled options
   const examVariants = useMemo(() => {
-    const codes: Array<'101' | '102' | '103' | '104'> = ['101', '102', '103', '104'];
     const labels = ['A', 'B', 'C', 'D'];
     const map: Record<
       string,
@@ -173,7 +346,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       }>
     > = {};
 
-    codes.forEach((code, cIdx) => {
+    availableCodes.forEach((code, cIdx) => {
       const baseSeed = Number(code) * 31 + shuffleCounter * 97 + cIdx * 17;
       const shuffledQs = shuffleWithSeed(targetExamQuestions, baseSeed);
       map[code] = shuffledQs.map((q, qIdx) => {
@@ -199,7 +372,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     });
 
     return map;
-  }, [targetExamQuestions, shuffleCounter]);
+  }, [availableCodes, targetExamQuestions, shuffleCounter]);
 
   const activeVariantQuestions = examVariants[activeExamCode] || [];
 
@@ -217,12 +390,12 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     }
   };
 
-  const handleReshuffle4Codes = () => {
+  const handleReshuffleCodes = () => {
     setShuffleCounter((c) => c + 1);
     onShowToast(
       'success',
-      'Đã trộn mới 4 Mã đề (101, 102, 103, 104)',
-      `Thuật toán Fisher-Yates đã hoán vị thứ tự câu hỏi và phương án A/B/C/D cho cả 4 mã đề.`
+      `Đã trộn mới ${examCodeCount} Mã đề (${availableCodes.join(', ')})`,
+      `Thuật toán Fisher-Yates đã hoán vị thứ tự câu hỏi và phương án A/B/C/D cho cả ${examCodeCount} mã đề.`
     );
   };
 
@@ -251,9 +424,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
         return `Câu ${i + 1}: ${q.question}\n${opts}\n`;
       }),
       '============================================================',
-      'BẢNG ĐÁP ÁN CHẤM THI (4 MÃ ĐỀ 101 - 102 - 103 - 104):',
+      `BẢNG ĐÁP ÁN CHẤM THI (${availableCodes.length} MÃ ĐỀ: ${availableCodes.join(' - ')}):`,
       ...targetExamQuestions.map((_, idx) => {
-        return `Câu ${idx + 1}:  [101: ${examVariants['101']?.[idx]?.correctLabel}]   [102: ${examVariants['102']?.[idx]?.correctLabel}]   [103: ${examVariants['103']?.[idx]?.correctLabel}]   [104: ${examVariants['104']?.[idx]?.correctLabel}]`;
+        const codesLine = availableCodes.map((c) => `[${c}: ${examVariants[c]?.[idx]?.correctLabel || 'A'}]`).join('   ');
+        return `Câu ${idx + 1}:  ${codesLine}`;
       }),
     ].join('\n');
 
@@ -267,7 +441,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
   const handleDownloadAnswerKey = () => {
     const lines = [
-      `QUIZGEN AI — BẢNG ĐÁP ÁN CHẤM THI & GIẢI THÍCH CHI TIẾT (4 MÃ ĐỀ 101, 102, 103, 104)`,
+      `QUIZGEN AI — BẢNG ĐÁP ÁN CHẤM THI & GIẢI THÍCH CHI TIẾT (${availableCodes.length} MÃ ĐỀ: ${availableCodes.join(', ')})`,
       `Đơn vị: ${universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'} — ${facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}`,
       `Kỳ thi: ${examTitle}`,
       `Học phần: ${subjectName || (selectedSubject !== 'all' ? selectedSubject.replace(/\.[^/.]+$/, '') : targetExamQuestions[0]?.textbookName?.replace(/\.[^/.]+$/, '') || 'Chưa đặt tên học phần')}`,
@@ -275,10 +449,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       `Ngày xuất: ${new Date().toLocaleString('vi-VN')}`,
       '========================================================================',
       'I. BẢNG ĐÁP ÁN NHANH THEO MÃ ĐỀ:',
-      'Câu\tMã 101\tMã 102\tMã 103\tMã 104',
+      `Câu\t${availableCodes.map((c) => `Mã ${c}`).join('\t')}`,
       ...targetExamQuestions.map(
         (_, i) =>
-          `Câu ${i + 1}\t  ${examVariants['101']?.[i]?.correctLabel}\t  ${examVariants['102']?.[i]?.correctLabel}\t  ${examVariants['103']?.[i]?.correctLabel}\t  ${examVariants['104']?.[i]?.correctLabel}`
+          `Câu ${i + 1}\t  ${availableCodes.map((c) => examVariants[c]?.[i]?.correctLabel || 'A').join('\t  ')}`
       ),
       '\n========================================================================',
       'II. LỜI GIẢI CHI TIẾT (THEO MÃ ĐỀ ĐANG CHỌN ' + activeExamCode + '):',
@@ -289,11 +463,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     ].join('\n');
 
     const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
-    triggerDownload(blob, `QuizGen_AI_DapAn_4MaDe_101_104_${Date.now()}.txt`);
+    triggerDownload(blob, `QuizGen_AI_DapAn_${availableCodes.length}MaDe_${Date.now()}.txt`);
     onShowToast(
       'success',
-      'Đã tải Bảng Đáp Án Chấm Thi (4 Mã đề)',
-      'Tệp đáp án tổng hợp của cả 4 mã đề 101, 102, 103, 104 kèm lời giải đã được tải xuống.'
+      `Đã tải Bảng Đáp Án Chấm Thi (${availableCodes.length} Mã đề)`,
+      `Tệp đáp án tổng hợp của ${availableCodes.length} mã đề (${availableCodes.join(', ')}) kèm lời giải đã được tải xuống.`
     );
   };
 
@@ -333,7 +507,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             subject: subjectName || (selectedSubject !== 'all' ? selectedSubject.replace(/\.[^/.]+$/, '') : targetExamQuestions[0]?.textbookName?.replace(/\.[^/.]+$/, '') || 'Chưa đặt tên học phần'),
             examTitle,
             durationMinutes: examDuration,
-            examCodeCount: 4,
+            examCodeCount: availableCodes.length,
+            examCodes: availableCodes,
             shuffleQuestions: true,
             shuffleOptions: true,
             includeAnswerKey: true,
@@ -345,6 +520,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           questions: targetExamQuestions,
         }),
       });
+
+      // Lưu vết bài thi này vào CSDL và localStorage để giảng viên có thể chọn lại sau này
+      void saveExamToStorageAndApi(format);
 
       const contentType = response.headers.get('content-type') || '';
       if (response.ok && !contentType.includes('application/json')) {
@@ -387,15 +565,24 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               Bước 4/4 • Nhận Đầu Ra Thực Tế Cho Giảng Viên
             </span>
             <h2 className="text-lg font-bold text-slate-800 mt-1">
-              Phòng Đóng Gói Tờ Đề Thi A4, Trộn 4 Mã Đề & Kết Xuất Đa Định Dạng
+              Phòng Đóng Gói Tờ Đề Thi A4, Trộn Mã Đề & Kết Xuất Đa Định Dạng
             </h2>
             <p className="text-xs text-slate-500">
-              Xem trước trực tiếp tờ đề thi chuẩn A4 kèm phiếu tô OMR, tự động trộn 4 mã đề (101–104) và tải ngay file Word, PDF, Bảng đáp án chấm thi hoặc gói LMS.
+              Xem trước trực tiếp tờ đề thi chuẩn A4 kèm phiếu tô OMR, tự động trộn từ 1 đến 8 mã đề và tải ngay file Word, PDF, Bảng đáp án chấm thi hoặc gói LMS.
             </p>
           </div>
 
-          {/* 4 Immediate Output Buttons for the Teacher */}
+          {/* 4 Immediate Output Buttons for the Teacher + Saved Exams Selector */}
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => setIsExamHistoryOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-xs rounded-lg transition-colors shadow-2xs"
+              title="Xem và chọn các đề thi đã lưu / đã sinh trước đó để in"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#008689]" />
+              Kho Đề Đã Sinh ({savedExams.length})
+            </button>
+
             <button
               onClick={() => handleExport('docx')}
               disabled={isExporting !== null || targetExamQuestions.length === 0}
@@ -431,7 +618,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-              3. Tải Bảng Đáp Án (4 Mã đề)
+              3. Tải Bảng Đáp Án ({availableCodes.length} Mã đề)
             </button>
 
             <button
@@ -452,7 +639,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
         {/* Exam Metadata Config + Mode Switcher */}
         <div className="space-y-3 pt-1 border-t border-slate-100">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
             {/* Input Điền Tên Trường */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
@@ -472,7 +659,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-[#008689]" />
-                Tên Khoa / Viện / Bộ môn:
+                Tên Khoa / Viện:
               </label>
               <input
                 type="text"
@@ -488,7 +675,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
-                  Tên học phần / Môn thi:
+                  Tên học phần / Môn:
                 </span>
                 {subjects.length > 0 && (
                   <span className="text-[10px] text-slate-400 font-normal">
@@ -530,10 +717,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               />
             </div>
 
+            {/* Select Số mã đề cần in */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                <span>Số mã đề cần in:</span>
+                <span className="text-[10px] text-[#008689] font-bold">{examCodeCount} mã</span>
+              </label>
+              <select
+                value={examCodeCount}
+                onChange={(e) => setExamCodeCount(Number(e.target.value))}
+                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
+              >
+                <option value={1}>1 mã đề (Mã 101)</option>
+                <option value={2}>2 mã đề (101, 102)</option>
+                <option value={4}>4 mã đề (101–104 - Chuẩn)</option>
+                <option value={6}>6 mã đề (101–106)</option>
+                <option value={8}>8 mã đề (101–108)</option>
+              </select>
+            </div>
+
             {/* Select Thời gian & Nút Trộn */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-700">
-                Thời lượng & Đảo mã đề:
+                Thời lượng & Đảo mã:
               </label>
               <div className="flex items-center gap-2">
                 <select
@@ -541,19 +747,19 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                   onChange={(e) => setExamDuration(Number(e.target.value))}
                   className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
                 >
-                  <option value={15}>15 phút (Thường kỳ)</option>
-                  <option value={45}>45 phút (Giữa kỳ)</option>
-                  <option value={60}>60 phút (Cuối kỳ)</option>
-                  <option value={90}>90 phút (Tổng hợp)</option>
+                  <option value={15}>15 phút</option>
+                  <option value={45}>45 phút</option>
+                  <option value={60}>60 phút</option>
+                  <option value={90}>90 phút</option>
                 </select>
 
                 <button
-                  onClick={handleReshuffle4Codes}
-                  title="Xáo trộn lại câu hỏi và các phương án A-B-C-D cho 4 mã đề"
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors shrink-0 shadow-2xs cursor-pointer"
+                  onClick={handleReshuffleCodes}
+                  title={`Xáo trộn lại câu hỏi và các phương án A-B-C-D cho ${examCodeCount} mã đề`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors shrink-0 shadow-2xs cursor-pointer"
                 >
                   <Shuffle className="w-3.5 h-3.5" />
-                  Trộn 4 Mã
+                  Trộn {examCodeCount} Mã
                 </button>
               </div>
             </div>
@@ -568,7 +774,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
             {[
               { id: 'preview_paper', label: 'Xem Tờ Đề Thi A4 & OMR', icon: Eye },
-              { id: 'answer_key', label: 'Bảng Đáp Án 4 Mã Đề', icon: KeyRound },
+              { id: 'answer_key', label: `Bảng Đáp Án (${availableCodes.length} Mã Đề)`, icon: KeyRound },
               {
                 id: 'question_list',
                 label: `Kho Câu Hỏi (${filteredQuestions.length})`,
@@ -608,7 +814,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 <span className="text-xs font-bold text-slate-500 uppercase">
                   Chọn Mã Đề Xem Trước:
                 </span>
-                {(['101', '102', '103', '104'] as const).map((code) => (
+                {availableCodes.map((code) => (
                   <button
                     key={code}
                     onClick={() => setActiveExamCode(code)}
@@ -767,7 +973,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                   onClick={() => setViewMode('answer_key')}
                   className="text-[11px] font-bold text-[#008689] hover:underline"
                 >
-                  Xem đủ 4 mã đề →
+                  Xem đủ {availableCodes.length} mã đề →
                 </button>
               </div>
               {activeVariantQuestions.length === 0 ? (
@@ -792,16 +998,16 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
         </div>
       )}
 
-      {/* VIEW 2: ANSWER KEY MATRIX FOR ALL 4 EXAM CODES (101, 102, 103, 104) */}
+      {/* VIEW 2: ANSWER KEY MATRIX FOR ALL DYNAMIC EXAM CODES */}
       {viewMode === 'answer_key' && (
         <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-base font-bold text-slate-800">
-                Bảng Đáp Án Chấm Thi Tổng Hợp (4 Mã Đề: 101, 102, 103, 104)
+                Bảng Đáp Án Chấm Thi Tổng Hợp ({availableCodes.length} Mã Đề: {availableCodes.join(', ')})
               </h3>
               <p className="text-xs text-slate-500">
-                Dành cho Giảng viên lưu hồ sơ chấm thi sau khi trộn đề bằng thuật toán Fisher-Yates
+                Dành cho Giảng viên lưu hồ sơ chấm thi sau khi trộn {availableCodes.length} mã đề bằng thuật toán Fisher-Yates
               </p>
             </div>
             <button
@@ -817,7 +1023,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           {targetExamQuestions.length === 0 ? (
             <div className="py-12 px-4 text-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50 space-y-2">
               <FileQuestion className="w-8 h-8 text-slate-400 mx-auto" />
-              <p className="text-sm font-semibold text-slate-700">Chưa có câu hỏi để tạo bảng đáp án 4 mã đề</p>
+              <p className="text-sm font-semibold text-slate-700">Chưa có câu hỏi để tạo bảng đáp án {availableCodes.length} mã đề</p>
               <p className="text-xs text-slate-400">Vui lòng tải lên tài liệu giáo trình và tạo câu hỏi trước khi lập bảng đáp án.</p>
             </div>
           ) : (
@@ -826,17 +1032,18 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
                     <th className="py-3 px-4">Thứ tự câu trên đề</th>
-                    <th className="py-3 px-4 text-center">Mã đề 101</th>
-                    <th className="py-3 px-4 text-center">Mã đề 102</th>
-                    <th className="py-3 px-4 text-center">Mã đề 103</th>
-                    <th className="py-3 px-4 text-center">Mã đề 104</th>
+                    {availableCodes.map((code) => (
+                      <th key={code} className="py-3 px-4 text-center">
+                        Mã đề {code}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {targetExamQuestions.map((_, idx) => (
                     <tr key={idx} className="hover:bg-slate-50">
                       <td className="py-3 px-4 font-bold text-slate-800">Câu {idx + 1}</td>
-                      {(['101', '102', '103', '104'] as const).map((code) => (
+                      {availableCodes.map((code) => (
                         <td key={code} className="py-3 px-4 text-center">
                           <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold">
                             {examVariants[code]?.[idx]?.correctLabel || 'A'}
@@ -1019,6 +1226,114 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== MODAL: KHO ĐỀ THI ĐÃ SINH & LỊCH SỬ ĐÓNG GÓI ===== */}
+      {isExamHistoryOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden animate-fade-in">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008689] flex items-center justify-center font-bold">
+                  <FolderOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Kho Đề Thi Đã Sinh & Đóng Gói
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Chọn một bộ đề thi trước đó để nạp lại vào bản in A4, phiếu OMR và bảng đáp án
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setIsExamHistoryOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Exams List */}
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
+              {savedExams.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <FileQuestion className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="text-xs font-semibold text-slate-700">Chưa có đề thi nào trong kho lưu trữ</p>
+                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                    Mỗi khi bạn thực hiện xuất bản đề thi (Word, PDF, QTI), bài thi sẽ được lưu tự động tại đây để bạn có thể chọn và in lại bất kỳ lúc nào.
+                  </p>
+                </div>
+              ) : (
+                savedExams.map((exam) => (
+                  <div
+                    key={exam.id}
+                    className="p-4 rounded-2xl border border-slate-200 hover:border-[#008689] bg-white transition-all space-y-2.5 shadow-2xs"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">{exam.title}</h4>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-1">
+                          <span className="font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                            Môn: {exam.subject}
+                          </span>
+                          <span>•</span>
+                          <span>{exam.questionCount} câu hỏi</span>
+                          <span>•</span>
+                          <span>{exam.durationMinutes} phút</span>
+                          <span>•</span>
+                          <span className="font-bold text-[#008689]">
+                            {exam.examCodes?.length || 4} mã đề ({exam.examCodes?.join(', ') || '101-104'})
+                          </span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {exam.createdAt}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                      <span className="text-slate-500 text-[11px] truncate max-w-[280px]">
+                        {exam.university} — {exam.faculty}
+                      </span>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleDeleteSavedExam(exam.id)}
+                          className="px-2.5 py-1 rounded-lg text-rose-600 hover:bg-rose-50 text-[11px] font-semibold transition-colors"
+                        >
+                          Xóa
+                        </button>
+                        <button
+                          onClick={() => handleLoadSavedExam(exam)}
+                          className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          Chọn đề này để in / xuất
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs">
+              <span className="text-slate-500">
+                Tổng cộng: <strong>{savedExams.length}</strong> bài thi đã lưu
+              </span>
+              <button
+                onClick={() => setIsExamHistoryOpen(false)}
+                className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold"
+              >
+                Đóng
+              </button>
             </div>
           </div>
         </div>

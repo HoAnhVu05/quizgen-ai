@@ -1231,7 +1231,26 @@ def get_exam(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
     if not exam:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi gói đề thi.")
-    return format_exam_response(exam)
+    res = format_exam_response(exam)
+    # Trả về chi tiết các biến thể mã đề và câu hỏi kèm theo để Frontend tái tạo trực quan
+    variants = db.query(ExamVariantDB).filter(ExamVariantDB.exam_id == exam_id).all()
+    res["variants"] = [
+        {
+            "id": v.id,
+            "examCode": v.exam_code,
+            "questionSequence": v.question_sequence if isinstance(v.question_sequence, list) else json.loads(v.question_sequence or "[]"),
+            "answerKey": v.answer_key if isinstance(v.answer_key, list) else json.loads(v.answer_key or "[]")
+        }
+        for v in variants
+    ]
+    q_ids = res.get("selectedQuestionIds", [])
+    if q_ids:
+        q_rows = db.query(QuestionDB).filter(QuestionDB.id.in_(q_ids)).all()
+        q_map = {q.id: format_question_response(q) for q in q_rows}
+        res["questions"] = [q_map[qid] for qid in q_ids if qid in q_map]
+    else:
+        res["questions"] = []
+    return res
 
 @app.get("/exams/{exam_id}/download")
 @app.get("/api/v1/exams/{exam_id}/download")
