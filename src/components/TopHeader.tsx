@@ -16,6 +16,7 @@ interface TopHeaderProps {
   currentUser: UserProfile | null;
   onLogout: () => void;
   onNavigate?: (screen: ScreenId) => void;
+  onAdminTabChange?: (tab: string) => void;
   onRoleSwitch?: (newRole: UserRole) => void;
   onShowToast: (
     type: 'success' | 'info' | 'warning' | 'error',
@@ -35,6 +36,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   currentScreen,
   currentUser,
   onNavigate,
+  onAdminTabChange,
 }) => {
   const isAdmin = currentUser?.role === 'admin';
 
@@ -42,7 +44,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     switch (screen) {
       case 'admin_portal':
         return {
-          label: 'Cổng Quản trị Hệ thống & Bảo mật 2FA',
+          label: 'Cổng Quản trị Hệ thống',
           icon: ShieldCheck,
         };
       case 'dashboard':
@@ -86,7 +88,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         <h2 className="text-sm font-bold text-slate-800 truncate">{screenMeta.label}</h2>
       </div>
 
-      {/* Right: Connected 4-Step Workflow Stepper for Lecturer OR 2FA Security Badge for Admin */}
+      {/* Right: Connected 4-Step Workflow Stepper for Lecturer or health check for Admin */}
       <div className="flex items-center space-x-2.5 shrink-0">
         {!isAdmin && onNavigate && (
           <div className="hidden xl:flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
@@ -122,10 +124,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         {isAdmin && (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Phiên Admin Đã Xác Thực 2FA
-            </span>
+            <button
+              onClick={() => {
+                onNavigate?.('admin_portal');
+                onAdminTabChange?.('services');
+              }}
+              className="px-3 py-1 rounded-lg text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors"
+            >
+              Kiểm tra Sức khỏe
+            </button>
             {onNavigate && currentScreen !== 'admin_portal' && (
               <button
                 onClick={() => onNavigate('admin_portal')}

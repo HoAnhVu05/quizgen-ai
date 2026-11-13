@@ -892,7 +892,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                           <td className="py-3 px-4">
                             {isSuperAdmin ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
-                                Quản trị viên (2FA)
+                                Quản trị viên
                               </span>
                             ) : (
                               <select
