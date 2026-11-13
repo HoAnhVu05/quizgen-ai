@@ -23,8 +23,19 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
     """
     if token.strip().startswith("mock-jwt-"):
         parts_mock = token.strip().split("-")
-        role_part = parts_mock[3] if len(parts_mock) > 3 else "lecturer"
-        return {"id": "usr-lec-005", "user_id": "usr-lec-005", "role": role_part, "sub": "usr-lec-005"}
+        role_part = "lecturer"
+        for part in parts_mock:
+            if part in ["admin", "head_of_department", "lecturer"]:
+                role_part = part
+                break
+        uid = "usr-adm-quizgen" if role_part == "admin" else ("usr-hod-001" if role_part == "head_of_department" else "usr-lec-001")
+        return {
+            "id": uid,
+            "user_id": uid,
+            "role": role_part,
+            "sub": uid,
+            "email": "quizgen.ai.team@gmail.com" if role_part == "admin" else "nguyentann0804@gmail.com"
+        }
 
     parts = token.strip().split(".")
     if len(parts) != 3:
@@ -129,4 +140,81 @@ def get_optional_user_id(
     try:
         return get_current_user_id(credentials, authorization, x_user_id)
     except HTTPException:
+        return None
+
+
+def get_current_user_info(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_email: Optional[str] = Header(None, alias="X-User-Email")
+) -> Dict[str, Any]:
+    """
+    Trích xuất toàn bộ thông tin người dùng (id, role, email) từ headers Gateway hoặc JWT Token.
+    Đảm bảo phân quyền đồng bộ trên toàn bộ vi dịch vụ.
+    """
+    user_info = {
+        "id": None,
+        "user_id": None,
+        "role": x_user_role.strip().lower() if x_user_role else None,
+        "email": x_user_email.strip().lower() if x_user_email else None
+    }
+
+    if x_user_id and x_user_id.strip():
+        user_info["id"] = x_user_id.strip()
+        user_info["user_id"] = x_user_id.strip()
+
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials.strip()
+    elif authorization:
+        auth_str = authorization.strip()
+        if auth_str.lower().startswith("bearer "):
+            token = auth_str[7:].strip()
+        else:
+            token = auth_str
+
+    if token:
+        try:
+            payload = decode_jwt_token(token)
+            uid = payload.get("id") or payload.get("user_id") or payload.get("sub")
+            if uid:
+                user_info["id"] = str(uid)
+                user_info["user_id"] = str(uid)
+            if payload.get("role"):
+                user_info["role"] = str(payload.get("role")).lower()
+            if payload.get("email"):
+                user_info["email"] = str(payload.get("email")).lower()
+            elif payload.get("sub") and "@" in str(payload.get("sub")):
+                user_info["email"] = str(payload.get("sub")).lower()
+        except Exception:
+            pass
+
+    # Fallback môi trường phát triển
+    if not user_info["id"]:
+        env = os.getenv("ENVIRONMENT", "development").lower()
+        if env in ["development", "dev", "local"]:
+            user_info["id"] = "usr-lec-001"
+            user_info["user_id"] = "usr-lec-001"
+            if not user_info["role"]:
+                user_info["role"] = "lecturer"
+            if not user_info["email"]:
+                user_info["email"] = "nguyentann0804@gmail.com"
+
+    return user_info
+
+
+def get_optional_user_info(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_email: Optional[str] = Header(None, alias="X-User-Email")
+) -> Optional[Dict[str, Any]]:
+    """Phiên bản tùy chọn trích xuất user_info mà không ném lỗi 401 khi không đăng nhập"""
+    try:
+        info = get_current_user_info(credentials, authorization, x_user_id, x_user_role, x_user_email)
+        return info if info.get("id") else None
+    except Exception:
         return None

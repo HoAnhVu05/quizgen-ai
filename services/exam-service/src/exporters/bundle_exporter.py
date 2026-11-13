@@ -103,12 +103,13 @@ class ExamBundleExporter:
                     faculty=faculty,
                     duration_minutes=duration_minutes,
                     include_answer_key=include_answer_key,
-                    include_explanation=include_explanation
+                    include_explanation=include_explanation,
+                    include_omr_sheet=include_omr_sheet
                 )
                 zf.writestr(f"De_Thi_Word/De_Thi_MaDe_{code}.docx", docx_bytes)
 
             # ---------------------------------------------------------
-            # 4. Sinh Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn độc lập
+            # 4. Sinh Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn độc lập (cả PDF và DOCX)
             # ---------------------------------------------------------
             omr_pdf_bytes = PDFExamExporter.generate_omr_50_pdf(
                 university=university,
@@ -117,6 +118,14 @@ class ExamBundleExporter:
                 exam_code=exam_codes[0] if exam_codes else "101"
             )
             zf.writestr("Phieu_Tra_Loi_OMR/Phieu_Tra_Loi_OMR_50_Cau_Chuan.pdf", omr_pdf_bytes)
+
+            omr_docx_bytes = WordExamExporter.generate_omr_50_docx(
+                university=university,
+                faculty=faculty,
+                subject=subject,
+                exam_code=exam_codes[0] if exam_codes else "101"
+            )
+            zf.writestr("Phieu_Tra_Loi_OMR/Phieu_Tra_Loi_OMR_50_Cau_Chuan.docx", omr_docx_bytes)
 
             # ---------------------------------------------------------
             # 5. Sinh Bảng Ma Trận Đáp Án So Sánh Chéo (.docx & .csv)

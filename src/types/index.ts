@@ -26,6 +26,10 @@ export interface UserProfile {
   avatarUrl?: string;
   authProvider?: 'local' | 'google';
   status?: 'active' | 'locked';
+  lockType?: 'temporary' | 'permanent';
+  lockReason?: string;
+  lockedUntil?: string;
+  lockedAt?: string;
   twoFactorVerified?: boolean;
 }
 

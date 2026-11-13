@@ -416,13 +416,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             }
           }
         } else {
+          // Backend từ chối xác thực
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
+
+          if (res.status === 403) {
+            // Tài khoản đã bị tạm khóa hoặc khóa vĩnh viễn bởi Quản trị viên
+            setErrors({ general: errMsg });
+            setIsLoading(false);
+            appendSecurityAuditLog(
+              normalizedEmail,
+              'BLOCKED_LOCKED_USER_LOGIN',
+              errMsg,
+              'critical'
+            );
+            return;
+          }
+
           // Nếu là tài khoản Admin chính thức nhưng DB cục bộ chưa cập nhật -> Fallback sang kiểm tra nghiêm ngặt cục bộ
           if (normalizedEmail === 'quizgen.ai.team@gmail.com') {
             backendFailed = true;
           } else {
             // Backend từ chối xác thực (sai mật khẩu hoặc không tồn tại)
-            const errData = await res.json().catch(() => ({}));
-            const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
             setErrors({ general: errMsg });
             setIsLoading(false);
             recordFailedAttempt(errMsg);

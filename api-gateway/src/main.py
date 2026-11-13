@@ -29,10 +29,16 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
 
     if token.startswith("mock-jwt-"):
         parts_m = token.split("-")
-        r_part = parts_m[3] if len(parts_m) > 3 else "lecturer"
-        headers["x-user-id"] = "usr-lec-005"
+        r_part = "lecturer"
+        for p in parts_m:
+            if p in ["admin", "head_of_department", "lecturer"]:
+                r_part = p
+                break
+        uid = "usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001")
+        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else "nguyentann0804@gmail.com"
+        headers["x-user-id"] = uid
         headers["x-user-role"] = r_part
-        headers["x-user-email"] = "avanimechannel@gmail.com"
+        headers["x-user-email"] = email
         return
 
     try:
@@ -114,7 +120,8 @@ def health_check():
             "document-service",
             "rag-service",
             "ai-service",
-            "exam-service"
+            "exam-service",
+            "admin-service"
         ]
     }
 
@@ -178,3 +185,10 @@ async def activities_proxy(request: Request, path: str = ""):
 async def audit_logs_proxy(request: Request, path: str = ""):
     target = f"/audit-logs/{path}".rstrip("/") if not path else f"/audit-logs/{path}"
     return await proxy_request(settings.EXAM_SERVICE_URL, target or "/audit-logs", request)
+
+@app.api_route("/api/v1/admin", methods=METHODS)
+@app.api_route("/api/v1/admin", methods=METHODS)
+@app.api_route("/api/v1/admin/{path:path}", methods=METHODS)
+async def admin_proxy(request: Request, path: str = ""):
+    target = f"/{path}" if path else "/overview"
+    return await proxy_request(settings.ADMIN_SERVICE_URL, target, request)

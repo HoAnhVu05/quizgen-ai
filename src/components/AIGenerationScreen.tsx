@@ -304,7 +304,10 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
-        const res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        let res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
+        if (!res.ok) {
+          res = await apiClient.fetch(`${API_BASE}/documents/${selectedBook}`);
+        }
         if (!res.ok) {
           throw new Error(await parseErrorMessage(res));
         }
@@ -314,12 +317,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
           setSelectedChapters([chapters[0]]);
         } else {
-          const defaultCh = ['Chương 1: Nội dung tổng quát'];
+          const defaultCh = ['Toàn bộ nội dung tài liệu'];
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
           setSelectedChapters(defaultCh);
         }
       } catch {
-        const defaultCh = ['Chương 1: Nội dung tổng quát'];
+        const defaultCh = ['Toàn bộ nội dung tài liệu'];
         setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
         setSelectedChapters(defaultCh);
       }
@@ -374,7 +377,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setGenerationStep('Đang kết nối API Gateway và truy xuất ngữ cảnh RAG từ tài liệu...');
 
     const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const defaultChapter = selectedChapters[0] || 'Chương tổng hợp';
 
     // Timeout Controller (60 giây cho các đề thi lớn)
@@ -523,7 +526,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setIsGenerating(false);
     setGenerationError(null);
     const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'GiaoTrinh_KinhTeViMo_2025.pdf';
+    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
     onShowToast(
       'info',
@@ -559,19 +562,11 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
                 <div className="space-y-2 pt-2">
                   <button
-                    onClick={handleUseFallbackQuestions}
+                    onClick={handleStartGenerate}
                     className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 transition-all flex items-center justify-center gap-2 shadow-md shadow-[#008689]/25"
                   >
-                    <Sparkles className="w-4 h-4" />
-                    Tiếp tục bằng AI RAG Engine (Không cần chờ Backend)
-                  </button>
-
-                  <button
-                    onClick={handleStartGenerate}
-                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-200"
-                  >
                     <RefreshCw className="w-4 h-4" />
-                    Thử lại gọi API Gateway (:8000)
+                    Thử lại gọi mô hình AI
                   </button>
 
                   <button
@@ -579,9 +574,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                       setIsGenerating(false);
                       setGenerationError(null);
                     }}
-                    className="text-xs text-slate-500 hover:text-slate-800 transition-colors pt-1 font-medium"
+                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-200"
                   >
-                    Hủy bỏ
+                    Đóng và cấu hình lại
                   </button>
                 </div>
               </div>
