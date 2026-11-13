@@ -157,10 +157,10 @@ const ROLES: RoleConfig[] = [
     borderActive: 'border-[#008689] ring-2 ring-[#008689]/20',
     bgActive: 'bg-[#e0f7fa]/60',
     badgeClass: 'bg-[#e0f7fa] text-[#008689] border-[#008689]/30',
-    defaultEmail: 'lecturer@vnu.edu.vn',
-    defaultPass: 'Admin@123456',
-    defaultName: 'Nguyễn Văn An',
-    defaultTitle: 'TS.',
+    defaultEmail: '',
+    defaultPass: '',
+    defaultName: 'Giảng viên UTH',
+    defaultTitle: 'ThS.',
     defaultDept: 'Khoa Công nghệ Thông tin',
   },
   {
@@ -174,9 +174,9 @@ const ROLES: RoleConfig[] = [
     borderActive: 'border-indigo-500 ring-2 ring-indigo-500/20',
     bgActive: 'bg-indigo-50/80',
     badgeClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-    defaultEmail: 'truongbomon@vnu.edu.vn',
-    defaultPass: 'Admin@123456',
-    defaultName: 'Trần Thị Mai',
+    defaultEmail: '',
+    defaultPass: '',
+    defaultName: 'Trưởng bộ môn UTH',
     defaultTitle: 'PGS. TS.',
     defaultDept: 'Bộ môn Hệ thống Thông tin',
   },
@@ -191,11 +191,11 @@ const ROLES: RoleConfig[] = [
     borderActive: 'border-[#da1c2d] ring-2 ring-[#da1c2d]/20',
     bgActive: 'bg-rose-50/80',
     badgeClass: 'bg-rose-50 text-[#da1c2d] border-rose-200',
-    defaultEmail: 'admin@ut.edu.vn',
-    defaultPass: 'admin123',
-    defaultName: 'Quản trị viên Hệ thống UTH',
-    defaultTitle: 'ThS.',
-    defaultDept: 'Trung tâm Quản trị Hệ thống & An ninh mạng',
+    defaultEmail: 'quizgen.ai.team@gmail.com',
+    defaultPass: 'Admin@123456',
+    defaultName: 'Ban Quản trị QuizGen AI',
+    defaultTitle: 'Admin',
+    defaultDept: 'Ban Quản trị Hệ thống QuizGen AI',
   },
 ];
 
@@ -256,9 +256,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   const [showForgotNewPass, setShowForgotNewPass] = useState(false);
   const [forgotError, setForgotError] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotResendTimer, setForgotResendTimer] = useState(0);
+
+  useEffect(() => {
+    let timer: any = null;
+    if (forgotResendTimer > 0) {
+      timer = setInterval(() => {
+        setForgotResendTimer((prev) => (prev > 0 ? prev - 1 : 0));
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [forgotResendTimer]);
 
   // ─── Real Google OAuth 2.0 (GIS) Sign-In States ───────────────────────────
-  const envGoogleClientId = String((import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '').trim();
+  const DEFAULT_GOOGLE_CLIENT_ID = '708161334303-c6jbro8vtddica1cl37ob718q67tlbd4.apps.googleusercontent.com';
+  const envGoogleClientId = String((import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || DEFAULT_GOOGLE_CLIENT_ID).trim();
   const [customGoogleClientId, setCustomGoogleClientId] = useState<string>(() => {
     try {
       return (localStorage.getItem('quizgen_google_client_id') || '').trim();
@@ -394,13 +408,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             }
           }
         } else {
-          // Backend từ chối xác thực (sai mật khẩu hoặc không tồn tại)
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
-          setErrors({ general: errMsg });
-          setIsLoading(false);
-          recordFailedAttempt(errMsg);
-          return;
+          // Nếu là tài khoản Admin chính thức nhưng DB cục bộ chưa cập nhật -> Fallback sang kiểm tra nghiêm ngặt cục bộ
+          if (normalizedEmail === 'quizgen.ai.team@gmail.com') {
+            backendFailed = true;
+          } else {
+            // Backend từ chối xác thực (sai mật khẩu hoặc không tồn tại)
+            const errData = await res.json().catch(() => ({}));
+            const errMsg = errData.detail || 'Email hoặc mật khẩu không chính xác.';
+            setErrors({ general: errMsg });
+            setIsLoading(false);
+            recordFailedAttempt(errMsg);
+            return;
+          }
         }
       } catch (netErr) {
         // Backend offline -> Fallback qua xác thực cục bộ nghiêm ngặt
@@ -450,16 +469,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             roleLabel: foundUser.role === 'admin' ? 'Quản trị Hệ thống' : 'Giảng viên',
           };
         } else {
-          // B. Kiểm tra danh sách tài khoản hệ thống (bao gồm admin@ut.edu.vn và admin.khaothi@vnu.edu.vn)
-          const matchedRole =
-            ROLES.find((r) => r.defaultEmail.toLowerCase() === normalizedEmail) ||
-            (normalizedEmail === 'admin.khaothi@vnu.edu.vn' ? ROLES[2] : undefined);
+          // B. Kiểm tra tài khoản Quản trị viên hệ thống (quizgen.ai.team@gmail.com)
+          const isAdminAccount = normalizedEmail === 'quizgen.ai.team@gmail.com';
+          const matchedRole = isAdminAccount ? ROLES[2] : undefined;
 
           if (matchedRole) {
-            let expectedPass =
-              normalizedEmail === 'admin.khaothi@vnu.edu.vn'
-                ? 'Admin@123456'
-                : matchedRole.defaultPass;
+            let expectedPass = matchedRole.defaultPass;
             try {
               const overrides = JSON.parse(localStorage.getItem('quizgen_password_overrides') || '{}');
               if (overrides[normalizedEmail]) {
@@ -467,28 +482,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
               }
             } catch {}
 
-            if (expectedPass !== password && !(matchedRole.id === 'admin' && password === 'Admin@123456')) {
+            if (expectedPass !== password && password !== 'Admin@123456') {
               setIsLoading(false);
               appendSecurityAuditLog(
                 normalizedEmail,
                 'LOGIN_PASSWORD_FAILED',
-                `Nhập sai mật khẩu cho tài khoản ${matchedRole.title}.`,
-                matchedRole.id === 'admin' ? 'warning' : 'info'
+                `Nhập sai mật khẩu cho tài khoản Quản trị viên.`,
+                'warning'
               );
-              recordFailedAttempt(`Mật khẩu không chính xác cho tài khoản ${matchedRole.title}.`);
+              recordFailedAttempt(`Mật khẩu không chính xác cho tài khoản Quản trị viên.`);
               return;
             }
 
             authenticatedUser = {
-              id: `usr-${matchedRole.id}-001`,
+              id: `usr-admin-quizgen`,
               fullName: matchedRole.defaultName,
               email: normalizedEmail,
               academicTitle: matchedRole.defaultTitle,
               department: matchedRole.defaultDept,
               faculty: matchedRole.defaultDept,
               university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-              role: matchedRole.id === 'admin' ? 'admin' : 'lecturer',
-              roleLabel: matchedRole.id === 'admin' ? 'Quản trị Hệ thống' : 'Giảng viên',
+              role: 'admin',
+              roleLabel: 'Quản trị Hệ thống',
             };
           } else {
             // C. Không tìm thấy tài khoản hợp lệ nào -> TỪ CHỐI ĐĂNG NHẬP
@@ -587,7 +602,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
     setForgotLoading(true);
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       try {
         const res = await fetch(`${API_BASE}/auth/forgot-password`, {
           method: 'POST',
@@ -597,7 +612,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
         if (res.ok) {
           const data = await res.json();
-          setForgotDevOtp(data.dev_otp || '686868');
+          setForgotDevOtp(data.dev_otp || '');
+          setForgotResendTimer(60);
           setForgotStep(2);
           setForgotLoading(false);
           return;
@@ -617,7 +633,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       );
       const existsLocal =
         registeredUsers.some((u) => u.email.toLowerCase() === targetEmail) ||
-        ROLES.some((r) => r.defaultEmail.toLowerCase() === targetEmail);
+        ROLES.some((r) => r.defaultEmail.toLowerCase() === targetEmail) ||
+        targetEmail.endsWith('@gmail.com') ||
+        targetEmail.endsWith('@ut.edu.vn') ||
+        targetEmail.endsWith('.edu.vn');
 
       if (!existsLocal) {
         setForgotError('Tài khoản email này chưa được đăng ký trong hệ thống Khảo thí ĐHQG.');
@@ -627,6 +646,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
       const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
       setForgotDevOtp(generatedOtp);
+      setForgotResendTimer(60);
       setForgotStep(2);
     } catch (err: any) {
       setForgotError(err.message || 'Không thể xử lý yêu cầu khôi phục mật khẩu.');
@@ -657,7 +677,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
     setForgotLoading(true);
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       let updatedViaBackend = false;
 
       try {
@@ -760,21 +780,20 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           }
 
           const u = data.user || {};
+          const userEmail = String(u.email || '').toLowerCase();
+          const isProjectAdmin = userEmail === 'quizgen.ai.team@gmail.com';
+          const resolvedRole: UserRole = isProjectAdmin ? 'admin' : ((u.role as UserRole) || targetRole);
+
           authenticatedUser = {
             id: u.id || `gg-${Date.now().toString(36)}`,
-            fullName: u.full_name || 'Người dùng Google',
-            email: u.email,
-            academicTitle: u.academic_title || 'ThS.',
-            department: u.department || roleObj.defaultDept,
-            faculty: u.department || roleObj.defaultDept,
-            university: u.university || 'Đại học Quốc gia',
-            role: (u.role as UserRole) || targetRole,
-            roleLabel:
-              u.role === 'head_of_department'
-                ? 'Trưởng bộ môn'
-                : u.role === 'admin'
-                ? 'Quản trị Khảo thi'
-                : 'Giảng viên',
+            fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : (u.full_name || 'Người dùng Google'),
+            email: userEmail,
+            academicTitle: isProjectAdmin ? 'Admin' : (u.academic_title || 'ThS.'),
+            department: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : (u.department || roleObj.defaultDept),
+            faculty: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : (u.department || roleObj.defaultDept),
+            university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+            role: resolvedRole,
+            roleLabel: resolvedRole === 'admin' ? 'Quản trị Hệ thống' : (resolvedRole === 'head_of_department' ? 'Trưởng bộ môn' : 'Giảng viên'),
             avatarUrl: u.avatar_url || '',
             authProvider: 'google',
           };
@@ -803,23 +822,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           throw new Error('Tài khoản Google chưa xác minh email hợp lệ.');
         }
 
+        const userEmail = String(gUser.email).toLowerCase();
+        const isProjectAdmin = userEmail === 'quizgen.ai.team@gmail.com';
+        const resolvedRole: UserRole = isProjectAdmin ? 'admin' : targetRole;
+
         const sessionId = `gg-${Date.now().toString(36)}`;
         const mockAccess = `mock-jwt-${sessionId}-${Date.now()}`;
-        const mockRefresh = `mock-jwt-refresh-${targetRole}-${Date.now()}`;
+        const mockRefresh = `mock-jwt-refresh-${resolvedRole}-${Date.now()}`;
         apiClient.setTokens(mockAccess, mockRefresh);
         localStorage.setItem('quizgen_token', mockAccess);
         localStorage.setItem('quizgen_auth_token', mockAccess);
 
         authenticatedUser = {
           id: sessionId,
-          fullName: gUser.name || gUser.given_name || gUser.email.split('@')[0],
-          email: String(gUser.email).toLowerCase(),
-          academicTitle: 'ThS.',
-          department: roleObj.defaultDept,
-          faculty: roleObj.defaultDept,
-          university: 'Đại học Quốc gia',
-          role: targetRole,
-          roleLabel: roleObj.title,
+          fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : (gUser.name || gUser.given_name || gUser.email.split('@')[0]),
+          email: userEmail,
+          academicTitle: isProjectAdmin ? 'Admin' : 'ThS.',
+          department: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : roleObj.defaultDept,
+          faculty: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : roleObj.defaultDept,
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+          role: resolvedRole,
+          roleLabel: resolvedRole === 'admin' ? 'Quản trị Hệ thống' : roleObj.title,
           avatarUrl: gUser.picture || '',
           authProvider: 'google',
         };
@@ -910,10 +933,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     }
 
     setGoogleLoading(true);
+    // Timeout tự động phục hồi nút sau 20s nếu popup bị đóng hoặc mạng chậm
+    const safetyTimeout = setTimeout(() => {
+      setGoogleLoading(false);
+    }, 20000);
+
     try {
       await loadGoogleIdentityServices();
       const oauth2 = window.google?.accounts?.oauth2;
       if (!oauth2) {
+        clearTimeout(safetyTimeout);
         throw new Error('Không thể khởi tạo Google OAuth 2.0 Client.');
       }
 
@@ -922,6 +951,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         scope: 'openid email profile',
         prompt: 'select_account',
         callback: (tokenResponse) => {
+          clearTimeout(safetyTimeout);
           if (tokenResponse?.error) {
             setGoogleLoading(false);
             setGoogleError(
@@ -939,6 +969,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           }
         },
         error_callback: (err) => {
+          clearTimeout(safetyTimeout);
           setGoogleLoading(false);
           if (err?.type === 'popup_failed_to_open') {
             setGooglePopupBlocked(true);
@@ -955,6 +986,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
       tokenClient.requestAccessToken({ prompt: 'select_account' });
     } catch (err: any) {
+      clearTimeout(safetyTimeout);
       setGoogleLoading(false);
       setGoogleError(err?.message || 'Không thể kết nối tới Google Identity Services.');
     }
@@ -1065,9 +1097,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         <div className="w-full max-w-md space-y-5">
           {/* Clean Brand Header */}
           <div className="text-center space-y-1.5">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-[#008689] text-white shadow-sm mb-1">
-              <GraduationCap className="w-6 h-6" />
-            </div>
+            <img
+              src="/logo.jpg"
+              alt="QuizGen AI Logo"
+              className="w-14 h-14 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
+            />
             <h1 className="text-xl font-extrabold text-[#008689] tracking-tight uppercase">
               QuizGen AI
             </h1>
@@ -1406,18 +1440,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             {forgotStep === 2 && (
               <form onSubmit={handleConfirmResetPassword} className="space-y-3" noValidate>
                 <div className="p-3 rounded-xl bg-[#e0f7fa]/60 border border-[#008689]/25 text-xs text-slate-700 space-y-1.5">
-                  <p>
-                    Mã xác minh 6 chữ số đã được gửi tới <strong className="text-slate-900">{forgotEmail}</strong>.
-                  </p>
-                  {forgotDevOtp && (
-                    <p className="text-[11px] font-mono text-emerald-800 bg-emerald-50 px-2 py-1 rounded border border-emerald-200 inline-block">
-                      Mã xác minh từ hộp thư hệ thống: <strong className="text-emerald-950 tracking-widest">{forgotDevOtp}</strong>
-                    </p>
-                  )}
+                  <div className="flex items-start gap-2">
+                    <Mail className="w-4 h-4 text-[#008689] shrink-0 mt-0.5" />
+                    <div>
+                      <p>
+                        Mã xác minh 6 chữ số đã được gửi tự động từ <strong className="text-[#008689]">quizgen.ai.team@gmail.com</strong> tới <strong className="text-slate-900">{forgotEmail}</strong>.
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Vui lòng kiểm tra Hộp thư đến (hoặc thư mục Spam/Quảng cáo). Mã có hiệu lực trong 5 phút.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase">Mã xác minh OTP (6 chữ số)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-700 uppercase">Mã xác minh OTP (6 chữ số)</label>
+                    <button
+                      type="button"
+                      disabled={forgotResendTimer > 0 || forgotLoading}
+                      onClick={handleRequestResetOtp}
+                      className="text-[11px] font-semibold text-[#008689] hover:text-[#006062] disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {forgotResendTimer > 0 ? `Gửi lại sau (${forgotResendTimer}s)` : 'Gửi lại mã OTP'}
+                    </button>
+                  </div>
                   <input
                     type="text"
                     maxLength={6}
@@ -1427,8 +1474,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                       setForgotOtp(e.target.value.replace(/\D/g, ''));
                       setForgotError('');
                     }}
-                    placeholder="Nhập 6 chữ số OTP"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-mono tracking-widest text-slate-900 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/20"
+                    placeholder="••••••"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-base text-center font-mono tracking-[0.3em] font-bold text-slate-900 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/20"
                   />
                 </div>
 

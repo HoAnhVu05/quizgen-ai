@@ -123,13 +123,13 @@ def startup_db():
                 "role": "head_of_department"
             },
             {
-                "id": "usr-adm-001",
-                "email": "admin.khaothi@vnu.edu.vn",
-                "full_name": "Lê Hoàng Nam",
-                "academic_title": "ThS.",
-                "university": "Đại học Quốc gia",
-                "department": "Phòng Khảo thí & Đảm bảo Chất lượng",
-                "password": "admin123",
+                "id": "usr-adm-quizgen",
+                "email": "quizgen.ai.team@gmail.com",
+                "full_name": "Ban Quản trị QuizGen AI",
+                "academic_title": "Admin",
+                "university": "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+                "department": "Ban Quản trị Hệ thống QuizGen AI",
+                "password": "Admin@123456",
                 "role": "admin"
             }
         ]

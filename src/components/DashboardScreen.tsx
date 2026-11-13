@@ -31,44 +31,31 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   currentUser
 }) => {
   const role = currentUser?.role || 'lecturer';
-  const [recentActivity, setRecentActivity] = useState([
-    {
-      id: 1,
-      action: 'Nạp giáo trình PDF',
-      subject: 'GiaoTrinh_KinhTeViMo_2025.pdf (184 trang)',
-      time: '15 phút trước',
-      status: 'Hoàn tất (42 chunks)',
-      type: 'upload'
-    },
-    {
-      id: 2,
-      action: 'Sinh câu hỏi AI (RAG + Bloom)',
-      subject: 'Chương 2: Cung - Cầu và Cơ chế cân bằng thị trường',
-      time: '12 phút trước',
-      status: 'Đã sinh 4 câu trắc nghiệm',
-      type: 'generate'
-    },
-    {
-      id: 3,
-      action: 'Phê duyệt câu hỏi vào Ngân hàng Đề',
-      subject: 'Kinh tế học Vi mô — Giữa kỳ HK1',
-      time: '2 giờ trước',
-      status: '32 câu đạt chuẩn',
-      type: 'approve'
-    }
-  ]);
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   const [bloomDistribution, setBloomDistribution] = useState([
-    { level: 'Nhận biết (Remember)', percent: 25, count: 37, color: 'bg-sky-500' },
-    { level: 'Thông hiểu (Understand)', percent: 35, count: 52, color: 'bg-[#008689]' },
-    { level: 'Vận dụng (Apply)', percent: 25, count: 37, color: 'bg-teal-600' },
-    { level: 'Phân tích (Analyze)', percent: 15, count: 22, color: 'bg-amber-500' }
+    { level: 'Nhận biết (Remember)', percent: 0, count: 0, color: 'bg-sky-500' },
+    { level: 'Thông hiểu (Understand)', percent: 0, count: 0, color: 'bg-[#008689]' },
+    { level: 'Vận dụng (Apply)', percent: 0, count: 0, color: 'bg-teal-600' },
+    { level: 'Phân tích (Analyze)', percent: 0, count: 0, color: 'bg-amber-500' }
   ]);
 
   const [statsSummary, setStatsSummary] = useState({
-    textbooksIndexed: 14,
-    totalGenerated: 148
+    textbooksIndexed: 0,
+    totalGenerated: 0
   });
+
+  useEffect(() => {
+    try {
+      const savedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+      const validDocs = savedDocs.filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+      setStatsSummary(prev => ({
+        ...prev,
+        textbooksIndexed: validDocs.length,
+        totalGenerated: approvedCount + pendingReviewCount
+      }));
+    } catch {}
+  }, [approvedCount, pendingReviewCount]);
 
   useEffect(() => {
     let isMounted = true;
@@ -83,8 +70,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         const d = res.data;
         if (d.stats) {
           setStatsSummary({
-            textbooksIndexed: d.stats.textbooksIndexed ?? 14,
-            totalGenerated: d.stats.totalGenerated ?? 148
+            textbooksIndexed: d.stats.textbooksIndexed ?? 0,
+            totalGenerated: d.stats.totalGenerated ?? 0
           });
         }
         if (Array.isArray(d.bloomDistribution) && d.bloomDistribution.length > 0) {
@@ -158,7 +145,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
           {
             label: 'Đề thi nháp đã lưu',
-            value: '6',
+            value: String(approvedCount > 0 ? 1 : 0),
             sub: `${approvedCount} câu hỏi đã đạt chuẩn`,
             icon: FileText,
             color: 'text-emerald-600',
@@ -170,7 +157,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       ? [
           {
             label: 'Đề thi chờ phê duyệt',
-            value: String(Math.max(pendingReviewCount, 3)),
+            value: String(pendingReviewCount),
             sub: 'Đề thi do Giảng viên bộ môn gửi lên',
             icon: ShieldCheck,
             color: 'text-amber-600',
@@ -182,7 +169,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
           {
             label: 'Độ phủ chuẩn đầu ra (Bloom)',
-            value: '94.5%',
+            value: approvedCount > 0 ? '100%' : '0%',
             sub: 'Đạt chuẩn ma trận nhận thức Bộ môn',
             icon: Award,
             color: 'text-[#008689]',
@@ -191,7 +178,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
           {
             label: 'Giảng viên đã nộp đề',
-            value: '18 / 20',
+            value: approvedCount > 0 ? '1 / 1' : '0 / 0',
             sub: 'Kỳ thi Học kỳ 1 — Năm học 2026',
             icon: Users,
             color: 'text-emerald-600',
@@ -200,7 +187,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
           {
             label: 'Ngân hàng đề thi bộ môn',
-            value: String(82 + approvedCount),
+            value: String(approvedCount),
             sub: 'Câu hỏi đã phê duyệt & khóa mã đề',
             icon: Database,
             color: 'text-[#008689]',
@@ -220,7 +207,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
           {
             label: 'Số bản ghi Audit Logs hôm nay',
-            value: '1,248',
+            value: String(JSON.parse(localStorage.getItem('quizgen_security_audit_logs') || '[]').filter((l: any) => l && l.id !== 'audit-init-1' && l.id !== 'audit-init-2').length),
             sub: '0 cảnh báo truy cập trái phép',
             icon: Lock,
             color: 'text-indigo-600',
@@ -229,7 +216,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           },
           {
             label: 'Đề thi đã đóng gói OMR',
-            value: '24',
+            value: String(approvedCount > 0 ? 1 : 0),
             sub: 'Sẵn sàng in ấn & xuất QTI 2.1',
             icon: FileCheck2,
             color: 'text-emerald-600',
@@ -491,7 +478,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               Hoạt động gần đây
             </h4>
             <div className="space-y-2.5">
-              {recentActivity.slice(0, 3).map((item) => (
+              {recentActivity.length === 0 ? (
+                <div className="py-4 text-center text-slate-400 text-xs">
+                  Chưa có hoạt động nào được ghi nhận.
+                </div>
+              ) : (
+                recentActivity.slice(0, 3).map((item) => (
                 <div
                   key={item.id}
                   className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 last:border-0"
@@ -507,7 +499,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                     <span className="text-slate-400">{item.time}</span>
                   </div>
                 </div>
-              ))}
+              ))
+              )}
             </div>
           </div>
         </div>
