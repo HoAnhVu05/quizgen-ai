@@ -679,8 +679,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#008689] bg-[#e6f4f4] px-2.5 py-0.5 rounded-md">
-              Bước 4/4 • Nhận Đầu Ra Thực Tế Cho Giảng Viên
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-md border border-purple-200 shadow-2xs">
+              <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+              Bước 4/4 • Đóng Gói & Xuất Bản Đề Thi (Purple)
             </span>
             <h2 className="text-lg font-bold text-slate-800 mt-1">
               Phòng Đóng Gói Tờ Đề Thi A4, Trộn Mã Đề & Kết Xuất Đa Định Dạng
