@@ -242,6 +242,36 @@ async def regenerate_question_endpoint(
         "question": new_q
     }
 
+@app.get("/history")
+@app.get("/jobs")
+def get_generation_history(
+    limit: int = 30,
+    user_id: Optional[str] = Depends(get_optional_user_id),
+    db: Session = Depends(get_db)
+):
+    """Tra cứu danh sách lịch sử các đợt sinh câu hỏi AI"""
+    query = db.query(AIGenerationJobDB)
+    if user_id and user_id not in ["lec-001", "usr-adm-quizgen"]:
+        query = query.filter(AIGenerationJobDB.user_id == user_id)
+    jobs = query.order_by(AIGenerationJobDB.created_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": job.id,
+            "jobId": job.id,
+            "userId": job.user_id,
+            "documentId": job.document_id,
+            "chapters": job.chapters or [],
+            "bloomMatrix": job.bloom_matrix or {},
+            "totalRequested": job.total_requested,
+            "totalGenerated": job.total_generated,
+            "status": job.status,
+            "errorMessage": job.error_message,
+            "createdAt": job.created_at.isoformat() if job.created_at else None,
+            "completedAt": job.completed_at.isoformat() if job.completed_at else None,
+        }
+        for job in jobs
+    ]
+
 @app.get("/jobs/{job_id}")
 def get_job_status(job_id: str, db: Session = Depends(get_db)):
     """Tra cứu trạng thái tiến trình Job sinh đề"""
