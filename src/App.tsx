@@ -45,7 +45,19 @@ export const App: React.FC = () => {
       const saved = localStorage.getItem('quizgen_questions');
       if (!saved) return INITIAL_QUESTIONS;
       const parsed = JSON.parse(saved);
-      return Array.isArray(parsed) ? parsed.filter((q: any) => q && !q.id?.startsWith('q-init-')) : INITIAL_QUESTIONS;
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (q: any) =>
+              q &&
+              !q.id?.startsWith('q-init-') &&
+              q.id !== 'q-1' &&
+              q.id !== 'q-2' &&
+              q.id !== 'q-3' &&
+              q.id !== 'q-4' &&
+              q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
+              q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
+          )
+        : INITIAL_QUESTIONS;
     } catch {
       return INITIAL_QUESTIONS;
     }
@@ -62,6 +74,22 @@ export const App: React.FC = () => {
       const filteredLogs = savedLogs.filter((l: any) => l && l.id !== 'audit-init-1' && l.id !== 'audit-init-2');
       if (savedLogs.length !== filteredLogs.length) {
         localStorage.setItem('quizgen_security_audit_logs', JSON.stringify(filteredLogs));
+      }
+      const savedQuestions = JSON.parse(localStorage.getItem('quizgen_questions') || '[]');
+      const filteredQuestions = savedQuestions.filter(
+        (q: any) =>
+          q &&
+          !q.id?.startsWith('q-init-') &&
+          q.id !== 'q-1' &&
+          q.id !== 'q-2' &&
+          q.id !== 'q-3' &&
+          q.id !== 'q-4' &&
+          q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
+          q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
+      );
+      if (savedQuestions.length !== filteredQuestions.length) {
+        localStorage.setItem('quizgen_questions', JSON.stringify(filteredQuestions));
+        setQuestions(filteredQuestions);
       }
     } catch {}
   }, []);
@@ -165,8 +193,19 @@ export const App: React.FC = () => {
         const res = await apiClient.fetch(`${API_BASE}/questions`);
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setQuestions(data);
+          if (Array.isArray(data)) {
+            const clean = data.filter(
+              (q: any) =>
+                q &&
+                !q.id?.startsWith('q-init-') &&
+                q.id !== 'q-1' &&
+                q.id !== 'q-2' &&
+                q.id !== 'q-3' &&
+                q.id !== 'q-4' &&
+                q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
+                q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
+            );
+            setQuestions(clean);
           }
         }
       } catch (err) {
