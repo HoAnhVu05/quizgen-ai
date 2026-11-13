@@ -15,6 +15,8 @@ import {
   Printer,
   KeyRound,
   ListChecks,
+  Clock,
+  Sparkles,
 } from 'lucide-react';
 import { Question, BloomLevel, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
@@ -333,138 +335,227 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5">
-      {/* Top Studio Header & 4-Format Direct Output Bar for Lecturer */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#008689] bg-[#e6f4f4] px-2.5 py-0.5 rounded-md">
-              Bước 4/4 • Nhận Đầu Ra Thực Tế Cho Giảng Viên
-            </span>
-            <h2 className="text-lg font-bold text-slate-800 mt-1">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 bg-slate-50/60 min-h-screen">
+      {/* 1. Hero Banner: Studio Overview (Left) + 4 Output Buttons (Right in 2x2 Grid) */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-6 lg:p-7 shadow-xs">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-center">
+          
+          {/* Left Column (xl:col-span-7): Heading, Subtitle, Academic Badges */}
+          <div className="xl:col-span-7 space-y-3.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-3 py-1 rounded-lg border border-purple-200 shadow-2xs">
+                <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
+                Bước 4/4 • Đóng Gói & Xuất Bản Đề Thi (Purple)
+              </span>
+              <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2.5 py-1 rounded-lg">
+                Chuẩn Khảo thí ĐHQG & Bộ GD&ĐT
+              </span>
+            </div>
+
+            <h1 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight leading-snug">
               Phòng Đóng Gói Tờ Đề Thi A4, Trộn 4 Mã Đề & Kết Xuất Đa Định Dạng
-            </h2>
-            <p className="text-xs text-slate-500">
+            </h1>
+
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed max-w-2xl">
               Xem trước trực tiếp tờ đề thi chuẩn A4 kèm phiếu tô OMR, tự động trộn 4 mã đề (101–104) và tải ngay file Word, PDF, Bảng đáp án chấm thi hoặc gói LMS.
             </p>
+
+            {/* Quick Context Tags */}
+            <div className="flex flex-wrap items-center gap-2.5 pt-1 text-xs text-slate-600 font-medium">
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-lg shadow-2xs">
+                <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
+                <span>
+                  Học phần: <strong className="text-slate-800 font-bold">
+                    {selectedSubject === 'all'
+                      ? targetExamQuestions[0]?.textbookName.replace(/\.[^/.]+$/, '') || 'Kinh tế học Vi mô'
+                      : selectedSubject}
+                  </strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-lg shadow-2xs">
+                <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  Quy mô: <strong className="text-slate-800 font-bold">{targetExamQuestions.length} câu hỏi</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-lg shadow-2xs">
+                <Shuffle className="w-3.5 h-3.5 text-indigo-600" />
+                <span>
+                  Mã đề: <strong className="text-slate-800 font-bold">101 • 102 • 103 • 104</strong>
+                </span>
+              </div>
+            </div>
           </div>
 
-          {/* 4 Immediate Output Buttons for the Teacher */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => handleExport('docx')}
-              disabled={isExporting !== null}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
-            >
-              {isExporting === 'docx' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
-              )}
-              1. Tải Đề Word (.docx)
-            </button>
+          {/* Right Column (xl:col-span-5): 4 Immediate Output Buttons in 2x2 Grid */}
+          <div className="xl:col-span-5 bg-gradient-to-br from-slate-50/90 to-slate-100/60 p-4 sm:p-5 rounded-2xl border border-slate-200/90 space-y-3">
+            <div className="flex items-center justify-between pb-0.5">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5 text-[#008689]" />
+                Kết xuất & Tải về trực tiếp
+              </span>
+              <span className="text-[10px] font-bold text-[#008689] bg-[#e6f4f4] px-2 py-0.5 rounded border border-[#b2d8d8]/40">
+                4 Định dạng
+              </span>
+            </div>
 
-            <button
-              onClick={() => handleExport('pdf')}
-              disabled={isExporting !== null}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
-            >
-              {isExporting === 'pdf' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-              )}
-              2. Tải Đề PDF + Phiếu OMR
-            </button>
+            {/* 2x2 Grid of the 4 Output Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Button 1: Tải Đề Word (.docx) */}
+              <button
+                onClick={() => handleExport('docx')}
+                disabled={isExporting !== null}
+                className="group relative flex items-center gap-3 p-3 bg-white hover:bg-[#008689] border border-slate-200/90 hover:border-[#008689] text-slate-800 hover:text-white rounded-xl shadow-xs hover:shadow-md transition-all duration-200 text-left disabled:opacity-50 min-h-[58px]"
+              >
+                <div className="w-9 h-9 rounded-lg bg-[#e6f4f4] group-hover:bg-white/20 text-[#008689] group-hover:text-white flex items-center justify-center shrink-0 transition-colors">
+                  {isExporting === 'docx' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold leading-tight truncate">Tải Đề Word</div>
+                  <div className="text-[10px] text-slate-500 group-hover:text-white/85 font-medium truncate mt-0.5">
+                    Chuẩn GD&ĐT (.docx)
+                  </div>
+                </div>
+              </button>
 
-            <button
-              onClick={handleDownloadAnswerKey}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-lg transition-colors"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-              3. Tải Bảng Đáp Án (4 Mã đề)
-            </button>
+              {/* Button 2: Tải Đề PDF + Phiếu OMR */}
+              <button
+                onClick={() => handleExport('pdf')}
+                disabled={isExporting !== null}
+                className="group relative flex items-center gap-3 p-3 bg-white hover:bg-emerald-600 border border-slate-200/90 hover:border-emerald-600 text-slate-800 hover:text-white rounded-xl shadow-xs hover:shadow-md transition-all duration-200 text-left disabled:opacity-50 min-h-[58px]"
+              >
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 group-hover:bg-white/20 text-emerald-600 group-hover:text-white flex items-center justify-center shrink-0 transition-colors">
+                  {isExporting === 'pdf' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold leading-tight truncate">Tải Đề PDF + OMR</div>
+                  <div className="text-[10px] text-slate-500 group-hover:text-white/85 font-medium truncate mt-0.5">
+                    In A4 & Chấm quang (.pdf)
+                  </div>
+                </div>
+              </button>
 
-            <button
-              onClick={() => handleExport('qti')}
-              disabled={isExporting !== null}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
-            >
-              {isExporting === 'qti' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Archive className="w-3.5 h-3.5" />
-              )}
-              4. Xuất Gói LMS QTI (.zip)
-            </button>
+              {/* Button 3: Tải Bảng Đáp Án (4 Mã Đề) */}
+              <button
+                onClick={handleDownloadAnswerKey}
+                className="group relative flex items-center gap-3 p-3 bg-white hover:bg-amber-600 border border-slate-200/90 hover:border-amber-600 text-slate-800 hover:text-white rounded-xl shadow-xs hover:shadow-md transition-all duration-200 text-left min-h-[58px]"
+              >
+                <div className="w-9 h-9 rounded-lg bg-amber-50 group-hover:bg-white/20 text-amber-600 group-hover:text-white flex items-center justify-center shrink-0 transition-colors">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold leading-tight truncate">Tải Bảng Đáp Án</div>
+                  <div className="text-[10px] text-slate-500 group-hover:text-white/85 font-medium truncate mt-0.5">
+                    4 Mã đề 101–104 (.txt)
+                  </div>
+                </div>
+              </button>
+
+              {/* Button 4: Xuất Gói LMS QTI (.zip) */}
+              <button
+                onClick={() => handleExport('qti')}
+                disabled={isExporting !== null}
+                className="group relative flex items-center gap-3 p-3 bg-white hover:bg-purple-600 border border-slate-200/90 hover:border-purple-600 text-slate-800 hover:text-white rounded-xl shadow-xs hover:shadow-md transition-all duration-200 text-left disabled:opacity-50 min-h-[58px]"
+              >
+                <div className="w-9 h-9 rounded-lg bg-purple-50 group-hover:bg-white/20 text-purple-600 group-hover:text-white flex items-center justify-center shrink-0 transition-colors">
+                  {isExporting === 'qti' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Archive className="w-4 h-4" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-bold leading-tight truncate">Xuất Gói LMS QTI</div>
+                  <div className="text-[10px] text-slate-500 group-hover:text-white/85 font-medium truncate mt-0.5">
+                    Canvas / Moodle (.zip)
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Exam Metadata Config + Mode Switcher */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">Tiêu đề kỳ thi:</span>
-              <input
-                type="text"
-                value={examTitle}
-                onChange={(e) => setExamTitle(e.target.value)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 w-72 focus:outline-none focus:border-[#008689]"
-              />
-            </div>
+      {/* 2. Exam Parameters Toolbar & Mode Switcher */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        {/* Left: Metadata Inputs & Reshuffle Action */}
+        <div className="flex flex-wrap items-center gap-3.5 flex-1">
+          {/* Tiêu đề kỳ thi */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Tiêu đề kỳ thi:</span>
+            <input
+              type="text"
+              value={examTitle}
+              onChange={(e) => setExamTitle(e.target.value)}
+              placeholder="Nhập tiêu đề kỳ thi..."
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50/50 text-xs font-semibold text-slate-800 w-64 sm:w-80 focus:outline-none focus:bg-white focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/10 transition-all"
+            />
+          </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">Thời gian:</span>
-              <select
-                value={examDuration}
-                onChange={(e) => setExamDuration(Number(e.target.value))}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
-              >
-                <option value={15}>15 phút (Thường kỳ)</option>
-                <option value={45}>45 phút (Giữa kỳ)</option>
-                <option value={60}>60 phút (Cuối kỳ)</option>
-                <option value={90}>90 phút (Tổng hợp)</option>
-              </select>
-            </div>
-
-            <button
-              onClick={handleReshuffle4Codes}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors"
+          {/* Thời gian làm bài */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Thời gian:</span>
+            <select
+              value={examDuration}
+              onChange={(e) => setExamDuration(Number(e.target.value))}
+              className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/10 transition-all cursor-pointer"
             >
-              <Shuffle className="w-3.5 h-3.5" />
-              Trộn lại 4 Mã đề (101–104)
-            </button>
+              <option value={15}>15 phút (Thường kỳ)</option>
+              <option value={45}>45 phút (Giữa kỳ)</option>
+              <option value={60}>60 phút (Cuối kỳ)</option>
+              <option value={90}>90 phút (Tổng hợp)</option>
+            </select>
           </div>
 
-          {/* 3 View Tabs */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
-            {[
-              { id: 'preview_paper', label: 'Xem Tờ Đề Thi A4 & OMR', icon: Eye },
-              { id: 'answer_key', label: 'Bảng Đáp Án 4 Mã Đề', icon: KeyRound },
-              {
-                id: 'question_list',
-                label: `Kho Câu Hỏi (${filteredQuestions.length})`,
-                icon: ListChecks,
-              },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const isAct = viewMode === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setViewMode(tab.id as typeof viewMode)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    isAct
-                      ? 'bg-white text-[#008689] shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {/* Nút trộn 4 mã đề (101–104) */}
+          <button
+            onClick={handleReshuffle4Codes}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition-all shadow-2xs hover:shadow-xs active:scale-95"
+            title="Hoán vị ngẫu nhiên câu hỏi và đáp án cho cả 4 mã đề"
+          >
+            <Shuffle className="w-3.5 h-3.5 text-purple-600" />
+            <span>Trộn lại 4 Mã đề (101–104)</span>
+          </button>
+        </div>
+
+        {/* Right: 3 Chế độ xem Tabs */}
+        <div className="flex items-center bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shrink-0 gap-1">
+          {[
+            { id: 'preview_paper', label: 'Xem Tờ Đề Thi A4 & OMR', icon: Eye },
+            { id: 'answer_key', label: 'Bảng Đáp Án 4 Mã Đề', icon: KeyRound },
+            {
+              id: 'question_list',
+              label: `Kho Câu Hỏi (${filteredQuestions.length})`,
+              icon: ListChecks,
+            },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const isAct = viewMode === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setViewMode(tab.id as typeof viewMode)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+                  isAct
+                    ? 'bg-white text-[#008689] shadow-xs border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isAct ? 'text-[#008689]' : 'text-slate-500'}`} />
+                <span className="whitespace-nowrap">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -472,50 +563,52 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       {viewMode === 'preview_paper' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left: A4 Exam Paper Preview */}
-          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-300 shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-8 space-y-6">
             {/* Code Switcher Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-slate-500 uppercase">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                   Chọn Mã Đề Xem Trước:
                 </span>
-                {(['101', '102', '103', '104'] as const).map((code) => (
-                  <button
-                    key={code}
-                    onClick={() => setActiveExamCode(code)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold border transition-all ${
-                      activeExamCode === code
-                        ? 'bg-[#008689] text-white border-[#008689]'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Mã đề {code}
-                  </button>
-                ))}
+                <div className="inline-flex rounded-xl border border-slate-200 p-0.5 bg-slate-50 gap-1">
+                  {(['101', '102', '103', '104'] as const).map((code) => (
+                    <button
+                      key={code}
+                      onClick={() => setActiveExamCode(code)}
+                      className={`px-3.5 py-1 rounded-lg text-xs font-extrabold transition-all ${
+                        activeExamCode === code
+                          ? 'bg-[#008689] text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      Mã {code}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <button
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-2xs"
               >
                 <Printer className="w-3.5 h-3.5 text-[#008689]" />
-                In trực tiếp tờ đề này
+                <span>In trực tiếp tờ đề này</span>
               </button>
             </div>
 
             {/* Official University Header on A4 Paper */}
-            <div className="border-2 border-slate-800 p-4 rounded-lg">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center border-b border-slate-300 pb-3">
-                <div className="space-y-0.5">
-                  <p className="text-[11px] font-bold uppercase text-slate-700">
+            <div className="border-2 border-slate-800 p-5 rounded-xl bg-white shadow-2xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center border-b border-slate-300 pb-3.5">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
                     TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM
                   </p>
-                  <p className="text-xs font-extrabold uppercase text-slate-900">
+                  <p className="text-xs font-black uppercase text-slate-900 tracking-wide">
                     {currentUser?.faculty || 'KHOA CÔNG NGHỆ THÔNG TIN'}
                   </p>
                 </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs font-extrabold uppercase text-slate-900">{examTitle}</p>
+                <div className="space-y-1">
+                  <p className="text-xs font-black uppercase text-slate-900 tracking-wide">{examTitle}</p>
                   <p className="text-[11px] font-semibold text-slate-600">
                     Học phần:{' '}
                     {selectedSubject === 'all'
@@ -529,12 +622,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 </div>
               </div>
 
-              <div className="pt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-700">
+              <div className="pt-3.5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-700 font-medium">
                 <div>
-                  Họ và tên sinh viên: ..........................................................
-                  MSSV: ..........................
+                  Họ và tên sinh viên: .......................................................... &nbsp;&nbsp;&nbsp; MSSV: ..........................
                 </div>
-                <div className="px-3 py-1 border-2 border-slate-900 font-extrabold text-slate-900 uppercase">
+                <div className="px-3.5 py-1 bg-slate-900 text-white font-black text-xs uppercase rounded tracking-wider shadow-2xs">
                   MÃ ĐỀ: {activeExamCode}
                 </div>
               </div>
@@ -545,13 +637,13 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               {activeVariantQuestions.map((q, index) => (
                 <div key={`${activeExamCode}-${q.id}`} className="space-y-2 text-sm text-slate-900">
                   <p className="font-semibold leading-relaxed">
-                    <span className="font-extrabold">Câu {index + 1}: </span>
+                    <span className="font-black text-[#008689]">Câu {index + 1}: </span>
                     {q.question}
                   </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-3">
                     {q.options.map((opt) => (
-                      <div key={opt.id} className="text-xs sm:text-sm text-slate-800">
-                        <span className="font-bold">{opt.label}. </span>
+                      <div key={opt.id} className="text-xs sm:text-sm text-slate-800 leading-relaxed">
+                        <span className="font-bold text-slate-900">{opt.label}. </span>
                         <span>{opt.text}</span>
                       </div>
                     ))}
@@ -560,40 +652,40 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               ))}
             </div>
 
-            <div className="pt-4 border-t border-slate-200 text-center text-xs font-bold text-slate-500 uppercase">
+            <div className="pt-5 border-t border-slate-200 text-center text-xs font-bold text-slate-400 uppercase tracking-widest">
               — HẾT (Sinh viên không được sử dụng tài liệu) —
             </div>
           </div>
 
           {/* Right: OMR Answer Sheet Preview & Quick Answer Key */}
           <div className="lg:col-span-4 space-y-4">
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">
                     Phiếu Tô Trắc Nghiệm OMR
                   </h3>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-slate-500 mt-0.5">
                     Đính kèm tự động khi xuất PDF — Mã đề {activeExamCode}
                   </p>
                 </div>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-[#e6f4f4] text-[#008689]">
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#e6f4f4] text-[#008689] border border-[#b2d8d8]/50">
                   Chuẩn máy chấm
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto pr-1">
+              <div className="grid grid-cols-2 gap-2 max-h-[360px] overflow-y-auto pr-1">
                 {activeVariantQuestions.map((q, i) => (
                   <div
                     key={i}
-                    className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs"
+                    className="flex items-center justify-between p-2 rounded-xl bg-slate-50/80 border border-slate-200/80 text-xs"
                   >
                     <span className="font-bold text-slate-700 w-7">{i + 1}.</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       {['A', 'B', 'C', 'D'].map((lbl) => (
                         <span
                           key={lbl}
-                          className="w-5 h-5 rounded-full border border-slate-400 text-[10px] font-bold flex items-center justify-center text-slate-600 bg-white"
+                          className="w-5 h-5 rounded-full border border-slate-300 text-[10px] font-bold flex items-center justify-center text-slate-600 bg-white shadow-2xs hover:bg-slate-100 transition-colors"
                         >
                           {lbl}
                         </span>
@@ -605,9 +697,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             </div>
 
             {/* Teacher's Live Answer Key for Active Code */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-3.5">
               <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-800 uppercase">
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                   Đáp Án Chấm Nhanh — Mã Đề {activeExamCode}
                 </h4>
                 <button
@@ -621,10 +713,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 {activeVariantQuestions.map((q, idx) => (
                   <div
                     key={idx}
-                    className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-center text-xs"
+                    className="p-2 rounded-xl bg-emerald-50/80 border border-emerald-200 text-center text-xs"
                   >
                     <span className="font-semibold text-slate-600">{idx + 1}: </span>
-                    <strong className="text-emerald-800">{q.correctLabel}</strong>
+                    <strong className="text-emerald-800 font-extrabold">{q.correctLabel}</strong>
                   </div>
                 ))}
               </div>
@@ -635,43 +727,43 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
       {/* VIEW 2: ANSWER KEY MATRIX FOR ALL 4 EXAM CODES (101, 102, 103, 104) */}
       {viewMode === 'answer_key' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+        <div className="bg-white rounded-2xl border border-slate-200/90 p-6 shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
             <div>
               <h3 className="text-base font-bold text-slate-800">
                 Bảng Đáp Án Chấm Thi Tổng Hợp (4 Mã Đề: 101, 102, 103, 104)
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Dành cho Giảng viên lưu hồ sơ chấm thi sau khi trộn đề bằng thuật toán Fisher-Yates
               </p>
             </div>
             <button
               onClick={handleDownloadAnswerKey}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#008689] hover:bg-[#006f72] text-white text-xs font-bold transition-colors"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white text-xs font-bold transition-all shadow-xs hover:shadow"
             >
               <Download className="w-3.5 h-3.5" />
               Tải Bảng Đáp Án & Lời Giải (.txt)
             </button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
-                  <th className="py-3 px-4">Thứ tự câu trên đề</th>
-                  <th className="py-3 px-4 text-center">Mã đề 101</th>
-                  <th className="py-3 px-4 text-center">Mã đề 102</th>
-                  <th className="py-3 px-4 text-center">Mã đề 103</th>
-                  <th className="py-3 px-4 text-center">Mã đề 104</th>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
+                  <th className="py-3.5 px-4">Thứ tự câu trên đề</th>
+                  <th className="py-3.5 px-4 text-center">Mã đề 101</th>
+                  <th className="py-3.5 px-4 text-center">Mã đề 102</th>
+                  <th className="py-3.5 px-4 text-center">Mã đề 103</th>
+                  <th className="py-3.5 px-4 text-center">Mã đề 104</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {targetExamQuestions.map((_, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
+                  <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3 px-4 font-bold text-slate-800">Câu {idx + 1}</td>
                     {(['101', '102', '103', '104'] as const).map((code) => (
                       <td key={code} className="py-3 px-4 text-center">
-                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold">
+                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold shadow-2xs">
                           {examVariants[code]?.[idx]?.correctLabel || 'A'}
                         </span>
                       </td>
@@ -687,22 +779,22 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       {/* VIEW 3: QUESTION BANK LIST & FILTERS */}
       {viewMode === 'question_list' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center gap-2.5">
-            <div className="relative flex-1 min-w-[220px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Tìm kiếm nội dung câu hỏi hoặc chương mục..."
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-[#008689]"
+                className="w-full pl-10 pr-3.5 py-2 rounded-xl border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/10 transition-all bg-slate-50/50 focus:bg-white"
               />
             </div>
 
             <select
               value={selectedSubject}
               onChange={(e) => setSelectedSubject(e.target.value)}
-              className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
+              className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/10 transition-all cursor-pointer"
             >
               <option value="all">Tất cả giáo trình ({effectivePool.length})</option>
               {subjects.map((sub) => (
@@ -715,7 +807,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             <select
               value={selectedBloom}
               onChange={(e) => setSelectedBloom(e.target.value as typeof selectedBloom)}
-              className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
+              className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/10 transition-all cursor-pointer"
             >
               <option value="all">Tất cả mức Bloom</option>
               {BLOOM_ORDER.map((lvl) => (
@@ -726,8 +818,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             </select>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-600">
+          <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
+            <div className="px-5 py-3.5 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-600">
               <div className="flex items-center gap-3">
                 <input
                   type="checkbox"
@@ -739,11 +831,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                   className="rounded border-slate-300 text-[#008689] focus:ring-[#008689]"
                 />
                 <span>
-                  Hiển thị <strong>{filteredQuestions.length}</strong> câu hỏi trong Ngân hàng Đề
+                  Hiển thị <strong className="text-slate-800">{filteredQuestions.length}</strong> câu hỏi trong Ngân hàng Đề
                   {selectedIds.length > 0 && ` (Đã chọn ${selectedIds.length} câu để đưa vào đề)`}
                 </span>
               </div>
-              <span className="text-emerald-700 flex items-center gap-1">
+              <span className="text-emerald-700 font-bold flex items-center gap-1.5 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200/60">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 100% Có trích dẫn RAG
               </span>
@@ -756,8 +848,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 const bloomCfg = BLOOM_STYLE[q.bloomLevel];
 
                 return (
-                  <div key={q.id} className="p-4 hover:bg-slate-50/60 transition-colors">
-                    <div className="flex items-start gap-3">
+                  <div key={q.id} className="p-4 sm:p-5 hover:bg-slate-50/70 transition-colors">
+                    <div className="flex items-start gap-3.5">
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -769,11 +861,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                         <div className="flex flex-wrap items-center gap-2 mb-1.5">
                           <span className="text-xs font-bold text-slate-500">#{index + 1}</span>
                           <span
-                            className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${bloomCfg.bg} ${bloomCfg.color} ${bloomCfg.border}`}
+                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border ${bloomCfg.bg} ${bloomCfg.color} ${bloomCfg.border}`}
                           >
                             {bloomCfg.label} ({bloomCfg.en})
                           </span>
-                          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                          <span className="text-xs font-medium text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-lg">
                             {q.textbookName} — {q.chapter}
                           </span>
                         </div>
@@ -783,35 +875,35 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                         </p>
 
                         {isExpanded && (
-                          <div className="mt-4 space-y-3 pt-3 border-t border-slate-100">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="mt-4 space-y-3.5 pt-3.5 border-t border-slate-100">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                               {q.options.map((opt) => {
                                 const isCorrect = opt.id === q.correctAnswerId;
                                 return (
                                   <div
                                     key={opt.id}
-                                    className={`p-2.5 rounded-lg border text-xs flex items-start gap-2 ${
+                                    className={`p-3 rounded-xl border text-xs flex items-start gap-2.5 transition-colors ${
                                       isCorrect
-                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold'
+                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-900 font-bold shadow-2xs'
                                         : 'bg-white border-slate-200 text-slate-600'
                                     }`}
                                   >
-                                    <span className="font-bold">{opt.label}.</span>
-                                    <span>{opt.text}</span>
+                                    <span className="font-extrabold w-4">{opt.label}.</span>
+                                    <span className="flex-1">{opt.text}</span>
                                   </div>
                                 );
                               })}
                             </div>
 
-                            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
                               <div>
-                                <strong className="text-slate-700">Giải thích: </strong>
+                                <strong className="text-slate-800 font-bold">Giải thích: </strong>
                                 {q.explanation}
                               </div>
-                              <div className="flex items-center gap-2 text-slate-500 pt-1">
+                              <div className="flex items-center gap-2 text-slate-500 pt-1 border-t border-slate-200/60">
                                 <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
                                 <span>
-                                  Nguồn: <strong>{q.textbookName}</strong> ({q.chapter} —{' '}
+                                  Nguồn trích dẫn: <strong className="text-slate-700">{q.textbookName}</strong> ({q.chapter} —{' '}
                                   {q.sourceChunkId})
                                 </span>
                               </div>
@@ -837,9 +929,12 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               })}
 
               {filteredQuestions.length === 0 && (
-                <div className="p-10 text-center text-sm text-slate-500">
-                  <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  Không tìm thấy câu hỏi nào khớp với bộ lọc hiện tại.
+                <div className="p-12 text-center text-sm text-slate-500 space-y-2">
+                  <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+                  <p className="font-semibold text-slate-600">Không tìm thấy câu hỏi nào</p>
+                  <p className="text-xs text-slate-400">
+                    Hãy điều chỉnh bộ lọc tìm kiếm hoặc quay lại Bước 2 để sinh thêm câu hỏi AI.
+                  </p>
                 </div>
               )}
             </div>

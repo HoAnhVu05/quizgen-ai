@@ -681,11 +681,17 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       {/* 1. Clean Header + Quick Presets */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+              Bước 2/4 • Sinh Câu Hỏi AI (Bloom)
+            </span>
+          </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            Sinh câu hỏi AI
+            Sinh câu hỏi AI theo Ma trận Bloom
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Chọn giáo trình và phân bổ số lượng câu hỏi theo mức độ nhận thức Bloom.
+            Chọn giáo trình và phân bổ số lượng câu hỏi theo 4 mức độ nhận thức Bloom.
           </p>
         </div>
 
@@ -700,7 +706,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
               onClick={() => applyPreset(preset.id as any)}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                 activePreset === preset.id
-                  ? 'bg-[#008689] text-white shadow-sm'
+                  ? 'bg-blue-600 text-white shadow-sm shadow-blue-600/25'
                   : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900'
               }`}
             >
@@ -851,14 +857,14 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             <button
               onClick={handleStartGenerate}
               disabled={isGenerating || totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
-              className={`w-full py-3 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-colors ${
+              className={`w-full py-3 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all ${
                 totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
                   ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                  : 'bg-[#008689] hover:bg-[#006d70] text-white shadow-sm'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/25'
               }`}
             >
               <Sparkles className="w-4 h-4" />
-              <span>{isGenerating ? 'Đang sinh câu hỏi...' : `Sinh ${totalQuestions} câu hỏi`}</span>
+              <span>{isGenerating ? 'Đang sinh câu hỏi...' : `Sinh ${totalQuestions} câu hỏi AI (Bước 2)`}</span>
             </button>
           </div>
         </div>

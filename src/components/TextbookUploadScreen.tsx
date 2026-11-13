@@ -296,11 +296,17 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       {/* 1. Clean Header + Upload Input */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-teal-50 text-[#008689] border border-teal-200 shadow-2xs">
+              <UploadCloud className="w-3.5 h-3.5 text-[#008689]" />
+              Bước 1/4 • Nạp & Quản Lý Giáo Trình (Teal)
+            </span>
+          </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            Quản lý giáo trình
+            Kho Giáo trình Môn học
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Tải lên tài liệu PDF hoặc DOCX (tối đa {MAX_UPLOAD_SIZE_MB}MB) để bóc tách nội dung sinh câu hỏi.
+            Tải lên tài liệu PDF hoặc DOCX (tối đa {MAX_UPLOAD_SIZE_MB}MB) để bóc tách nội dung và nạp vào vector store RAG.
           </p>
         </div>
 

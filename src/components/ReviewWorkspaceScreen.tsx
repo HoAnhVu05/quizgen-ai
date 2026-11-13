@@ -249,62 +249,79 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-4">
       {/* Top Connected Workflow Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
-            {[
-              { id: 'all', label: `Tất cả (${questions.length})` },
-              { id: 'pending', label: `Chờ kiểm tra (${pendingCount})` },
-              { id: 'approved', label: `Đã chốt (${approvedCount})` },
-              { id: 'rejected', label: `Đã loại (${rejectedCount})` },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setFilterStatus(tab.id as typeof filterStatus)}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  filterStatus === tab.id
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+              <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
+              Bước 3/4 • Đối Soát Minh Chứng & Biên Tập Đề (Amber)
+            </span>
+            <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md hidden md:inline-block">
+              Đối chiếu song song trích dẫn RAG
+            </span>
           </div>
-
-          <select
-            value={filterBloom}
-            onChange={(e) => setFilterBloom(e.target.value as typeof filterBloom)}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
-          >
-            <option value="all">Tất cả mức Bloom</option>
-            {BLOOM_ORDER.map((lvl) => (
-              <option key={lvl} value={lvl}>
-                {BLOOM_STYLE[lvl].label} ({BLOOM_STYLE[lvl].en})
-              </option>
-            ))}
-          </select>
+          <span className="text-xs text-slate-500 font-medium">
+            Tổng cộng: <strong className="text-slate-800 font-bold">{questions.length}</strong> câu hỏi
+          </span>
         </div>
 
-        {/* Action Buttons connecting Step 3 -> Step 4 */}
-        <div className="flex flex-wrap items-center gap-2">
-          {pendingCount > 0 && (
-            <button
-              onClick={onBatchApprove}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs rounded-lg transition-colors"
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-              Chốt nhanh tất cả ({pendingCount} câu)
-            </button>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+              {[
+                { id: 'all', label: `Tất cả (${questions.length})` },
+                { id: 'pending', label: `Chờ kiểm tra (${pendingCount})` },
+                { id: 'approved', label: `Đã chốt (${approvedCount})` },
+                { id: 'rejected', label: `Đã loại (${rejectedCount})` },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setFilterStatus(tab.id as typeof filterStatus)}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    filterStatus === tab.id
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-          <button
-            onClick={handleApproveAllAndProceedToExport}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-sm"
-          >
-            <span>Bước 4: Đóng gói Tờ Đề A4 & Xuất File ({questions.length} câu)</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+            <select
+              value={filterBloom}
+              onChange={(e) => setFilterBloom(e.target.value as typeof filterBloom)}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="all">Tất cả mức Bloom</option>
+              {BLOOM_ORDER.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {BLOOM_STYLE[lvl].label} ({BLOOM_STYLE[lvl].en})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Action Buttons connecting Step 3 -> Step 4 */}
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingCount > 0 && (
+              <button
+                onClick={onBatchApprove}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs rounded-lg transition-colors"
+              >
+                <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                Chốt nhanh tất cả ({pendingCount} câu)
+              </button>
+            )}
+
+            <button
+              onClick={handleApproveAllAndProceedToExport}
+              className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg transition-all shadow-sm shadow-purple-600/20"
+            >
+              <span>Bước 4: Đóng gói Tờ Đề A4 & Xuất File ({questions.length} câu)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 

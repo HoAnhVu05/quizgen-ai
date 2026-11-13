@@ -12,7 +12,9 @@ import {
   Users,
   Lock,
   Cpu,
-  FileCheck2
+  FileCheck2,
+  UploadCloud,
+  CheckSquare,
 } from 'lucide-react';
 import { ScreenId, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
@@ -369,53 +371,93 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             </div>
 
             {role === 'lecturer' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {[
                   {
                     step: 'Bước 1',
                     title: 'Nạp Giáo trình PDF/DOCX',
                     desc: 'Trích xuất văn bản & lập chỉ mục Vector',
-                    screen: 'upload' as ScreenId
+                    screen: 'upload' as ScreenId,
+                    icon: UploadCloud,
+                    badgeStyle: 'bg-teal-50 text-[#008689] border-teal-200',
+                    borderHover: 'hover:border-[#008689] hover:bg-teal-50/20',
+                    iconBox: 'bg-teal-50 text-[#008689] border border-teal-200/60',
+                    actionColor: 'text-[#008689]',
+                    titleHover: 'group-hover:text-[#008689]',
                   },
                   {
                     step: 'Bước 2',
                     title: 'Cấu hình Ma trận Bloom',
-                    desc: 'Thiết lập tỷ lệ 4 mức độ nhận thức',
-                    screen: 'generate' as ScreenId
+                    desc: 'Thiết lập tỷ lệ 4 mức độ nhận thức AI',
+                    screen: 'generate' as ScreenId,
+                    icon: Sparkles,
+                    badgeStyle: 'bg-blue-50 text-blue-700 border-blue-200',
+                    borderHover: 'hover:border-blue-500 hover:bg-blue-50/20',
+                    iconBox: 'bg-blue-50 text-blue-600 border border-blue-200/60',
+                    actionColor: 'text-blue-600',
+                    titleHover: 'group-hover:text-blue-600',
                   },
                   {
                     step: 'Bước 3',
-                    title: 'Đối soát & Gửi Bộ môn',
+                    title: 'Đối soát & Biên tập Đề',
                     desc: `Kiểm tra ${pendingReviewCount} câu hỏi chờ gửi duyệt`,
-                    screen: 'review' as ScreenId
+                    screen: 'review' as ScreenId,
+                    icon: CheckSquare,
+                    badgeStyle: 'bg-amber-50 text-amber-800 border-amber-200',
+                    borderHover: 'hover:border-amber-500 hover:bg-amber-50/20',
+                    iconBox: 'bg-amber-50 text-amber-600 border border-amber-200/60',
+                    actionColor: 'text-amber-700',
+                    titleHover: 'group-hover:text-amber-700',
                   },
                   {
                     step: 'Bước 4',
-                    title: 'Ngân hàng Câu hỏi Cá nhân',
-                    desc: 'Tải bản nháp Word (.docx) phục vụ giảng dạy',
-                    screen: 'bank' as ScreenId
-                  }
-                ].map((item, i) => (
-                  <button
-                    key={i}
-                    onClick={() => onNavigate(item.screen)}
-                    className="group text-left p-4 rounded-lg border border-slate-200 hover:border-[#008689] hover:bg-slate-50/70 transition-all flex flex-col justify-between"
-                  >
-                    <div>
-                      <span className="text-[11px] font-bold text-[#008689] uppercase">
-                        {item.step}
-                      </span>
-                      <h4 className="text-sm font-bold text-slate-800 mt-0.5 group-hover:text-[#008689] transition-colors">
-                        {item.title}
-                      </h4>
-                      <p className="text-xs text-slate-500 mt-1">{item.desc}</p>
-                    </div>
-                    <div className="mt-3 flex items-center gap-1 text-xs font-semibold text-[#008689]">
-                      <span>Mở công cụ</span>
-                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
-                    </div>
-                  </button>
-                ))}
+                    title: 'Đóng gói & Xuất Đề Thi',
+                    desc: 'Xuất bản Word (.docx), In PDF OMR và gói LMS Canvas',
+                    screen: 'bank' as ScreenId,
+                    icon: Database,
+                    badgeStyle: 'bg-purple-50 text-purple-700 border-purple-200',
+                    borderHover: 'hover:border-purple-500 hover:bg-purple-50/20',
+                    iconBox: 'bg-purple-50 text-purple-600 border border-purple-200/60',
+                    actionColor: 'text-purple-700',
+                    titleHover: 'group-hover:text-purple-700',
+                  },
+                ].map((item, i) => {
+                  const ItemIcon = item.icon;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => onNavigate(item.screen)}
+                      className={`group text-left p-4 rounded-xl border border-slate-200 bg-white transition-all flex flex-col justify-between shadow-2xs hover:shadow-xs ${item.borderHover}`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span
+                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md border tracking-wider ${item.badgeStyle}`}
+                          >
+                            {item.step}
+                          </span>
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${item.iconBox}`}
+                          >
+                            <ItemIcon className="w-3.5 h-3.5" />
+                          </div>
+                        </div>
+                        <h4
+                          className={`text-sm font-bold text-slate-800 transition-colors leading-snug ${item.titleHover}`}
+                        >
+                          {item.title}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">{item.desc}</p>
+                      </div>
+                      <div
+                        className={`mt-3 flex items-center gap-1 text-xs font-bold ${item.actionColor}`}
+                      >
+                        <span>Mở công cụ</span>
+                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

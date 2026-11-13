@@ -27,6 +27,70 @@ interface NavItem {
   badge?: number;
 }
 
+interface NavItemStyle {
+  stepTagClass: string;
+  activeContainer: string;
+  inactiveContainer: string;
+  activeIconBox: string;
+  inactiveIconBox: string;
+  activeText: string;
+}
+
+const NAV_ITEM_STYLES: Record<ScreenId, NavItemStyle> = {
+  upload: {
+    // Bước 1: Xanh ngọc (Teal)
+    stepTagClass: 'text-[#008689]',
+    activeContainer: 'bg-teal-50/90 text-[#006d70] font-bold border border-teal-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-teal-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-[#008689] text-white shadow-xs',
+    inactiveIconBox: 'bg-teal-50 text-[#008689] border border-teal-200/60 group-hover:bg-teal-100/70',
+    activeText: 'text-[#006d70]',
+  },
+  generate: {
+    // Bước 2: Xanh dương (Blue)
+    stepTagClass: 'text-blue-600',
+    activeContainer: 'bg-blue-50/90 text-blue-900 font-bold border border-blue-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-blue-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-blue-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-blue-50 text-blue-600 border border-blue-200/60 group-hover:bg-blue-100/70',
+    activeText: 'text-blue-900',
+  },
+  review: {
+    // Bước 3: Cam vàng (Amber)
+    stepTagClass: 'text-amber-600',
+    activeContainer: 'bg-amber-50/90 text-amber-950 font-bold border border-amber-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-amber-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-amber-500 text-white shadow-xs',
+    inactiveIconBox: 'bg-amber-50 text-amber-600 border border-amber-200/60 group-hover:bg-amber-100/70',
+    activeText: 'text-amber-950',
+  },
+  bank: {
+    // Bước 4: Tím (Purple)
+    stepTagClass: 'text-purple-600',
+    activeContainer: 'bg-purple-50/90 text-purple-900 font-bold border border-purple-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-purple-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-purple-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-purple-50 text-purple-600 border border-purple-200/60 group-hover:bg-purple-100/70',
+    activeText: 'text-purple-900',
+  },
+  dashboard: {
+    stepTagClass: 'text-slate-500',
+    activeContainer: 'bg-slate-100 text-slate-900 font-bold border border-slate-200 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium border border-transparent',
+    activeIconBox: 'bg-slate-800 text-white shadow-xs',
+    inactiveIconBox: 'bg-slate-100 text-slate-500 group-hover:bg-slate-200/80',
+    activeText: 'text-slate-900',
+  },
+  admin_portal: {
+    stepTagClass: 'text-[#da1c2d]',
+    activeContainer: 'bg-rose-50 text-[#da1c2d] font-bold border border-rose-200 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-rose-50/50 font-medium border border-transparent',
+    activeIconBox: 'bg-[#da1c2d] text-white shadow-xs',
+    inactiveIconBox: 'bg-rose-50 text-[#da1c2d] border border-rose-200 group-hover:bg-rose-100',
+    activeText: 'text-[#da1c2d]',
+  },
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({
   currentScreen,
   onNavigate,
@@ -130,34 +194,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation List */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+      <nav className="flex-1 py-4 px-3 space-y-1.5 overflow-y-auto">
         {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentScreen === item.id;
+          const theme = NAV_ITEM_STYLES[item.id] || NAV_ITEM_STYLES.dashboard;
 
           return (
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors ${
-                isActive
-                  ? 'bg-[#e0f7fa]/80 text-[#006d70] font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
+              className={`w-full group flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all duration-150 ${
+                isActive ? theme.activeContainer : theme.inactiveContainer
               }`}
             >
-              <div className="flex items-center space-x-2.5 min-w-0">
-                <Icon
-                  className={`w-4 h-4 shrink-0 ${
-                    isActive ? 'text-[#008689]' : 'text-slate-400'
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                    isActive ? theme.activeIconBox : theme.inactiveIconBox
                   }`}
-                />
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                </div>
                 <div className="min-w-0">
                   {item.stepTag && (
-                    <span className="block text-[9px] font-bold uppercase tracking-wider text-[#008689]">
+                    <span
+                      className={`block text-[9px] font-extrabold uppercase tracking-wider ${theme.stepTagClass}`}
+                    >
                       {item.stepTag}
                     </span>
                   )}
-                  <span className="text-xs truncate block">{item.label}</span>
+                  <span
+                    className={`text-xs truncate block leading-snug ${
+                      isActive ? theme.activeText : 'text-slate-700'
+                    }`}
+                  >
+                    {item.label}
+                  </span>
                 </div>
               </div>
 
