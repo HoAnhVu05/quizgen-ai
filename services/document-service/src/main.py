@@ -398,9 +398,8 @@ def list_documents(
 ):
     """Lấy danh sách giáo trình đã nạp trong hệ thống (hỗ trợ lọc theo user_id nếu có)"""
     query = db.query(DocumentDB)
-    target_user = user_id or current_user_id
-    if target_user:
-        query = query.filter(DocumentDB.user_id == target_user)
+    if user_id:
+        query = query.filter(DocumentDB.user_id == user_id)
 
     docs = query.order_by(DocumentDB.created_at.desc()).all()
     return [

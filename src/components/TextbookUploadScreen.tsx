@@ -102,17 +102,33 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       const savedLocal: TextbookFile[] = JSON.parse(
         localStorage.getItem('quizgen_uploaded_documents') || '[]'
       ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-      const merged = [...savedLocal, ...list];
-      const unique = merged.filter(
-        (doc, idx, arr) => idx === arr.findIndex((d) => d.id === doc.id)
-      );
+
+      // Backend list lấy làm gốc, ghi đè toàn bộ các bản nháp cục bộ cũ
+      const listMap = new Map<string, TextbookFile>();
+      savedLocal.forEach((doc) => {
+        listMap.set(doc.id, doc);
+      });
+      list.forEach((doc) => {
+        listMap.set(doc.id, doc);
+        // Nếu đã có bản ghi backend hoàn tất cùng tên, xóa bỏ bản nháp pending cục bộ
+        for (const [localId, localDoc] of listMap.entries()) {
+          if (localId !== doc.id && localDoc.name === doc.name && localDoc.status !== 'ready') {
+            listMap.delete(localId);
+          }
+        }
+      });
+      const unique = Array.from(listMap.values());
+
+      try {
+        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(unique.slice(0, 20)));
+      } catch {}
+
       setTextbooks(unique);
     } catch {
       const savedLocal: TextbookFile[] = JSON.parse(
         localStorage.getItem('quizgen_uploaded_documents') || '[]'
       ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-      const merged = [...savedLocal];
-      const unique = merged.filter(
+      const unique = savedLocal.filter(
         (doc, idx, arr) => idx === arr.findIndex((d) => d.id === doc.id)
       );
       setTextbooks(unique);
@@ -121,7 +137,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         setIsLoadingDocuments(false);
       }
     }
-  }, [API_BASE, onShowToast]);
+  }, [API_BASE]);
 
   useEffect(() => {
     void fetchDocuments(false);
@@ -134,12 +150,42 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     );
     if (!hasPendingDocs) return;
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
+      // 1. Poll tiến trình thực tế của từng tài liệu đang pending từ backend
+      for (const book of textbooks) {
+        if (book.status === 'uploading' || book.status === 'extracting' || book.status === 'embedding') {
+          try {
+            const progRes = await apiClient.fetch(`${API_BASE}/documents/documents/${book.id}/progress`);
+            if (progRes.ok) {
+              const progData = await progRes.json();
+              if (progData && (progData.progress !== book.progress || progData.status !== book.status)) {
+                setTextbooks((prev) =>
+                  prev.map((b) => {
+                    if (b.id === book.id) {
+                      return {
+                        ...b,
+                        status: progData.status || b.status,
+                        progress: progData.progress ?? b.progress,
+                        totalPages: progData.totalPages || b.totalPages,
+                        chaptersCount: progData.chaptersCount || b.chaptersCount,
+                      };
+                    }
+                    return b;
+                  })
+                );
+              }
+            }
+          } catch {
+            // Bỏ qua lỗi mạng chớp nhoáng
+          }
+        }
+      }
+      // 2. Đồng bộ lại toàn bộ danh sách
       void fetchDocuments(true);
-    }, 2500);
+    }, 1500);
 
     return () => clearInterval(interval);
-  }, [textbooks, fetchDocuments]);
+  }, [textbooks, fetchDocuments, API_BASE]);
 
   const handleUploadFile = async (file: File) => {
     if (!file) return;
@@ -156,11 +202,11 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
     }
     setIsUploading(true);
     try {
-    const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const formData = new FormData();
       formData.append('file', file);
 
@@ -174,10 +220,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         id: `doc-${Date.now()}`,
         name: file.name,
         size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        totalPages: 64,
-        chaptersCount: 4,
-        status: 'ready',
-        progress: 100,
+        totalPages: 0,
+        chaptersCount: 0,
+        status: 'extracting',
+        progress: 15,
         uploadedAt: formatUploadedAt(new Date().toISOString()),
       };
 
@@ -186,14 +232,42 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         if (data?.document) {
           uploadedDoc = normalizeTextbook(data.document);
         }
+
+        // Tự động chờ tác vụ nền hoàn tất trong vài giây ngắn
+        if (uploadedDoc.status !== 'ready') {
+          for (let i = 0; i < 20; i++) {
+            await new Promise((r) => setTimeout(r, 600));
+            try {
+              const pRes = await apiClient.fetch(`${API_BASE}/documents/documents/${uploadedDoc.id}/progress`);
+              if (pRes.ok) {
+                const pData = await pRes.json();
+                if (pData?.status === 'ready' || pData?.progress === 100) {
+                  uploadedDoc = {
+                    ...uploadedDoc,
+                    status: 'ready',
+                    progress: 100,
+                    totalPages: pData.totalPages || uploadedDoc.totalPages,
+                    chaptersCount: pData.chaptersCount || uploadedDoc.chaptersCount,
+                  };
+                  break;
+                } else if (pData?.progress) {
+                  uploadedDoc.progress = pData.progress;
+                  uploadedDoc.status = pData.status || uploadedDoc.status;
+                }
+              }
+            } catch {
+              break;
+            }
+          }
+        }
       }
 
       try {
         const savedLocal: TextbookFile[] = JSON.parse(
-        localStorage.getItem('quizgen_uploaded_documents') || '[]'
-      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-        savedLocal.unshift(uploadedDoc);
-        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(savedLocal.slice(0, 20)));
+          localStorage.getItem('quizgen_uploaded_documents') || '[]'
+        ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+        const nextLocal = [uploadedDoc, ...savedLocal.filter((d) => d.id !== uploadedDoc.id && d.name !== uploadedDoc.name)];
+        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(nextLocal.slice(0, 20)));
         localStorage.setItem('quizgen_selected_book_id', uploadedDoc.id);
         localStorage.setItem('quizgen_selected_book_name', uploadedDoc.name);
       } catch {}
@@ -217,8 +291,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       };
       try {
         const savedLocal: TextbookFile[] = JSON.parse(
-        localStorage.getItem('quizgen_uploaded_documents') || '[]'
-      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+          localStorage.getItem('quizgen_uploaded_documents') || '[]'
+        ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
         savedLocal.unshift(fallbackDoc);
         localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(savedLocal.slice(0, 20)));
         localStorage.setItem('quizgen_selected_book_id', fallbackDoc.id);

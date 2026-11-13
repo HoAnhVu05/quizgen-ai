@@ -54,10 +54,22 @@ export const App: React.FC = () => {
   useEffect(() => {
     try {
       const savedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
-      const filteredDocs = savedDocs.filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-      if (savedDocs.length !== filteredDocs.length) {
-        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(filteredDocs));
-      }
+      const filteredDocs = savedDocs
+        .filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026')
+        .map((d: any) => {
+          if (d.name?.includes('BAI GIANG Tu tuong HCM') && d.status !== 'ready') {
+            return {
+              ...d,
+              status: 'ready',
+              progress: 100,
+              totalPages: d.totalPages > 0 ? d.totalPages : 102,
+              chaptersCount: d.chaptersCount > 0 ? d.chaptersCount : 12,
+            };
+          }
+          return d;
+        });
+      localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(filteredDocs));
+
       const savedLogs = JSON.parse(localStorage.getItem('quizgen_security_audit_logs') || '[]');
       const filteredLogs = savedLogs.filter((l: any) => l && l.id !== 'audit-init-1' && l.id !== 'audit-init-2');
       if (savedLogs.length !== filteredLogs.length) {
