@@ -247,11 +247,11 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+    <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 space-y-3.5 sm:space-y-4">
       {/* Top Connected Workflow Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg border border-slate-200 w-full sm:w-auto">
             {[
               { id: 'all', label: `Tất cả (${questions.length})` },
               { id: 'pending', label: `Chờ kiểm tra (${pendingCount})` },
@@ -261,7 +261,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setFilterStatus(tab.id as typeof filterStatus)}
-                className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                className={`flex-1 sm:flex-initial text-center px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
                   filterStatus === tab.id
                     ? 'bg-white text-slate-800 shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
@@ -275,7 +275,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
           <select
             value={filterBloom}
             onChange={(e) => setFilterBloom(e.target.value as typeof filterBloom)}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
+            className="w-full sm:w-auto px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
           >
             <option value="all">Tất cả mức Bloom</option>
             {BLOOM_ORDER.map((lvl) => (
@@ -287,11 +287,11 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
         </div>
 
         {/* Action Buttons connecting Step 3 -> Step 4 */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           {pendingCount > 0 && (
             <button
               onClick={onBatchApprove}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs rounded-lg transition-colors"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs rounded-lg transition-colors w-full sm:w-auto"
             >
               <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
               Chốt nhanh tất cả ({pendingCount} câu)
@@ -300,7 +300,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
 
           <button
             onClick={handleApproveAllAndProceedToExport}
-            className="flex items-center gap-1.5 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-sm"
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-sm w-full sm:w-auto"
           >
             <span>Bước 4: Đóng gói Tờ Đề A4 & Xuất File ({questions.length} câu)</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -317,7 +317,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               Danh sách câu hỏi ({filteredQuestions.length})
             </span>
           </div>
-          <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+          <div className="divide-y divide-slate-100 max-h-56 sm:max-h-72 lg:max-h-[600px] overflow-y-auto">
             {filteredQuestions.map((q, idx) => {
               const isSelected = activeQuestion?.id === q.id;
               const bloomCfg = BLOOM_STYLE[q.bloomLevel];
@@ -503,17 +503,17 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
             </div>
 
             {/* Decision Bar */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
               <button
                 onClick={() => handleStatusChange('rejected')}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors"
+                className="w-full sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition-colors"
               >
                 <X className="w-4 h-4" />
                 Loại câu này (R)
               </button>
               <button
                 onClick={() => handleStatusChange('approved')}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#008689] text-white hover:bg-[#006f72] text-xs font-semibold transition-colors"
+                className="w-full sm:flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-[#008689] text-white hover:bg-[#006f72] text-xs font-semibold transition-colors"
               >
                 <Check className="w-4 h-4" />
                 Chốt câu hỏi vào Đề (A)

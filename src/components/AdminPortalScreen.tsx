@@ -217,33 +217,33 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const criticalAlertsCount = auditLogs.filter((l) => l.severity === 'critical').length;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#f7f9fb]">
+    <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6 bg-[#f7f9fb]">
       {/* Top Admin Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 text-xs font-bold text-[#da1c2d] bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-md">
             <ShieldCheck className="w-3.5 h-3.5" />
             <span>Cổng Quản Trị Hệ Thống & Bảo Mật 2FA (System Admin Portal)</span>
           </div>
-          <h2 className="text-xl font-bold text-slate-800 pt-1">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-800 pt-1">
             Trung tâm Quản trị Tài khoản, Hạ tầng AI & Nhật ký An ninh
           </h2>
-          <p className="text-sm text-slate-500 max-w-2xl">
+          <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">
             Quản lý danh sách tài khoản Giảng viên, cấu hình khóa bảo mật 2 lớp (2FA PIN), giám sát cụm 8 Microservices và kiểm toán truy cập.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0 w-full lg:w-auto">
           <button
             onClick={() => onNavigate('dashboard')}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 transition-colors w-full sm:w-auto"
           >
             <Eye className="w-4 h-4 text-[#008689]" />
             Xem thử Giao diện Làm đề của Giảng viên
           </button>
           <button
             onClick={loadUsersAndLogs}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#008689] hover:bg-[#006d70] text-white font-semibold text-xs rounded-lg transition-colors"
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-[#008689] hover:bg-[#006d70] text-white font-semibold text-xs rounded-lg transition-colors w-full sm:w-auto"
           >
             <RefreshCw className="w-3.5 h-3.5" />
             Làm mới dữ liệu
@@ -252,7 +252,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       </div>
 
       {/* 4 Admin KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase">
@@ -333,7 +333,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       </div>
 
       {/* Navigation Tabs inside Admin Portal */}
-      <div className="bg-white rounded-xl border border-slate-200 p-2 shadow-sm flex flex-wrap items-center gap-2">
+      <div className="bg-white rounded-xl border border-slate-200 p-1.5 sm:p-2 shadow-sm grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2">
         {[
           {
             id: 'users',

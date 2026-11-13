@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard,
   UploadCloud,
   Sparkles,
   CheckSquare,
   Database,
-  GraduationCap,
   LogOut,
   ShieldCheck,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 
@@ -17,6 +18,13 @@ interface SidebarProps {
   pendingReviewCount: number;
   currentUser?: UserProfile | null;
   onLogout: () => void;
+  onUpdateProfile?: (updates: {
+    fullName: string;
+    academicTitle: string;
+    department?: string;
+  }) => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 interface NavItem {
@@ -33,8 +41,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   pendingReviewCount,
   currentUser,
   onLogout,
+  onUpdateProfile,
+  isMobileOpen = false,
+  onCloseMobile,
 }) => {
   const activeRole: UserRole = currentUser?.role || 'lecturer';
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftDept, setDraftDept] = useState('');
+
+  const openProfileEditor = () => {
+    if (!currentUser) return;
+    setDraftName(currentUser.fullName || '');
+    setDraftTitle(currentUser.academicTitle || '');
+    setDraftDept(currentUser.department || currentUser.faculty || '');
+    setShowProfileModal(true);
+  };
 
   const filteredNavItems = useMemo<NavItem[]>(() => {
     const lecturerWorkflow: NavItem[] = [
@@ -108,68 +131,96 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const initials = getInitials(currentUser?.fullName, currentUser?.academicTitle);
 
   return (
-    <aside className="w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none relative z-20">
-      {/* Top UTH Accent Line */}
-      <div className="h-1 w-full bg-[#008689]" />
-
-      {/* Brand Header */}
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center space-x-3">
-        <img
-          src="/logo.jpg"
-          alt="QuizGen AI Logo"
-          className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300"
+          onClick={onCloseMobile}
         />
-        <div className="min-w-0">
-          <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight">
-            QuizGen AI
-          </h1>
-          <p className="text-[11px] text-slate-400 truncate">
-            {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Trợ lý Đề thi Giảng viên'}
-          </p>
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none transition-transform duration-300 ease-in-out md:static md:w-64 md:translate-x-0 ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        {/* Top UTH Accent Line */}
+        <div className="h-1 w-full bg-[#008689]" />
+
+        {/* Brand Header */}
+        <div className="px-4 sm:px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center space-x-3 min-w-0">
+            <img
+              src="/logo.jpg"
+              alt="QuizGen AI Logo"
+              className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+            />
+            <div className="min-w-0">
+              <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight">
+                QuizGen AI
+              </h1>
+              <p className="text-[11px] text-slate-400 truncate">
+                {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Trợ lý Đề thi Giảng viên'}
+              </p>
+            </div>
+          </div>
+
+          {/* Close button on mobile drawer */}
+          <button
+            type="button"
+            onClick={onCloseMobile}
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0"
+            title="Đóng menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
-      </div>
 
-      {/* Navigation List */}
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {filteredNavItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentScreen === item.id;
+        {/* Navigation List */}
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {filteredNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentScreen === item.id;
 
-          return (
-            <button
-              key={item.id}
-              onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors ${
-                isActive
-                  ? 'bg-[#e0f7fa]/80 text-[#006d70] font-bold'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-              }`}
-            >
-              <div className="flex items-center space-x-2.5 min-w-0">
-                <Icon
-                  className={`w-4 h-4 shrink-0 ${
-                    isActive ? 'text-[#008689]' : 'text-slate-400'
-                  }`}
-                />
-                <div className="min-w-0">
-                  {item.stepTag && (
-                    <span className="block text-[9px] font-bold uppercase tracking-wider text-[#008689]">
-                      {item.stepTag}
-                    </span>
-                  )}
-                  <span className="text-xs truncate block">{item.label}</span>
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  onNavigate(item.id);
+                  onCloseMobile?.();
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-colors ${
+                  isActive
+                    ? 'bg-[#e0f7fa]/80 text-[#006d70] font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
+                }`}
+              >
+                <div className="flex items-center space-x-2.5 min-w-0">
+                  <Icon
+                    className={`w-4 h-4 shrink-0 ${
+                      isActive ? 'text-[#008689]' : 'text-slate-400'
+                    }`}
+                  />
+                  <div className="min-w-0">
+                    {item.stepTag && (
+                      <span className="block text-[9px] font-bold uppercase tracking-wider text-[#008689]">
+                        {item.stepTag}
+                      </span>
+                    )}
+                    <span className="text-xs truncate block">{item.label}</span>
+                  </div>
                 </div>
-              </div>
 
-              {item.badge !== undefined && (
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
+                {item.badge !== undefined && (
+                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
 
       {/* Clean Profile Footer */}
       <div className="p-3.5 border-t border-slate-100 bg-slate-50/50">
@@ -199,16 +250,145 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <button
-            id="sidebar-logout-btn"
-            onClick={onLogout}
-            title="Đăng xuất"
-            className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0"
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
+          <div className="flex items-center space-x-1 shrink-0">
+            {onUpdateProfile && currentUser && !isSystemAdmin && (
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                title="Đổi học vị & tên hiển thị"
+                className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button
+              id="sidebar-logout-btn"
+              onClick={onLogout}
+              title="Đăng xuất"
+              className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Quick Profile & Academic Title Edit Modal */}
+      {showProfileModal && onUpdateProfile && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm select-text"
+          onClick={() => setShowProfileModal(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white border border-slate-200 shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+              <h3 className="text-sm font-bold text-slate-900">
+                Cập nhật Học vị & Tên hiển thị
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!draftName.trim()) return;
+                onUpdateProfile({
+                  fullName: draftName,
+                  academicTitle: draftTitle,
+                  department: draftDept,
+                });
+                setShowProfileModal(false);
+              }}
+              className="space-y-3"
+            >
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">Học vị</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    { value: '', label: 'Không' },
+                    { value: 'CN.', label: 'CN.' },
+                    { value: 'KS.', label: 'KS.' },
+                    { value: 'ThS.', label: 'ThS.' },
+                    { value: 'TS.', label: 'TS.' },
+                    { value: 'PGS. TS.', label: 'PGS. TS.' },
+                    { value: 'GS. TS.', label: 'GS. TS.' },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => setDraftTitle(item.value)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
+                        draftTitle === item.value
+                          ? 'bg-[#008689] text-white border-[#008689]'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-white'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">Họ và tên</label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const parts = draftName.trim().split(/\s+/);
+                      if (parts.length > 1) setDraftName(parts.reverse().join(' '));
+                    }}
+                    className="text-[11px] font-semibold text-[#008689] hover:underline"
+                  >
+                    Đảo ngược tên
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Khoa / Đơn vị</label>
+                <input
+                  type="text"
+                  value={draftDept}
+                  onChange={(e) => setDraftDept(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs text-slate-900 outline-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowProfileModal(false)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70]"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </aside>
+    </>
   );
 };

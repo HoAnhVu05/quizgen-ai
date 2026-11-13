@@ -333,15 +333,15 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 space-y-3.5 sm:space-y-5">
       {/* Top Studio Header & 4-Format Direct Output Bar for Lecturer */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#008689] bg-[#e6f4f4] px-2.5 py-0.5 rounded-md">
               Bước 4/4 • Nhận Đầu Ra Thực Tế Cho Giảng Viên
             </span>
-            <h2 className="text-lg font-bold text-slate-800 mt-1">
+            <h2 className="text-base sm:text-lg font-bold text-slate-800 mt-1">
               Phòng Đóng Gói Tờ Đề Thi A4, Trộn 4 Mã Đề & Kết Xuất Đa Định Dạng
             </h2>
             <p className="text-xs text-slate-500">
@@ -350,11 +350,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           </div>
 
           {/* 4 Immediate Output Buttons for the Teacher */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap items-center gap-2 w-full lg:w-auto shrink-0">
             <button
               onClick={() => handleExport('docx')}
               disabled={isExporting !== null}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
             >
               {isExporting === 'docx' ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -367,7 +367,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             <button
               onClick={() => handleExport('pdf')}
               disabled={isExporting !== null}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
             >
               {isExporting === 'pdf' ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -379,7 +379,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
             <button
               onClick={handleDownloadAnswerKey}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-lg transition-colors"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-lg transition-colors"
             >
               <KeyRound className="w-3.5 h-3.5 text-amber-700" />
               3. Tải Bảng Đáp Án (4 Mã đề)
@@ -388,7 +388,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             <button
               onClick={() => handleExport('qti')}
               disabled={isExporting !== null}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-50"
             >
               {isExporting === 'qti' ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -402,23 +402,23 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
         {/* Exam Metadata Config + Mode Switcher */}
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5 flex-1 w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
               <span className="text-xs font-semibold text-slate-600">Tiêu đề kỳ thi:</span>
               <input
                 type="text"
                 value={examTitle}
                 onChange={(e) => setExamTitle(e.target.value)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 w-72 focus:outline-none focus:border-[#008689]"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 w-full sm:w-72 focus:outline-none focus:border-[#008689]"
               />
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <span className="text-xs font-semibold text-slate-600">Thời gian:</span>
               <select
                 value={examDuration}
                 onChange={(e) => setExamDuration(Number(e.target.value))}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
+                className="flex-1 sm:flex-initial px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
               >
                 <option value={15}>15 phút (Thường kỳ)</option>
                 <option value={45}>45 phút (Giữa kỳ)</option>
@@ -429,7 +429,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
             <button
               onClick={handleReshuffle4Codes}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors"
             >
               <Shuffle className="w-3.5 h-3.5" />
               Trộn lại 4 Mã đề (101–104)
@@ -437,7 +437,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           </div>
 
           {/* 3 View Tabs */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto shrink-0">
             {[
               { id: 'preview_paper', label: 'Xem Tờ Đề Thi A4 & OMR', icon: Eye },
               { id: 'answer_key', label: 'Bảng Đáp Án 4 Mã Đề', icon: KeyRound },
@@ -453,7 +453,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => setViewMode(tab.id as typeof viewMode)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     isAct
                       ? 'bg-white text-[#008689] shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
@@ -472,7 +472,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       {viewMode === 'preview_paper' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left: A4 Exam Paper Preview */}
-          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-300 shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-300 shadow-sm p-3.5 sm:p-6 sm:p-8 space-y-4 sm:space-y-6">
             {/* Code Switcher Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200">
               <div className="flex items-center gap-2">

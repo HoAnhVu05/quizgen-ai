@@ -8,6 +8,7 @@ import {
   CheckSquare,
   Database,
   ChevronRight,
+  Menu,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 
@@ -22,6 +23,7 @@ interface TopHeaderProps {
     title: string,
     message: string
   ) => void;
+  onToggleMobileMenu?: () => void;
 }
 
 const WORKFLOW_STEPS: { id: ScreenId; step: string; label: string }[] = [
@@ -35,6 +37,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   currentScreen,
   currentUser,
   onNavigate,
+  onToggleMobileMenu,
 }) => {
   const isAdmin = currentUser?.role === 'admin';
 
@@ -43,35 +46,41 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       case 'admin_portal':
         return {
           label: 'Cổng Quản trị Hệ thống & Bảo mật 2FA',
+          shortLabel: 'Quản trị Hệ thống',
           icon: ShieldCheck,
         };
       case 'dashboard':
         return {
           label: 'Bảng điều khiển Biên soạn Học thuật',
+          shortLabel: 'Tổng quan Học thuật',
           icon: LayoutDashboard,
         };
       case 'upload':
         return {
           label: 'Bước 1/4: Kho Giáo trình & Tài liệu Môn học',
+          shortLabel: 'Bước 1: Nạp Giáo trình',
           icon: UploadCloud,
         };
       case 'generate':
         return {
           label: 'Bước 2/4: Sinh Câu hỏi AI theo Ma trận Bloom',
+          shortLabel: 'Bước 2: Sinh Đề AI',
           icon: Sparkles,
         };
       case 'review':
         return {
           label: 'Bước 3/4: Đối soát Trích dẫn Sách & Biên tập Câu hỏi',
+          shortLabel: 'Bước 3: Đối soát Đề',
           icon: CheckSquare,
         };
       case 'bank':
         return {
           label: 'Bước 4/4: Phòng Đóng gói, Trộn Mã Đề & Xuất Bản Đề Thi (Word / PDF OMR / LMS)',
+          shortLabel: 'Bước 4: Xuất Đề Thi',
           icon: Database,
         };
       default:
-        return { label: 'QuizGen AI', icon: Cpu };
+        return { label: 'QuizGen AI', shortLabel: 'QuizGen AI', icon: Cpu };
     }
   };
 
@@ -79,15 +88,30 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const ScreenIcon = screenMeta.icon;
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-30 shrink-0 select-none">
-      {/* Left: Screen Title */}
-      <div className="flex items-center space-x-2.5 min-w-0">
+    <header className="h-14 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none">
+      {/* Left: Mobile Hamburger + Screen Title */}
+      <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0">
+        {onToggleMobileMenu && (
+          <button
+            type="button"
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-1.5 -ml-1 rounded-lg text-slate-600 hover:text-[#008689] hover:bg-slate-100 transition-colors shrink-0"
+            title="Mở thanh điều hướng"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <ScreenIcon className="w-4 h-4 text-[#008689] shrink-0" />
-        <h2 className="text-sm font-bold text-slate-800 truncate">{screenMeta.label}</h2>
+        <h2 className="text-xs sm:text-sm font-bold text-slate-800 truncate hidden sm:block">
+          {screenMeta.label}
+        </h2>
+        <h2 className="text-xs font-bold text-slate-800 truncate sm:hidden">
+          {screenMeta.shortLabel}
+        </h2>
       </div>
 
       {/* Right: Connected 4-Step Workflow Stepper for Lecturer OR 2FA Security Badge for Admin */}
-      <div className="flex items-center space-x-2.5 shrink-0">
+      <div className="flex items-center space-x-2 shrink-0">
         {!isAdmin && onNavigate && (
           <div className="hidden xl:flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1">
             {WORKFLOW_STEPS.map((s, idx) => {
@@ -121,17 +145,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         )}
 
         {isAdmin && (
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Phiên Admin Đã Xác Thực 2FA
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="inline-flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">Phiên Admin Đã Xác Thực 2FA</span>
+              <span className="sm:hidden">2FA Admin</span>
             </span>
             {onNavigate && currentScreen !== 'admin_portal' && (
               <button
                 onClick={() => onNavigate('admin_portal')}
-                className="px-3 py-1 rounded-lg text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors"
+                className="px-2.5 sm:px-3 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors whitespace-nowrap"
               >
-                Về Cổng Admin
+                Cổng Admin
               </button>
             )}
           </div>

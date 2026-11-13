@@ -70,10 +70,17 @@ async function verifyGoogleOAuthToken({ googleAccessToken, idToken, expectedClie
       throw err;
     }
 
+    const formattedName =
+      userInfo.family_name && userInfo.given_name
+        ? `${userInfo.family_name} ${userInfo.given_name}`.trim()
+        : (userInfo.name || userInfo.given_name || email.split('@')[0]).trim();
+
     return {
       sub: userInfo.sub || tokenInfo.sub || '',
       email,
-      fullName: (userInfo.name || userInfo.given_name || email.split('@')[0]).trim(),
+      fullName: formattedName,
+      givenName: (userInfo.given_name || '').trim(),
+      familyName: (userInfo.family_name || '').trim(),
       avatarUrl: userInfo.picture || '',
     };
   }
@@ -102,10 +109,17 @@ async function verifyGoogleOAuthToken({ googleAccessToken, idToken, expectedClie
       throw err;
     }
 
+    const formattedName =
+      info.family_name && info.given_name
+        ? `${info.family_name} ${info.given_name}`.trim()
+        : (info.name || info.given_name || email.split('@')[0]).trim();
+
     return {
       sub: info.sub || '',
       email,
-      fullName: (info.name || info.given_name || email.split('@')[0]).trim(),
+      fullName: formattedName,
+      givenName: (info.given_name || '').trim(),
+      familyName: (info.family_name || '').trim(),
       avatarUrl: info.picture || '',
     };
   }
@@ -1031,9 +1045,9 @@ const server = http.createServer((req, res) => {
           password: `google-oauth-${Date.now()}`,
           full_name: googleProfile.fullName,
           fullName: googleProfile.fullName,
-          academic_title: jsonBody?.academic_title || 'ThS.',
-          academicTitle: jsonBody?.academic_title || 'ThS.',
-          university: jsonBody?.university || 'Đại học Quốc gia',
+          academic_title: jsonBody?.academic_title ?? '',
+          academicTitle: jsonBody?.academic_title ?? '',
+          university: jsonBody?.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
           department: jsonBody?.department || 'Khoa Công nghệ Thông tin',
           role: requestedRole,
           roleLabel: roleLabels[requestedRole] || 'Giảng viên',
@@ -1144,6 +1158,28 @@ const server = http.createServer((req, res) => {
           created_at: new Date().toISOString(),
         })
       );
+      return;
+    }
+
+    // Auth Profile Update (Sync academic title & display name)
+    if (pathname === '/api/v1/auth/profile' && (req.method === 'PUT' || req.method === 'PATCH')) {
+      const targetEmail = String(jsonBody?.email || '').trim().toLowerCase();
+      const targetUser = targetEmail ? MOCK_USERS_DB.get(targetEmail) : null;
+      if (targetUser) {
+        if (typeof jsonBody.full_name === 'string' && jsonBody.full_name.trim()) {
+          targetUser.full_name = jsonBody.full_name.trim();
+          targetUser.fullName = targetUser.full_name;
+        }
+        if (typeof jsonBody.academic_title === 'string') {
+          targetUser.academic_title = jsonBody.academic_title.trim();
+          targetUser.academicTitle = targetUser.academic_title;
+        }
+        if (typeof jsonBody.department === 'string' && jsonBody.department.trim()) {
+          targetUser.department = jsonBody.department.trim();
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'success', user: targetUser || null }));
       return;
     }
 

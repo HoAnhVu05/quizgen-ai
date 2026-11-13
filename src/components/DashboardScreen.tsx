@@ -238,30 +238,30 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         ];
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+    <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
       {/* Clean Welcome Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#008689] bg-[#e6f4f4] px-2.5 py-1 rounded-md">
             <span>{roleHeaderConfig.badge}</span>
           </div>
-          <h2 className="text-xl font-bold text-slate-800 pt-1">{roleHeaderConfig.title}</h2>
-          <p className="text-sm text-slate-500 max-w-2xl">{roleHeaderConfig.subtitle}</p>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-800 pt-1">{roleHeaderConfig.title}</h2>
+          <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">{roleHeaderConfig.subtitle}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0">
           {role === 'lecturer' && (
             <>
               <button
                 onClick={() => onNavigate('upload')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-sm rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
               >
                 <FileText className="w-4 h-4" />
                 Nạp Giáo trình Mới
               </button>
               <button
                 onClick={() => onNavigate('generate')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
               >
                 <Sparkles className="w-4 h-4 text-[#008689]" />
                 Sinh Đề Thi AI
@@ -272,14 +272,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <>
               <button
                 onClick={() => onNavigate('review')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-sm rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
               >
                 <ShieldCheck className="w-4 h-4" />
                 Duyệt Đề thi Bộ môn ({pendingReviewCount})
               </button>
               <button
                 onClick={() => onNavigate('bank')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
               >
                 <Database className="w-4 h-4 text-[#008689]" />
                 Ngân hàng Đề Bộ môn
@@ -290,14 +290,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <>
               <button
                 onClick={() => onNavigate('review')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-sm rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
               >
                 <FileCheck2 className="w-4 h-4" />
                 Giám sát & Xuất bản OMR / QTI
               </button>
               <button
                 onClick={() => onNavigate('bank')}
-                className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm rounded-lg transition-colors"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
               >
                 <Database className="w-4 h-4 text-[#008689]" />
                 Kho Khảo thí Tập trung
@@ -308,7 +308,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       </div>
 
       {/* Role-Specific 4 KPI Stat Cards (AC-1.2) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {kpiCards.map((stat, idx) => {
           const Icon = stat.icon;
           return (
@@ -345,20 +345,20 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       </div>
 
       {/* Main Content Split: Quick Workflow Steps & Bloom Distribution */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Workflow Quick Navigation */}
-        <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+        <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-base font-bold text-slate-800">
+                <h3 className="text-sm sm:text-base font-bold text-slate-800">
                   {role === 'lecturer'
                     ? 'Quy trình Biên soạn Đề thi (4 bước)'
                     : role === 'head_of_department'
                     ? 'Quy trình Thẩm định & Khóa Đề thi Bộ môn'
                     : 'Quy trình Xuất bản Khảo thí & Đóng gói LMS'}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-slate-500 mt-0.5">
                   {role === 'lecturer'
                     ? 'Chọn nhanh tác vụ biên soạn và đối soát học thuật'
                     : role === 'head_of_department'
@@ -506,9 +506,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </div>
 
         {/* Bloom Cognitive Distribution */}
-        <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col justify-between">
           <div>
-            <h3 className="text-base font-bold text-slate-800">
+            <h3 className="text-sm sm:text-base font-bold text-slate-800">
               Phân bổ Thang đo Nhận thức Bloom
             </h3>
             <p className="text-xs text-slate-500 mt-0.5 mb-5">
