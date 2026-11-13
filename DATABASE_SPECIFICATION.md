@@ -2,7 +2,7 @@
 
 **Hệ thống:** QuizGen AI – Nền tảng Khảo thí & Khởi tạo Đề thi Tự động ứng dụng AI  
 
-**Phiên bản:** v2.4 Database Specification  
+**Phiên bản:** v2.6 Database Specification (Cập nhật [SCRUM-84]: Google OAuth 2.0, Persistent OTP Password Resets, Data Cleaning & Automated Restore Engine)  
 
 **Tài liệu:** Bản đặc tả chi tiết toàn bộ các Schema, Bảng, Khóa, Vector Store, Cache & Quy trình Dữ liệu
 
@@ -30,7 +30,11 @@
 
    - 3.4. Schema `ai` (Phân hệ Ma trận Bloom & Tác vụ Gọi LLM)
 
-   - 3.5. Schema `exams` (Phân hệ Ngân hàng Câu hỏi & Đóng gói Đề thi)
+   - 3.5. Schema `exams` (Phân hệ Ngân hàng Câu hỏi, Khảo thí & Đóng gói Đề thi)
+
+   - 3.6. [SCRUM-58] Cơ chế Khảo thí Thang đo Nhận thức Bloom & Thống kê Sư phạm
+
+   - 3.7. [SCRUM-52] Bộ Chỉ mục Tối ưu Hiệu năng & Kịch bản Rate Limiting 5 lượt/phút
 
 4. [Đặc tả Cơ sở Dữ liệu Vector (ChromaDB Vector Store Specification)](#4-đặc-tả-cơ-sở-dữ-liệu-vector-chromadb-vector-store-specification)
 
@@ -428,6 +432,12 @@ Chịu trách nhiệm lưu trữ danh tính giảng viên, học hàm, trường
 
 | `is_active` | `BOOLEAN` | **NOT NULL** | `TRUE` | Trạng thái tài khoản (bị khóa nếu là `FALSE`). |
 
+| `google_id` | `VARCHAR(100)` | **UNIQUE, NULLABLE** | `NULL` | [SCRUM-84] ID định danh người dùng từ Google OAuth 2.0 (`sub` claim). |
+
+| `avatar_url` | `TEXT` | `NULLABLE` | `NULL` | [SCRUM-84] Đường dẫn URL ảnh đại diện của người dùng. |
+
+| `auth_provider` | `VARCHAR(30)` | **NOT NULL** | `'local'` | [SCRUM-84] Phương thức xác thực: `'local'`, `'google'`.
+
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm khởi tạo tài khoản. |
 
 | `updated_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm cập nhật hồ sơ gần nhất. |
@@ -439,6 +449,16 @@ Chịu trách nhiệm lưu trữ danh tính giảng viên, học hàm, trường
   - `idx_users_email` (B-Tree trên `email`) $\rightarrow$ Tăng tốc độ xác thực khi Login.
 
   - `idx_users_university` (B-Tree trên `university`).
+
+  - `idx_users_role` (B-Tree trên `role`).
+
+  - `idx_users_status` (B-Tree trên `is_active`).
+
+  - `idx_users_google_id` (B-Tree trên `google_id`) [SCRUM-84] Tra cứu nhanh đăng nhập Google OAuth.
+
+  - `idx_users_auth_provider` (B-Tree trên `auth_provider`) [SCRUM-84] Phân loại nguồn xác thực.
+
+  - `idx_users_email_provider` (B-Tree composite trên `email, auth_provider`).
 
 
 
@@ -461,6 +481,42 @@ Chịu trách nhiệm lưu trữ danh tính giảng viên, học hàm, trường
 | `revoked` | `BOOLEAN` | **NOT NULL** | `FALSE` | Cờ thu hồi token (khi giảng viên bấm Đăng xuất). |
 
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm cấp phát token. |
+
+
+
+#### Bảng: `auth.password_reset_tokens` [SCRUM-84]
+
+Quản lý mã OTP 6 chữ số gửi qua Email SMTP (Gmail) cho quy trình Quên mật khẩu, hỗ trợ phòng chống tấn công brute-force và kiểm tra hết hạn thời gian thực (< 5ms).
+
+| Tên Cột | Kiểu Dữ liệu | Ràng buộc | Giá trị Mặc định | Mô tả & Ý nghĩa Nghiệp vụ |
+
+|---|---|---|---|---|
+
+| `id` | `VARCHAR(50)` | **PRIMARY KEY** | Tự sinh | Mã định danh duy nhất của phiên OTP (VD: `prt-001`). |
+
+| `email` | `VARCHAR(100)` | **NOT NULL** | Không | Email của người dùng yêu cầu khôi phục mật khẩu. |
+
+| `otp_code` | `VARCHAR(10)` | **NOT NULL** | Không | Chuỗi OTP gồm 6 chữ số ngẫu nhiên sinh ra từ hệ thống. |
+
+| `otp_hash` | `VARCHAR(255)` | `NULLABLE` | Không | Mã băm bảo mật SHA-256 của OTP (tùy chọn mở rộng). |
+
+| `expires_at` | `TIMESTAMPTZ` | **NOT NULL** | Không | Thời điểm hết hạn mã OTP (thời hạn tiêu chuẩn: 10 phút). |
+
+| `is_used` | `BOOLEAN` | **NOT NULL** | `FALSE` | Đánh dấu mã đã được tiêu thụ đổi mật khẩu thành công. |
+
+| `attempts_count` | `INT` | **NOT NULL** | `0` | Số lần thử nhập sai mã OTP để khóa phiên nếu vượt quá 5 lần. |
+
+| `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm khởi tạo và gửi email OTP. |
+
+
+
+- **Chỉ mục (Indexes):**
+
+  - `idx_pwd_resets_email` (B-Tree trên `email`) Tra cứu các phiên reset theo người dùng.
+
+  - `idx_pwd_resets_active` (B-Tree trên `email, is_used, expires_at`) Lọc mã OTP còn hiệu lực.
+
+  - `idx_pwd_resets_lookup` (B-Tree composite trên `email, otp_code, is_used, expires_at`) Xác thực 1-bước siêu tốc.
 
 
 
@@ -803,6 +859,118 @@ Lưu trữ kho câu hỏi trắc nghiệm đã sinh, trạng thái kiểm duyệ
 | `format` | `VARCHAR(20)` | **NOT NULL** | `'docx'` | Định dạng xuất: `'docx'` (Word), `'pdf'`, `'qti'` (Canvas/Moodle). |
 
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm đóng gói đề thi thành công. |
+
+
+
+#### Bảng: `exams.exam_variants` (Các Bản Hoán Vị Mã Đề)
+
+| Tên Cột | Kiểu Dữ liệu | Ràng buộc | Giá trị Mặc định | Mô tả & Ý nghĩa Nghiệp vụ |
+|---|---|---|---|---|
+| `id` | `VARCHAR(50)` | **PRIMARY KEY** | Tự sinh | Mã hoán vị đề (VD: `var-001-101`). |
+| `exam_id` | `VARCHAR(50)` | **FOREIGN KEY, NOT NULL** | Không | Trỏ đến `exams.exams(id)` (`ON DELETE CASCADE`). |
+| `exam_code` | `VARCHAR(10)` | **NOT NULL** | Không | Mã đề thi học thuật: `'101'`, `'102'`, `'103'`, `'104'`. |
+| `question_sequence` | `JSONB` | **NOT NULL** | Không | Thứ tự câu hỏi hoán vị kèm hoán vị các phương án ABCD. |
+| `answer_keys` | `JSONB` | **NOT NULL** | Không | Bảng đáp án đối chiếu nhanh cho máy quét chấm thi OMR / giảng viên. |
+| `file_path` | `VARCHAR(500)` | `NULLABLE` | Không | Đường dẫn lưu trữ file Word/PDF xuất bản của mã đề. |
+| `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm sinh mã đề. |
+
+
+
+#### Bảng: `exams.question_audit_logs` ([SCRUM-58] Nhật Ký Vết Khảo Thí & Chỉnh Sửa Câu Hỏi)
+
+Lưu trữ 100% vết chỉnh sửa của giảng viên (Audit Trail) phục vụ công tác thanh tra khảo thí, đối soát sư phạm và thẩm định đề thi.
+
+| Tên Cột | Kiểu Dữ liệu | Ràng buộc | Giá trị Mặc định | Mô tả & Ý nghĩa Nghiệp vụ |
+|---|---|---|---|---|
+| `id` | `VARCHAR(50)` | **PRIMARY KEY** | Tự sinh | Định danh vết khảo thí (`q-audit-...`). |
+| `question_id` | `VARCHAR(50)` | **FOREIGN KEY, NOT NULL** | Không | Trỏ đến `exams.questions(id)` (`ON DELETE CASCADE`). |
+| `lecturer_id` | `VARCHAR(50)` | **NOT NULL** | Không | Mã định danh giảng viên thực hiện hành động. |
+| `action` | `VARCHAR(50)` | **NOT NULL** | Không | Thao tác: `'inline_edit'`, `'approve'`, `'reject'`, `'status_change'`, `'regenerate'`, `'update_bloom'`. |
+| `previous_state` | `JSONB` | `NULLABLE` | Không | Snapshot toàn bộ nội dung câu hỏi trước khi chỉnh sửa. |
+| `new_state` | `JSONB` | `NULLABLE` | Không | Snapshot toàn bộ nội dung câu hỏi sau khi chỉnh sửa. |
+| `change_summary` | `TEXT` | `NULLABLE` | Không | Chuỗi tóm tắt thay đổi tự động (VD: *Giảng viên sửa nội dung câu hỏi, đổi đáp án đúng (A -> C)*). |
+| `field_changes` | `JSONB` | `NULLABLE` | Không | Chi tiết diff theo từng trường: `{"question": {"old": "..", "new": ".."}, "bloomLevel": {...}}`. |
+| `edit_reason` | `TEXT` | `NULLABLE` | Không | Căn cứ sư phạm / lý do điều chỉnh từ giảng viên hoặc Hội đồng khảo thí. |
+| `ip_address` | `VARCHAR(45)` | `NULLABLE` | Không | Địa chỉ IP của giảng viên khi thao tác (IPv4 hoặc IPv6). |
+| `user_agent` | `VARCHAR(255)` | `NULLABLE` | Không | Thông tin thiết bị và trình duyệt thực hiện thao tác. |
+| `performed_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm ghi nhận vết khảo thí. |
+
+
+
+#### Bảng: `exams.exam_audit_logs` ([SCRUM-52] Nhật Ký Vận Hành & Xuất Bản Đề Thi)
+
+| Tên Cột | Kiểu Dữ liệu | Ràng buộc | Giá trị Mặc định | Mô tả & Ý nghĩa Nghiệp vụ |
+|---|---|---|---|---|
+| `id` | `VARCHAR(50)` | **PRIMARY KEY** | Tự sinh | Định danh bản ghi (`ex-audit-...`). |
+| `exam_id` | `VARCHAR(50)` | **FOREIGN KEY, NOT NULL** | Không | Trỏ đến `exams.exams(id)` (`ON DELETE CASCADE`). |
+| `user_id` | `VARCHAR(50)` | **NOT NULL** | Không | Người thực hiện (giảng viên / phòng khảo thí). |
+| `action` | `VARCHAR(50)` | **NOT NULL** | Không | Thao tác: `'create'`, `'export_pdf'`, `'export_docx'`, `'export_qti'`, `'permute_codes'`, `'update_matrix'`. |
+| `details` | `JSONB` | `NULLABLE` | Không | Chi tiết gói xuất (số lượng câu, cấu hình hoán vị, phiếu OMR đính kèm). |
+| `ip_address` | `VARCHAR(45)` | `NULLABLE` | Không | IP client. |
+| `user_agent` | `VARCHAR(255)` | `NULLABLE` | Không | Trình duyệt / client. |
+| `performed_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm tác vụ diễn ra. |
+
+
+
+#### Các Bảng Học Thuật & Hoạt Động Bổ Sung
+
+- **`exams.subjects`**: Danh mục môn học / học phần (`id, code, name, credits, faculty_id, description`).
+- **`exams.learning_outcomes`**: Chuẩn đầu ra môn học CLO (`id, subject_id, code, description, bloom_target`).
+- **`exams.question_clos`**: Bảng liên kết câu hỏi với chuẩn đầu ra (`question_id, clo_id`).
+- **`exams.system_activities`**: Nhật ký hoạt động hiển thị dòng thời gian trên màn hình Dashboard (`id, user_id, action_type, title, detail, icon_name, badge_color`).
+
+
+
+---
+
+
+
+### 3.6. [SCRUM-58] CƠ CHẾ KHẢO THÍ THANG ĐO NHẬN THỨC BLOOM & THỐNG KÊ SƯ PHẠM
+
+Hệ thống QuizGen AI chuẩn hóa thang đo nhận thức Bloom theo 4 cấp độ khảo thí đại học:
+
+| Cấp độ Bloom | Tên tiếng Anh | Phân tầng Sư phạm | Tỷ lệ Mục tiêu Chuẩn (Blueprint) | Mô tả Năng lực Đánh giá |
+|---|---|---|---|---|
+| **Nhận biết** | Remember | Cơ bản (Basic) | **40%** | Nhắc lại định nghĩa, khái niệm, thuật ngữ cơ bản từ giáo trình. |
+| **Thông hiểu** | Understand | Cơ bản (Basic) | **30%** | Giải thích bản chất, phân biệt các hiện tượng, so sánh nguyên lý. |
+| **Vận dụng** | Apply | Nâng cao (Advanced) | **20%** | Áp dụng công thức, định lý vào giải quyết tình huống định lượng cụ thể. |
+| **Phân tích** | Analyze | Nâng cao (Advanced) | **10%** | Mổ xẻ tình huống phức tạp, chỉ ra nguyên nhân - hệ quả, đánh giá ma trận dữ liệu. |
+
+#### Công Thức Tính Toán & Đánh Giá Tự Động:
+1. **Tỷ lệ phần trăm từng mức:**  
+   $$\text{percentage}_i = \frac{count_i}{\sum count} \times 100\%$$
+2. **Phân tầng tổng hợp:**  
+   $$\text{Tỷ lệ Cơ bản} = \%(\text{Nhận biết}) + \%(\text{Thông hiểu})$$  
+   $$\text{Tỷ lệ Nâng cao} = \%(\text{Vận dụng}) + \%(\text{Phân tích})$$
+3. **Độ lệch chuẩn mực sư phạm (Deviation):**  
+   $$\Delta\%_i = \text{percentage}_i - \text{target}_i$$
+4. **Đánh giá cân bằng ma trận:**
+   - Nếu Tỷ lệ Nâng cao $> 35\%$: Gắn cờ *"Độ phân hóa cao (> 35% nâng cao)"*.
+   - Nếu Tỷ lệ Cơ bản $> 80\%$: Gắn cờ *"Thiên về nhận biết - thông hiểu, cần bổ sung câu hỏi tình huống"*.
+   - Khuyến nghị AI tự động phân tích và đưa ra đề xuất bổ sung câu hỏi theo đúng ma trận đề thi kết thúc học phần.
+
+
+
+---
+
+
+
+### 3.7. [SCRUM-52] BỘ CHỈ MỤC TỐI ƯU HIỆU NĂNG & KỊCH BẢN RATE LIMITING 5 LƯỢT/PHÚT
+
+Để đảm bảo SLA phản hồi truy vấn dưới 100ms trên cơ sở dữ liệu hàng triệu bản ghi và ngăn chặn quá tải hạ tầng LLM:
+
+#### 1. Bộ Chỉ Mục Composite Tối Ưu Phân Bổ (Question Allocation Indexes):
+- `idx_questions_bloom_status_composite` trên `exams.questions(status, bloom_level)`: Tối ưu đếm tỷ lệ Bloom theo trạng thái duyệt.
+- `idx_questions_allocation_matrix` trên `exams.questions(document_id, chapter, bloom_level, status)`: Tối ưu bộ lọc chọn câu hỏi đa chiều.
+- `idx_questions_approved_pool` (Partial Index) trên `exams.questions(document_id, bloom_level) WHERE status = 'approved'`: Chỉ mục siêu nhẹ chỉ đánh trên các câu hỏi đã duyệt, tăng tốc độ bốc đề thi lên gấp 5 lần.
+- `idx_exam_audit_logs_action` trên `exams.exam_audit_logs(action, exam_id, user_id)`: Tối ưu lọc nhật ký xuất bản đề thi.
+- `idx_question_audit_qid_time` trên `exams.question_audit_logs(question_id, performed_at DESC)`: Hiển thị dòng thời gian lịch sử sửa đổi câu hỏi tức thì.
+
+#### 2. Kịch Bản Stress-Test Rate Limiting 5 lượt/phút (Redis / In-Memory Fallback):
+- **Khóa Redis:** `ratelimit:ai:generate:{user_id}` (TTL: 60 giây).
+- **Hạn mức nghiêm ngặt:** Đúng 5 yêu cầu sinh câu hỏi / phút cho mỗi tài khoản giảng viên.
+- **Phản hồi khi vượt ngưỡng:** Mã trạng thái `HTTP 429 Too Many Requests` với thông báo tiếng Việt rõ ràng, độ trễ từ chối $< 0.01\text{ ms}$ giúp bảo vệ 100% CPU và tài nguyên API LLM.
+- **Tính độc lập:** Hạn mức của Giảng viên A hoàn toàn biệt lập với Giảng viên B, tự động reset ngay khi hết cửa sổ 60s.
 
 
 

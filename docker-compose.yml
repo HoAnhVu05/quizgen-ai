@@ -162,7 +162,9 @@ services:
       - ./database/migrations/06_comprehensive_academic_extensions.sql:/docker-entrypoint-initdb.d/06_extensions.sql
       - ./database/migrations/07_exam_audit_and_distribution_indexes.sql:/docker-entrypoint-initdb.d/07_exam_audit_and_indexes.sql
       - ./database/migrations/08_[SCRUM-58]_question_audit_logs_and_bloom_stats.sql:/docker-entrypoint-initdb.d/08_scrum_58_audit_bloom.sql
-      - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/09_seed.sql
+      - ./database/migrations/09_[SCRUM-62]_comprehensive_b_tree_indexes.sql:/docker-entrypoint-initdb.d/09_scrum_62_indexes.sql
+      - ./database/migrations/10_[SCRUM-84]_auth_oauth_and_password_resets.sql:/docker-entrypoint-initdb.d/10_scrum_84_auth.sql
+      - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/11_seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quizgen -d quizgen_db"]
       interval: 5s
