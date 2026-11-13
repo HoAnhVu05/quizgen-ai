@@ -104,6 +104,12 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   const [facultyName, setFacultyName] = useState<string>(
     currentUser?.faculty || currentUser?.department || 'KHOA CÔNG NGHỆ THÔNG TIN'
   );
+  const [subjectName, setSubjectName] = useState<string>(() => {
+    if (questions.length > 0 && questions[0]?.textbookName) {
+      return questions[0].textbookName.replace(/\.[^/.]+$/, '');
+    }
+    return 'Kinh tế học Vi mô';
+  });
   const [examDuration, setExamDuration] = useState<number>(60);
   const [activeExamCode, setActiveExamCode] = useState<'101' | '102' | '103' | '104'>('101');
   const [shuffleCounter, setShuffleCounter] = useState<number>(1);
@@ -116,6 +122,12 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       setFacultyName(currentUser.faculty || currentUser.department || '');
     }
   }, [currentUser]);
+
+  React.useEffect(() => {
+    if (selectedSubject !== 'all') {
+      setSubjectName(selectedSubject.replace(/\.[^/.]+$/, ''));
+    }
+  }, [selectedSubject]);
 
   const bankPool = questions.filter((q) => q.status !== 'rejected');
   const effectivePool = bankPool.length > 0 ? bankPool : questions;
@@ -223,7 +235,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       `${universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'}`,
       `${facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}`,
       `${examTitle} — MÃ ĐỀ ${activeExamCode}`,
-      `Học phần: ${selectedSubject === 'all' ? targetExamQuestions[0]?.textbookName || 'Kinh tế học Vi mô' : selectedSubject}`,
+      `Học phần: ${subjectName || (selectedSubject === 'all' ? targetExamQuestions[0]?.textbookName || 'Kinh tế học Vi mô' : selectedSubject)}`,
       `Thời gian làm bài: ${examDuration} phút`,
       `Giảng viên ra đề: ${currentUser?.fullName || 'TS. Nguyễn Văn An'}`,
       '============================================================',
@@ -251,6 +263,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       `QUIZGEN AI — BẢNG ĐÁP ÁN CHẤM THI & GIẢI THÍCH CHI TIẾT (4 MÃ ĐỀ 101, 102, 103, 104)`,
       `Đơn vị: ${universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'} — ${facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}`,
       `Kỳ thi: ${examTitle}`,
+      `Học phần: ${subjectName || (selectedSubject === 'all' ? targetExamQuestions[0]?.textbookName || 'Kinh tế học Vi mô' : selectedSubject)}`,
       `Giảng viên: ${currentUser?.academicTitle || ''} ${currentUser?.fullName || 'Giảng viên'}`,
       `Ngày xuất: ${new Date().toLocaleString('vi-VN')}`,
       '========================================================================',
@@ -302,15 +315,15 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           facultyName,
           university: universityName,
           faculty: facultyName,
+          subjectName: subjectName || 'Kinh tế học Vi mô',
+          subject: subjectName || 'Kinh tế học Vi mô',
           config: {
             universityName,
             facultyName,
             university: universityName,
             faculty: facultyName,
-            subjectName:
-              selectedSubject === 'all'
-                ? targetExamQuestions[0]?.textbookName || 'Kinh tế học Vi mô'
-                : selectedSubject,
+            subjectName: subjectName || 'Kinh tế học Vi mô',
+            subject: subjectName || 'Kinh tế học Vi mô',
             examTitle,
             durationMinutes: examDuration,
             examCodeCount: 4,
@@ -427,7 +440,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
         {/* Exam Metadata Config + Mode Switcher */}
         <div className="space-y-3 pt-1 border-t border-slate-100">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
             {/* Input Điền Tên Trường */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
@@ -456,6 +469,38 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 placeholder="VD: KHOA CÔNG NGHỆ THÔNG TIN"
                 className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
               />
+            </div>
+
+            {/* Input Chọn / Chỉnh sửa Tên Học Phần */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
+                  Tên học phần / Môn thi:
+                </span>
+                {subjects.length > 0 && (
+                  <span className="text-[10px] text-slate-400 font-normal">
+                    (chọn / sửa)
+                  </span>
+                )}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  list="exam-subject-datalist"
+                  value={subjectName}
+                  onChange={(e) => setSubjectName(e.target.value)}
+                  placeholder="VD: Kinh tế vi mô / Kỹ thuật lập trình"
+                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+                />
+                <datalist id="exam-subject-datalist">
+                  {subjects.map((s) => (
+                    <option key={s} value={s.replace(/\.[^/.]+$/, '')}>
+                      {s.replace(/\.[^/.]+$/, '')}
+                    </option>
+                  ))}
+                </datalist>
+              </div>
             </div>
 
             {/* Input Tiêu đề kỳ thi */}
@@ -588,12 +633,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                 </div>
                 <div className="space-y-0.5">
                   <p className="text-xs font-extrabold uppercase text-slate-900">{examTitle}</p>
-                  <p className="text-[11px] font-semibold text-slate-600">
+                  <p className="text-[11px] font-semibold text-slate-700">
                     Học phần:{' '}
-                    {selectedSubject === 'all'
-                      ? targetExamQuestions[0]?.textbookName.replace(/\.[^/.]+$/, '') ||
-                        'Kinh tế học Vi mô'
-                      : selectedSubject}
+                    <span className="font-bold text-slate-900">
+                      {subjectName || 'Kinh tế học Vi mô'}
+                    </span>
                   </p>
                   <p className="text-[11px] text-slate-600">
                     Thời gian làm bài: <strong>{examDuration} phút</strong> (Không kể thời gian phát đề)
