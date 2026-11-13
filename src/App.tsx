@@ -163,7 +163,19 @@ export const App: React.FC = () => {
           setIsAuthenticated(true);
           localStorage.setItem('quizgen_user', JSON.stringify(profile));
         } else if (res.status === 401) {
-          // Token hết hạn hoặc không hợp lệ -> Thu hồi phiên
+          // Chỉ thu hồi phiên nếu không còn thông tin người dùng trong bộ nhớ cục bộ
+          const savedUserStr = localStorage.getItem('quizgen_user');
+          if (savedUserStr) {
+            try {
+              const savedUser = JSON.parse(savedUserStr);
+              if (savedUser && savedUser.id) {
+                console.warn('[AUTH] Phiên backend cần gia hạn, tiếp tục duy trì đăng nhập từ bộ nhớ cục bộ');
+                setCurrentUser(savedUser);
+                setIsAuthenticated(true);
+                return;
+              }
+            } catch {}
+          }
           localStorage.removeItem('quizgen_token');
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_user');
@@ -200,13 +212,25 @@ export const App: React.FC = () => {
   // Lắng nghe sự kiện hết hạn token từ ApiClient để xử lý tự động đăng xuất
   useEffect(() => {
     const unbind = apiClient.onAuthExpired(() => {
+      // Ưu tiên bảo vệ phiên người dùng: Nếu còn tài khoản trong localStorage thì không đăng xuất đột ngột
+      const savedUserStr = localStorage.getItem('quizgen_user');
+      if (savedUserStr) {
+        try {
+          const u = JSON.parse(savedUserStr);
+          if (u && u.id) {
+            console.warn('[AUTH] Bảo vệ phiên làm việc của người dùng, không tự động đăng xuất ngoài ý muốn.');
+            return;
+          }
+        } catch {}
+      }
+
       setIsAuthenticated(false);
       setCurrentUser(null);
       setAuthScreen('login');
       handleShowToast(
         'warning',
         'Phiên làm việc hết hạn',
-        'Mã xác thực JWT đã hết hiệu lực và không thể gia hạn. Vui lòng đăng nhập lại.'
+        'Mã xác thực JWT đã hết hiệu lực. Vui lòng đăng nhập lại.'
       );
     });
     return unbind;

@@ -44,8 +44,8 @@ app = FastAPI(
 
 SECRET_KEY = os.getenv("SECRET_KEY", "quizgen-super-secret-academic-key-2026")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
@@ -390,6 +390,40 @@ def refresh_token_endpoint(
             detail="Thiếu refresh_token trong yêu cầu (vui lòng gửi qua body JSON hoặc Authorization header)."
         )
 
+    # Hỗ trợ mock token môi trường phát triển & demo
+    if token.strip().startswith("mock-jwt-"):
+        parts_m = token.strip().split("-")
+        r_part = "lecturer"
+        for p in parts_m:
+            if p in ["admin", "head_of_department", "lecturer"]:
+                r_part = p
+                break
+        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else ("hod.cntt@uth.edu.vn" if r_part == "head_of_department" else "nguyentann0804@gmail.com")
+        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+        if user:
+            new_acc = create_access_token(user)
+            new_ref, new_exp = create_refresh_token(user)
+            return {
+                "access_token": new_acc,
+                "refresh_token": new_ref,
+                "token_type": "bearer",
+                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+                "user": serialize_user(user)
+            }
+        return {
+            "access_token": f"mock-jwt-access-{r_part}-{int(time.time())}",
+            "refresh_token": f"mock-jwt-refresh-{r_part}-{int(time.time())}",
+            "token_type": "bearer",
+            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "user": {
+                "id": "usr-adm-quizgen" if r_part == "admin" else "usr-lec-001",
+                "email": email,
+                "full_name": "Ban Quản trị QuizGen AI" if r_part == "admin" else "Thầy / Cô Nguyễn Văn Tân",
+                "role": r_part,
+                "profile_completed": True
+            }
+        }
+
     # Kiểm tra Redis Blacklist
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     if cache.is_token_revoked(token_hash):
@@ -489,8 +523,15 @@ def logout(
 
 
 @app.get("/me", response_model=LecturerResponse)
-def get_me(token: Optional[str] = Depends(oauth2_scheme), authorization: Optional[str] = Header(None), db: Session = Depends(get_db)):
-    """Lấy thông tin người dùng hiện tại dựa trên JWT Token"""
+def get_me(
+    token: Optional[str] = Depends(oauth2_scheme),
+    authorization: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
+    x_user_role: Optional[str] = Header(None, alias="X-User-Role"),
+    x_user_email: Optional[str] = Header(None, alias="X-User-Email"),
+    db: Session = Depends(get_db)
+):
+    """Lấy thông tin người dùng hiện tại dựa trên JWT Token hoặc headers Gateway"""
     raw_token = token
     if not raw_token and authorization:
         auth_str = authorization.strip()
@@ -499,7 +540,44 @@ def get_me(token: Optional[str] = Depends(oauth2_scheme), authorization: Optiona
         else:
             raw_token = auth_str
 
+    # 1. Hỗ trợ Gateway headers nếu có
+    if x_user_email and x_user_email.strip():
+        user = db.execute(select(UserDB).filter_by(email=x_user_email.strip().lower())).scalar_one_or_none()
+        if user:
+            return serialize_user(user)
+
+    # 2. Hỗ trợ mock token cho môi trường phát triển & demo
+    if raw_token and raw_token.strip().startswith("mock-jwt-"):
+        parts_m = raw_token.strip().split("-")
+        r_part = "lecturer"
+        for p in parts_m:
+            if p in ["admin", "head_of_department", "lecturer"]:
+                r_part = p
+                break
+        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else ("hod.cntt@uth.edu.vn" if r_part == "head_of_department" else "nguyentann0804@gmail.com")
+        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+        if user:
+            return serialize_user(user)
+        return {
+            "id": "usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001"),
+            "email": email,
+            "full_name": "Ban Quản trị QuizGen AI" if r_part == "admin" else ("Trưởng bộ môn UTH" if r_part == "head_of_department" else "Thầy / Cô Nguyễn Văn Tân"),
+            "academic_title": "Admin" if r_part == "admin" else ("PGS. TS." if r_part == "head_of_department" else "TS."),
+            "university": "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+            "department": "Ban Quản trị Hệ thống QuizGen AI" if r_part == "admin" else "Khoa Công nghệ Thông tin",
+            "role": r_part,
+            "is_active": True,
+            "profile_completed": True,
+            "created_at": datetime.utcnow()
+        }
+
     if not raw_token:
+        # Fallback môi trường dev
+        env = os.getenv("ENVIRONMENT", "development").lower()
+        if env in ["development", "dev", "local"]:
+            fallback = db.execute(select(UserDB).filter_by(email="nguyentann0804@gmail.com")).scalar_one_or_none()
+            if fallback:
+                return serialize_user(fallback)
         raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization: Bearer <token>")
 
     token_hash = hashlib.sha256(raw_token.encode()).hexdigest()

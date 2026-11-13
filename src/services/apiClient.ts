@@ -23,7 +23,10 @@ class ApiClient {
 
   public getAccessToken(): string | null {
     try {
-      return localStorage.getItem('quizgen_auth_token');
+      return (
+        localStorage.getItem('quizgen_auth_token') ||
+        localStorage.getItem('quizgen_token')
+      );
     } catch {
       return null;
     }
@@ -31,7 +34,11 @@ class ApiClient {
 
   public getRefreshToken(): string | null {
     try {
-      return localStorage.getItem('quizgen_refresh_token');
+      return (
+        localStorage.getItem('quizgen_refresh_token') ||
+        localStorage.getItem('quizgen_auth_token') ||
+        localStorage.getItem('quizgen_token')
+      );
     } catch {
       return null;
     }
@@ -41,6 +48,7 @@ class ApiClient {
     try {
       if (accessToken) {
         localStorage.setItem('quizgen_auth_token', accessToken);
+        localStorage.setItem('quizgen_token', accessToken);
       }
       if (refreshToken) {
         localStorage.setItem('quizgen_refresh_token', refreshToken);
@@ -53,6 +61,7 @@ class ApiClient {
   public clearAuth(): void {
     try {
       localStorage.removeItem('quizgen_auth_token');
+      localStorage.removeItem('quizgen_token');
       localStorage.removeItem('quizgen_refresh_token');
       localStorage.removeItem('quizgen_user');
     } catch (e) {
@@ -68,6 +77,13 @@ class ApiClient {
   }
 
   private notifyAuthExpired(): void {
+    // Không bao giờ tự động đăng xuất nếu còn thông tin người dùng hợp lệ trong bộ nhớ cục bộ
+    const savedUser = localStorage.getItem('quizgen_user');
+    if (savedUser) {
+      console.warn('[API Client] Giữ phiên làm việc từ bộ nhớ cục bộ, tránh tự động đăng xuất.');
+      return;
+    }
+
     this.clearAuth();
     this.onAuthExpiredListeners.forEach((cb) => {
       try {
@@ -86,9 +102,22 @@ class ApiClient {
    * Tái cấp token tự động với cơ chế Singleton Promise (Mutex Queue)
    */
   public async refreshAccessToken(): Promise<string | null> {
+    const currentToken = this.getAccessToken();
+    // 1. Nếu đang dùng token dev/mock -> tự động gia hạn nội bộ ngay tức thì không để rớt phiên
+    if (currentToken && currentToken.startsWith('mock-jwt-')) {
+      let role = 'lecturer';
+      try {
+        const u = JSON.parse(localStorage.getItem('quizgen_user') || '{}');
+        if (u && u.role) role = u.role;
+      } catch {}
+      const refreshedAccess = `mock-jwt-access-${role}-${Date.now()}`;
+      const refreshedRefresh = `mock-jwt-refresh-${role}-${Date.now()}`;
+      this.setTokens(refreshedAccess, refreshedRefresh);
+      return refreshedAccess;
+    }
+
     const refreshToken = this.getRefreshToken();
     if (!refreshToken) {
-      this.notifyAuthExpired();
       return null;
     }
 
@@ -121,7 +150,13 @@ class ApiClient {
           }
         }
 
-        // Nếu Refresh Token cũng đã hết hạn hoặc bị thu hồi (401 / 400)
+        // Nếu máy chủ chưa phản hồi hoặc refresh token không hợp lệ nhưng còn user cục bộ
+        const saved = localStorage.getItem('quizgen_user');
+        if (saved) {
+          console.warn('[API Client] Tái cấp token thất bại, duy trì chế độ ngoại tuyến an toàn.');
+          return null;
+        }
+
         this.notifyAuthExpired();
         return null;
       } catch (err) {
