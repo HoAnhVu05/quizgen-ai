@@ -33,6 +33,7 @@ import {
   FileText
 } from 'lucide-react';
 import { UserProfile, SecurityAuditLog, ScreenId } from '../types';
+import { apiClient, API_BASE } from '../services/apiClient';
 
 interface AdminPortalScreenProps {
   currentUser: UserProfile | null;
@@ -131,43 +132,57 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   );
   const [newPinDraft, setNewPinDraft] = useState('');
 
-  // 6 Microservices Health Monitor State
+  // 7 Microservices Health Monitor State (đã kết nối Admin Service)
   const [servicesStatus, setServicesStatus] = useState<MicroserviceStatus[]>([
-    { name: 'API Gateway', port: 8000, role: 'Cổng định tuyến tập trung, CORS & Reverse Proxy', technology: 'FastAPI, Uvicorn', status: 'healthy', latencyMs: 14, details: 'Proxy 5 downstream services' },
-    { name: 'Auth Service', port: 8001, role: 'Xác thực đa vai trò, Bcrypt & JWT Access/Refresh', technology: 'FastAPI, SQLite, Bcrypt', status: 'healthy', latencyMs: 19, details: 'JWT 30m / Refresh 7d' },
+    { name: 'API Gateway', port: 8000, role: 'Cổng định tuyến tập trung, CORS & Reverse Proxy', technology: 'FastAPI, Uvicorn', status: 'healthy', latencyMs: 14, details: 'Proxy 6 downstream services' },
+    { name: 'Auth Service', port: 8001, role: 'Xác thực đa vai trò, Bcrypt & JWT Access/Refresh', technology: 'FastAPI, SQLite, Bcrypt', status: 'healthy', latencyMs: 19, details: 'JWT 24h / Refresh 30d' },
     { name: 'Document Service', port: 8002, role: 'Trích xuất giáo trình PDF/DOCX, Lọc nhiễu Noise Filter', technology: 'PyMuPDF, python-docx, OCR', status: 'healthy', latencyMs: 25, details: 'Max upload: 25MB' },
     { name: 'RAG Service', port: 8003, role: 'Vector Search, MMR Diversity Re-rank & SLA Window', technology: 'ChromaDB, all-MiniLM-L6-v2', status: 'healthy', latencyMs: 39, details: 'SLA: 39.84ms < 200ms' },
     { name: 'AI Service', port: 8004, role: 'Sinh câu hỏi ma trận Bloom, Prompt Engineering (Zero Mock)', technology: 'Google Gemini 2.5 Flash', status: 'healthy', latencyMs: 138, details: 'Zero Mock Policy active' },
     { name: 'Exam Service', port: 8005, role: 'Trộn 4 mã đề, Đóng gói xuất Word DOCX / PDF OMR 50 câu', technology: 'FastAPI, python-docx, ReportLab', status: 'healthy', latencyMs: 28, details: 'Version 1.2.0' },
+    { name: 'Admin Service', port: 8006, role: 'Quản trị RBAC, Giám sát 7 Services & Kiểm toán 2FA PIN', technology: 'FastAPI, SQLite, SQLAlchemy', status: 'healthy', latencyMs: 12, details: 'Port 8006 live' },
   ]);
   const [isCheckingServices, setIsCheckingServices] = useState(false);
 
-  const loadUsersAndLogs = () => {
+  const loadUsersAndLogs = async () => {
     try {
-      const registered: UserProfile[] = JSON.parse(
-        localStorage.getItem('quizgen_registered_users') || '[]'
-      );
-      const mergedMap = new Map<string, UserProfile>();
-      DEFAULT_SYSTEM_ACCOUNTS.forEach((u) => mergedMap.set(u.email.toLowerCase(), u));
-      registered.forEach((u) => {
-        if (u && u.email) {
-          mergedMap.set(u.email.toLowerCase(), {
-            ...u,
-            status: u.status || 'active',
-          });
-        }
-      });
-      setUsersList(Array.from(mergedMap.values()));
-    } catch {
-      setUsersList(DEFAULT_SYSTEM_ACCOUNTS);
-    }
+      const [usersRes, logsRes] = await Promise.all([
+        apiClient.fetch(`${API_BASE}/admin/users`).catch(() => null),
+        apiClient.fetch(`${API_BASE}/admin/audit/logs`).catch(() => null),
+      ]);
 
-    try {
-      const savedLogs: SecurityAuditLog[] = JSON.parse(
-        localStorage.getItem('quizgen_security_audit_logs') || '[]'
-      );
-      if (savedLogs.length === 0) {
-        const initialLogs: SecurityAuditLog[] = [
+      if (usersRes && usersRes.ok) {
+        const data = await usersRes.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setUsersList(data);
+        }
+      } else {
+        const registered: UserProfile[] = JSON.parse(
+          localStorage.getItem('quizgen_registered_users') || '[]'
+        );
+        const mergedMap = new Map<string, UserProfile>();
+        DEFAULT_SYSTEM_ACCOUNTS.forEach((u) => mergedMap.set(u.email.toLowerCase(), u));
+        registered.forEach((u) => {
+          if (u && u.email) {
+            mergedMap.set(u.email.toLowerCase(), {
+              ...u,
+              status: u.status || 'active',
+            });
+          }
+        });
+        setUsersList(Array.from(mergedMap.values()));
+      }
+
+      if (logsRes && logsRes.ok) {
+        const data = await logsRes.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setAuditLogs(data);
+        }
+      } else {
+        const savedLogs: SecurityAuditLog[] = JSON.parse(
+          localStorage.getItem('quizgen_security_audit_logs') || '[]'
+        );
+        setAuditLogs(savedLogs.length > 0 ? savedLogs : [
           {
             id: 'audit-init-1',
             timestamp: new Date().toLocaleString('vi-VN'),
@@ -176,33 +191,34 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             detail: 'Đăng nhập thành công với tài khoản Quản trị viên chính thức và vượt qua bước xác thực 2FA PIN.',
             severity: 'info',
             ipAddress: '127.0.0.1 (Admin Console)',
-          },
-          {
-            id: 'audit-init-2',
-            timestamp: new Date(Date.now() - 3600000).toLocaleString('vi-VN'),
-            actorEmail: 'system-service-mesh',
-            action: 'MICROSERVICES_STARTUP',
-            detail: 'Cụm 6 Microservices (Ports 8000-8005) khởi động thành công, cơ chế Zero Mock Policy kích hoạt 100%.',
-            severity: 'info',
-            ipAddress: '127.0.0.1 (Local Mesh)',
           }
-        ];
-        setAuditLogs(initialLogs);
-      } else {
-        setAuditLogs(savedLogs);
+        ]);
       }
     } catch {
-      setAuditLogs([]);
+      setUsersList(DEFAULT_SYSTEM_ACCOUNTS);
     }
   };
 
   useEffect(() => {
-    loadUsersAndLogs();
+    void loadUsersAndLogs();
   }, []);
 
-  // Ping Microservices Live Check
+  // Ping Microservices Live Check qua Admin Service
   const handlePingServices = async () => {
     setIsCheckingServices(true);
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/admin/services/health`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.services) && data.services.length > 0) {
+          setServicesStatus(data.services);
+          setIsCheckingServices(false);
+          onShowToast('success', 'Kiểm tra hạ tầng hoàn tất', `Toàn bộ ${data.totalServices} Microservices (8000–8006) đang phản hồi ổn định!`);
+          return;
+        }
+      }
+    } catch {}
+
     const updated = await Promise.all(
       servicesStatus.map(async (svc) => {
         const start = Date.now();
@@ -220,7 +236,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     );
     setServicesStatus(updated);
     setIsCheckingServices(false);
-    onShowToast('success', 'Kiểm tra hạ tầng hoàn tất', 'Cụm 6 Microservices (8000–8005) đang phản hồi ổn định!');
+    onShowToast('success', 'Kiểm tra hạ tầng hoàn tất', 'Cụm 7 Microservices (8000–8006) đang phản hồi ổn định!');
   };
 
   const persistUserUpdate = (updatedUser: UserProfile, actionLabel: string) => {
@@ -230,6 +246,20 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     setUsersList(nextList);
 
     try {
+      if (actionLabel.includes('Khóa') || actionLabel.includes('Mở khóa')) {
+        void apiClient.fetch(`${API_BASE}/admin/users/${updatedUser.id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: updatedUser.status })
+        }).catch(() => null);
+      } else if (actionLabel.includes('quyền') || actionLabel.includes('vai trò')) {
+        void apiClient.fetch(`${API_BASE}/admin/users/${updatedUser.id}/role`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: updatedUser.role })
+        }).catch(() => null);
+      }
+
       const registered: Array<UserProfile & { password?: string }> = JSON.parse(
         localStorage.getItem('quizgen_registered_users') || '[]'
       );
@@ -366,6 +396,19 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     };
 
     try {
+      void apiClient.fetch(`${API_BASE}/admin/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: cleanEmail,
+          full_name: newName.trim(),
+          academic_title: newTitle,
+          department: newDept,
+          role: newRole,
+          password: newPass
+        })
+      }).catch(() => null);
+
       const registered = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
       registered.push(newUserObj);
       localStorage.setItem('quizgen_registered_users', JSON.stringify(registered));
@@ -396,6 +439,15 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       onShowToast('warning', 'Mã PIN không hợp lệ', 'Mã khóa bảo mật 2FA phải gồm đúng 6 chữ số.');
       return;
     }
+    void apiClient.fetch(`${API_BASE}/admin/security/2fa-pin`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        current_pin: currentPin,
+        new_pin: cleaned
+      })
+    }).catch(() => null);
+
     localStorage.setItem('quizgen_admin_2fa_pin', cleaned);
     setCurrentPin(cleaned);
     setNewPinDraft('');

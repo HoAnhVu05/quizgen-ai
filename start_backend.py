@@ -52,6 +52,11 @@ SERVICES = [
         "port": 8005
     },
     {
+        "name": "admin-service",
+        "cwd": os.path.abspath(os.path.join(os.path.dirname(__file__), "services", "admin-service")),
+        "port": 8006
+    },
+    {
         "name": "api-gateway",
         "cwd": os.path.abspath(os.path.join(os.path.dirname(__file__), "api-gateway")),
         "port": 8000

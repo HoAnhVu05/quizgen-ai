@@ -120,7 +120,8 @@ def health_check():
             "document-service",
             "rag-service",
             "ai-service",
-            "exam-service"
+            "exam-service",
+            "admin-service"
         ]
     }
 
@@ -184,3 +185,9 @@ async def activities_proxy(request: Request, path: str = ""):
 async def audit_logs_proxy(request: Request, path: str = ""):
     target = f"/audit-logs/{path}".rstrip("/") if not path else f"/audit-logs/{path}"
     return await proxy_request(settings.EXAM_SERVICE_URL, target or "/audit-logs", request)
+
+@app.api_route("/api/v1/admin", methods=METHODS)
+@app.api_route("/api/v1/admin/{path:path}", methods=METHODS)
+async def admin_proxy(request: Request, path: str = ""):
+    target = f"/{path}".rstrip("/") if not path else f"/{path}"
+    return await proxy_request(settings.ADMIN_SERVICE_URL, target or "/overview", request)
