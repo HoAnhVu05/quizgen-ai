@@ -5,6 +5,8 @@ import {
   FileSpreadsheet,
   Archive,
   CheckCircle2,
+  Check,
+  ChevronRight,
   BookOpen,
   FileText,
   ChevronDown,
@@ -49,6 +51,7 @@ interface QuestionBankScreenProps {
     message: string
   ) => void;
   currentUser?: UserProfile | null;
+  onNavigate?: (screen: any) => void;
 }
 
 const BLOOM_ORDER: BloomLevel[] = ['Nhận biết', 'Thông hiểu', 'Vận dụng', 'Phân tích'];
@@ -105,6 +108,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   questions,
   onShowToast,
   currentUser,
+  onNavigate,
 }) => {
   const [viewMode, setViewMode] = useState<'preview_paper' | 'question_list' | 'answer_key'>(
     'preview_paper'
@@ -675,214 +679,216 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-5">
-      {/* Top Studio Header & 4-Format Direct Output Bar for Lecturer */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-100 pb-4">
-          <div>
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-md border border-purple-200 shadow-2xs">
-              <CheckCircle2 className="w-3.5 h-3.5 text-purple-600" />
-              Bước 4/4 • Đóng Gói & Xuất Bản Đề Thi (Purple)
-            </span>
-            <h2 className="text-lg font-bold text-slate-800 mt-1">
-              Phòng Đóng Gói Tờ Đề Thi A4, Trộn Mã Đề & Kết Xuất Đa Định Dạng
-            </h2>
-            <p className="text-xs text-slate-500">
-              Xem trước trực tiếp tờ đề thi chuẩn A4 kèm phiếu tô OMR, tự động trộn từ 1 đến 8 mã đề và tải ngay file Word, PDF, Bảng đáp án chấm thi hoặc gói LMS.
-            </p>
-          </div>
-
-          {/* 4 Immediate Output Buttons for the Teacher + Saved Exams Selector */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              onClick={() => setIsExamHistoryOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 font-bold text-xs rounded-lg transition-colors shadow-2xs"
-              title="Xem và chọn các đề thi đã lưu / đã sinh trước đó để in"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-[#008689]" />
-              Kho Đề Đã Sinh ({savedExams.length})
-            </button>
-
-            <button
-              onClick={() => handleExport('docx')}
-              disabled={isExporting !== null || targetExamQuestions.length === 0}
-              title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để xuất đề thi' : undefined}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isExporting === 'docx' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Download className="w-3.5 h-3.5" />
-              )}
-              1. Tải Đề Word (.docx)
-            </button>
-
-            <button
-              onClick={() => handleExport('pdf')}
-              disabled={isExporting !== null || targetExamQuestions.length === 0}
-              title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để xuất đề thi' : undefined}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isExporting === 'pdf' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-              )}
-              2. Tải Đề PDF + Phiếu OMR
-            </button>
-
-            <button
-              onClick={handleDownloadAnswerKey}
-              disabled={targetExamQuestions.length === 0}
-              title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để tải đáp án' : undefined}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-              3. Tải Bảng Đáp Án ({availableCodes.length} Mã đề)
-            </button>
-
-            <button
-              onClick={() => handleExport('qti')}
-              disabled={isExporting !== null || targetExamQuestions.length === 0}
-              title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để xuất gói LMS' : undefined}
-              className="flex items-center gap-1.5 px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isExporting === 'qti' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Archive className="w-3.5 h-3.5" />
-              )}
-              4. Xuất Gói LMS QTI (.zip)
-            </button>
-          </div>
-        </div>
-
-        {/* Exam Metadata Config + Mode Switcher */}
-        <div className="space-y-3 pt-1 border-t border-slate-100">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
-            {/* Input Điền Tên Trường */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                <GraduationCap className="w-3.5 h-3.5 text-[#008689]" />
-                Tên trường / Học viện:
-              </label>
-              <input
-                type="text"
-                value={universityName}
-                onChange={(e) => setUniversityName(e.target.value)}
-                placeholder="VD: TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)"
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
-              />
-            </div>
-
-            {/* Input Điền Tên Khoa / Viện */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-[#008689]" />
-                Tên Khoa / Viện:
-              </label>
-              <input
-                type="text"
-                value={facultyName}
-                onChange={(e) => setFacultyName(e.target.value)}
-                placeholder="VD: KHOA CÔNG NGHỆ THÔNG TIN"
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
-              />
-            </div>
-
-            {/* Input Chọn / Chỉnh sửa Tên Học Phần */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
-                  Tên học phần / Môn:
-                </span>
-                {subjects.length > 0 && (
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    (chọn / sửa)
-                  </span>
-                )}
-              </label>
-              <div className="relative">
+      {/* Top Studio Header & Direct Output Bar for Lecturer */}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3.5 no-print">
+        {/* Hàng trên: Cụm form thông tin (trái) + 5 Nút chức năng thu gọn (phải) */}
+        <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          
+          {/* Cụm Form Thông Tin (Góc Trên Bên Trái) */}
+          <div className="flex-1 min-w-0">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2 bg-slate-50/70 p-2.5 rounded-xl border border-slate-200/80">
+              {/* 1. Tên trường / Học viện */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <label className="text-[10px] font-bold text-slate-700 flex items-center gap-1 truncate">
+                  <GraduationCap className="w-3 h-3 text-[#008689] shrink-0" />
+                  <span className="truncate">Trường / Học viện:</span>
+                </label>
                 <input
                   type="text"
-                  list="exam-subject-datalist"
-                  value={subjectName}
-                  onChange={(e) => setSubjectName(e.target.value)}
-                  placeholder="VD: Kinh tế vi mô / Kỹ thuật lập trình"
-                  className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+                  value={universityName}
+                  onChange={(e) => setUniversityName(e.target.value)}
+                  placeholder="VD: TRƯỜNG ĐH GIAO THÔNG VẬN TẢI TP.HCM"
+                  className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
                 />
-                <datalist id="exam-subject-datalist">
-                  {subjects.map((s) => (
-                    <option key={s} value={s.replace(/\.[^/.]+$/, '')}>
-                      {s.replace(/\.[^/.]+$/, '')}
-                    </option>
-                  ))}
-                </datalist>
               </div>
-            </div>
 
-            {/* Input Tiêu đề kỳ thi */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-[#008689]" />
-                Tiêu đề kỳ thi:
-              </label>
-              <input
-                type="text"
-                value={examTitle}
-                onChange={(e) => setExamTitle(e.target.value)}
-                placeholder="VD: ĐỀ KIỂM TRA KẾT THÚC HỌC PHẦN"
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
-              />
-            </div>
+              {/* 2. Tên Khoa / Viện */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <label className="text-[10px] font-bold text-slate-700 flex items-center gap-1 truncate">
+                  <Building2 className="w-3 h-3 text-[#008689] shrink-0" />
+                  <span className="truncate">Khoa / Viện:</span>
+                </label>
+                <input
+                  type="text"
+                  value={facultyName}
+                  onChange={(e) => setFacultyName(e.target.value)}
+                  placeholder="VD: KHOA CÔNG NGHỆ THÔNG TIN"
+                  className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+                />
+              </div>
 
-            {/* Select Số mã đề cần in */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-                <span>Số mã đề cần in:</span>
-                <span className="text-[10px] text-[#008689] font-bold">{examCodeCount} mã</span>
-              </label>
-              <select
-                value={examCodeCount}
-                onChange={(e) => setExamCodeCount(Number(e.target.value))}
-                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
-              >
-                <option value={1}>1 mã đề (Mã 101)</option>
-                <option value={2}>2 mã đề (101, 102)</option>
-                <option value={4}>4 mã đề (101–104 - Chuẩn)</option>
-                <option value={6}>6 mã đề (101–106)</option>
-                <option value={8}>8 mã đề (101–108)</option>
-              </select>
-            </div>
+              {/* 3. Tên học phần / Môn */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <label className="text-[10px] font-bold text-slate-700 flex items-center justify-between">
+                  <span className="flex items-center gap-1 truncate">
+                    <BookOpen className="w-3 h-3 text-[#008689] shrink-0" />
+                    <span className="truncate">Học phần / Môn:</span>
+                  </span>
+                  {subjects.length > 0 && (
+                    <span className="text-[9px] text-slate-400 font-normal shrink-0">
+                      (chọn/sửa)
+                    </span>
+                  )}
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    list="exam-subject-datalist"
+                    value={subjectName}
+                    onChange={(e) => setSubjectName(e.target.value)}
+                    placeholder="VD: Kinh tế vi mô"
+                    className="w-full h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+                  />
+                  <datalist id="exam-subject-datalist">
+                    {subjects.map((s) => (
+                      <option key={s} value={s.replace(/\.[^/.]+$/, '')}>
+                        {s.replace(/\.[^/.]+$/, '')}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+              </div>
 
-            {/* Select Thời gian & Nút Trộn */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] font-bold text-slate-700">
-                Thời lượng & Đảo mã:
-              </label>
-              <div className="flex items-center gap-2">
+              {/* 4. Tiêu đề kỳ thi */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <label className="text-[10px] font-bold text-slate-700 flex items-center gap-1 truncate">
+                  <FileText className="w-3 h-3 text-[#008689] shrink-0" />
+                  <span className="truncate">Tiêu đề kỳ thi:</span>
+                </label>
+                <input
+                  type="text"
+                  value={examTitle}
+                  onChange={(e) => setExamTitle(e.target.value)}
+                  placeholder="VD: ĐỀ THI KẾT THÚC HỌC PHẦN"
+                  className="h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+                />
+              </div>
+
+              {/* 5. Số mã đề cần in */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <label className="text-[10px] font-bold text-slate-700 flex items-center justify-between">
+                  <span className="truncate">Số mã đề:</span>
+                  <span className="text-[10px] text-[#008689] font-bold shrink-0">{examCodeCount} mã</span>
+                </label>
                 <select
-                  value={examDuration}
-                  onChange={(e) => setExamDuration(Number(e.target.value))}
-                  className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
+                  value={examCodeCount}
+                  onChange={(e) => setExamCodeCount(Number(e.target.value))}
+                  className="w-full h-8 px-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
                 >
-                  <option value={15}>15 phút</option>
-                  <option value={45}>45 phút</option>
-                  <option value={60}>60 phút</option>
-                  <option value={90}>90 phút</option>
+                  <option value={1}>1 mã (101)</option>
+                  <option value={2}>2 mã (101, 102)</option>
+                  <option value={4}>4 mã (101–104)</option>
+                  <option value={6}>6 mã (101–106)</option>
+                  <option value={8}>8 mã (101–108)</option>
                 </select>
+              </div>
 
-                <button
-                  onClick={handleReshuffleCodes}
-                  title={`Xáo trộn lại câu hỏi và các phương án A-B-C-D cho ${examCodeCount} mã đề`}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors shrink-0 shadow-2xs cursor-pointer"
-                >
-                  <Shuffle className="w-3.5 h-3.5" />
-                  Trộn {examCodeCount} Mã
-                </button>
+              {/* 6. Thời lượng & Đảo mã */}
+              <div className="flex flex-col gap-1 min-w-0">
+                <label className="text-[10px] font-bold text-slate-700 truncate">
+                  Thời lượng & Đảo mã:
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={examDuration}
+                    onChange={(e) => setExamDuration(Number(e.target.value))}
+                    className="w-16 h-8 px-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
+                  >
+                    <option value={15}>15p</option>
+                    <option value={45}>45p</option>
+                    <option value={60}>60p</option>
+                    <option value={90}>90p</option>
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={handleReshuffleCodes}
+                    title={`Xáo trộn lại câu hỏi và các phương án A-B-C-D cho ${examCodeCount} mã đề`}
+                    className="h-8 inline-flex items-center gap-1 px-2 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-[11px] transition-colors shrink-0 shadow-2xs cursor-pointer whitespace-nowrap"
+                  >
+                    <Shuffle className="w-3 h-3" />
+                    <span>Trộn mã</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Nhóm 5 Nút Chức Năng (Góc Trên Bên Phải): Kho Đề ở đầu canh giữa theo chiều dọc + 4 nút xuất dạng lưới 2 hàng */}
+          <div className="flex items-center gap-2 shrink-0 2xl:self-center">
+            {/* 1. Nút Kho Đề Đã Sinh: Đặt ở đầu tiên (ngoài cùng bên trái), canh giữa theo chiều dọc so với 2 hàng nút */}
+            <button
+              type="button"
+              onClick={() => setIsExamHistoryOpen(true)}
+              className="h-9 inline-flex items-center justify-center gap-1.5 px-2.5 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-colors shadow-2xs whitespace-nowrap cursor-pointer"
+              title="Xem và chọn các đề thi đã lưu / đã sinh trước đó để in"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-slate-600" />
+              <span>Kho Đề Đã Sinh{savedExams.length > 0 ? ` (${savedExams.length})` : ''}</span>
+            </button>
+
+            {/* Lưới 2x2 cho 4 nút xuất file */}
+            <div className="grid grid-cols-2 gap-1.5">
+              {/* Hàng trên: Tải Đề Word & Tải Đề PDF */}
+              <button
+                type="button"
+                onClick={() => handleExport('docx')}
+                disabled={isExporting !== null || targetExamQuestions.length === 0}
+                title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để xuất đề thi' : 'Tải đề thi định dạng Microsoft Word (.docx)'}
+                className="h-7 px-2.5 rounded-md text-[10.5px] font-bold bg-[#008689] hover:bg-[#007073] text-white transition-colors shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer"
+              >
+                {isExporting === 'docx' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Download className="w-3 h-3" />
+                )}
+                <span>Tải Đề Word</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExport('pdf')}
+                disabled={isExporting !== null || targetExamQuestions.length === 0}
+                title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để xuất đề thi' : 'Tải đề thi PDF in ấn chuẩn A4 kèm phiếu tô OMR 50 câu'}
+                className="h-7 px-2.5 rounded-md text-[10.5px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer"
+              >
+                {isExporting === 'pdf' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-3 h-3" />
+                )}
+                <span>Tải Đề PDF</span>
+              </button>
+
+              {/* Hàng dưới: Tải Bảng Đáp Án & Xuất Gói LMS */}
+              <button
+                type="button"
+                onClick={handleDownloadAnswerKey}
+                disabled={targetExamQuestions.length === 0}
+                title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để tải đáp án' : 'Tải bảng đáp án chấm thi tổng hợp cho tất cả mã đề'}
+                className="h-7 px-2.5 rounded-md text-[10.5px] font-bold bg-amber-500 hover:bg-amber-600 text-white transition-colors shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer"
+              >
+                <KeyRound className="w-3 h-3 text-white" />
+                <span>Tải Bảng Đáp Án</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleExport('qti')}
+                disabled={isExporting !== null || targetExamQuestions.length === 0}
+                title={targetExamQuestions.length === 0 ? 'Chưa có câu hỏi để xuất gói LMS' : 'Xuất gói câu hỏi Canvas / Moodle LMS QTI 2.1 (.zip)'}
+                className="h-7 px-2.5 rounded-md text-[10.5px] font-bold bg-purple-600 hover:bg-purple-700 text-white transition-colors shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer"
+              >
+                {isExporting === 'qti' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Archive className="w-3 h-3" />
+                )}
+                <span>Xuất Gói LMS</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
             <span className="text-xs text-slate-500 font-medium">
@@ -920,7 +926,6 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           </div>
         </div>
       </div>
-    </div>
 
       {/* VIEW 1: LIVE A4 EXAM PAPER PREVIEW + OMR SHEET */}
       {viewMode === 'preview_paper' && (
