@@ -552,20 +552,13 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wide bg-rose-50 text-[#da1c2d] border border-rose-200">
-              <ShieldCheck className="w-4 h-4 text-[#da1c2d]" />
-              Trung Tâm Quản Trị Hệ Thống Tối Cao (Super Admin)
-            </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
               7/7 Microservices Online (Ports 8000–8006)
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-50 text-[#008689] border border-teal-200">
-              Zero Mock Data
-            </span>
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            Bảng Điều Hành, Phân Quyền RBAC &amp; Kiểm Soát Khóa Tài Khoản Tức Thì
+            Bảng Điều Hành &amp; Quản Trị Hệ Thống
           </h1>
           <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
             Giám sát tài khoản giảng viên toàn trường từ CSDL auth.db thực tế, phân quyền vai trò (Admin, Trưởng bộ môn, Giảng viên), thực thi khóa tài khoản có hẹn giờ tự động mở khóa và thu hồi phiên đăng nhập tức thì.
@@ -595,11 +588,10 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       {/* ── Tab Navigation Pills ── */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         {[
-          { id: 'overview', label: 'Tổng quan & Chỉ số Tối cao', icon: Activity },
+          { id: 'overview', label: 'Tổng quan', icon: Activity },
           { id: 'users', label: 'Quản lý Tài khoản & Khóa/Mở khóa', icon: Users, badge: usersList.length },
           { id: 'rbac', label: 'Ma Trận Phân Quyền RBAC', icon: Layers },
           { id: 'services', label: 'Giám sát 7 Microservices', icon: Server, badge: '7 Cổng Live' },
-          { id: 'security', label: 'Bảo mật & Cấu hình 2FA', icon: KeyRound },
           { id: 'audit', label: 'Nhật ký An ninh & Kiểm toán', icon: Terminal, badge: auditLogs.length },
           { id: 'exams', label: 'Kho Đề Thi & Tuân Thủ Khảo Thí', icon: Database, badge: totalExams },
         ].map((tab) => {
@@ -1222,101 +1214,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         </div>
       )}
 
-      {/* ── TAB 4: SECURITY & 2FA CONFIGURATION ── */}
-      {activeTab === 'security' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 2FA PIN Setting Card */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2.5">
-              <KeyRound className="w-5 h-5 text-[#da1c2d]" />
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
-                Mã Khóa Bảo Mật 2FA Quản Trị Viên (Admin PIN)
-              </h3>
-            </div>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Mã xác thực cấp 2 (2FA) gồm đúng 6 chữ số bảo vệ cổng quản trị tối cao, ngăn chặn việc đánh cắp thông tin tài khoản admin.
-            </p>
-
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-              <div>
-                <span className="text-xs text-slate-500 block">Mã PIN 2FA Hiện tại:</span>
-                <span className="text-lg font-mono font-bold text-[#da1c2d] tracking-widest">
-                  {currentPin.slice(0, 2)}••••
-                </span>
-              </div>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-rose-50 text-[#da1c2d] border border-rose-200">
-                Đang kích hoạt
-              </span>
-            </div>
-
-            <form onSubmit={handleUpdate2FAPin} className="space-y-3 pt-2">
-              <label className="text-xs font-semibold text-slate-700 block">
-                Thiết lập Mã PIN 6 chữ số mới:
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="password"
-                  maxLength={6}
-                  value={newPinDraft}
-                  onChange={(e) => setNewPinDraft(e.target.value.replace(/\D/g, ''))}
-                  placeholder="Nhập 6 số mới (VD: 246810)"
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-mono text-slate-900 placeholder-slate-400 outline-none focus:border-[#da1c2d] focus:bg-white"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#da1c2d] hover:bg-[#b81725] text-white font-bold text-xs rounded-xl transition-colors shadow-xs"
-                >
-                  Lưu PIN Mới
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Email OTP & Google OAuth Status */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs">
-            <div className="flex items-center gap-2.5">
-              <Mail className="w-5 h-5 text-[#008689]" />
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
-                Cổng Gửi OTP &amp; Google OAuth 2.0
-              </h3>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-slate-800 block">Hòm thư hệ thống chính thức</span>
-                  <span className="text-slate-500 font-mono text-[11px]">quizgen.ai.team@gmail.com</span>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold text-[10px] border border-emerald-200">
-                  Gmail SMTP Active
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-slate-800 block">Google OAuth 2.0 Production</span>
-                  <span className="text-slate-500 text-[11px]">Đăng nhập chuẩn Production mọi tài khoản</span>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold text-[10px] border border-emerald-200">
-                  Production Ready
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                <div>
-                  <span className="font-semibold text-slate-800 block">Chính sách chống Brute-Force</span>
-                  <span className="text-slate-500 text-[11px]">Tự động khóa 60s sau 5 lần nhập sai</span>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-rose-50 text-[#da1c2d] font-semibold text-[10px] border border-rose-200">
-                  Bật nghiêm ngặt
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB 5: AUDIT LOGS (REAL FROM admin.db) ── */}
+      {/* ── TAB 4: AUDIT LOGS (REAL FROM admin.db) ── */}
       {activeTab === 'audit' && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
