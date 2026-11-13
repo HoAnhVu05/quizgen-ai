@@ -86,13 +86,13 @@ def test_scrum_62():
     compose_path = BASE_DIR / "docker-compose.yml"
     compose_content = compose_path.read_text(encoding="utf-8")
     has_mount_09 = "09_scrum_62_indexes.sql" in compose_content
-    has_mount_10 = "10_seed.sql" in compose_content
-    if has_mount_09 and has_mount_10:
+    has_seed = "10_seed.sql" in compose_content or "11_seed.sql" in compose_content
+    if has_mount_09 and has_seed:
         passed_scenarios += 1
-        print(" [PASS] | Kịch bản 4: Docker Compose mount tuần tự chuẩn xác 10 file khởi tạo")
-        print("        Chi tiết: 09_scrum_62_indexes.sql được thực thi trước 10_seed.sql, tránh lỗi thứ tự DDL/DML.")
+        print(" [PASS] | Kịch bản 4: Docker Compose mount tuần tự chuẩn xác các file khởi tạo")
+        print("        Chi tiết: 09_scrum_62_indexes.sql được thực thi trước seed data, tránh lỗi thứ tự DDL/DML.")
     else:
-        print(" [FAIL] | Kịch bản 4: Thiếu mount 09_scrum_62_indexes.sql hoặc 10_seed.sql")
+        print(" [FAIL] | Kịch bản 4: Thiếu mount 09_scrum_62_indexes.sql hoặc seed sql")
     print("-" * 75)
 
     # 5. Kiểm tra file script backup_database.bat

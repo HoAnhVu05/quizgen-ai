@@ -2,7 +2,7 @@
 
 **Hệ thống:** QuizGen AI – Nền tảng Khảo thí & Khởi tạo Đề thi Tự động ứng dụng AI  
 
-**Phiên bản:** v2.5 Database Specification (Cập nhật [SCRUM-52] & [SCRUM-58]: Audit Trails, Thống kê Bloom, Composite Indexes & Rate Limiting)  
+**Phiên bản:** v2.6 Database Specification (Cập nhật [SCRUM-84]: Google OAuth 2.0, Persistent OTP Password Resets, Data Cleaning & Automated Restore Engine)  
 
 **Tài liệu:** Bản đặc tả chi tiết toàn bộ các Schema, Bảng, Khóa, Vector Store, Cache & Quy trình Dữ liệu
 
@@ -432,6 +432,12 @@ Chịu trách nhiệm lưu trữ danh tính giảng viên, học hàm, trường
 
 | `is_active` | `BOOLEAN` | **NOT NULL** | `TRUE` | Trạng thái tài khoản (bị khóa nếu là `FALSE`). |
 
+| `google_id` | `VARCHAR(100)` | **UNIQUE, NULLABLE** | `NULL` | [SCRUM-84] ID định danh người dùng từ Google OAuth 2.0 (`sub` claim). |
+
+| `avatar_url` | `TEXT` | `NULLABLE` | `NULL` | [SCRUM-84] Đường dẫn URL ảnh đại diện của người dùng. |
+
+| `auth_provider` | `VARCHAR(30)` | **NOT NULL** | `'local'` | [SCRUM-84] Phương thức xác thực: `'local'`, `'google'`.
+
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm khởi tạo tài khoản. |
 
 | `updated_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm cập nhật hồ sơ gần nhất. |
@@ -443,6 +449,16 @@ Chịu trách nhiệm lưu trữ danh tính giảng viên, học hàm, trường
   - `idx_users_email` (B-Tree trên `email`) $\rightarrow$ Tăng tốc độ xác thực khi Login.
 
   - `idx_users_university` (B-Tree trên `university`).
+
+  - `idx_users_role` (B-Tree trên `role`).
+
+  - `idx_users_status` (B-Tree trên `is_active`).
+
+  - `idx_users_google_id` (B-Tree trên `google_id`) [SCRUM-84] Tra cứu nhanh đăng nhập Google OAuth.
+
+  - `idx_users_auth_provider` (B-Tree trên `auth_provider`) [SCRUM-84] Phân loại nguồn xác thực.
+
+  - `idx_users_email_provider` (B-Tree composite trên `email, auth_provider`).
 
 
 
@@ -465,6 +481,42 @@ Chịu trách nhiệm lưu trữ danh tính giảng viên, học hàm, trường
 | `revoked` | `BOOLEAN` | **NOT NULL** | `FALSE` | Cờ thu hồi token (khi giảng viên bấm Đăng xuất). |
 
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm cấp phát token. |
+
+
+
+#### Bảng: `auth.password_reset_tokens` [SCRUM-84]
+
+Quản lý mã OTP 6 chữ số gửi qua Email SMTP (Gmail) cho quy trình Quên mật khẩu, hỗ trợ phòng chống tấn công brute-force và kiểm tra hết hạn thời gian thực (< 5ms).
+
+| Tên Cột | Kiểu Dữ liệu | Ràng buộc | Giá trị Mặc định | Mô tả & Ý nghĩa Nghiệp vụ |
+
+|---|---|---|---|---|
+
+| `id` | `VARCHAR(50)` | **PRIMARY KEY** | Tự sinh | Mã định danh duy nhất của phiên OTP (VD: `prt-001`). |
+
+| `email` | `VARCHAR(100)` | **NOT NULL** | Không | Email của người dùng yêu cầu khôi phục mật khẩu. |
+
+| `otp_code` | `VARCHAR(10)` | **NOT NULL** | Không | Chuỗi OTP gồm 6 chữ số ngẫu nhiên sinh ra từ hệ thống. |
+
+| `otp_hash` | `VARCHAR(255)` | `NULLABLE` | Không | Mã băm bảo mật SHA-256 của OTP (tùy chọn mở rộng). |
+
+| `expires_at` | `TIMESTAMPTZ` | **NOT NULL** | Không | Thời điểm hết hạn mã OTP (thời hạn tiêu chuẩn: 10 phút). |
+
+| `is_used` | `BOOLEAN` | **NOT NULL** | `FALSE` | Đánh dấu mã đã được tiêu thụ đổi mật khẩu thành công. |
+
+| `attempts_count` | `INT` | **NOT NULL** | `0` | Số lần thử nhập sai mã OTP để khóa phiên nếu vượt quá 5 lần. |
+
+| `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm khởi tạo và gửi email OTP. |
+
+
+
+- **Chỉ mục (Indexes):**
+
+  - `idx_pwd_resets_email` (B-Tree trên `email`) Tra cứu các phiên reset theo người dùng.
+
+  - `idx_pwd_resets_active` (B-Tree trên `email, is_used, expires_at`) Lọc mã OTP còn hiệu lực.
+
+  - `idx_pwd_resets_lookup` (B-Tree composite trên `email, otp_code, is_used, expires_at`) Xác thực 1-bước siêu tốc.
 
 
 

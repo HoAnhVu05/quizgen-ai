@@ -2,8 +2,8 @@
 -- SEED DATA: DỮ LIỆU MẪU HỌC THUẬT ĐẠI HỌC CHO PHÁT TRIỂN & KIỂM THỬ
 -- ====================================================================
 
--- 1. Giảng viên mẫu (Auth)
-INSERT INTO auth.users (id, email, password_hash, full_name, academic_title, university, department, role, is_active)
+-- 1. Giảng viên & Quản trị viên mẫu (Auth) [SCRUM-84]
+INSERT INTO auth.users (id, email, password_hash, full_name, academic_title, university, department, role, is_active, google_id, avatar_url, auth_provider)
 VALUES
     (
         'lec-001',
@@ -11,10 +11,13 @@ VALUES
         '$2b$12$e6mZ603L0zGZ7NqI3YqB6eV5tSgM8Nqv5e9Y.X5mD3M3gQ0n2Kj1u', -- hashed of 'academic123'
         'Nguyễn Văn A',
         'TS.',
-        'Đại học Quốc gia',
+        'Đại học Quốc gia TP.HCM',
         'Khoa Kinh tế & Quản trị',
         'lecturer',
-        TRUE
+        TRUE,
+        NULL,
+        NULL,
+        'local'
     ),
     (
         'lec-002',
@@ -22,21 +25,27 @@ VALUES
         '$2b$12$e6mZ603L0zGZ7NqI3YqB6eV5tSgM8Nqv5e9Y.X5mD3M3gQ0n2Kj1u',
         'Trần Thị B',
         'PGS.TS.',
-        'Đại học Quốc gia',
+        'Đại học Quốc gia TP.HCM',
         'Khoa Công nghệ Thông tin',
         'lecturer',
-        TRUE
+        TRUE,
+        NULL,
+        NULL,
+        'local'
     ),
     (
         'usr-lec-001',
-        'lecturer@vnu.edu.vn',
+        'nguyenvanan.cntt@vnu.edu.vn',
         '$2b$12$e6mZ603L0zGZ7NqI3YqB6eV5tSgM8Nqv5e9Y.X5mD3M3gQ0n2Kj1u', -- academic123
         'Nguyễn Văn An',
         'TS.',
-        'Đại học Quốc gia',
+        'Đại học Quốc gia TP.HCM',
         'Khoa Công nghệ Thông tin',
         'lecturer',
-        TRUE
+        TRUE,
+        NULL,
+        NULL,
+        'local'
     ),
     (
         'usr-head-001',
@@ -44,10 +53,55 @@ VALUES
         '$2b$12$e6mZ603L0zGZ7NqI3YqB6eV5tSgM8Nqv5e9Y.X5mD3M3gQ0n2Kj1u', -- academic123
         'Trần Thị Mai',
         'PGS. TS.',
-        'Đại học Quốc gia',
+        'Đại học Quốc gia TP.HCM',
         'Bộ môn Hệ thống Thông tin',
         'head_of_department',
-        TRUE
+        TRUE,
+        NULL,
+        NULL,
+        'local'
+    ),
+    (
+        'usr-adm-uth',
+        'admin@uth.edu.vn',
+        '$2b$12$wG383cM4iGzK7Z7fH2VveODbN0kE5cW8E1L0r3O4J1u7s1m9k2j3a', -- admin123
+        'Ban Quản trị UTH Portal',
+        'Admin',
+        'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+        'Phòng Khảo thí & Đảm bảo Chất lượng',
+        'admin',
+        TRUE,
+        NULL,
+        NULL,
+        'local'
+    ),
+    (
+        'usr-adm-quizgen',
+        'quizgen.ai.team@gmail.com',
+        '$2b$12$e6mZ603L0zGZ7NqI3YqB6eV5tSgM8Nqv5e9Y.X5mD3M3gQ0n2Kj1u', -- Admin@123456
+        'Ban Quản trị QuizGen AI',
+        'Admin',
+        'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+        'Ban Quản trị Hệ thống QuizGen AI',
+        'admin',
+        TRUE,
+        '104829104820194829102',
+        'https://lh3.googleusercontent.com/a/default-user',
+        'google'
+    ),
+    (
+        'usr-adm-002',
+        'admin@quizgen.ai',
+        '$2b$12$wG383cM4iGzK7Z7fH2VveODbN0kE5cW8E1L0r3O4J1u7s1m9k2j3a', -- admin123
+        'Quản trị viên Hệ thống QuizGen',
+        'Admin',
+        'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+        'Ban Công nghệ Thông tin',
+        'admin',
+        TRUE,
+        NULL,
+        NULL,
+        'local'
     ),
     (
         'usr-adm-001',
@@ -55,11 +109,28 @@ VALUES
         '$2b$12$wG383cM4iGzK7Z7fH2VveODbN0kE5cW8E1L0r3O4J1u7s1m9k2j3a', -- admin123
         'Lê Hoàng Nam',
         'ThS.',
-        'Đại học Quốc gia',
+        'Đại học Quốc gia TP.HCM',
         'Phòng Khảo thí & Đảm bảo Chất lượng',
         'admin',
-        TRUE
+        TRUE,
+        NULL,
+        NULL,
+        'local'
     )
+ON CONFLICT (id) DO UPDATE SET 
+    email = EXCLUDED.email,
+    password_hash = EXCLUDED.password_hash,
+    full_name = EXCLUDED.full_name,
+    role = EXCLUDED.role,
+    google_id = EXCLUDED.google_id,
+    avatar_url = EXCLUDED.avatar_url,
+    auth_provider = EXCLUDED.auth_provider;
+
+-- 1.1. Mã OTP Khôi phục Mật khẩu Mẫu (Password Reset Tokens Seed) [SCRUM-84]
+INSERT INTO auth.password_reset_tokens (id, email, otp_code, expires_at, is_used, attempts_count)
+VALUES
+    ('prt-demo-001', 'lecturer@vnu.edu.vn', '889922', CURRENT_TIMESTAMP + INTERVAL '10 minutes', FALSE, 0),
+    ('prt-demo-002', 'admin@uth.edu.vn', '123456', CURRENT_TIMESTAMP - INTERVAL '5 minutes', TRUE, 1)
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Giáo trình mẫu (Documents)

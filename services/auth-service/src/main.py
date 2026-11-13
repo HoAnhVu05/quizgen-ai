@@ -24,6 +24,7 @@ from .database import engine, Base, get_db
 from .models import (
     UserDB,
     UserTokenDB,
+    PasswordResetTokenDB,
     UniversityDB,
     FacultyDB,
     LecturerCreate,
