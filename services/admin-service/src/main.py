@@ -9,7 +9,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, or_
 
 from .database import engine, Base, get_db, SessionLocal
 from .models import AdminAuditLogDB, AdminConfigDB
@@ -491,6 +491,253 @@ def delete_user_endpoint(user_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     return {"status": "success", "message": f"Đã xóa tài khoản {user_email}."}
+
+@app.get("/users/{user_id}/details")
+def get_user_full_details(user_id: str, db: Session = Depends(get_db)):
+    """
+    Truy vấn toàn diện 360 độ dữ liệu và lịch sử hoạt động của một người dùng:
+    - Hồ sơ cá nhân (Họ tên, email, học vị, khoa, trường, vai trò, trạng thái khóa)
+    - Danh sách & số lượng file tài liệu/giáo trình đã tải lên (documents.db)
+    - Lịch sử tạo câu hỏi trắc nghiệm & phân bổ Bloom (exam.db)
+    - Lịch sử đóng gói & in/xuất đề thi (exam.db)
+    - Lịch sử đăng nhập & phiên làm việc (auth.db user_tokens)
+    - Nhật ký an ninh & kiểm toán liên quan đến tài khoản này (admin.db)
+    """
+    # 1. Lấy thông tin user từ auth.db
+    with get_auth_connection() as a_conn:
+        user_row = a_conn.execute(
+            """SELECT id, email, full_name, academic_title, university, department, 
+                      role, is_active, status, lock_type, lock_reason, locked_until, 
+                      locked_at, created_at, updated_at 
+               FROM users WHERE id = ? OR email = ?""",
+            (user_id, user_id)
+        ).fetchone()
+
+        if not user_row:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+
+        user_data = dict(user_row)
+        actual_user_id = user_data["id"]
+        actual_email = user_data["email"]
+
+        # Lấy lịch sử token / đăng nhập
+        token_rows = a_conn.execute(
+            """SELECT id, device_info, token_type, expires_at, revoked, created_at 
+               FROM user_tokens WHERE user_id = ? 
+               ORDER BY created_at DESC LIMIT 50""",
+            (actual_user_id,)
+        ).fetchall()
+
+        login_history = []
+        now_dt = datetime.utcnow()
+        for tr in token_rows:
+            tr_dict = dict(tr)
+            is_revoked = bool(tr_dict.get("revoked"))
+            exp_str = tr_dict.get("expires_at")
+            is_expired = False
+            if exp_str:
+                try:
+                    exp_dt = datetime.fromisoformat(exp_str)
+                    if now_dt >= exp_dt:
+                        is_expired = True
+                except Exception:
+                    pass
+
+            session_status = "revoked" if is_revoked else ("expired" if is_expired else "active")
+            login_history.append({
+                "id": tr_dict["id"],
+                "deviceInfo": tr_dict.get("device_info") or "Trình duyệt Web",
+                "tokenType": tr_dict.get("token_type") or "refresh",
+                "status": session_status,
+                "createdAt": tr_dict.get("created_at") or "Vừa xong",
+                "expiresAt": tr_dict.get("expires_at"),
+                "revoked": is_revoked
+            })
+
+    # Các bí danh (aliases) có thể của user_id trong các service khác
+    user_aliases = [
+        actual_user_id,
+        actual_email,
+        actual_user_id.replace("usr-", ""),
+        f"usr-{actual_user_id}",
+        "lec-001" if "lec" in actual_user_id else actual_user_id
+    ]
+    user_aliases = list(set(user_aliases))
+    placeholders = ",".join(["?"] * len(user_aliases))
+
+    # 2. Lấy danh sách tài liệu từ documents.db
+    documents_list = []
+    total_pages_sum = 0
+    try:
+        d_conn = get_doc_connection()
+        if d_conn:
+            with d_conn:
+                doc_rows = d_conn.execute(
+                    f"""SELECT id, name, file_path, file_size, total_pages, chapters_count, 
+                               status, progress, error_message, created_at, updated_at 
+                        FROM documents 
+                        WHERE user_id IN ({placeholders}) 
+                        ORDER BY created_at DESC""",
+                    user_aliases
+                ).fetchall()
+
+                for dr in doc_rows:
+                    dr_dict = dict(dr)
+                    pages = dr_dict.get("total_pages") or 0
+                    total_pages_sum += pages
+                    documents_list.append({
+                        "id": dr_dict["id"],
+                        "name": dr_dict["name"],
+                        "filePath": dr_dict.get("file_path"),
+                        "fileSize": dr_dict.get("file_size") or "Không rõ",
+                        "totalPages": pages,
+                        "chaptersCount": dr_dict.get("chapters_count") or 0,
+                        "status": dr_dict.get("status") or "ready",
+                        "progress": dr_dict.get("progress") or 100,
+                        "errorMessage": dr_dict.get("error_message"),
+                        "createdAt": dr_dict.get("created_at") or "Vừa xong",
+                        "updatedAt": dr_dict.get("updated_at")
+                    })
+    except Exception as e:
+        print(f"[ADMIN USER DETAILS] Error reading documents.db: {e}")
+
+    # 3. Lấy lịch sử tạo câu hỏi & đề thi từ exam.db
+    questions_list = []
+    bloom_stats = {"Nhận biết": 0, "Thông hiểu": 0, "Vận dụng": 0, "Phân tích": 0}
+    exams_list = []
+    try:
+        e_conn = get_exam_connection()
+        if e_conn:
+            with e_conn:
+                # A. Câu hỏi
+                q_rows = e_conn.execute(
+                    f"""SELECT id, document_id, textbook_name, chapter, bloom_level, 
+                               question_text, status, created_by, created_at 
+                        FROM questions 
+                        WHERE created_by IN ({placeholders}) 
+                        ORDER BY created_at DESC LIMIT 100""",
+                    user_aliases
+                ).fetchall()
+
+                for qr in q_rows:
+                    qr_dict = dict(qr)
+                    b_level = qr_dict.get("bloom_level") or "Thông hiểu"
+                    if b_level in bloom_stats:
+                        bloom_stats[b_level] += 1
+                    questions_list.append({
+                        "id": qr_dict["id"],
+                        "documentId": qr_dict.get("document_id"),
+                        "textbookName": qr_dict.get("textbook_name") or "Giáo trình",
+                        "chapter": qr_dict.get("chapter") or "Toàn tài liệu",
+                        "bloomLevel": b_level,
+                        "questionText": qr_dict.get("question_text") or "",
+                        "status": qr_dict.get("status") or "approved",
+                        "createdAt": qr_dict.get("created_at") or "Vừa xong"
+                    })
+
+                # B. Đề thi đã đóng gói / in
+                exam_rows = e_conn.execute(
+                    f"""SELECT id, user_id, title, subject, faculty, university, 
+                               duration_minutes, exam_codes, selected_question_ids, format, created_at 
+                        FROM exams 
+                        WHERE user_id IN ({placeholders}) 
+                        ORDER BY created_at DESC""",
+                    user_aliases
+                ).fetchall()
+
+                import json
+                for er in exam_rows:
+                    er_dict = dict(er)
+                    q_ids = []
+                    try:
+                        q_ids = json.loads(er_dict.get("selected_question_ids") or "[]")
+                    except Exception:
+                        pass
+
+                    e_codes = []
+                    try:
+                        e_codes = json.loads(er_dict.get("exam_codes") or "[]")
+                    except Exception:
+                        pass
+
+                    exams_list.append({
+                        "id": er_dict["id"],
+                        "title": er_dict["title"],
+                        "subject": er_dict.get("subject") or er_dict["title"],
+                        "faculty": er_dict.get("faculty") or "Khoa CNTT",
+                        "university": er_dict.get("university") or "ĐH Giao thông Vận tải TP.HCM",
+                        "durationMinutes": er_dict.get("duration_minutes") or 60,
+                        "examCodes": e_codes,
+                        "questionCount": len(q_ids) if q_ids else 40,
+                        "format": er_dict.get("format") or "pdf",
+                        "createdAt": er_dict.get("created_at") or "Vừa xong"
+                    })
+    except Exception as e:
+        print(f"[ADMIN USER DETAILS] Error reading exam.db: {e}")
+
+    # 4. Lấy nhật ký kiểm toán liên quan từ admin.db
+    user_audit_logs = db.query(AdminAuditLogDB).filter(
+        or_(
+            AdminAuditLogDB.actor_email == actual_email,
+            AdminAuditLogDB.detail.contains(actual_email)
+        )
+    ).order_by(desc(AdminAuditLogDB.timestamp)).limit(50).all()
+
+    audit_logs_list = [
+        {
+            "id": l.id,
+            "timestamp": l.timestamp.strftime("%d/%m/%Y, %H:%M:%S") if l.timestamp else "Vừa xong",
+            "actorEmail": l.actor_email,
+            "action": l.action,
+            "detail": l.detail,
+            "severity": l.severity,
+            "ipAddress": l.ip_address
+        }
+        for l in user_audit_logs
+    ]
+
+    role_labels = {
+        "admin": "Quản trị viên (Super Admin)",
+        "head_of_department": "Trưởng bộ môn (HOD)",
+        "lecturer": "Giảng viên (Lecturer)"
+    }
+
+    return {
+        "status": "success",
+        "user": {
+            "id": actual_user_id,
+            "email": actual_email,
+            "fullName": user_data["full_name"],
+            "academicTitle": user_data.get("academic_title") or "TS.",
+            "university": user_data.get("university") or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+            "department": user_data.get("department") or "Khoa Công nghệ Thông tin",
+            "role": user_data["role"],
+            "roleLabel": role_labels.get(user_data["role"], "Giảng viên"),
+            "status": user_data.get("status") or ("active" if user_data.get("is_active") else "locked"),
+            "isActive": bool(user_data.get("is_active")),
+            "lockType": user_data.get("lock_type"),
+            "lockReason": user_data.get("lock_reason"),
+            "lockedUntil": user_data.get("locked_until"),
+            "lockedAt": user_data.get("locked_at"),
+            "createdAt": user_data.get("created_at") or "Chưa rõ",
+            "updatedAt": user_data.get("updated_at") or "Chưa rõ",
+        },
+        "stats": {
+            "totalDocuments": len(documents_list),
+            "totalDocumentPages": total_pages_sum,
+            "totalQuestions": len(questions_list),
+            "bloomBreakdown": bloom_stats,
+            "totalExams": len(exams_list),
+            "totalLogins": len(login_history),
+            "totalAudits": len(audit_logs_list),
+            "lastLoginAt": login_history[0]["createdAt"] if login_history else "Chưa ghi nhận"
+        },
+        "documents": documents_list,
+        "questions": questions_list,
+        "exams": exams_list,
+        "loginHistory": login_history,
+        "auditLogs": audit_logs_list
+    }
 
 # ─── Microservices Monitor (Live Pings) ──────────────────────────────────────
 SERVICES_CONFIG = [

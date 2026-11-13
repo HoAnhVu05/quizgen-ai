@@ -32,7 +32,11 @@ import {
   Layers,
   FileText,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  Printer,
+  HelpCircle,
+  FileCheck
 } from 'lucide-react';
 import { UserProfile, SecurityAuditLog, ScreenId, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -125,6 +129,11 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [overviewKpis, setOverviewKpis] = useState<RealOverviewKPIs | null>(null);
   const [complianceData, setComplianceData] = useState<ExamComplianceData | null>(null);
   const [auditSeverityFilter, setAuditSeverityFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
+
+  // User 360 Inspection State (Nút Con Mắt Xem Toàn Bộ Hoạt Động)
+  const [selectedUserDetails, setSelectedUserDetails] = useState<any | null>(null);
+  const [isLoadingUserDetails, setIsLoadingUserDetails] = useState(false);
+  const [userDetailsTab, setUserDetailsTab] = useState<'overview' | 'documents' | 'questions' | 'exams' | 'logins' | 'audits'>('overview');
 
   // Lock Account Modal State
   const [showLockModal, setShowLockModal] = useState(false);
@@ -242,6 +251,26 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     setServicesStatus(updated);
     setIsCheckingServices(false);
     onShowToast('success', 'Kiểm tra hạ tầng hoàn tất', 'Cụm 7 Microservices (8000–8006) đang phản hồi ổn định!');
+  };
+
+  // ─── Xử lý Xem Chi Tiết 360° Người Dùng (Nút Con Mắt) ───────────────────
+  const handleViewUserDetails = async (target: UserProfile) => {
+    setIsLoadingUserDetails(true);
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/admin/users/${target.id}/details`);
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedUserDetails(data);
+        setUserDetailsTab('overview');
+      } else {
+        const err = await res.json().catch(() => ({}));
+        onShowToast('error', 'Lỗi tải dữ liệu', err.detail || 'Không thể xem thông tin chi tiết.');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi kết nối', err.message || 'Không thể kết nối đến Admin Service.');
+    } finally {
+      setIsLoadingUserDetails(false);
+    }
   };
 
   // ─── Xử lý Mở Popup Khóa Tài Khoản ─────────────────────────────────────────
@@ -920,6 +949,17 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
                           <td className="py-3 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* View 360 User Activity Eye Button (Nút Con Mắt) */}
+                              <button
+                                onClick={() => handleViewUserDetails(u)}
+                                disabled={isLoadingUserDetails}
+                                title="Xem toàn bộ hồ sơ, tài liệu đã tải, lịch sử tạo câu hỏi, in đề, đăng nhập"
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-teal-50 hover:bg-teal-100 text-[#008689] border border-teal-200 transition-colors shadow-2xs"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-[#008689]" />
+                                <span>Chi tiết</span>
+                              </button>
+
                               {/* Reset Pass */}
                               <button
                                 onClick={() => handleResetPassword(u)}
@@ -1766,6 +1806,477 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ── MODAL: CHI TIẾT 360° NGƯỜI DÙNG (NÚT CON MẮT) ── */}
+      {selectedUserDetails && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="flex items-center gap-3.5">
+                <div className="w-11 h-11 rounded-2xl bg-[#008689]/10 text-[#008689] border border-[#008689]/20 flex items-center justify-center font-bold text-base shadow-xs">
+                  {selectedUserDetails.user.fullName ? selectedUserDetails.user.fullName.slice(0, 2).toUpperCase() : 'ND'}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-black text-slate-900">
+                      {selectedUserDetails.user.academicTitle ? `${selectedUserDetails.user.academicTitle} ` : ''}
+                      {selectedUserDetails.user.fullName}
+                    </h2>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      selectedUserDetails.user.role === 'admin'
+                        ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                        : selectedUserDetails.user.role === 'head_of_department'
+                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        : 'bg-teal-50 text-[#008689] border border-teal-200'
+                    }`}>
+                      {selectedUserDetails.user.roleLabel}
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      selectedUserDetails.user.status === 'locked'
+                        ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    }`}>
+                      {selectedUserDetails.user.status === 'locked' ? 'Bị khóa' : 'Hoạt động'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-mono mt-0.5">
+                    {selectedUserDetails.user.email} • ID: {selectedUserDetails.user.id} • {selectedUserDetails.user.department}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedUserDetails(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Summary Cards (Real Numbers) */}
+            <div className="p-4 bg-white border-b border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
+                  <span>Tài liệu đã nạp</span>
+                  <FileText className="w-3.5 h-3.5 text-[#008689]" />
+                </div>
+                <div className="text-xl font-black text-slate-900">
+                  {selectedUserDetails.stats.totalDocuments} file
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  {selectedUserDetails.stats.totalDocumentPages} trang nội dung
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
+                  <span>Câu hỏi đã sinh</span>
+                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                </div>
+                <div className="text-xl font-black text-slate-900">
+                  {selectedUserDetails.stats.totalQuestions} câu
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  4 mức tư duy Bloom
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
+                  <span>Đề thi đã đóng gói/in</span>
+                  <Database className="w-3.5 h-3.5 text-indigo-600" />
+                </div>
+                <div className="text-xl font-black text-slate-900">
+                  {selectedUserDetails.stats.totalExams} bộ đề
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Word DOCX &amp; PDF OMR
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
+                  <span>Phiên đăng nhập</span>
+                  <KeyRound className="w-3.5 h-3.5 text-[#da1c2d]" />
+                </div>
+                <div className="text-xl font-black text-slate-900">
+                  {selectedUserDetails.stats.totalLogins} lượt
+                </div>
+                <div className="text-[10px] text-slate-400 truncate" title={selectedUserDetails.stats.lastLoginAt}>
+                  Gần nhất: {selectedUserDetails.stats.lastLoginAt.slice(0, 16)}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Internal Tab Navigation */}
+            <div className="flex items-center gap-1 px-4 pt-2 border-b border-slate-200 bg-slate-50/50 overflow-x-auto">
+              {[
+                { id: 'overview', label: 'Hồ Sơ & Tổng Quan', count: null },
+                { id: 'documents', label: 'Tài Liệu Giáo Trình', count: selectedUserDetails.documents.length },
+                { id: 'questions', label: 'Ngân Hàng Câu Hỏi', count: selectedUserDetails.questions.length },
+                { id: 'exams', label: 'Lịch Sử In & Xuất Đề', count: selectedUserDetails.exams.length },
+                { id: 'logins', label: 'Lịch Sử Đăng Nhập', count: selectedUserDetails.loginHistory.length },
+                { id: 'audits', label: 'Nhật Ký An Ninh', count: selectedUserDetails.auditLogs.length },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setUserDetailsTab(t.id as any)}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
+                    userDetailsTab === t.id
+                      ? 'border-[#008689] text-[#008689] bg-white rounded-t-lg'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span>{t.label}</span>
+                  {t.count !== null && (
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                      userDetailsTab === t.id ? 'bg-[#008689] text-white' : 'bg-slate-200 text-slate-600'
+                    }`}>
+                      {t.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab Body Viewport (Scrollable) */}
+            <div className="flex-1 overflow-y-auto p-5 text-xs text-slate-700 space-y-4">
+              {/* TAB 1: OVERVIEW */}
+              {userDetailsTab === 'overview' && (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <h4 className="font-bold text-slate-900 uppercase tracking-wide text-[11px]">
+                      Thông Tin Hồ Sơ Học Thuật (auth.db)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Họ và tên:</span>
+                        <span className="font-bold text-slate-800">{selectedUserDetails.user.fullName}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Email đăng nhập:</span>
+                        <span className="font-mono text-slate-800">{selectedUserDetails.user.email}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Học hàm / Học vị:</span>
+                        <span className="font-semibold text-slate-800">{selectedUserDetails.user.academicTitle}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Khoa / Đơn vị:</span>
+                        <span className="font-semibold text-slate-800">{selectedUserDetails.user.department}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Cơ sở đào tạo:</span>
+                        <span className="font-semibold text-slate-800">{selectedUserDetails.user.university}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Vai trò hệ thống:</span>
+                        <span className="font-bold text-[#008689]">{selectedUserDetails.user.roleLabel}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Ngày khởi tạo tài khoản:</span>
+                        <span className="font-mono text-slate-600">{selectedUserDetails.user.createdAt}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block text-[11px]">Cập nhật lần cuối:</span>
+                        <span className="font-mono text-slate-600">{selectedUserDetails.user.updatedAt}</span>
+                      </div>
+                    </div>
+
+                    {selectedUserDetails.user.status === 'locked' && (
+                      <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-[#da1c2d] space-y-1 mt-2">
+                        <div className="font-bold flex items-center gap-1.5">
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Chi tiết lệnh khóa tài khoản:</span>
+                        </div>
+                        <p className="text-[11px]">
+                          <strong>Hình thức:</strong> {selectedUserDetails.user.lockType === 'temporary' ? 'Tạm khóa có thời hạn' : 'Khóa vĩnh viễn'}
+                        </p>
+                        <p className="text-[11px]">
+                          <strong>Lý do:</strong> {selectedUserDetails.user.lockReason || 'Không có lý do'}
+                        </p>
+                        {selectedUserDetails.user.lockedUntil && (
+                          <p className="text-[11px] font-mono">
+                            <strong>Hẹn giờ tự động mở:</strong> {selectedUserDetails.user.lockedUntil}
+                          </p>
+                        )}
+                        {selectedUserDetails.user.lockedAt && (
+                          <p className="text-[11px] font-mono">
+                            <strong>Thời điểm khóa:</strong> {selectedUserDetails.user.lockedAt}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bloom Breakdown Chart */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <h4 className="font-bold text-slate-900 uppercase tracking-wide text-[11px]">
+                      Phân Bổ Câu Hỏi Theo Mức Độ Tư Duy Bloom (exam.db)
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200 text-center">
+                        <span className="text-[11px] text-sky-700 font-bold block">Nhận biết (L1)</span>
+                        <span className="text-lg font-black text-sky-600">
+                          {selectedUserDetails.stats.bloomBreakdown['Nhận biết'] || 0}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200 text-center">
+                        <span className="text-[11px] text-emerald-700 font-bold block">Thông hiểu (L2)</span>
+                        <span className="text-lg font-black text-emerald-600">
+                          {selectedUserDetails.stats.bloomBreakdown['Thông hiểu'] || 0}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200 text-center">
+                        <span className="text-[11px] text-amber-700 font-bold block">Vận dụng (L3)</span>
+                        <span className="text-lg font-black text-amber-600">
+                          {selectedUserDetails.stats.bloomBreakdown['Vận dụng'] || 0}
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-white border border-slate-200 text-center">
+                        <span className="text-[11px] text-rose-700 font-bold block">Phân tích (L4)</span>
+                        <span className="text-lg font-black text-[#da1c2d]">
+                          {selectedUserDetails.stats.bloomBreakdown['Phân tích'] || 0}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: DOCUMENTS */}
+              {userDetailsTab === 'documents' && (
+                <div className="space-y-3">
+                  {selectedUserDetails.documents.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      Giảng viên này chưa tải lên tài liệu hoặc giáo trình nào.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase border-b border-slate-200 font-semibold">
+                          <tr>
+                            <th className="py-2.5 px-3">Tên Tài Liệu / Giáo Trình</th>
+                            <th className="py-2.5 px-3">Dung Lượng</th>
+                            <th className="py-2.5 px-3">Quy Mô</th>
+                            <th className="py-2.5 px-3">Trạng Thái</th>
+                            <th className="py-2.5 px-3">Thời Gian Nạp</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedUserDetails.documents.map((d: any) => (
+                            <tr key={d.id} className="hover:bg-slate-50">
+                              <td className="py-2.5 px-3">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-4 h-4 text-[#008689] shrink-0" />
+                                  <div>
+                                    <span className="font-bold text-slate-900 block">{d.name}</span>
+                                    <span className="text-[10px] font-mono text-slate-400">ID: {d.id}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-slate-600">{d.fileSize}</td>
+                              <td className="py-2.5 px-3">
+                                <span className="font-semibold text-slate-800">{d.totalPages} trang</span>
+                                <span className="text-slate-400"> • {d.chaptersCount} chương</span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                  <span>Đã sẵn sàng</span>
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">{d.createdAt}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: QUESTIONS */}
+              {userDetailsTab === 'questions' && (
+                <div className="space-y-3">
+                  {selectedUserDetails.questions.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      Chưa có câu hỏi trắc nghiệm nào được sinh bởi tài khoản này.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {selectedUserDetails.questions.map((q: any, idx: number) => (
+                        <div key={q.id || idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 hover:border-[#008689]/40 transition-colors">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-slate-700">#{idx + 1} ({q.id})</span>
+                              <span className={`px-2 py-0.2 rounded font-bold text-[10px] uppercase ${
+                                q.bloomLevel === 'Nhận biết'
+                                  ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                  : q.bloomLevel === 'Thông hiểu'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : q.bloomLevel === 'Vận dụng'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                              }`}>
+                                {q.bloomLevel}
+                              </span>
+                              <span className="text-slate-500 font-medium">{q.textbookName}</span>
+                            </div>
+                            <span className="font-mono text-slate-400 text-[10px]">{q.createdAt}</span>
+                          </div>
+                          <p className="text-slate-800 font-medium leading-relaxed">{q.questionText}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 4: EXAMS */}
+              {userDetailsTab === 'exams' && (
+                <div className="space-y-3">
+                  {selectedUserDetails.exams.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      Chưa có đề thi nào được đóng gói hoặc in bởi tài khoản này.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase border-b border-slate-200 font-semibold">
+                          <tr>
+                            <th className="py-2.5 px-3">Mã &amp; Tên Đề Thi</th>
+                            <th className="py-2.5 px-3">Học Phần</th>
+                            <th className="py-2.5 px-3">Thời Lượng</th>
+                            <th className="py-2.5 px-3">Định Dạng Xuất</th>
+                            <th className="py-2.5 px-3">Mã Hoán Vị</th>
+                            <th className="py-2.5 px-3">Thời Gian Đóng Gói</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedUserDetails.exams.map((ex: any) => (
+                            <tr key={ex.id} className="hover:bg-slate-50">
+                              <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                <div>{ex.title}</div>
+                                <span className="font-mono text-[10px] text-slate-400">{ex.id}</span>
+                              </td>
+                              <td className="py-2.5 px-3 text-slate-700">{ex.subject}</td>
+                              <td className="py-2.5 px-3">{ex.durationMinutes} phút ({ex.questionCount} câu)</td>
+                              <td className="py-2.5 px-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${
+                                  ex.format === 'docx' ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                                }`}>
+                                  {ex.format}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-slate-600">
+                                {Array.isArray(ex.examCodes) ? ex.examCodes.join(', ') : '101, 102, 103, 104'}
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">{ex.createdAt}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 5: LOGIN HISTORY */}
+              {userDetailsTab === 'logins' && (
+                <div className="space-y-3">
+                  {selectedUserDetails.loginHistory.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      Chưa ghi nhận phiên đăng nhập nào trong CSDL auth.db.
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-[11px] text-slate-500 uppercase border-b border-slate-200 font-semibold">
+                          <tr>
+                            <th className="py-2.5 px-3">Thời Gian Đăng Nhập</th>
+                            <th className="py-2.5 px-3">Thiết Bị &amp; Môi Trường</th>
+                            <th className="py-2.5 px-3">Loại Xác Thực</th>
+                            <th className="py-2.5 px-3">Trạng Thái Phiên</th>
+                            <th className="py-2.5 px-3">Hạn Hiệu Lực</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {selectedUserDetails.loginHistory.map((sess: any) => (
+                            <tr key={sess.id} className="hover:bg-slate-50">
+                              <td className="py-2.5 px-3 font-mono text-slate-700">{sess.createdAt}</td>
+                              <td className="py-2.5 px-3 text-slate-800">{sess.deviceInfo}</td>
+                              <td className="py-2.5 px-3 font-mono text-slate-500 text-[11px]">{sess.tokenType}</td>
+                              <td className="py-2.5 px-3">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  sess.status === 'active'
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : sess.status === 'revoked'
+                                    ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                                    : 'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {sess.status === 'active' ? 'Đang hoạt động' : sess.status === 'revoked' ? 'Đã thu hồi' : 'Hết hạn'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 font-mono text-[10px] text-slate-400">{sess.expiresAt || 'Không rõ'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 6: AUDITS */}
+              {userDetailsTab === 'audits' && (
+                <div className="space-y-3">
+                  {selectedUserDetails.auditLogs.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                      Không có sự kiện kiểm toán nào liên quan đến tài khoản này trong CSDL admin.db.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white">
+                      {selectedUserDetails.auditLogs.map((log: any) => (
+                        <div key={log.id} className="p-3 flex items-start justify-between gap-3 hover:bg-slate-50 transition-colors">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-[10px] font-bold px-2 py-0.2 rounded uppercase font-mono ${
+                                log.severity === 'critical'
+                                  ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
+                                  : log.severity === 'warning'
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              }`}>
+                                {log.action}
+                              </span>
+                              <span className="font-mono text-slate-500 text-[11px]">{log.ipAddress}</span>
+                            </div>
+                            <p className="text-slate-800 text-xs">{log.detail}</p>
+                          </div>
+                          <span className="font-mono text-slate-400 text-[10px] shrink-0">{log.timestamp}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400 font-mono">
+                Truy vấn từ CSDL microservices: auth.db • documents.db • exam.db • admin.db
+              </span>
+              <button
+                onClick={() => setSelectedUserDetails(null)}
+                className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs transition-colors"
+              >
+                Đóng Cửa Sổ
+              </button>
+            </div>
           </div>
         </div>
       )}
