@@ -763,6 +763,7 @@ export const App: React.FC = () => {
               questions={questions}
               onShowToast={handleShowToast}
               currentUser={currentUser}
+              onNavigate={setCurrentScreen}
             />
           )}
         </div>

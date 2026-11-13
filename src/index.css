@@ -160,3 +160,55 @@
   animation: shimmerWave 1.8s ease-in-out infinite;
 }
 
+/* Print Stylesheet - Only print exam paper, hide all UI chrome */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Hide everything on the page by default */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Only show the exam paper container and its children */
+  #printable-exam-paper,
+  #printable-exam-paper * {
+    visibility: visible !important;
+  }
+
+  /* Position printable paper at top-left */
+  #printable-exam-paper {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .exam-question-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+
