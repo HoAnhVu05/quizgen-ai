@@ -473,6 +473,7 @@ class ExportPdfRequest(BaseModel):
 
 
 class UnifiedExportRequest(BaseModel):
+    config: Optional[Dict[str, Any]] = None
     selectedQuestionIds: Optional[List[str]] = None
     selected_question_ids: Optional[List[str]] = None
     universityName: Optional[str] = None
@@ -509,33 +510,51 @@ class UnifiedExportRequest(BaseModel):
     questions: Optional[List[Dict[str, Any]]] = None
 
     def get_university(self) -> str:
-        return self.universityName or self.university or self.schoolName or self.school or "ĐẠI HỌC QUỐC GIA"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return (
+            self.universityName or self.university or self.schoolName or self.school or
+            cfg.get("universityName") or cfg.get("university") or cfg.get("schoolName") or cfg.get("school") or
+            "TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM"
+        )
 
     def get_faculty(self) -> str:
-        return self.facultyName or self.faculty or self.department or "Khoa Kinh tế & Quản trị"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return (
+            self.facultyName or self.faculty or self.department or
+            cfg.get("facultyName") or cfg.get("faculty") or cfg.get("department") or
+            "KHOA CÔNG NGHỆ THÔNG TIN"
+        )
 
     def get_title(self) -> str:
-        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.examTitle or self.exam_title or self.title or cfg.get("examTitle") or cfg.get("title") or "ĐỀ THI KẾT THÚC HỌC PHẦN"
 
     def get_subject(self) -> str:
-        return self.subjectName or self.subject or "Kinh tế vi mô"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.subjectName or self.subject or cfg.get("subjectName") or cfg.get("subject") or "Kinh tế vi mô"
 
     def get_code(self) -> str:
-        return str(self.examCode or self.exam_code or self.code or "101")
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return str(self.examCode or self.exam_code or self.code or cfg.get("examCode") or cfg.get("code") or "101")
 
     def get_base_code(self) -> int:
+        cfg = self.config if isinstance(self.config, dict) else {}
         if self.base_exam_code is not None:
             return self.base_exam_code
         if self.baseExamCode is not None:
             return self.baseExamCode
+        if cfg.get("baseExamCode") is not None:
+            return int(cfg["baseExamCode"])
         code_str = self.get_code()
         return int(code_str) if code_str.isdigit() else 101
 
     def get_exam_code_count(self) -> int:
-        return self.exam_code_count or self.examCodeCount or 4
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.exam_code_count or self.examCodeCount or cfg.get("examCodeCount") or 4
 
     def get_duration(self) -> int:
-        return self.durationMinutes or self.duration_minutes or self.duration or 60
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.durationMinutes or self.duration_minutes or self.duration or cfg.get("durationMinutes") or cfg.get("duration") or 60
 
     def get_include_answer_key(self) -> bool:
         if self.include_answer_key is not None:

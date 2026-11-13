@@ -15,6 +15,8 @@ import {
   Printer,
   KeyRound,
   ListChecks,
+  Building2,
+  GraduationCap,
 } from 'lucide-react';
 import { Question, BloomLevel, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
@@ -96,9 +98,24 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
   // Exam Paper Configuration for the Lecturer
   const [examTitle, setExamTitle] = useState('ĐỀ KIỂM TRA GIỮA KỲ / KẾT THÚC HỌC PHẦN');
+  const [universityName, setUniversityName] = useState<string>(
+    currentUser?.university || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'
+  );
+  const [facultyName, setFacultyName] = useState<string>(
+    currentUser?.faculty || currentUser?.department || 'KHOA CÔNG NGHỆ THÔNG TIN'
+  );
   const [examDuration, setExamDuration] = useState<number>(60);
   const [activeExamCode, setActiveExamCode] = useState<'101' | '102' | '103' | '104'>('101');
   const [shuffleCounter, setShuffleCounter] = useState<number>(1);
+
+  React.useEffect(() => {
+    if (currentUser?.university) {
+      setUniversityName(currentUser.university);
+    }
+    if (currentUser?.faculty || currentUser?.department) {
+      setFacultyName(currentUser.faculty || currentUser.department || '');
+    }
+  }, [currentUser]);
 
   const bankPool = questions.filter((q) => q.status !== 'rejected');
   const effectivePool = bankPool.length > 0 ? bankPool : questions;
@@ -203,7 +220,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
   const buildFallbackBlob = (format: 'docx' | 'pdf' | 'qti') => {
     const lines = [
-      `TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)`,
+      `${universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'}`,
+      `${facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}`,
       `${examTitle} — MÃ ĐỀ ${activeExamCode}`,
       `Học phần: ${selectedSubject === 'all' ? targetExamQuestions[0]?.textbookName || 'Kinh tế học Vi mô' : selectedSubject}`,
       `Thời gian làm bài: ${examDuration} phút`,
@@ -231,6 +249,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   const handleDownloadAnswerKey = () => {
     const lines = [
       `QUIZGEN AI — BẢNG ĐÁP ÁN CHẤM THI & GIẢI THÍCH CHI TIẾT (4 MÃ ĐỀ 101, 102, 103, 104)`,
+      `Đơn vị: ${universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)'} — ${facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}`,
       `Kỳ thi: ${examTitle}`,
       `Giảng viên: ${currentUser?.academicTitle || ''} ${currentUser?.fullName || 'Giảng viên'}`,
       `Ngày xuất: ${new Date().toLocaleString('vi-VN')}`,
@@ -279,9 +298,15 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           format,
+          universityName,
+          facultyName,
+          university: universityName,
+          faculty: facultyName,
           config: {
-            universityName: 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)',
-            facultyName: currentUser?.faculty || 'Khoa Công nghệ Thông tin',
+            universityName,
+            facultyName,
+            university: universityName,
+            faculty: facultyName,
             subjectName:
               selectedSubject === 'all'
                 ? targetExamQuestions[0]?.textbookName || 'Kinh tế học Vi mô'
@@ -401,40 +426,86 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
         </div>
 
         {/* Exam Metadata Config + Mode Switcher */}
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2.5 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">Tiêu đề kỳ thi:</span>
+        <div className="space-y-3 pt-1 border-t border-slate-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-slate-50/70 p-3.5 rounded-xl border border-slate-200/80">
+            {/* Input Điền Tên Trường */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                <GraduationCap className="w-3.5 h-3.5 text-[#008689]" />
+                Tên trường / Học viện:
+              </label>
+              <input
+                type="text"
+                value={universityName}
+                onChange={(e) => setUniversityName(e.target.value)}
+                placeholder="VD: TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+              />
+            </div>
+
+            {/* Input Điền Tên Khoa / Viện */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-[#008689]" />
+                Tên Khoa / Viện / Bộ môn:
+              </label>
+              <input
+                type="text"
+                value={facultyName}
+                onChange={(e) => setFacultyName(e.target.value)}
+                placeholder="VD: KHOA CÔNG NGHỆ THÔNG TIN"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
+              />
+            </div>
+
+            {/* Input Tiêu đề kỳ thi */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-[#008689]" />
+                Tiêu đề kỳ thi:
+              </label>
               <input
                 type="text"
                 value={examTitle}
                 onChange={(e) => setExamTitle(e.target.value)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 w-72 focus:outline-none focus:border-[#008689]"
+                placeholder="VD: ĐỀ KIỂM TRA KẾT THÚC HỌC PHẦN"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#008689] focus:ring-1 focus:ring-[#008689] bg-white transition-all shadow-2xs"
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-slate-600">Thời gian:</span>
-              <select
-                value={examDuration}
-                onChange={(e) => setExamDuration(Number(e.target.value))}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
-              >
-                <option value={15}>15 phút (Thường kỳ)</option>
-                <option value={45}>45 phút (Giữa kỳ)</option>
-                <option value={60}>60 phút (Cuối kỳ)</option>
-                <option value={90}>90 phút (Tổng hợp)</option>
-              </select>
-            </div>
+            {/* Select Thời gian & Nút Trộn */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] font-bold text-slate-700">
+                Thời lượng & Đảo mã đề:
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={examDuration}
+                  onChange={(e) => setExamDuration(Number(e.target.value))}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689] shadow-2xs"
+                >
+                  <option value={15}>15 phút (Thường kỳ)</option>
+                  <option value={45}>45 phút (Giữa kỳ)</option>
+                  <option value={60}>60 phút (Cuối kỳ)</option>
+                  <option value={90}>90 phút (Tổng hợp)</option>
+                </select>
 
-            <button
-              onClick={handleReshuffle4Codes}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors"
-            >
-              <Shuffle className="w-3.5 h-3.5" />
-              Trộn lại 4 Mã đề (101–104)
-            </button>
+                <button
+                  onClick={handleReshuffle4Codes}
+                  title="Xáo trộn lại câu hỏi và các phương án A-B-C-D cho 4 mã đề"
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#e6f4f4] hover:bg-[#d5ecec] text-[#008689] font-bold text-xs transition-colors shrink-0 shadow-2xs cursor-pointer"
+                >
+                  <Shuffle className="w-3.5 h-3.5" />
+                  Trộn 4 Mã
+                </button>
+              </div>
+            </div>
           </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+            <span className="text-xs text-slate-500 font-medium">
+              Chế độ hiển thị & đối soát:
+            </span>
 
           {/* 3 View Tabs */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
@@ -467,6 +538,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           </div>
         </div>
       </div>
+    </div>
 
       {/* VIEW 1: LIVE A4 EXAM PAPER PREVIEW + OMR SHEET */}
       {viewMode === 'preview_paper' && (
@@ -508,10 +580,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-center border-b border-slate-300 pb-3">
                 <div className="space-y-0.5">
                   <p className="text-[11px] font-bold uppercase text-slate-700">
-                    TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM
+                    {universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM'}
                   </p>
                   <p className="text-xs font-extrabold uppercase text-slate-900">
-                    {currentUser?.faculty || 'KHOA CÔNG NGHỆ THÔNG TIN'}
+                    {facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}
                   </p>
                 </div>
                 <div className="space-y-0.5">
