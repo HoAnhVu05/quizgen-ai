@@ -673,7 +673,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   }, [generationHistory, historySearchQuery]);
 
   return (
-    <div className="flex-1 p-6 md:p-8 overflow-y-auto space-y-6 bg-[#f7f9fb] text-slate-800 relative">
+    <div className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-4 sm:space-y-6 bg-[#f7f9fb] text-slate-800 relative">
       {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
       {isGenerating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
@@ -809,7 +809,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       )}
 
       {/* 1. Header with Mode Tabs: Cấu hình mới & Lịch sử sinh câu hỏi */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-3 sm:pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 shadow-2xs">
@@ -819,6 +819,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
             Sinh câu hỏi AI theo Ma trận Bloom
+
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Chọn giáo trình, cấu hình ma trận Bloom hoặc tra cứu lại lịch sử các đợt sinh câu hỏi AI.
@@ -834,6 +835,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 activeMainTab === 'generate'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
+
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -1153,7 +1155,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
         {/* Right Summary Sidebar (1 Col) */}
         <div>
-          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4 sticky top-6">
+          <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl space-y-4 sticky lg:top-6">
             <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100">
               Tóm tắt cấu hình
             </h3>

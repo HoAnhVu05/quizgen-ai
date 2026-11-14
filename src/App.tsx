@@ -13,6 +13,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
 import { PricingPlansModal } from './components/PricingPlansModal';
 import { PaymentQRModal } from './components/PaymentQRModal';
+import { AIChatCopilot } from './components/AIChatCopilot';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 
@@ -71,6 +72,7 @@ export const App: React.FC = () => {
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
   const [adminTab, setAdminTab] = useState<string>('overview');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
@@ -804,7 +806,10 @@ export const App: React.FC = () => {
       {/* Persistent Academic Sidebar with User & Logout */}
       <Sidebar
         currentScreen={currentScreen}
-        onNavigate={setCurrentScreen}
+        onNavigate={(screen) => {
+          setCurrentScreen(screen);
+          setIsMobileMenuOpen(false);
+        }}
         pendingReviewCount={pendingCount}
         currentUser={currentUser}
         onLogout={handleLogout}
@@ -812,10 +817,12 @@ export const App: React.FC = () => {
         onAdminTabChange={setAdminTab}
         onUpdateProfile={handleUpdateUserProfile}
         onOpenPricingModal={() => setIsPricingModalOpen(true)}
+        isMobileOpen={isMobileMenuOpen}
+        onCloseMobile={() => setIsMobileMenuOpen(false)}
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#f7f9fb]">
+      <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#f7f9fb] min-w-0">
         {/* Unified Top Header Bar synchronized with User Account & Role */}
         <TopHeader
           currentScreen={currentScreen}
@@ -823,10 +830,14 @@ export const App: React.FC = () => {
           subscriptionInfo={subscriptionInfo}
           onOpenPricingModal={() => setIsPricingModalOpen(true)}
           onLogout={handleLogout}
-          onNavigate={setCurrentScreen}
-          onAdminTabChange={setAdminTab}
+        onNavigate={(screen) => {
+          setCurrentScreen(screen);
+          setIsMobileMenuOpen(false);
+        }}
+        onAdminTabChange={setAdminTab}
           onRoleSwitch={handleRoleSwitch}
           onShowToast={handleShowToast}
+          onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
         />
 
         {/* Screen Content Viewport */}
@@ -910,6 +921,16 @@ export const App: React.FC = () => {
           onShowToast={handleShowToast}
         />
       </main>
+
+      {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}
+      {isAuthenticated && (
+        <AIChatCopilot
+          currentScreen={currentScreen}
+          currentUser={currentUser}
+          activeQuestion={questions.length > 0 ? questions[0] : null}
+          onNavigate={(screen) => setCurrentScreen(screen)}
+        />
+      )}
     </div>
   );
 };

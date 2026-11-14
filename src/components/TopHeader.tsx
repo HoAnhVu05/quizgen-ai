@@ -10,6 +10,8 @@ import {
   ChevronRight,
   Check,
   Crown,
+  Menu,
+  Activity,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -27,6 +29,7 @@ interface TopHeaderProps {
     title: string,
     message: string
   ) => void;
+  onToggleMobileMenu?: () => void;
 }
 
 interface WorkflowStepConfig {
@@ -123,6 +126,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onOpenPricingModal,
   onNavigate,
   onAdminTabChange,
+  onToggleMobileMenu,
 }) => {
   const isAdmin = currentUser?.role === 'admin';
 
@@ -131,42 +135,49 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       case 'admin_portal':
         return {
           label: 'Cổng Quản trị Hệ thống',
+          shortLabel: 'Quản trị',
           icon: ShieldCheck,
           iconStyle: 'bg-rose-50 text-[#da1c2d] border-rose-200',
         };
       case 'dashboard':
         return {
           label: 'Bảng điều khiển Biên soạn Học thuật',
+          shortLabel: 'Tổng quan Học thuật',
           icon: LayoutDashboard,
           iconStyle: 'bg-slate-100 text-slate-700 border-slate-200',
         };
       case 'upload':
         return {
           label: 'Bước 1/4: Kho Giáo trình & Tài liệu Môn học',
+          shortLabel: 'Bước 1: Nạp Giáo trình',
           icon: UploadCloud,
           iconStyle: 'bg-teal-50 text-[#008689] border-teal-200',
         };
       case 'generate':
         return {
           label: 'Bước 2/4: Sinh Câu hỏi AI theo Ma trận Bloom',
+          shortLabel: 'Bước 2: Sinh Đề AI',
           icon: Sparkles,
           iconStyle: 'bg-blue-50 text-blue-600 border-blue-200',
         };
       case 'review':
         return {
           label: 'Bước 3/4: Đối soát Trích dẫn Sách & Biên tập Câu hỏi',
+          shortLabel: 'Bước 3: Đối soát Đề',
           icon: CheckSquare,
           iconStyle: 'bg-amber-50 text-amber-600 border-amber-200',
         };
       case 'bank':
         return {
           label: 'Bước 4/4: Phòng Đóng gói, Trộn Mã Đề & Xuất Bản Đề Thi (Word / PDF OMR / LMS)',
+          shortLabel: 'Bước 4: Xuất Đề Thi',
           icon: Database,
           iconStyle: 'bg-purple-50 text-purple-600 border-purple-200',
         };
       default:
         return {
           label: 'QuizGen AI',
+          shortLabel: 'QuizGen AI',
           icon: Cpu,
           iconStyle: 'bg-slate-100 text-slate-700 border-slate-200',
         };
@@ -179,9 +190,18 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const currentStepIndex = WORKFLOW_STEPS.findIndex((s) => s.id === currentScreen);
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none">
-      {/* Left: Screen Title with Distinct Step Icon Styling */}
-      <div className="flex items-center gap-2.5 min-w-0 mr-3">
+    <header className="h-14 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none">
+      {/* Left: Mobile Hamburger + Screen Title */}
+      <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0 mr-3">
+        {onToggleMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 md:hidden transition-colors"
+            title="Mở menu điều hướng"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <div
           className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors ${screenMeta.iconStyle}`}
         >
@@ -301,22 +321,24 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
 
         {isAdmin && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               onClick={() => {
                 onNavigate?.('admin_portal');
                 onAdminTabChange?.('services');
               }}
-              className="px-3 py-1 rounded-lg text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors"
+              className="px-2.5 sm:px-3 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors flex items-center gap-1"
             >
-              Kiểm tra Sức khỏe
+              <Activity className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Kiểm tra Sức khỏe</span>
+              <span className="sm:hidden">Sức khỏe</span>
             </button>
             {onNavigate && currentScreen !== 'admin_portal' && (
               <button
                 onClick={() => onNavigate('admin_portal')}
-                className="px-3 py-1 rounded-lg text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors"
+                className="px-2.5 sm:px-3 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors whitespace-nowrap"
               >
-                Về Cổng Admin
+                Cổng Admin
               </button>
             )}
           </div>

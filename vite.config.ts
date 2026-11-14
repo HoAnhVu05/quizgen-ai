@@ -123,7 +123,7 @@ export default defineConfig({
   plugins: [react(), authOtpDevPlugin()],
   server: {
     port: 3000,
-    host: '127.0.0.1',
+    host: 'localhost',
     open: true,
     allowedHosts: true
   }

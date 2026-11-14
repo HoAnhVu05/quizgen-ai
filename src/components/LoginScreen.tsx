@@ -1226,7 +1226,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           </div>
 
           {/* Login Card */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] shadow-sm p-6 sm:p-7 space-y-5">
+          <div className="bg-white rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] shadow-sm p-4 sm:p-7 space-y-4 sm:space-y-5">
             <div className="text-center border-b border-slate-100 pb-3.5">
               <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
                 Đăng nhập hệ thống

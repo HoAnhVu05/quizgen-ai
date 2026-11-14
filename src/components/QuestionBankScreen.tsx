@@ -678,7 +678,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5">
+    <div className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 space-y-3.5 sm:space-y-5">
       {/* Top Studio Header & Direct Output Bar for Lecturer */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3.5 no-print">
         {/* Hàng trên: Cụm form thông tin (trái) + 5 Nút chức năng thu gọn (phải) */}
@@ -931,7 +931,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       {viewMode === 'preview_paper' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left: A4 Exam Paper Preview */}
-          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-300 shadow-sm p-6 sm:p-8 space-y-6">
+          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-300 shadow-sm p-3.5 sm:p-6 sm:p-8 space-y-4 sm:space-y-6">
             {/* Code Switcher Bar (Ẩn khi in) */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-200 no-print">
               <div className="flex items-center gap-2">
