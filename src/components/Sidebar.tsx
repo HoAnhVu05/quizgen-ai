@@ -14,8 +14,15 @@ import {
   Layers,
   Pencil,
   X,
+  CreditCard,
+  Crown,
+  Clock,
+  Check,
+  RefreshCw,
+  ShoppingBag,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
+import { apiClient, API_BASE } from '../services/apiClient';
 
 interface SidebarProps {
   currentScreen: ScreenId;
@@ -30,6 +37,7 @@ interface SidebarProps {
     academicTitle: string;
     department?: string;
   }) => void;
+  onOpenPricingModal?: () => void;
 }
 
 interface NavItem {
@@ -114,20 +122,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
   adminTab = 'overview',
   onAdminTabChange,
   onUpdateProfile,
+  onOpenPricingModal,
 }) => {
   const activeRole: UserRole = currentUser?.role || 'lecturer';
   const isSystemAdmin = activeRole === 'admin';
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState<'profile' | 'billing'>('profile');
   const [draftName, setDraftName] = useState('');
   const [draftTitle, setDraftTitle] = useState('');
   const [draftDept, setDraftDept] = useState('');
+  const [userOrders, setUserOrders] = useState<any[]>([]);
+  const [userSub, setUserSub] = useState<any>(null);
+  const [loadingBilling, setLoadingBilling] = useState(false);
 
-  const openProfileEditor = () => {
+  const openProfileEditor = async (tab: 'profile' | 'billing' = 'profile') => {
     if (!currentUser) return;
     setDraftName(currentUser.fullName || '');
     setDraftTitle(currentUser.academicTitle || '');
     setDraftDept(currentUser.department || currentUser.faculty || '');
+    setProfileModalTab(tab);
     setShowProfileModal(true);
+
+    setLoadingBilling(true);
+    try {
+      const [subRes, ordRes] = await Promise.all([
+        apiClient.fetch(`${API_BASE}/payment/subscription/my?user_id=${currentUser.id}`).catch(() => null),
+        apiClient.fetch(`${API_BASE}/payment/orders/history?user_id=${currentUser.id}`).catch(() => null),
+      ]);
+      if (subRes && subRes.ok) {
+        const subData = await subRes.json();
+        setUserSub(subData);
+      }
+      if (ordRes && ordRes.ok) {
+        const ordData = await ordRes.json();
+        setUserOrders(ordData.orders || []);
+      }
+    } catch (e) {
+      console.error('[SIDEBAR PROFILE] Lỗi tải dữ liệu gói cước:', e);
+    } finally {
+      setLoadingBilling(false);
+    }
   };
 
   const filteredNavItems = useMemo<NavItem[]>(() => {
@@ -142,6 +176,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'admin_portal',
+          adminSubTab: 'payments',
+          label: 'Quản lý Gói cước & Doanh thu',
+          icon: CreditCard,
+        },
+        {
+          id: 'admin_portal',
           adminSubTab: 'users',
           label: 'Quản lý Tài khoản & Phân quyền',
           icon: Users,
@@ -149,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           id: 'admin_portal',
           adminSubTab: 'services',
-          label: 'Kiểm tra Sức khỏe Cụm 7 Services',
+          label: 'Kiểm tra Sức khỏe Cụm 8 Services',
           icon: Server,
         },
         {
@@ -339,25 +379,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Clean Profile Footer */}
       <div className="p-3.5 border-t border-slate-100 bg-slate-50/50">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center space-x-2.5 min-w-0">
+          <div
+            onClick={() => openProfileEditor('profile')}
+            className="flex items-center space-x-2.5 min-w-0 cursor-pointer group"
+            title="Nhấn để xem thông tin tài khoản & gói cước"
+          >
             {currentUser?.avatarUrl ? (
               <img
                 src={currentUser.avatarUrl}
                 alt={displayName}
                 referrerPolicy="no-referrer"
-                className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0 bg-white"
+                className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0 bg-white group-hover:border-[#008689] transition-colors"
               />
             ) : (
               <div
                 className={`w-8 h-8 rounded-lg bg-gradient-to-br ${
                   isSystemAdmin ? 'from-[#da1c2d] to-rose-700' : 'from-[#008689] to-[#1d999d]'
-                } flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-xs`}
+                } flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-xs group-hover:opacity-90 transition-opacity`}
               >
                 {initials}
               </div>
             )}
             <div className="min-w-0">
-              <div className="text-xs font-bold text-slate-800 truncate">{displayName}</div>
+              <div className="text-xs font-bold text-slate-800 truncate group-hover:text-[#008689] transition-colors">
+                {displayName}
+              </div>
               <div className="text-[10px] text-slate-500 truncate">
                 {isSystemAdmin ? 'Quản trị Hệ thống' : 'Giảng viên Học thuật'}
               </div>
@@ -365,15 +411,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="flex items-center space-x-1 shrink-0">
-            {onUpdateProfile && currentUser && !isSystemAdmin && (
-              <button
-                type="button"
-                onClick={openProfileEditor}
-                title="Đổi học vị & tên hiển thị"
-                className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
-              >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
+            {currentUser && !isSystemAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openProfileEditor('billing')}
+                  title="Xem gói cước & lịch sử mua"
+                  className="text-slate-400 hover:text-amber-600 transition-colors p-1.5 rounded-lg hover:bg-amber-50"
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                </button>
+                {onUpdateProfile && (
+                  <button
+                    type="button"
+                    onClick={() => openProfileEditor('profile')}
+                    title="Đổi học vị & tên hiển thị"
+                    className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </>
             )}
             <button
               id="sidebar-logout-btn"
@@ -387,118 +445,313 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Quick Profile & Academic Title Edit Modal */}
-      {showProfileModal && onUpdateProfile && (
+      {/* Account Profile, Subscription & Payment History Modal */}
+      {showProfileModal && (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm select-text"
           onClick={() => setShowProfileModal(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl bg-white border border-slate-200 shadow-2xl p-5 space-y-4"
+            className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
-              <h3 className="text-sm font-bold text-slate-900">
-                Cập nhật Học vị & Tên hiển thị
-              </h3>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#008689]/10 text-[#008689] flex items-center justify-center font-bold">
+                  {initials}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Tài Khoản Giảng Viên &amp; Gói Cước
+                  </h3>
+                  <p className="text-[11px] text-slate-400 font-mono">{currentUser?.email}</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowProfileModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!draftName.trim()) return;
-                onUpdateProfile({
-                  fullName: draftName,
-                  academicTitle: draftTitle,
-                  department: draftDept,
-                });
-                setShowProfileModal(false);
-              }}
-              className="space-y-3"
-            >
-              <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700">Học vị</label>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[
-                    { value: '', label: 'Không' },
-                    { value: 'CN.', label: 'CN.' },
-                    { value: 'KS.', label: 'KS.' },
-                    { value: 'ThS.', label: 'ThS.' },
-                    { value: 'TS.', label: 'TS.' },
-                    { value: 'PGS. TS.', label: 'PGS. TS.' },
-                    { value: 'GS. TS.', label: 'GS. TS.' },
-                  ].map((item) => (
+            {/* Modal Internal Tabs */}
+            <div className="flex items-center gap-1 px-5 pt-2 border-b border-slate-200 bg-slate-50/40">
+              <button
+                type="button"
+                onClick={() => setProfileModalTab('profile')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition-all ${
+                  profileModalTab === 'profile'
+                    ? 'border-[#008689] text-[#008689] bg-white rounded-t-lg'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                <span>Hồ Sơ Học Thuật</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setProfileModalTab('billing')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition-all ${
+                  profileModalTab === 'billing'
+                    ? 'border-amber-500 text-amber-700 bg-white rounded-t-lg'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-500" />
+                <span>Lịch Sử Mua Gói &amp; Thanh Toán</span>
+                {userOrders.length > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-bold">
+                    {userOrders.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto flex-1 space-y-4">
+              {/* TAB 1: ACADEMIC PROFILE */}
+              {profileModalTab === 'profile' && onUpdateProfile && (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!draftName.trim()) return;
+                    onUpdateProfile({
+                      fullName: draftName,
+                      academicTitle: draftTitle,
+                      department: draftDept,
+                    });
+                    setShowProfileModal(false);
+                  }}
+                  className="space-y-3.5"
+                >
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-slate-700">Học hàm / Học vị</label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {[
+                        { value: '', label: 'Không' },
+                        { value: 'CN.', label: 'CN.' },
+                        { value: 'KS.', label: 'KS.' },
+                        { value: 'ThS.', label: 'ThS.' },
+                        { value: 'TS.', label: 'TS.' },
+                        { value: 'PGS. TS.', label: 'PGS. TS.' },
+                        { value: 'GS. TS.', label: 'GS. TS.' },
+                      ].map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => setDraftTitle(item.value)}
+                          className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
+                            draftTitle === item.value
+                              ? 'bg-[#008689] text-white border-[#008689]'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-white'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700">Họ và tên</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const parts = draftName.trim().split(/\s+/);
+                          if (parts.length > 1) setDraftName(parts.reverse().join(' '));
+                        }}
+                        className="text-[11px] font-semibold text-[#008689] hover:underline"
+                      >
+                        Đảo ngược tên
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-900 outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-700">Khoa / Đơn vị bộ môn</label>
+                    <input
+                      type="text"
+                      value={draftDept}
+                      onChange={(e) => setDraftDept(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs text-slate-900 outline-none"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                     <button
-                      key={item.label}
                       type="button"
-                      onClick={() => setDraftTitle(item.value)}
-                      className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
-                        draftTitle === item.value
-                          ? 'bg-[#008689] text-white border-[#008689]'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-white'
-                      }`}
+                      onClick={() => setShowProfileModal(false)}
+                      className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
                     >
-                      {item.label}
+                      Hủy
                     </button>
-                  ))}
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70] transition-colors"
+                    >
+                      Lưu thay đổi
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* TAB 2: BILLING & PURCHASE HISTORY */}
+              {profileModalTab === 'billing' && (
+                <div className="space-y-4">
+                  {/* Current Active Plan Card */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-white border border-amber-200 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+                        <Crown className="w-5 h-5 text-amber-100" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-slate-900 text-sm">
+                            {userSub?.plan_name || 'Gói Trải Nghiệm Miễn Phí'}
+                          </h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            {userSub?.status === 'active' ? 'Đang hiệu lực' : 'Miễn phí'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {userSub?.expires_at
+                            ? `Hạn dùng đến: ${userSub.expires_at.slice(0, 10)}`
+                            : 'Mặc định 3 giáo trình lưu trữ'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {onOpenPricingModal && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowProfileModal(false);
+                          onOpenPricingModal();
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-xs shadow-xs transition-all hover:scale-[1.02] shrink-0"
+                      >
+                        Nâng cấp / Gia hạn gói
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quotas Progress */}
+                  {userSub?.quotas && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-500 block">Giáo trình đã nạp</span>
+                        <div className="text-base font-black text-slate-900">
+                          {userSub.quotas.documents_used} / {userSub.quotas.max_documents >= 999999 ? '∞' : userSub.quotas.max_documents} file
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-500 block">Câu hỏi AI tháng này</span>
+                        <div className="text-base font-black text-slate-900">
+                          {userSub.quotas.questions_used_month} / {userSub.quotas.max_questions_month >= 999999 ? '∞' : userSub.quotas.max_questions_month} câu
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Orders History List */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-900 text-xs">Lịch Sử Mua Gói Cước</h4>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        {userOrders.length} giao dịch
+                      </span>
+                    </div>
+
+                    {loadingBilling ? (
+                      <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#008689]" />
+                        <span>Đang tải lịch sử thanh toán...</span>
+                      </div>
+                    ) : userOrders.length === 0 ? (
+                      <div className="py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 p-4 space-y-2">
+                        <ShoppingBag className="w-6 h-6 text-slate-300 mx-auto" />
+                        <p className="text-xs text-slate-500">
+                          Bạn chưa phát sinh giao dịch thanh toán nào.
+                        </p>
+                        {onOpenPricingModal && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProfileModal(false);
+                              onOpenPricingModal();
+                            }}
+                            className="text-xs font-bold text-[#008689] hover:underline"
+                          >
+                            Xem các gói cước PRO ưu đãi chỉ từ 2.000đ →
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="py-2.5 px-3">Mã Đơn</th>
+                              <th className="py-2.5 px-3">Gói Cước</th>
+                              <th className="py-2.5 px-3">Số Tiền</th>
+                              <th className="py-2.5 px-3">Ngày Mua</th>
+                              <th className="py-2.5 px-3">Trạng Thái</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {userOrders.map((ord: any) => (
+                              <tr key={ord.id} className="hover:bg-slate-50">
+                                <td className="py-2.5 px-3 font-mono font-bold text-slate-800">
+                                  #{ord.order_code}
+                                </td>
+                                <td className="py-2.5 px-3 font-semibold text-slate-900">
+                                  {ord.plan_name}
+                                </td>
+                                <td className="py-2.5 px-3 font-mono font-bold text-amber-600">
+                                  {ord.amount_vnd.toLocaleString('vi-VN')}đ
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
+                                  {ord.created_at.slice(0, 16)}
+                                </td>
+                                <td className="py-2.5 px-3">
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                      ord.status === 'COMPLETED'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : ord.status === 'PENDING'
+                                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                        : 'bg-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    {ord.status === 'COMPLETED'
+                                      ? 'Thành công'
+                                      : ord.status === 'PENDING'
+                                      ? 'Chờ thanh toán'
+                                      : ord.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">Họ và tên</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const parts = draftName.trim().split(/\s+/);
-                      if (parts.length > 1) setDraftName(parts.reverse().join(' '));
-                    }}
-                    className="text-[11px] font-semibold text-[#008689] hover:underline"
-                  >
-                    Đảo ngược tên
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={draftName}
-                  onChange={(e) => setDraftName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-900 outline-none"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700">Khoa / Đơn vị</label>
-                <input
-                  type="text"
-                  value={draftDept}
-                  onChange={(e) => setDraftDept(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs text-slate-900 outline-none"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowProfileModal(false)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70]"
-                >
-                  Lưu thay đổi
-                </button>
-              </div>
-            </form>
+              )}
+            </div>
           </div>
         </div>
       )}

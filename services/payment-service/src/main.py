@@ -198,6 +198,19 @@ class OrderCreateRequest(BaseModel):
     user_name: str
     payment_method: Optional[str] = "VIETQR"
 
+class PlanUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    price_vnd: Optional[int] = None
+    duration_days: Optional[int] = None
+    max_documents: Optional[int] = None
+    max_questions_month: Optional[int] = None
+    max_exams_month: Optional[int] = None
+    allow_qti_export: Optional[bool] = None
+    allow_full_bloom: Optional[bool] = None
+    features: Optional[List[str]] = None
+    is_popular: Optional[bool] = None
+    is_active: Optional[bool] = None
+
 # ─── BANK CONFIGURATION (TPBANK VIETQR NAPAS 247) ───────────────────────────
 BANK_ID = os.getenv("VIETQR_BANK_ID", "TPB") # TPBank (Ngân hàng Tiên Phong)
 BANK_NAME = "TPBank (Ngân hàng Tiên Phong)"
@@ -218,11 +231,14 @@ def health_check():
     }
 
 @app.get("/plans")
-def get_plans():
-    """Lấy danh mục toàn bộ các gói cước đang mở bán."""
+def get_plans(include_all: bool = False):
+    """Lấy danh mục toàn bộ các gói cước đang mở bán (hoặc tất cả nếu include_all=True)."""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM plans WHERE is_active = 1 ORDER BY price_vnd ASC")
+    if include_all:
+        cursor.execute("SELECT * FROM plans ORDER BY price_vnd ASC")
+    else:
+        cursor.execute("SELECT * FROM plans WHERE is_active = 1 ORDER BY price_vnd ASC")
     rows = cursor.fetchall()
     conn.close()
     
@@ -232,6 +248,153 @@ def get_plans():
         p["features"] = json.loads(p["features_json"]) if p.get("features_json") else []
         plans.append(p)
     return {"plans": plans}
+
+@app.put("/plans/{plan_id}")
+@app.post("/plans/{plan_id}")
+def update_plan(plan_id: str, payload: PlanUpdateRequest):
+    """Cập nhật cấu hình hoặc đơn giá gói cước (Dành cho Admin)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM plans WHERE id = ? OR code = ?", (plan_id, plan_id))
+    plan = cursor.fetchone()
+    if not plan:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Không tìm thấy gói cước.")
+    
+    actual_id = plan["id"]
+    updates = []
+    values = []
+    
+    if payload.name is not None:
+        updates.append("name = ?")
+        values.append(payload.name)
+    if payload.price_vnd is not None:
+        updates.append("price_vnd = ?")
+        values.append(payload.price_vnd)
+    if payload.duration_days is not None:
+        updates.append("duration_days = ?")
+        values.append(payload.duration_days)
+    if payload.max_documents is not None:
+        updates.append("max_documents = ?")
+        values.append(payload.max_documents)
+    if payload.max_questions_month is not None:
+        updates.append("max_questions_month = ?")
+        values.append(payload.max_questions_month)
+    if payload.max_exams_month is not None:
+        updates.append("max_exams_month = ?")
+        values.append(payload.max_exams_month)
+    if payload.allow_qti_export is not None:
+        updates.append("allow_qti_export = ?")
+        values.append(1 if payload.allow_qti_export else 0)
+    if payload.allow_full_bloom is not None:
+        updates.append("allow_full_bloom = ?")
+        values.append(1 if payload.allow_full_bloom else 0)
+    if payload.features is not None:
+        updates.append("features_json = ?")
+        values.append(json.dumps(payload.features, ensure_ascii=False))
+    if payload.is_popular is not None:
+        updates.append("is_popular = ?")
+        values.append(1 if payload.is_popular else 0)
+    if payload.is_active is not None:
+        updates.append("is_active = ?")
+        values.append(1 if payload.is_active else 0)
+        
+    if updates:
+        values.append(actual_id)
+        sql = f"UPDATE plans SET {', '.join(updates)} WHERE id = ?"
+        cursor.execute(sql, values)
+        conn.commit()
+        
+    cursor.execute("SELECT * FROM plans WHERE id = ?", (actual_id,))
+    updated_row = cursor.fetchone()
+    conn.close()
+    
+    res = dict(updated_row)
+    res["features"] = json.loads(res["features_json"]) if res.get("features_json") else []
+    print(f"[PAYMENT-SERVICE] Đã cập nhật gói cước {actual_id}: {res['name']} - {res['price_vnd']:,}đ")
+    return {"message": "Cập nhật gói cước thành công", "plan": res}
+
+@app.get("/admin/overview")
+def get_payment_admin_overview():
+    """Tổng quan doanh thu, thống kê đơn hàng và danh sách gói cước cho Admin Portal."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Doanh thu
+    cursor.execute("SELECT COALESCE(SUM(amount_vnd), 0) FROM orders WHERE status = 'COMPLETED'")
+    total_revenue = cursor.fetchone()[0]
+    
+    # 2. Thống kê đơn hàng
+    cursor.execute("SELECT COUNT(*) FROM orders")
+    total_orders = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'COMPLETED'")
+    completed_orders = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'PENDING'")
+    pending_orders = cursor.fetchone()[0]
+    
+    # 3. Thuê bao đang hoạt động
+    cursor.execute("SELECT COUNT(DISTINCT user_id) FROM subscriptions WHERE status = 'active'")
+    active_subscribers = cursor.fetchone()[0]
+    
+    # 4. Toàn bộ gói cước kèm số lượng đăng ký
+    cursor.execute("""
+    SELECT p.*, COUNT(s.id) as subscriber_count 
+    FROM plans p
+    LEFT JOIN subscriptions s ON p.id = s.plan_id AND s.status = 'active'
+    GROUP BY p.id
+    ORDER BY p.price_vnd ASC
+    """)
+    plan_rows = cursor.fetchall()
+    plans = []
+    for r in plan_rows:
+        p = dict(r)
+        p["features"] = json.loads(p["features_json"]) if p.get("features_json") else []
+        plans.append(p)
+        
+    # 5. Đơn hàng gần đây
+    cursor.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 100")
+    recent_order_rows = cursor.fetchall()
+    recent_orders = [dict(r) for r in recent_order_rows]
+    
+    conn.close()
+    
+    return {
+        "kpis": {
+            "totalRevenueVnd": total_revenue,
+            "totalOrders": total_orders,
+            "completedOrders": completed_orders,
+            "pendingOrders": pending_orders,
+            "activeSubscribers": active_subscribers,
+        },
+        "plans": plans,
+        "orders": recent_orders
+    }
+
+@app.post("/admin/orders/{order_id}/approve")
+def admin_approve_order(order_id: str):
+    """Admin duyệt đơn hàng thủ công và kích hoạt ngay lập tức."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM orders WHERE id = ? OR order_code = ?", (order_id, order_id))
+    order = cursor.fetchone()
+    conn.close()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng.")
+        
+    o = dict(order)
+    if o["status"] == "COMPLETED":
+        return {"status": "COMPLETED", "message": "Đơn hàng này đã được kích hoạt trước đó."}
+        
+    _activate_subscription(o, bank_ref="ADMIN_MANUAL_APPROVE")
+    return {
+        "status": "COMPLETED",
+        "message": f"Admin đã duyệt thành công đơn hàng #{o['order_code']}. Gói {o['plan_name']} đã được kích hoạt!",
+        "order_code": o["order_code"],
+        "plan_code": o["plan_code"]
+    }
 
 @app.get("/subscription/my")
 def get_my_subscription(user_id: str = Query(...)):

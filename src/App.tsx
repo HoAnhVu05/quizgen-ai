@@ -723,6 +723,7 @@ export const App: React.FC = () => {
         adminTab={adminTab}
         onAdminTabChange={setAdminTab}
         onUpdateProfile={handleUpdateUserProfile}
+        onOpenPricingModal={() => setIsPricingModalOpen(true)}
       />
 
       {/* Main Content Area */}

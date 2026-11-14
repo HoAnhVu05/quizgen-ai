@@ -37,6 +37,7 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 AUTH_DB_PATH = os.path.join(BASE_DIR, "auth-service", "data", "auth.db")
 DOC_DB_PATH = os.path.join(BASE_DIR, "document-service", "data", "documents.db")
 EXAM_DB_PATH = os.path.join(BASE_DIR, "exam-service", "data", "exam.db")
+PAYMENT_DB_PATH = os.path.join(BASE_DIR, "payment-service", "data", "payment.db")
 
 def get_auth_connection():
     os.makedirs(os.path.dirname(AUTH_DB_PATH), exist_ok=True)
@@ -54,6 +55,13 @@ def get_doc_connection():
 def get_exam_connection():
     if os.path.exists(EXAM_DB_PATH):
         conn = sqlite3.connect(EXAM_DB_PATH, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+    return None
+
+def get_payment_connection():
+    if os.path.exists(PAYMENT_DB_PATH):
+        conn = sqlite3.connect(PAYMENT_DB_PATH, timeout=5.0)
         conn.row_factory = sqlite3.Row
         return conn
     return None
@@ -696,6 +704,34 @@ def get_user_full_details(user_id: str, db: Session = Depends(get_db)):
         for l in user_audit_logs
     ]
 
+    # 5. Lấy thông tin gói cước và lịch sử thanh toán từ payment.db
+    current_subscription = None
+    orders_list = []
+    try:
+        p_conn = get_payment_connection()
+        if p_conn:
+            p_cur = p_conn.cursor()
+            p_cur.execute("""
+                SELECT s.*, p.name as plan_name, p.price_vnd, p.duration_days
+                FROM subscriptions s
+                JOIN plans p ON s.plan_id = p.id
+                WHERE s.user_id = ? AND s.status = 'active'
+                ORDER BY s.created_at DESC LIMIT 1
+            """, (actual_user_id,))
+            s_row = p_cur.fetchone()
+            if s_row:
+                current_subscription = dict(s_row)
+            
+            p_cur.execute("""
+                SELECT * FROM orders
+                WHERE user_id = ? OR user_email = ?
+                ORDER BY created_at DESC LIMIT 50
+            """, (actual_user_id, actual_email))
+            orders_list = [dict(r) for r in p_cur.fetchall()]
+            p_conn.close()
+    except Exception as e:
+        print(f"[ADMIN USER DETAILS] Error reading payment.db: {e}")
+
     role_labels = {
         "admin": "Quản trị viên (Super Admin)",
         "head_of_department": "Trưởng bộ môn (HOD)",
@@ -736,7 +772,9 @@ def get_user_full_details(user_id: str, db: Session = Depends(get_db)):
         "questions": questions_list,
         "exams": exams_list,
         "loginHistory": login_history,
-        "auditLogs": audit_logs_list
+        "auditLogs": audit_logs_list,
+        "subscription": current_subscription,
+        "payments": orders_list
     }
 
 # ─── Microservices Monitor (Live Pings) ──────────────────────────────────────
@@ -747,7 +785,8 @@ SERVICES_CONFIG = [
     {"name": "RAG Service", "port": 8003, "role": "Vector Search, MMR Diversity Re-rank & SLA Window", "technology": "ChromaDB, all-MiniLM-L6-v2"},
     {"name": "AI Service", "port": 8004, "role": "Sinh câu hỏi ma trận Bloom, Prompt Engineering (Zero Mock)", "technology": "Google Gemini 2.5 Flash"},
     {"name": "Exam Service", "port": 8005, "role": "Trộn 4 mã đề, Đóng gói xuất Word DOCX / PDF OMR 50 câu", "technology": "FastAPI, python-docx, ReportLab"},
-    {"name": "Admin Service", "port": 8006, "role": "Quản trị RBAC, Giám sát 7 Services & Khóa/Mở khóa tài khoản", "technology": "FastAPI, SQLite, SQLAlchemy"}
+    {"name": "Admin Service", "port": 8006, "role": "Quản trị RBAC, Giám sát 8 Services & Khóa/Mở khóa tài khoản", "technology": "FastAPI, SQLite, SQLAlchemy"},
+    {"name": "Payment Service", "port": 8007, "role": "Quản lý Gói cước, Sinh mã VietQR TPBank & Kích hoạt thuê bao tự động", "technology": "FastAPI, SQLite, SePay API"}
 ]
 
 @app.get("/services/health")
