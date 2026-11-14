@@ -387,9 +387,9 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
   );
 
   return (
-    <div className="flex-1 p-6 md:p-8 overflow-y-auto space-y-6 bg-[#f7f9fb] text-slate-800">
+    <div className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-4 sm:space-y-6 bg-[#f7f9fb] text-slate-800">
       {/* 1. Clean Header + Upload Input */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-3 sm:pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-teal-50 text-[#008689] border border-teal-200 shadow-2xs">
@@ -399,6 +399,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
             Kho Giáo trình Môn học
+
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Tải lên tài liệu PDF hoặc DOCX (tối đa {MAX_UPLOAD_SIZE_MB}MB) để bóc tách nội dung và nạp vào vector store RAG.
@@ -408,7 +409,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={isUploading}
-          className="flex items-center space-x-2 px-4 py-2 bg-[#008689] hover:bg-[#006d70] text-white text-xs font-bold rounded-xl shadow-sm transition-colors"
+          className="flex items-center justify-center space-x-2 px-4 py-2.5 sm:py-2 bg-[#008689] hover:bg-[#006d70] text-white text-xs font-bold rounded-xl shadow-sm transition-colors w-full sm:w-auto"
         >
           <UploadCloud className="w-4 h-4" />
           <span>{isUploading ? 'Đang tải lên...' : 'Tải tệp lên'}</span>
@@ -462,14 +463,14 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
             Danh sách tài liệu ({textbooks.length})
           </h3>
 
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Tìm tài liệu..."
-              className="pl-8 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#008689] text-slate-800 placeholder-slate-400 w-56"
+              className="pl-8 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#008689] text-slate-800 placeholder-slate-400 w-full sm:w-56"
             />
           </div>
         </div>

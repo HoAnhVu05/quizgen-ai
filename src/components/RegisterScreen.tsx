@@ -355,7 +355,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
             <img
               src="/logo.jpg"
               alt="QuizGen AI Logo"
-              className="w-13 h-13 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
+              className="w-12 h-12 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
             />
             <h1 className="text-lg font-extrabold text-[#008689] tracking-tight uppercase">
               QuizGen AI
@@ -366,7 +366,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
           </div>
 
           {/* Card */}
-          <div className="rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] bg-white shadow-sm p-6 sm:p-7 space-y-4">
+          <div className="rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] bg-white shadow-sm p-4 sm:p-7 space-y-4">
             <div className="text-center border-b border-slate-100 pb-3">
               <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
                 Tạo tài khoản mới
@@ -393,8 +393,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
               </div>
 
               {/* 2. Học vị & Họ tên */}
-              <div className="grid grid-cols-3 gap-2.5">
-                <div className="col-span-1 space-y-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
+                <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-700">Học vị</label>
                   <select
                     value={form.academicTitle}
@@ -409,7 +409,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
                   </select>
                 </div>
 
-                <div className="col-span-2 space-y-1">
+                <div className="sm:col-span-2 space-y-1">
                   <label className="text-xs font-semibold text-slate-700">Họ và tên</label>
                   <div className="relative">
                     <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />

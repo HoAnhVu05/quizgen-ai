@@ -30,6 +30,8 @@ interface SidebarProps {
     academicTitle: string;
     department?: string;
   }) => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 interface NavItem {
@@ -114,6 +116,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   adminTab = 'overview',
   onAdminTabChange,
   onUpdateProfile,
+  isMobileOpen = false,
+  onCloseMobile,
 }) => {
   const activeRole: UserRole = currentUser?.role || 'lecturer';
   const isSystemAdmin = activeRole === 'admin';
@@ -224,7 +228,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const initials = getInitials(currentUser?.fullName, currentUser?.academicTitle);
 
   return (
-    <aside className="w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none relative z-20">
+    <>
+      {/* Mobile Backdrop Overlay */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 md:hidden transition-opacity duration-300"
+          onClick={onCloseMobile}
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 md:static md:z-20 w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none transition-transform duration-300 ease-in-out ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
       {/* Top UTH Accent Line */}
       <div className={`h-1 w-full ${isSystemAdmin ? 'bg-gradient-to-r from-[#da1c2d] to-rose-600' : 'bg-[#008689]'}`} />
 
@@ -248,6 +265,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}
           </p>
         </div>
+        {onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 md:hidden ml-auto"
+            title="Đóng menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* Role Title Section Header */}
@@ -503,6 +529,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
     </aside>
+    </>
   );
 };
 

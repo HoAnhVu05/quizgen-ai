@@ -562,10 +562,11 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           </h1>
           <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
             Giám sát tài khoản giảng viên toàn trường từ CSDL auth.db thực tế, phân quyền vai trò (Admin, Trưởng bộ môn, Giảng viên), thực thi khóa tài khoản có hẹn giờ tự động mở khóa và thu hồi phiên đăng nhập tức thì.
+
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0 w-full lg:w-auto">
           <button
             onClick={loadAllRealData}
             disabled={isLoading}
