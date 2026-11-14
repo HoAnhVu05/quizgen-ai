@@ -740,6 +740,7 @@ export const App: React.FC = () => {
               pendingReviewCount={pendingCount}
               approvedCount={approvedCount}
               currentUser={currentUser}
+              questions={questions}
             />
           )}
 

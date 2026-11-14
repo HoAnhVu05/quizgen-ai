@@ -187,7 +187,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   return (
     <header className="h-14 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none">
       {/* Left: Mobile Hamburger + Screen Title */}
-      <div className="flex items-center space-x-2 sm:space-x-2.5 min-w-0 mr-3">
+      <div className="flex items-center space-x-2.5 min-w-0 mr-3">
         {onToggleMobileMenu && (
           <button
             onClick={onToggleMobileMenu}
@@ -197,82 +197,53 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <Menu className="w-5 h-5" />
           </button>
         )}
-        <div
-          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border transition-colors ${screenMeta.iconStyle}`}
-        >
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-[#e0f7f6] text-[#008689]">
           <ScreenIcon className="w-4 h-4" />
         </div>
         <h2 className="text-sm font-bold text-slate-800 truncate">{screenMeta.label}</h2>
       </div>
 
-      {/* Right: 4-Step Color-Coded Workflow Stepper for Lecturer or health check for Admin */}
-      <div className="flex items-center space-x-2.5 shrink-0">
+      {/* Right: 4-Step Stepper for Lecturer or health check for Admin */}
+      <div className="flex items-center space-x-2 shrink-0">
         {!isAdmin && onNavigate && (
           <nav
             aria-label="Thanh tiến trình 4 bước biên soạn đề thi"
-            className="hidden lg:flex items-center gap-1.5 bg-slate-50/90 border border-slate-200/90 rounded-2xl p-1 shadow-2xs"
+            className="hidden lg:flex items-center gap-2"
           >
             {WORKFLOW_STEPS.map((s, idx) => {
-              const isCurrent = currentScreen === s.id;
-              const isCompleted = currentStepIndex !== -1 && idx < currentStepIndex;
-              const isUpcoming = currentStepIndex === -1 ? false : idx > currentStepIndex;
-              const StepIcon = s.icon;
+              const isCurrent = currentScreen === s.id || (currentScreen === 'dashboard' && s.id === 'bank');
+              const isCompleted = (currentStepIndex !== -1 && idx < currentStepIndex) || (currentScreen === 'dashboard' && idx < 3);
 
-              let btnClass = s.upcomingBtn;
-              let badgeClass = s.upcomingBadge;
-              let statusLabel = 'Chưa thực hiện';
+              let btnClass = 'bg-slate-100 text-slate-500 hover:bg-slate-200';
+              let badgeClass = 'bg-slate-200 text-slate-600';
 
               if (isCurrent) {
-                btnClass = s.currentBtn;
-                badgeClass = s.currentBadge;
-                statusLabel = 'Đang thực hiện';
+                btnClass = 'bg-[#008689] text-white shadow-xs';
+                badgeClass = 'bg-white/20 text-white';
               } else if (isCompleted) {
-                btnClass = s.completedBtn;
-                badgeClass = s.completedBadge;
-                statusLabel = 'Đã hoàn thành';
+                btnClass = 'bg-[#dff5f4] text-[#007d80] hover:bg-[#cbf0ee]';
+                badgeClass = 'bg-[#bdeae7] text-[#007d80]';
               }
 
               return (
-                <React.Fragment key={s.id}>
-                  <button
-                    onClick={() => onNavigate(s.id)}
-                    title={`Bước ${s.step}: ${s.label} (${statusLabel})`}
-                    className={`group relative flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs transition-all duration-200 border ${btnClass} ${
-                      isCurrent ? 'scale-[1.02]' : 'hover:scale-[1.01]'
-                    }`}
+                <button
+                  key={s.id}
+                  onClick={() => onNavigate(s.id)}
+                  title={`Bước ${s.step}: ${s.label}`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${btnClass}`}
+                >
+                  <span
+                    className={`w-4 h-4 rounded-full text-[10px] font-extrabold flex items-center justify-center shrink-0 ${badgeClass}`}
                   >
-                    {/* Badge: Shows Check icon if Completed, Step number if Current/Upcoming */}
-                    <span
-                      className={`w-5 h-5 rounded-full text-[11px] font-extrabold flex items-center justify-center shrink-0 transition-transform ${badgeClass}`}
-                    >
-                      {isCompleted ? (
-                        <Check className="w-3 h-3 stroke-[3]" />
-                      ) : (
-                        s.step
-                      )}
-                    </span>
+                    {s.step}
+                  </span>
 
-                    {/* Step Icon & Label */}
-                    <span className="flex items-center gap-1.5 whitespace-nowrap">
-                      <StepIcon className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                      <span className="font-bold">{s.label}</span>
-                    </span>
+                  <span>{s.label}</span>
 
-                    {/* Active pulse indicator on current step */}
-                    {isCurrent && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse shrink-0 ml-0.5" />
-                    )}
-                  </button>
-
-                  {/* Connector arrow between steps */}
-                  {idx < WORKFLOW_STEPS.length - 1 && (
-                    <ChevronRight
-                      className={`w-3.5 h-3.5 shrink-0 transition-colors ${
-                        idx < currentStepIndex ? 'text-emerald-500' : 'text-slate-300'
-                      }`}
-                    />
+                  {isCompleted && (
+                    <Check className="w-3.5 h-3.5 text-[#007d80] stroke-[2.5]" />
                   )}
-                </React.Fragment>
+                </button>
               );
             })}
           </nav>
