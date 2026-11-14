@@ -11,6 +11,7 @@ import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
+import { AIChatCopilot } from './components/AIChatCopilot';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 
@@ -779,6 +780,16 @@ export const App: React.FC = () => {
           )}
         </div>
       </main>
+
+      {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}
+      {isAuthenticated && (
+        <AIChatCopilot
+          currentScreen={currentScreen}
+          currentUser={currentUser}
+          activeQuestion={questions.length > 0 ? questions[0] : null}
+          onNavigate={(screen) => setCurrentScreen(screen)}
+        />
+      )}
     </div>
   );
 };

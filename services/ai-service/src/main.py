@@ -183,7 +183,8 @@ async def generate_questions(
             bloom_matrix=bloom_matrix,
             document_id=document_id,
             chapter_name=primary_chapter,
-            textbook_name=textbook_name
+            textbook_name=textbook_name,
+            images=req.get_images()
         )
 
         # Cập nhật kết quả Job vào DB
@@ -231,11 +232,19 @@ async def regenerate_question_endpoint(
     }
     bloom_lvl = current_q.get("bloomLevel") or current_q.get("bloom_level") or "Thông hiểu"
 
+    img_ctx = current_q.get("imageContext") or current_q.get("image_context")
+    if not img_ctx and (current_q.get("hasImage") or current_q.get("has_image")):
+        img_ctx = {
+            "url": current_q.get("imageUrl") or current_q.get("image_url"),
+            "caption": current_q.get("imageCaption") or current_q.get("image_caption")
+        }
+
     new_q = await generator.regenerate_single_question(
         question_id=question_id,
         current_question=current_q,
         chunk_context=chunk_context,
-        bloom_level=bloom_lvl
+        bloom_level=bloom_lvl,
+        image_context=img_ctx
     )
     return {
         "success": True,
@@ -286,4 +295,31 @@ def get_job_status(job_id: str, db: Session = Depends(get_db)):
         "totalGenerated": job.total_generated,
         "createdAt": job.created_at.isoformat() if job.created_at else None,
         "completedAt": job.completed_at.isoformat() if job.completed_at else None
+    }
+
+@app.post("/chat")
+@app.post("/ai/chat")
+async def chat_copilot_endpoint(
+    req: Dict[str, Any],
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """API QuizGen Copilot: Trợ lý hội thoại học thuật AI thời gian thực"""
+    message = str(req.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Nội dung tin nhắn không được để trống.")
+
+    history = req.get("history") or []
+    context = req.get("context") or {}
+    if user_id:
+        context["userId"] = user_id
+
+    result = await generator.chat_with_copilot(
+        message=message,
+        history=history,
+        context=context
+    )
+    return {
+        "success": True,
+        "reply": result.get("reply", ""),
+        "suggestedActions": result.get("suggestedActions", [])
     }
