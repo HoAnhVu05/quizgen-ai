@@ -9,6 +9,7 @@ import { ReviewWorkspaceScreen } from './components/ReviewWorkspaceScreen';
 import { QuestionBankScreen } from './components/QuestionBankScreen';
 import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { ToastContainer } from './components/ToastContainer';
+import { UserProfileModal } from './components/UserProfileModal';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
   const [adminTab, setAdminTab] = useState<string>('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
@@ -485,15 +487,20 @@ export const App: React.FC = () => {
     fullName: string;
     academicTitle: string;
     department?: string;
+    faculty?: string;
+    university?: string;
   }) => {
     if (!currentUser) return;
-    const nextDept = updates.department?.trim() || currentUser.department || 'Khoa Công nghệ Thông tin';
+    const nextDept = updates.department?.trim() || currentUser.department || 'Bộ môn Khoa học máy tính';
+    const nextFaculty = updates.faculty?.trim() || currentUser.faculty || 'Khoa Công nghệ thông tin';
+    const nextUniv = updates.university?.trim() || currentUser.university || 'Trường Đại học Giao thông vận tải TP.HCM (UTH)';
     const updatedUser: UserProfile = {
       ...currentUser,
       fullName: updates.fullName.trim() || currentUser.fullName,
       academicTitle: updates.academicTitle.trim(),
       department: nextDept,
-      faculty: nextDept,
+      faculty: nextFaculty,
+      university: nextUniv,
     };
 
     setCurrentUser(updatedUser);
@@ -506,6 +513,8 @@ export const App: React.FC = () => {
           fullName: updatedUser.fullName,
           academicTitle: updatedUser.academicTitle || '',
           department: nextDept,
+          faculty: nextFaculty,
+          university: nextUniv,
         };
         localStorage.setItem('quizgen_google_profiles', JSON.stringify(profiles));
       } catch {}
@@ -651,6 +660,15 @@ export const App: React.FC = () => {
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
+      {/* User Profile & Academic Info Settings Modal */}
+      <UserProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        currentUser={currentUser}
+        onUpdateProfile={handleUpdateUserProfile}
+        onShowToast={handleShowToast}
+      />
+
       {/* Locked Alert Modal Layer */}
       {lockedAlert?.isOpen && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -702,6 +720,7 @@ export const App: React.FC = () => {
         onUpdateProfile={handleUpdateUserProfile}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
+        onOpenProfileModal={() => setIsProfileModalOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -711,14 +730,15 @@ export const App: React.FC = () => {
           currentScreen={currentScreen}
           currentUser={currentUser}
           onLogout={handleLogout}
-        onNavigate={(screen) => {
-          setCurrentScreen(screen);
-          setIsMobileMenuOpen(false);
-        }}
-        onAdminTabChange={setAdminTab}
+          onNavigate={(screen) => {
+            setCurrentScreen(screen);
+            setIsMobileMenuOpen(false);
+          }}
+          onAdminTabChange={setAdminTab}
           onRoleSwitch={handleRoleSwitch}
           onShowToast={handleShowToast}
           onToggleMobileMenu={() => setIsMobileMenuOpen((prev) => !prev)}
+          onOpenProfileModal={() => setIsProfileModalOpen(true)}
         />
 
         {/* Screen Content Viewport */}

@@ -32,6 +32,7 @@ interface SidebarProps {
   }) => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
+  onOpenProfileModal?: () => void;
 }
 
 interface NavItem {
@@ -118,6 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateProfile,
   isMobileOpen = false,
   onCloseMobile,
+  onOpenProfileModal,
 }) => {
   const activeRole: UserRole = currentUser?.role || 'lecturer';
   const isSystemAdmin = activeRole === 'admin';
@@ -394,7 +396,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {onUpdateProfile && currentUser && !isSystemAdmin && (
               <button
                 type="button"
-                onClick={openProfileEditor}
+                onClick={() => {
+                  if (onOpenProfileModal) {
+                    onOpenProfileModal();
+                  } else {
+                    openProfileEditor();
+                  }
+                }}
                 title="Đổi học vị & tên hiển thị"
                 className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
               >
