@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileText,
   Sparkles,
@@ -18,8 +18,13 @@ import {
   Check,
   Calendar,
   BarChart2,
+  PieChart,
+  Lightbulb,
+  Brain,
+  GraduationCap,
+  GitBranch,
 } from 'lucide-react';
-import { ScreenId, UserProfile } from '../types';
+import { ScreenId, UserProfile, Question } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
 
 interface DashboardScreenProps {
@@ -27,13 +32,15 @@ interface DashboardScreenProps {
   pendingReviewCount: number;
   approvedCount: number;
   currentUser?: UserProfile | null;
+  questions?: Question[];
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   onNavigate,
   pendingReviewCount,
   approvedCount,
-  currentUser
+  currentUser,
+  questions: propsQuestions,
 }) => {
   const role = currentUser?.role || 'lecturer';
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
@@ -49,6 +56,215 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     textbooksIndexed: 0,
     totalGenerated: 0
   });
+
+  // Hover state for interactive donut chart & cards
+  const [hoveredLevel, setHoveredLevel] = useState<string | null>(null);
+
+  // Compute unified Bloom Taxonomy metrics from actual questions
+  const computedBloomData = useMemo(() => {
+    let allQuestions: Question[] = [];
+    if (propsQuestions && Array.isArray(propsQuestions) && propsQuestions.length > 0) {
+      allQuestions = propsQuestions;
+    } else {
+      try {
+        const saved = localStorage.getItem('quizgen_questions');
+        if (saved) {
+          allQuestions = JSON.parse(saved);
+        }
+      } catch {}
+    }
+
+    const validQuestions = Array.isArray(allQuestions) ? allQuestions : [];
+    const total = validQuestions.length;
+
+    let rememberCount = 0;
+    let understandCount = 0;
+    let applyCount = 0;
+    let analyzeCount = 0;
+
+    validQuestions.forEach((q) => {
+      const level = (q.bloomLevel || (q as any).bloom_level || '').trim().toLowerCase();
+      if (level.includes('nhận biết') || level.includes('remember')) {
+        rememberCount++;
+      } else if (level.includes('thông hiểu') || level.includes('understand')) {
+        understandCount++;
+      } else if (level.includes('vận dụng') || level.includes('apply')) {
+        applyCount++;
+      } else if (level.includes('phân tích') || level.includes('analyze')) {
+        analyzeCount++;
+      } else {
+        rememberCount++;
+      }
+    });
+
+    // If no questions in storage/props, check if API provided distribution
+    if (total === 0 && Array.isArray(bloomDistribution) && bloomDistribution.some((b) => b.count > 0)) {
+      const apiTotal = bloomDistribution.reduce((acc, b) => acc + (b.count || 0), 0);
+      if (apiTotal > 0) {
+        return {
+          total: apiTotal,
+          items: [
+            {
+              id: 'remember',
+              nameVi: 'Nhận biết',
+              nameEn: 'Remember',
+              count: bloomDistribution[0]?.count || 0,
+              percent: Math.round(((bloomDistribution[0]?.count || 0) / apiTotal) * 100),
+              hex: '#8B5CF6',
+              bgClass: 'bg-[#FAF5FF]',
+              borderClass: 'border-purple-200/80',
+              badgeClass: 'bg-purple-100 text-purple-700 border-purple-200',
+              iconBoxClass: 'bg-purple-100 text-purple-600',
+              textClass: 'text-purple-700',
+              icon: BookOpen,
+            },
+            {
+              id: 'understand',
+              nameVi: 'Thông hiểu',
+              nameEn: 'Understand',
+              count: bloomDistribution[1]?.count || 0,
+              percent: Math.round(((bloomDistribution[1]?.count || 0) / apiTotal) * 100),
+              hex: '#3B82F6',
+              bgClass: 'bg-[#EFF6FF]',
+              borderClass: 'border-blue-200/80',
+              badgeClass: 'bg-blue-100 text-blue-700 border-blue-200',
+              iconBoxClass: 'bg-blue-100 text-blue-600',
+              textClass: 'text-blue-700',
+              icon: Lightbulb,
+            },
+            {
+              id: 'apply',
+              nameVi: 'Vận dụng',
+              nameEn: 'Apply',
+              count: bloomDistribution[2]?.count || 0,
+              percent: Math.round(((bloomDistribution[2]?.count || 0) / apiTotal) * 100),
+              hex: '#06B6D4',
+              bgClass: 'bg-[#ECFEFF]',
+              borderClass: 'border-cyan-200/80',
+              badgeClass: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+              iconBoxClass: 'bg-cyan-100 text-cyan-700',
+              textClass: 'text-cyan-700',
+              icon: Cpu,
+            },
+            {
+              id: 'analyze',
+              nameVi: 'Phân tích',
+              nameEn: 'Analyze',
+              count: bloomDistribution[3]?.count || 0,
+              percent: Math.round(((bloomDistribution[3]?.count || 0) / apiTotal) * 100),
+              hex: '#F59E0B',
+              bgClass: 'bg-[#FFFBEB]',
+              borderClass: 'border-amber-200/80',
+              badgeClass: 'bg-amber-100 text-amber-700 border-amber-200',
+              iconBoxClass: 'bg-amber-100 text-amber-600',
+              textClass: 'text-amber-700',
+              icon: GitBranch,
+            },
+          ],
+        };
+      }
+    }
+
+    const calcPercent = (cnt: number) => (total > 0 ? Math.round((cnt / total) * 100) : 0);
+
+    return {
+      total,
+      items: [
+        {
+          id: 'remember',
+          nameVi: 'Nhận biết',
+          nameEn: 'Remember',
+          count: rememberCount,
+          percent: calcPercent(rememberCount),
+          hex: '#8B5CF6',
+          bgClass: 'bg-[#FAF5FF]',
+          borderClass: 'border-purple-200/80',
+          badgeClass: 'bg-purple-100 text-purple-700 border-purple-200',
+          iconBoxClass: 'bg-purple-100 text-purple-600',
+          textClass: 'text-purple-700',
+          icon: BookOpen,
+        },
+        {
+          id: 'understand',
+          nameVi: 'Thông hiểu',
+          nameEn: 'Understand',
+          count: understandCount,
+          percent: calcPercent(understandCount),
+          hex: '#3B82F6',
+          bgClass: 'bg-[#EFF6FF]',
+          borderClass: 'border-blue-200/80',
+          badgeClass: 'bg-blue-100 text-blue-700 border-blue-200',
+          iconBoxClass: 'bg-blue-100 text-blue-600',
+          textClass: 'text-blue-700',
+          icon: Lightbulb,
+        },
+        {
+          id: 'apply',
+          nameVi: 'Vận dụng',
+          nameEn: 'Apply',
+          count: applyCount,
+          percent: calcPercent(applyCount),
+          hex: '#06B6D4',
+          bgClass: 'bg-[#ECFEFF]',
+          borderClass: 'border-cyan-200/80',
+          badgeClass: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+          iconBoxClass: 'bg-cyan-100 text-cyan-700',
+          textClass: 'text-cyan-700',
+          icon: Cpu,
+        },
+        {
+          id: 'analyze',
+          nameVi: 'Phân tích',
+          nameEn: 'Analyze',
+          count: analyzeCount,
+          percent: calcPercent(analyzeCount),
+          hex: '#F59E0B',
+          bgClass: 'bg-[#FFFBEB]',
+          borderClass: 'border-amber-200/80',
+          badgeClass: 'bg-amber-100 text-amber-700 border-amber-200',
+          iconBoxClass: 'bg-amber-100 text-amber-600',
+          textClass: 'text-amber-700',
+          icon: GitBranch,
+        },
+      ],
+    };
+  }, [propsQuestions, bloomDistribution]);
+
+  // Circumference for Donut Chart (radius = 65)
+  const donutRadius = 65;
+  const donutCircumference = 2 * Math.PI * donutRadius; // ~408.41
+
+  const donutSlices = useMemo(() => {
+    const total = computedBloomData.total;
+    if (total === 0) return [];
+
+    const nonZeroItems = computedBloomData.items.filter((item) => item.count > 0);
+    const gap = nonZeroItems.length > 1 ? 3 : 0;
+
+    let accumulatedOffset = 0;
+    return computedBloomData.items.map((item) => {
+      const fraction = total > 0 ? item.count / total : 0;
+      const arcLength = fraction * donutCircumference;
+      const dashLength = item.count > 0 ? Math.max(0, arcLength - gap) : 0;
+      const dasharray = item.count > 0 ? `${dashLength} ${donutCircumference - dashLength}` : `0 ${donutCircumference}`;
+      const offset = -accumulatedOffset;
+      if (item.count > 0) {
+        accumulatedOffset += arcLength;
+      }
+      return {
+        ...item,
+        fraction,
+        arcLength,
+        dasharray,
+        offset,
+      };
+    });
+  }, [computedBloomData, donutCircumference]);
+
+  const hoveredItem = useMemo(() => {
+    if (!hoveredLevel) return null;
+    return computedBloomData.items.find((item) => item.id === hoveredLevel) || null;
+  }, [hoveredLevel, computedBloomData]);
 
   useEffect(() => {
     try {
@@ -389,7 +605,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       {/* Main Content Split: Quick Workflow Steps & Bloom Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Workflow Quick Navigation */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 rounded-xl bg-[#cbf0ee] text-[#008689] flex items-center justify-center shrink-0">
@@ -581,40 +797,229 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         </div>
 
-        {/* Bloom Cognitive Distribution */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
+        {/* Bloom Cognitive Distribution – Donut + Smart Cards */}
+        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
-                <BarChart2 className="w-4 h-4" />
+            {/* A. Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 shadow-2xs">
+                  <PieChart className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm sm:text-base font-bold text-slate-800 truncate">
+                    Phân bố Thang đo Nhận thức Bloom
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5 truncate">
+                    Tỷ lệ câu hỏi theo 4 mức độ nhận thức trong Ngân hàng Đề
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm sm:text-base font-bold text-slate-800">
-                  Phân bổ Thang đo Nhận thức Bloom
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Tỷ lệ câu hỏi theo 4 mức độ nhận thức trong Ngân hàng Đề
-                </p>
+
+              {/* Right: Total questions count badge */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold shadow-2xs">
+                  <span className={`w-2 h-2 rounded-full ${computedBloomData.total > 0 ? 'bg-[#008689] animate-pulse' : 'bg-slate-300'}`} />
+                  <span>Tổng số câu hỏi: <strong className="text-slate-900">{computedBloomData.total}</strong></span>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4">
-              {bloomDistribution.map((item, idx) => (
-                <div key={idx}>
-                  <div className="flex justify-between text-xs mb-1.5">
-                    <span className="font-medium text-slate-700">{item.level}</span>
-                    <span className="font-semibold text-slate-600">
-                      {item.count} câu ({item.percent}%)
-                    </span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${item.color} rounded-full`}
-                      style={{ width: `${item.percent}%` }}
-                    />
+            {/* B. Khu vực biểu đồ và thống kê (2 cột) */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center pt-3 sm:pt-4">
+              {/* Cột trái – Donut Chart */}
+              <div className="md:col-span-5 flex flex-col items-center justify-center relative select-none">
+                <div className="relative w-44 h-44 flex items-center justify-center">
+                  {/* SVG Donut Chart */}
+                  <svg
+                    viewBox="0 0 180 180"
+                    className="w-full h-full transform -rotate-90 transition-transform duration-500"
+                  >
+                    {/* Background ring if total === 0 */}
+                    {computedBloomData.total === 0 && (
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="65"
+                        fill="none"
+                        stroke="#E2E8F0"
+                        strokeWidth="18"
+                        strokeDasharray="4 4"
+                        className="opacity-70"
+                      />
+                    )}
+
+                    {/* Slices when total > 0 */}
+                    {computedBloomData.total > 0 &&
+                      donutSlices.map((slice) => {
+                        if (slice.count === 0) return null;
+                        const isHovered = hoveredLevel === slice.id;
+                        return (
+                          <circle
+                            key={slice.id}
+                            cx="90"
+                            cy="90"
+                            r="65"
+                            fill="none"
+                            stroke={slice.hex}
+                            strokeWidth={isHovered ? 23 : 18}
+                            strokeDasharray={slice.dasharray}
+                            strokeDashoffset={slice.offset}
+                            className="transition-all duration-300 ease-out cursor-pointer hover:opacity-90"
+                            onMouseEnter={() => setHoveredLevel(slice.id)}
+                            onMouseLeave={() => setHoveredLevel(null)}
+                          >
+                            <title>{`${slice.nameVi} (${slice.nameEn}): ${slice.count} câu (${slice.percent}%)`}</title>
+                          </circle>
+                        );
+                      })}
+                  </svg>
+
+                  {/* Center Content */}
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-2">
+                    {hoveredItem ? (
+                      <>
+                        <div
+                          className="w-3 h-3 rounded-full mb-1 transition-all"
+                          style={{ backgroundColor: hoveredItem.hex }}
+                        />
+                        <span className="text-xl font-black text-slate-800 leading-none">
+                          {hoveredItem.count}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-600 truncate max-w-[85px] mt-0.5">
+                          {hoveredItem.nameVi}
+                        </span>
+                        <span
+                          className="text-[10px] font-black mt-0.5"
+                          style={{ color: hoveredItem.hex }}
+                        >
+                          {hoveredItem.percent}%
+                        </span>
+                      </>
+                    ) : computedBloomData.total > 0 ? (
+                      <>
+                        <div className="w-7 h-7 rounded-full bg-purple-50 flex items-center justify-center text-purple-600 mb-0.5">
+                          <Brain className="w-4 h-4" />
+                        </div>
+                        <span className="text-2xl font-black text-slate-800 leading-none tracking-tight">
+                          {computedBloomData.total}
+                        </span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-1">
+                          Câu hỏi
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <GraduationCap className="w-6 h-6 text-slate-300 mb-1" />
+                        <span className="text-sm font-bold text-slate-400 leading-none">0 câu</span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">Chưa có dữ liệu</span>
+                      </>
+                    )}
                   </div>
                 </div>
-              ))}
+
+                <span className="text-[11px] text-slate-400 mt-2 font-medium text-center">
+                  {computedBloomData.total > 0
+                    ? 'Rê chuột vào cung biểu đồ để xem chi tiết'
+                    : 'Chưa có câu hỏi trong ngân hàng'}
+                </span>
+              </div>
+
+              {/* Cột phải – Smart Cards (Grid 2 hàng x 2 cột) */}
+              <div className="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {computedBloomData.items.map((item) => {
+                  const ItemIcon = item.icon;
+                  const isHovered = hoveredLevel === item.id;
+                  return (
+                    <div
+                      key={item.id}
+                      onMouseEnter={() => setHoveredLevel(item.id)}
+                      onMouseLeave={() => setHoveredLevel(null)}
+                      className={`${item.bgClass} border ${item.borderClass} rounded-2xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer ${
+                        isHovered
+                          ? 'shadow-sm -translate-y-0.5 ring-2'
+                          : 'shadow-2xs hover:shadow-xs'
+                      }`}
+                      style={{
+                        borderColor: isHovered ? item.hex : undefined,
+                      }}
+                    >
+                      {/* Top: Icon + Badge */}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div
+                          className={`w-7 h-7 rounded-lg ${item.iconBoxClass} flex items-center justify-center shrink-0 shadow-2xs`}
+                        >
+                          <ItemIcon className="w-3.5 h-3.5" />
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${item.badgeClass}`}
+                        >
+                          {item.percent}%
+                        </span>
+                      </div>
+
+                      {/* Middle: Title Vi/En + Count */}
+                      <div className="mt-2">
+                        <div className="flex items-baseline gap-1 truncate">
+                          <span className="text-xs font-bold text-slate-800 truncate">
+                            {item.nameVi}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-semibold truncate">
+                            ({item.nameEn})
+                          </span>
+                        </div>
+                        <div className="text-lg sm:text-xl font-black text-slate-800 tracking-tight mt-0.5">
+                          {item.count}{' '}
+                          <span className="text-[11px] font-semibold text-slate-400">câu</span>
+                        </div>
+                      </div>
+
+                      {/* Bottom: Mini Progress Bar */}
+                      <div className="w-full h-1.5 bg-white/80 rounded-full overflow-hidden mt-2 border border-slate-200/50">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 ease-out"
+                          style={{
+                            width: `${item.percent}%`,
+                            backgroundColor: item.hex,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* C. Insight Summary */}
+            <div className="mt-4 p-3.5 rounded-2xl bg-gradient-to-r from-teal-50/70 via-sky-50/50 to-slate-50 border border-teal-100/90 flex items-start sm:items-center gap-3 shadow-2xs text-xs">
+              <div className="w-8 h-8 rounded-xl bg-[#cbf0ee] text-[#008689] flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 shadow-2xs">
+                <Lightbulb className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1 text-slate-600 leading-relaxed">
+                {computedBloomData.total === 0 ? (
+                  <p>
+                    <strong className="text-slate-800 font-bold">Chưa có dữ liệu ma trận Bloom:</strong> Ngân hàng đề hiện chưa có câu hỏi nào. Khi bạn tải giáo trình hoặc sinh đề thi AI, hệ thống sẽ tự động phân loại và cập nhật phân bố Bloom theo thời gian thực.
+                  </p>
+                ) : (
+                  <p>
+                    <strong className="text-slate-800 font-bold">Nhận xét phân bố thực tế:</strong>{' '}
+                    Tổng số {computedBloomData.total} câu hỏi gồm{' '}
+                    {computedBloomData.items[0].count} câu Nhận biết ({computedBloomData.items[0].percent}%),{' '}
+                    {computedBloomData.items[1].count} câu Thông hiểu ({computedBloomData.items[1].percent}%),{' '}
+                    {computedBloomData.items[2].count} câu Vận dụng ({computedBloomData.items[2].percent}%), và{' '}
+                    {computedBloomData.items[3].count} câu Phân tích ({computedBloomData.items[3].percent}%).{' '}
+                    Tỷ lệ nhóm Cơ bản (Nhận biết & Thông hiểu) là{' '}
+                    <span className="font-bold text-slate-800">
+                      {computedBloomData.items[0].percent + computedBloomData.items[1].percent}%
+                    </span>
+                    , nhóm Nâng cao (Vận dụng & Phân tích) là{' '}
+                    <span className="font-bold text-slate-800">
+                      {computedBloomData.items[2].percent + computedBloomData.items[3].percent}%
+                    </span>
+                    .
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
