@@ -131,16 +131,19 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-4xl w-full overflow-hidden shadow-2xl border border-slate-200/80 flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
         
-        {/* Modal Top Bar */}
-        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-teal-500/20 text-[#00a896] flex items-center justify-center border border-teal-500/30">
-              <QrCode className="w-4 h-4 text-teal-300" />
+        {/* Modal Top Bar with Fluid Waving Gradient */}
+        <div className="wave-gradient-flow relative px-6 pt-5 pb-9 text-white flex items-center justify-between shrink-0 shadow-md overflow-hidden">
+          {/* Subtle Ambient Glowing Orbs */}
+          <div className="fluid-blob-animate absolute top-0 right-1/4 w-72 h-72 bg-white/15 rounded-full blur-2xl pointer-events-none" />
+          
+          <div className="relative z-20 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-white/20 text-white flex items-center justify-center border border-white/30 shadow-xs">
+              <QrCode className="w-4 h-4 text-amber-200" />
             </div>
             <div>
               <h3 className="font-bold text-sm text-white flex items-center gap-2">
                 Cổng Thanh Toán VietQR Chuẩn NAPAS 24/7
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-white/20 text-white border border-white/30 shadow-2xs">
                   Tự Động 100%
                 </span>
               </h3>
@@ -148,11 +151,30 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+            className="relative z-20 p-1.5 rounded-xl text-white/80 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-colors cursor-pointer"
             title="Đóng (Esc)"
           >
             <X className="w-5 h-5" />
           </button>
+
+          {/* Undulating Wave Crest spilling down */}
+          <div className="absolute -bottom-1 left-0 w-full overflow-hidden leading-none pointer-events-none z-10">
+            <svg
+              className="relative block w-[200%] h-6 sm:h-7"
+              viewBox="0 0 1200 120"
+              preserveAspectRatio="none"
+            >
+              <path
+                d="M0,0 C150,90 350,-40 500,45 C650,110 900,-30 1200,60 L1200,120 L0,120 Z"
+                fill="rgba(6, 182, 212, 0.4)"
+                className="wave-animate-back"
+              />
+              <path
+                d="M0,45 C150,110 350,15 600,80 C850,135 1050,35 1200,75 L1200,120 L0,120 Z"
+                fill="#f8fafc"
+              />
+            </svg>
+          </div>
         </div>
 
         {/* Modal Body */}
@@ -215,69 +237,102 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
             /* ===== DUAL-PANEL FINTECH CHECKOUT VIEW ===== */
             <div className="grid grid-cols-1 md:grid-cols-12 min-h-[500px]">
               
-              {/* --- LEFT PANEL: Order Summary & Benefits (40%) --- */}
-              <div className="md:col-span-5 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white p-6 sm:p-7 flex flex-col justify-between border-b md:border-b-0 md:border-r border-slate-800">
-                <div className="space-y-6">
+              {/* --- LEFT PANEL: Waving Liquid Ocean Column overflowing into Right Panel (40%) --- */}
+              <div className="wave-panel-flow relative md:col-span-5 text-white p-6 sm:p-7 flex flex-col justify-between overflow-hidden shadow-xl">
+                {/* Organic Liquid Drifting Blobs inside */}
+                <div className="fluid-blob-animate absolute top-0 right-0 w-72 h-72 bg-white/15 blur-3xl pointer-events-none" />
+                <div className="fluid-blob-animate absolute bottom-0 left-0 w-64 h-64 bg-cyan-400/20 blur-2xl pointer-events-none" style={{ animationDelay: '-4s' }} />
+
+                <div className="relative z-20 space-y-6">
                   {/* Order Tag */}
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-teal-100/90 block mb-1">
                       Đơn hàng thanh toán
                     </span>
                     <div className="flex items-center gap-2">
                       <span className="text-base font-black text-white font-mono">#{order.order_code}</span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/20 text-amber-200 border border-white/30 shadow-xs">
                         Chờ Chuyển Khoản
                       </span>
                     </div>
                   </div>
 
                   {/* Plan Card Spotlight */}
-                  <div className="p-4 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+                  <div className="p-4 rounded-2xl bg-white/15 backdrop-blur-xs border border-white/25 space-y-2 shadow-xs">
                     <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
-                      <Crown className="w-4 h-4 text-amber-400" />
+                      <Crown className="w-4 h-4 text-amber-300" />
                       <span>{order.plan_name}</span>
                     </div>
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-baseline gap-1.5">
                       <span className="text-2xl sm:text-3xl font-black text-white">
                         {order.amount_vnd.toLocaleString('vi-VN')}
                       </span>
-                      <span className="text-xs text-slate-400 font-bold">VNĐ</span>
+                      <span className="text-xs text-white/80 font-bold">VNĐ</span>
                     </div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                    <p className="text-[11px] text-white/85 leading-relaxed">
                       Áp dụng ưu đãi hỗ trợ giảng viên kiểm thử hệ thống trực tiếp bằng tiền thật.
                     </p>
                   </div>
 
                   {/* Instant Benefits List */}
                   <div className="space-y-2.5">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-teal-100/90 block">
                       Đặc quyền mở khóa ngay:
                     </span>
-                    <div className="space-y-2 text-xs text-slate-300">
+                    <div className="space-y-2.5 text-xs text-white/95">
                       <div className="flex items-start gap-2">
-                        <Check className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
-                        <span><strong>Không giới hạn tài liệu</strong> lưu trữ trong Vector Store.</span>
+                        <div className="w-4 h-4 rounded-full bg-white/25 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <Check className="w-2.5 h-2.5 text-emerald-200 stroke-[3]" />
+                        </div>
+                        <span><strong>Không giới hạn tài liệu</strong> nạp vào Vector Store.</span>
                       </div>
                       <div className="flex items-start gap-2">
-                        <Check className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
+                        <div className="w-4 h-4 rounded-full bg-white/25 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <Check className="w-2.5 h-2.5 text-emerald-200 stroke-[3]" />
+                        </div>
                         <span><strong>Sinh 6 mức độ Bloom</strong> chuẩn kiểm định giáo dục.</span>
                       </div>
                       <div className="flex items-start gap-2">
-                        <Check className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
+                        <div className="w-4 h-4 rounded-full bg-white/25 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <Check className="w-2.5 h-2.5 text-emerald-200 stroke-[3]" />
+                        </div>
                         <span><strong>Xuất gói QTI Canvas LMS</strong> và file Word kèm ma trận.</span>
                       </div>
                       <div className="flex items-start gap-2">
-                        <Check className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
-                        <span><strong>Tốc độ xử lý ưu tiên</strong> GPU Cloud &lt; 15 giây.</span>
+                        <div className="w-4 h-4 rounded-full bg-white/25 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                          <Check className="w-2.5 h-2.5 text-emerald-200 stroke-[3]" />
+                        </div>
+                        <span><strong>Tốc độ xử lý ưu tiên</strong> GPU Cloud dưới 15 giây.</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Left Footer Security */}
-                <div className="pt-6 border-t border-white/10 flex items-center gap-2.5 text-[11px] text-slate-400">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <div className="relative z-20 pt-6 border-t border-white/20 flex items-center gap-2.5 text-[11px] text-white/85">
+                  <ShieldCheck className="w-4 h-4 text-emerald-300 shrink-0" />
                   <span>Mỗi mã QR gắn liền duy nhất với 01 đơn hàng để tự động hóa tuyệt đối.</span>
+                </div>
+
+                {/* Undulating Vertical Wave Spilling into the Right Panel */}
+                <div className="hidden md:block absolute -right-5 top-0 bottom-0 w-8 overflow-hidden pointer-events-none z-10">
+                  <svg
+                    className="h-[200%] w-full"
+                    viewBox="0 0 100 1200"
+                    preserveAspectRatio="none"
+                  >
+                    {/* Back wave layer */}
+                    <path
+                      d="M0,0 C60,150 -30,350 40,550 C90,750 -20,950 50,1150 C90,1350 -10,1550 40,1750 C80,1950 -20,2150 30,2350 L0,2400 Z"
+                      fill="rgba(6, 182, 212, 0.4)"
+                      className="wave-animate-vertical-back"
+                    />
+                    {/* Front wave blending into right side */}
+                    <path
+                      d="M0,0 C40,200 -20,400 50,650 C100,850 -10,1050 40,1300 C80,1500 -20,1700 50,1950 C90,2150 -10,2350 40,2400 L0,2400 Z"
+                      fill="#ffffff"
+                    />
+                  </svg>
                 </div>
               </div>
 

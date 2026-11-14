@@ -160,6 +160,156 @@
   animation: shimmerWave 1.8s ease-in-out infinite;
 }
 
+/* Animated Liquid Waves & Ocean Gradient Shift for Payment */
+@keyframes auroraGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes waveFlowFront {
+  0% {
+    transform: translateX(0) scaleY(1);
+  }
+  50% {
+    transform: translateX(-25%) scaleY(1.3);
+  }
+  100% {
+    transform: translateX(-50%) scaleY(1);
+  }
+}
+
+@keyframes waveFlowBack {
+  0% {
+    transform: translateX(-50%) scaleY(1.2);
+  }
+  50% {
+    transform: translateX(-25%) scaleY(0.8);
+  }
+  100% {
+    transform: translateX(0) scaleY(1.2);
+  }
+}
+
+@keyframes waveFlowVerticalFront {
+  0% {
+    transform: translateY(0) scaleX(1);
+  }
+  50% {
+    transform: translateY(-25%) scaleX(1.35);
+  }
+  100% {
+    transform: translateY(-50%) scaleX(1);
+  }
+}
+
+@keyframes waveFlowVerticalBack {
+  0% {
+    transform: translateY(-50%) scaleX(1.2);
+  }
+  50% {
+    transform: translateY(-25%) scaleX(0.85);
+  }
+  100% {
+    transform: translateY(0) scaleX(1.2);
+  }
+}
+
+@keyframes organicFluidDrift {
+  0%, 100% {
+    border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    border-radius: 70% 30% 50% 50% / 30% 60% 40% 70%;
+    transform: translate(25px, -18px) scale(1.1) rotate(120deg);
+  }
+  66% {
+    border-radius: 50% 60% 30% 60% / 60% 30% 70% 40%;
+    transform: translate(-18px, 20px) scale(0.95) rotate(240deg);
+  }
+}
+
+.wave-animate-front {
+  animation: waveFlowFront 6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.wave-animate-back {
+  animation: waveFlowBack 8s ease-in-out infinite;
+}
+
+.wave-animate-vertical-front {
+  animation: waveFlowVerticalFront 6.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.wave-animate-vertical-back {
+  animation: waveFlowVerticalBack 8.5s ease-in-out infinite;
+}
+
+.fluid-blob-animate {
+  animation: organicFluidDrift 8s ease-in-out infinite;
+}
+
+.wave-gradient-flow {
+  background: linear-gradient(
+    125deg,
+    #008689 0%,
+    #06b6d4 22%,
+    #2563eb 45%,
+    #6366f1 65%,
+    #10b981 85%,
+    #008689 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7s ease-in-out infinite;
+}
+
+.wave-panel-flow {
+  background: linear-gradient(
+    155deg,
+    #005a5d 0%,
+    #0891b2 20%,
+    #1e40af 45%,
+    #059669 70%,
+    #005a5d 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7.5s ease-in-out infinite;
+}
+
+.aurora-header-slow {
+  background: linear-gradient(
+    125deg,
+    #008689 0%,
+    #06b6d4 22%,
+    #2563eb 45%,
+    #6366f1 65%,
+    #10b981 85%,
+    #008689 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7s ease-in-out infinite;
+}
+
+.aurora-panel-slow {
+  background: linear-gradient(
+    155deg,
+    #005a5d 0%,
+    #0891b2 20%,
+    #1e40af 45%,
+    #059669 70%,
+    #005a5d 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7.5s ease-in-out infinite;
+}
+
 /* Print Stylesheet - Only print exam paper, hide all UI chrome */
 @media print {
   @page {

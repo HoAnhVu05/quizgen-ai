@@ -117,40 +117,67 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[94vh] overflow-hidden shadow-2xl border border-slate-200/80 flex flex-col animate-in zoom-in-95 duration-200">
         
-        {/* ===== 1. Premium Hero Header ===== */}
-        <div className="relative px-6 py-6 bg-gradient-to-r from-slate-950 via-slate-900 to-[#005a5d] text-white shrink-0 overflow-hidden border-b border-white/10">
-          {/* Subtle Ambient Glowing Orbs */}
-          <div className="absolute top-0 right-1/4 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-10 left-10 w-60 h-60 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+        {/* ===== 1. Premium Animated Aurora Wave Header ===== */}
+        <div className="wave-gradient-flow relative px-6 pt-7 pb-10 text-white shrink-0 overflow-visible shadow-md">
+          {/* Subtle Ambient Glowing Orbs with organic drift */}
+          <div className="fluid-blob-animate absolute top-0 right-1/4 w-96 h-96 bg-white/15 blur-3xl pointer-events-none" />
+          <div className="fluid-blob-animate absolute -bottom-10 left-10 w-72 h-72 bg-amber-300/20 blur-2xl pointer-events-none" style={{ animationDelay: '-3s' }} />
 
-          <div className="relative z-10 flex items-center justify-between gap-4">
+          <div className="relative z-20 flex items-center justify-between gap-4">
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-gradient-to-r from-amber-400/20 to-teal-400/20 text-amber-300 border border-amber-300/30 shadow-xs">
-                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-white/20 text-amber-200 border border-white/30 shadow-xs backdrop-blur-xs">
+                  <Crown className="w-3.5 h-3.5 text-amber-300" />
                   Nâng Cấp Bản Quyền Giảng Viên
                 </span>
                 {isUserPro && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                    <CheckCircle2 className="w-3 h-3" /> Đã Kích Hoạt PRO
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 text-white border border-white/30">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-300" /> Đã Kích Hoạt PRO
                   </span>
                 )}
               </div>
               <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
                 Mở Khóa Toàn Bộ Sức Mạnh QuizGen AI
               </h2>
-              <p className="text-xs sm:text-sm text-slate-300 max-w-2xl">
+              <p className="text-xs sm:text-sm text-white/90 max-w-2xl leading-relaxed">
                 Lưu trữ giáo trình không giới hạn, sinh câu hỏi chuẩn kiểm định 6 bậc Bloom và xuất trực tiếp Canvas LMS / Word chuẩn đề thi.
               </p>
             </div>
 
             <button
               onClick={onClose}
-              className="p-2.5 rounded-2xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all shrink-0 cursor-pointer"
+              className="p-2.5 rounded-2xl text-white/80 hover:text-white bg-white/10 hover:bg-white/20 border border-white/20 transition-all shrink-0 cursor-pointer shadow-xs"
               title="Đóng (Esc)"
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+
+          {/* Undulating Organic Wave Crest overflowing down into content */}
+          <div className="absolute -bottom-1 left-0 w-full overflow-hidden leading-none pointer-events-none z-10">
+            <svg
+              className="relative block w-[200%] h-8 sm:h-10"
+              viewBox="0 0 1200 120"
+              preserveAspectRatio="none"
+            >
+              {/* Back wave layer with cyan glow */}
+              <path
+                d="M0,0 C150,90 350,-40 500,45 C650,110 900,-30 1200,60 L1200,120 L0,120 Z"
+                fill="rgba(6, 182, 212, 0.4)"
+                className="wave-animate-back"
+              />
+              {/* Mid wave layer with royal sapphire glow */}
+              <path
+                d="M0,20 C200,100 450,-20 700,60 C950,120 1100,0 1200,40 L1200,120 L0,120 Z"
+                fill="rgba(37, 99, 235, 0.35)"
+                className="wave-animate-front"
+              />
+              {/* Front wave blending into content background */}
+              <path
+                d="M0,45 C150,110 350,15 600,80 C850,135 1050,35 1200,75 L1200,120 L0,120 Z"
+                fill="#f8fafc"
+              />
+            </svg>
           </div>
         </div>
 
@@ -381,21 +408,22 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
             </div>
           </div>
 
-          {/* ===== 4. Trust & Security Guarantee Footer ===== */}
-          <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-800 text-white flex flex-col sm:flex-row items-center justify-between gap-3 text-xs shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center border border-emerald-500/30 shrink-0">
-                <ShieldCheck className="w-4 h-4" />
+          {/* ===== 4. Trust & Security Guarantee Footer with Fluid Gradient Wave ===== */}
+          <div className="wave-panel-flow rounded-3xl p-5 text-white flex flex-col sm:flex-row items-center justify-between gap-4 text-xs shadow-lg border border-white/25 relative overflow-hidden">
+            <div className="fluid-blob-animate absolute -right-10 -bottom-10 w-60 h-60 bg-white/10 blur-2xl pointer-events-none" />
+            <div className="relative z-10 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center border border-white/30 shrink-0 shadow-xs">
+                <ShieldCheck className="w-5 h-5 text-amber-200" />
               </div>
               <div>
-                <span className="font-bold text-emerald-300">Thanh toán chuẩn VietQR NAPAS 24/7 an toàn tuyệt đối.</span>
-                <span className="text-slate-300 block text-[11px]">
+                <span className="font-extrabold text-white text-sm">Thanh toán chuẩn VietQR NAPAS 24/7 an toàn tuyệt đối.</span>
+                <span className="text-white/85 block text-[11px] mt-0.5">
                   Tự động quét biến động số dư TPBank và mở khóa gói cước tức thì sau 2 giây.
                 </span>
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-slate-300 shrink-0">
-              <Headphones className="w-3.5 h-3.5 text-teal-400" />
+            <div className="relative z-10 flex items-center gap-2 text-[11px] text-white/95 shrink-0 bg-white/10 px-3.5 py-2 rounded-xl border border-white/20">
+              <Headphones className="w-3.5 h-3.5 text-amber-300" />
               <span>Hỗ trợ kỹ thuật: <strong>quizgen.ai.team@gmail.com</strong></span>
             </div>
           </div>
