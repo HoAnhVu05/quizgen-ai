@@ -815,6 +815,73 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    // AI Copilot Chat (QuizGen Copilot)
+    if (pathname === '/api/v1/ai/chat' || pathname === '/ai/chat') {
+      const message = String(jsonBody.message || '').trim();
+      const ctx = jsonBody.context || {};
+      const screen = ctx.currentScreen || 'dashboard';
+      const screenLabel = ctx.screenLabel || 'Bảng điều khiển';
+      const q = ctx.activeQuestion;
+
+      let reply = '';
+      let suggestions = [];
+
+      const lowerMsg = message.toLowerCase();
+
+      if (lowerMsg.includes('bloom') || lowerMsg.includes('ma trận')) {
+        reply = `Theo Quy chuẩn Khảo thí UTH, cấu trúc ma trận Bloom tối ưu được khuyến nghị:\n\n` +
+          `• **Đề thi Giữa kỳ (60 phút):** 40% Nhận biết, 40% Thông hiểu, 20% Vận dụng.\n` +
+          `• **Đề thi Cuối kỳ (90 phút):** 30% Nhận biết, 40% Thông hiểu, 20% Vận dụng, 10% Phân tích.\n` +
+          `• **Kiểm tra 15 phút:** 70% Nhận biết, 30% Thông hiểu.\n\n` +
+          `Thầy/Cô có thể bấm vào tab **Bước 2: Sinh câu hỏi AI** và chọn các mẫu Preset có sẵn để hệ thống tự cân chỉnh tỷ lệ câu hỏi chính xác.`;
+        suggestions = ['📊 Áp dụng mẫu Giữa kỳ (40-40-20)', '📝 Áp dụng mẫu Cuối kỳ (30-40-20-10)', '💡 Sinh thêm câu hỏi Phân tích'];
+      } else if (lowerMsg.includes('giải thích') || lowerMsg.includes('tại sao') || lowerMsg.includes('đáp án')) {
+        if (q) {
+          reply = `**Giải thích sư phạm cho câu hỏi:** "${q.question}"\n\n` +
+            `• **Đáp án chính xác:** ${q.correctAnswerId ? q.correctAnswerId.toUpperCase() : 'A'}\n` +
+            `• **Cơ sở khoa học:** ${q.explanation || 'Theo nội dung chuẩn hóa trong giáo trình đã trích xuất.'}\n\n` +
+            `• **Phân tích các phương án gây nhiễu:** Các phương án còn lại cố tình đưa ra các yếu tố nghịch biến hoặc đảo ngược điều kiện tiên quyết để đánh giá năng lực phân biệt khái niệm của sinh viên.`;
+        } else {
+          reply = `Để tôi giải thích cặn kẽ một câu hỏi cụ thể, Thầy/Cô chỉ cần chọn hoặc mở câu hỏi đó trong danh sách tại **Bước 3: Đối soát đề**, sau đó bấm nút *Giải thích đáp án* nhé!`;
+        }
+        suggestions = ['📈 Tăng độ khó lên Vận dụng', '🎯 Tạo thêm 2 phương án bẫy', '📄 Xem trang sách nguồn'];
+      } else if (lowerMsg.includes('xuất') || lowerMsg.includes('in đề') || lowerMsg.includes('word') || lowerMsg.includes('pdf')) {
+        reply = `Hệ thống hỗ trợ xuất bản đề thi đa định dạng tại **Bước 4: Đóng gói & Xuất Đề Thi**:\n\n` +
+          `1. **Tệp Word (.docx):** Bản in đề thi chính thức chuẩn lề A4, bảng thông tin học phần và đáp án đính kèm cuối trang.\n` +
+          `2. **Tệp PDF + Phiếu OMR:** Tích hợp sẵn mẫu phiếu tô trắc nghiệm quang học 50 câu chuẩn thi tập trung.\n` +
+          `3. **Thuật toán Fisher-Yates:** Tự động xáo trộn và sinh từ 1 đến 8 mã đề thi độc lập, chống gian lận trong phòng thi.\n` +
+          `4. **Gói ZIP đồng bộ:** Tải toàn bộ các mã đề và bảng ma trận trong một file nén duy nhất.`;
+        suggestions = ['🖨️ Mở Bước 4: Xuất Đề Thi', '🔀 Đảo 4 mã đề tự động', '📑 Tải mẫu phiếu OMR'];
+      } else if (lowerMsg.includes('toán') || lowerMsg.includes('lý') || lowerMsg.includes('công thức') || lowerMsg.includes('latex')) {
+        reply = `QuizGen AI đã được nâng cấp toàn diện để hỗ trợ công thức Toán học & Vật lý theo chuẩn **LaTeX**:\n\n` +
+          `• Công thức dao động: $x = A\\cos(\\omega t + \\varphi)$, $v = -\\omega A\\sin(\\omega t + \\varphi)$\n` +
+          `• Công thức năng lượng: $E = \\frac{1}{2}m\\omega^2 A^2$, $E = mc^2$\n` +
+          `• Tích phân & Giải tích: $\\int_{a}^{b} f(x)dx = F(b) - F(a)$\n\n` +
+          `Toàn bộ công thức đều được render sắc nét trên giao diện và nhúng nguyên bản vào file Word in ra của Thầy/Cô.`;
+        suggestions = ['🔬 Soạn đề thi Vật lý đại cương', '📐 Soạn đề thi Toán giải tích', '📊 Kiểm tra render LaTeX'];
+      } else {
+        reply = `Chào Thầy/Cô! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của UTH.\n\n` +
+          `Hiện tại Thầy/Cô đang ở **${screenLabel}**.\n\n` +
+          `Tôi có thể hỗ trợ Thầy/Cô:\n` +
+          `• Giải thích chi tiết đáp án và cơ sở khoa học từng câu hỏi.\n` +
+          `• Viết lại, nâng/hạ độ khó câu hỏi theo Thang đo nhận thức Bloom.\n` +
+          `• Soạn thảo công thức Toán, Lý, Hóa chuẩn LaTeX ($...$).\n` +
+          `• Hướng dẫn xuất bản bộ đề thi Word/PDF OMR và thuật toán đảo mã đề.\n\n` +
+          `Thầy/Cô cần tôi hỗ trợ nội dung nào ngay bây giờ?`;
+        suggestions = ['💡 Giải thích đáp án', '📊 Tư vấn ma trận Bloom', '🖨️ Hướng dẫn xuất đề thi'];
+      }
+
+      setTimeout(() => {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          reply,
+          suggestedActions: suggestions
+        }));
+      }, 500);
+      return;
+    }
+
     // Documents: Upload động, Xóa & Liệt kê kho tri thức học thuật
     if (pathname === '/api/v1/documents/upload' || pathname === '/documents/upload') {
       let uploadedFilename = 'Tai_Lieu_Moi_' + Date.now() + '.docx';

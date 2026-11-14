@@ -438,3 +438,106 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
             }
             normalized.append(item)
         return normalized
+
+    async def chat_with_copilot(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Trò chuyện thông minh với QuizGen Copilot có nhận thức ngữ cảnh học thuật và màn hình hiện tại"""
+        if not self.model:
+            self._init_model()
+
+        ctx = context or {}
+        screen = ctx.get("currentScreen", "dashboard")
+        screen_label = ctx.get("screenLabel", "Không gian làm việc")
+        active_question = ctx.get("activeQuestion")
+        user_name = ctx.get("userName", "Thầy/Cô")
+
+        system_instruction = f"""
+Bạn là QuizGen Copilot — Trợ lý Khảo thí Học thuật AI chuyên nghiệp của Trường Đại học Giao thông Vận tải TP.HCM (UTH).
+Bạn đang đồng hành và hỗ trợ giảng viên ({user_name}) biên soạn, thẩm định và xuất bản đề thi trên nền tảng QuizGen AI.
+
+NGỮ CẢNH LÀM VIỆC HIỆN TẠI:
+- Màn hình hiện tại: {screen_label} (Mã màn hình: {screen})
+"""
+        if active_question and isinstance(active_question, dict):
+            q_txt = active_question.get('question', '')
+            bloom = active_question.get('bloomLevel') or active_question.get('bloom_level', '')
+            opts = active_question.get('options', [])
+            ans = active_question.get('correctAnswerId') or active_question.get('correct_answer_id', '')
+            exp = active_question.get('explanation', '')
+            system_instruction += f"""
+- Câu hỏi đang xem xét tại màn hình:
+  + Cấp độ Bloom: {bloom}
+  + Nội dung: {q_txt}
+  + Các phương án: {json.dumps(opts, ensure_ascii=False)}
+  + Đáp án đúng: {ans}
+  + Lời giải thích: {exp}
+"""
+
+        system_instruction += """
+NGUYÊN TẮC PHẢN HỒI:
+1. Luôn giữ văn phong sư phạm chuẩn mực, chuyên nghiệp, súc tích và giải quyết trực diện vấn đề.
+2. Hỗ trợ toàn diện: giải thích đáp án, viết lại câu hỏi khó hơn/dễ hơn, đề xuất phương án bẫy học thuật, tra cứu quy định ma trận Bloom.
+3. Khi viết công thức Toán, Vật lý, Kỹ thuật, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).
+4. Phản hồi bằng tiếng Việt chuẩn.
+"""
+
+        # Nếu không có mô hình (offline/chưa cấu hình API Key)
+        if not self.model:
+            return {
+                "reply": (
+                    f"Chào {user_name}! Tôi là QuizGen Copilot. Hiện tại tôi đang chạy ở chế độ Hỗ trợ Ngoại tuyến.\n\n"
+                    f"Bạn đang làm việc tại **{screen_label}**. Bạn có thể yêu cầu tôi giải thích đáp án, tăng độ khó câu hỏi theo ma trận Bloom, hoặc hướng dẫn xuất đề thi chuẩn Word/PDF bất kỳ lúc nào!"
+                ),
+                "suggestedActions": [
+                    "💡 Giải thích đáp án câu hỏi",
+                    "📈 Tăng độ khó Bloom",
+                    "🖨️ Hướng dẫn xuất bản đề thi"
+                ]
+            }
+
+        try:
+            # Xây dựng lịch sử hội thoại gần nhất
+            conversation_parts: List[Any] = [system_instruction]
+            if history:
+                for h in history[-6:]: # Giữ tối đa 6 lượt chat gần nhất
+                    role_str = "Giảng viên" if h.get("role") == "user" else "Copilot"
+                    conversation_parts.append(f"{role_str}: {h.get('content', '')}")
+
+            conversation_parts.append(f"Giảng viên: {message}\nCopilot:")
+
+            response = self.model.generate_content(
+                contents=[{"role": "user", "parts": conversation_parts}]
+            )
+            reply_text = response.text.strip() if response and response.text else "Tôi đã ghi nhận yêu cầu của bạn."
+
+            # Gợi ý hành động tiếp theo dựa trên màn hình
+            suggestions = [
+                "💡 Giải thích chi tiết câu hỏi này",
+                "📈 Viết lại câu hỏi ở mức Vận dụng cao",
+                "🎯 Thêm phương án bẫy học thuật"
+            ]
+            if screen == "generate":
+                suggestions = ["📊 Tỉ lệ Bloom chuẩn giữa kỳ?", "⚡ Tối ưu ma trận đề thi", "📖 Hỏi đáp về tài liệu"]
+            elif screen == "upload":
+                suggestions = ["📄 Định dạng tài liệu hỗ trợ?", "📑 Lưu ý file PDF có hình vẽ", "🔍 Kiểm tra nội dung trích xuất"]
+            elif screen == "bank":
+                suggestions = ["🖨️ Xuất đề thi Word chuẩn A4", "📝 Tạo phiếu chấm trắc nghiệm OMR", "🔀 Đảo mã đề Fisher-Yates"]
+
+            return {
+                "reply": reply_text,
+                "suggestedActions": suggestions
+            }
+        except Exception as e:
+            print(f"[AI-COPILOT] Lỗi phản hồi Copilot: {e}")
+            return {
+                "reply": f"Tôi đã tiếp nhận câu hỏi của bạn về: *\"{message}\"*. Hiện tại đường truyền AI đang bận hoặc có giới hạn tần suất, vui lòng thử lại sau giây lát hoặc chọn gợi ý bên dưới.",
+                "suggestedActions": [
+                    "💡 Giải thích câu hỏi",
+                    "📈 Tăng độ khó Bloom",
+                    "🖨️ Hướng dẫn xuất đề thi"
+                ]
+            }

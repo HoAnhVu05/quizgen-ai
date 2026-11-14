@@ -296,3 +296,30 @@ def get_job_status(job_id: str, db: Session = Depends(get_db)):
         "createdAt": job.created_at.isoformat() if job.created_at else None,
         "completedAt": job.completed_at.isoformat() if job.completed_at else None
     }
+
+@app.post("/chat")
+@app.post("/ai/chat")
+async def chat_copilot_endpoint(
+    req: Dict[str, Any],
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """API QuizGen Copilot: Trợ lý hội thoại học thuật AI thời gian thực"""
+    message = str(req.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Nội dung tin nhắn không được để trống.")
+
+    history = req.get("history") or []
+    context = req.get("context") or {}
+    if user_id:
+        context["userId"] = user_id
+
+    result = await generator.chat_with_copilot(
+        message=message,
+        history=history,
+        context=context
+    )
+    return {
+        "success": True,
+        "reply": result.get("reply", ""),
+        "suggestedActions": result.get("suggestedActions", [])
+    }
