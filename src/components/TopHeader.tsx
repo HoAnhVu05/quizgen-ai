@@ -194,7 +194,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <UserCog className="w-4 h-4 text-slate-400 group-hover:text-[#008689] shrink-0 ml-0.5" />
           </button>
         )}
-        )}
 
         {/* Subscription Plan Badge & Upgrade Action */}
         <div className="flex items-center gap-2">

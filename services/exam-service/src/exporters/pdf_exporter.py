@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import io
 import re
@@ -26,6 +27,9 @@ try:
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
+    rl_canvas = None
+    RL_A4 = None
+    RL_MM = None
 
 
 def _resolve_image_stream(img_source: Any) -> Optional[Tuple[io.BytesIO, float, float]]:

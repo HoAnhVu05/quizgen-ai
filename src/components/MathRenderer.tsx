@@ -104,7 +104,7 @@ export const MathRenderer: React.FC<MathRendererProps> = ({
         >
           <BlockMath
             math={seg.value}
-            renderError={(error) => (
+            renderError={(error: any) => (
               <span
                 className="text-rose-500 font-mono text-xs px-1.5 py-0.5 bg-rose-50 rounded border border-rose-200"
                 title={error.message}
@@ -122,7 +122,7 @@ export const MathRenderer: React.FC<MathRendererProps> = ({
       <span key={idx} className="inline-math-wrapper mx-0.5 inline-block align-baseline">
         <InlineMath
           math={seg.value}
-          renderError={(error) => (
+          renderError={(error: any) => (
             <span
               className="text-rose-500 font-mono text-xs px-1 py-0.5 bg-rose-50 rounded border border-rose-200"
               title={error.message}
