@@ -64,9 +64,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     if (currentUser) {
       setDraftTitle(currentUser.academicTitle || '');
       setDraftName(currentUser.fullName || '');
-      setDraftFaculty(currentUser.faculty || currentUser.department || 'Khoa Công nghệ thông tin');
-      setDraftDept(currentUser.department || 'Bộ môn Khoa học máy tính');
-      setDraftUniversity(currentUser.university || 'Trường Đại học Giao thông vận tải TP.HCM (UTH)');
+      setDraftFaculty(currentUser.faculty || currentUser.department || '');
+      setDraftDept(currentUser.department || '');
+      setDraftUniversity(currentUser.university || '');
     }
   }, [currentUser, isOpen]);
 
@@ -153,9 +153,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               <p className="text-xs text-teal-100 truncate mt-0.5">
                 {currentUser?.email || 'giangvien@ut.edu.vn'}
               </p>
-              <p className="text-[11px] text-teal-200/90 truncate mt-0.5">
-                {draftFaculty} • {draftUniversity}
-              </p>
+              {(draftFaculty || draftUniversity) ? (
+                <p className="text-[11px] text-teal-200/90 truncate mt-0.5">
+                  {[draftFaculty, draftUniversity].filter(Boolean).join(' • ')}
+                </p>
+              ) : null}
             </div>
           </div>
 

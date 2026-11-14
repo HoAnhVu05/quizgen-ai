@@ -137,11 +137,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <h2 className="text-sm font-bold text-slate-800 truncate leading-snug">
             {screenMeta.label}
           </h2>
-          <div className="hidden sm:flex items-center gap-1.5 text-[10px] text-slate-400 font-medium">
-            <span>Đại học GTVT TP.HCM (UTH)</span>
-            <span>•</span>
-            <span className="text-[#008689] font-bold">Phân hệ Khảo thí AI</span>
-          </div>
         </div>
       </div>
 
