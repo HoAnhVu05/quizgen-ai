@@ -6,6 +6,7 @@
 **Dự án:** QuizGen AI  
 **Phạm vi phụ trách:** Payment Service, Cổng Thanh toán VietQR TPBank, Admin Portal & Quản lý Phân quyền RBAC  
 **Nhánh làm việc (Git Branch):** feature/upload-from-nguyentann-20261030  
+**Mã Commit chính thức:** 84cabd2  
 
 ---
 
@@ -81,11 +82,43 @@ Trong ngày 14/11/2026, toàn bộ công việc được tập trung hoàn thi�
   - Port 8006: Admin Service
   - Port 8007: Payment Service (VietQR TPBank)
 - **Frontend App:** Chạy tại `http://127.0.0.1:3000/`.
-- **Git Commit & Push:** Đã commit và push tất cả các thay đổi lên branch `feature/upload-from-nguyentann-20261030` (Commit mới nhất: `84cabd2`).
+- **Git Commit & Push:** Đã commit và push tất cả các thay đổi lên branch `feature/upload-from-nguyentann-20261030`.
 
 ---
 
-## IV. TỆP VÀ THAM CHIẾU LIÊN QUAN
+## IV. MINH CHỨNG (EVIDENCE - LINK COMMIT GIT)
+
+*(Tuân thủ quy định: Dẫn link trực tiếp tới nhánh làm việc, danh sách commit trên GitHub và nhiệm vụ Jira tương ứng).*
+
+- **Đường dẫn nhánh làm việc Git (Branch URL):**  
+  [https://github.com/HoAnhVu05/quizgen-ai/tree/feature/upload-from-nguyentann-20261030](https://github.com/HoAnhVu05/quizgen-ai/tree/feature/upload-from-nguyentann-20261030)
+
+- **Đường dẫn nhiệm vụ Atlassian Jira:**  
+  [https://ut-team-quizgen-ai.atlassian.net/browse/SCRUM-86](https://ut-team-quizgen-ai.atlassian.net/browse/SCRUM-86)
+
+- **Danh sách link các Commit thực hiện trong ngày (GitHub Commits):**
+  1. **Commit `d6fc83a`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/d6fc83a](https://github.com/HoAnhVu05/quizgen-ai/commit/d6fc83a)  
+     *Nội dung:* `[SCRUM-86] Fix chuyen man hinh khi ha quyen Admin ve Giang vien va siet chat chi Admin goc moi duoc cap quyen Admin`
+  2. **Commit `a4452e7`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/a4452e7](https://github.com/HoAnhVu05/quizgen-ai/commit/a4452e7)  
+     *Nội dung:* `[SCRUM-86] Loai bo thanh tab ngang va header trung lap trong Admin Portal, dong bo menu doc Sidebar`
+  3. **Commit `7df1abd`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/7df1abd](https://github.com/HoAnhVu05/quizgen-ai/commit/7df1abd)  
+     *Nội dung:* `[SCRUM-86] Redesign User 360 inspection modal sang giao dien 2 cot Master-Detail hien dai, thoang dang`
+  4. **Commit `2f01709`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/2f01709](https://github.com/HoAnhVu05/quizgen-ai/commit/2f01709)  
+     *Nội dung:* `[SCRUM-86] Dong bo Payment vao Admin Portal, quan ly don gia goi cuoc va xem lich su mua goi`
+  5. **Commit `f922ae9`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/f922ae9](https://github.com/HoAnhVu05/quizgen-ai/commit/f922ae9)  
+     *Nội dung:* `[SCRUM-86] feat(ui): Uu tien ma QR to ro, thu gon thanh tren va tinh chinh thong tin chuyen khoan gon dep`
+  6. **Commit `1aa66e1`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/1aa66e1](https://github.com/HoAnhVu05/quizgen-ai/commit/1aa66e1)  
+     *Nội dung:* `[SCRUM-86] feat(ui): Thiet ke lai trang thanh toan kien truc Wave Canopy dong bo lien mach khong con thanh doc gia`
+  7. **Commit `28058e3`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/28058e3](https://github.com/HoAnhVu05/quizgen-ai/commit/28058e3)  
+     *Nội dung:* `[SCRUM-86] feat(ui): Nang cap hieu ung ngon song uon luon chuyen dong cho trang thanh toan`
+  8. **Commit `cab8f83`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/cab8f83](https://github.com/HoAnhVu05/quizgen-ai/commit/cab8f83)  
+     *Nội dung:* `[SCRUM-86] feat(ui): Nang cap toan bo giao dien trang thanh toan VietQR va xoa banner thua o buoc giao trinh`
+  9. **Commit `84cabd2`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/84cabd2](https://github.com/HoAnhVu05/quizgen-ai/commit/84cabd2)  
+     *Nội dung:* `[SCRUM-86] Merge toan bo code moi tu origin/develop vao branch: AIChatCopilot, KaTeX, Responsive Drawer`
+
+---
+
+## V. TỆP VÀ THAM CHIẾU LIÊN QUAN
 
 - [Payment Service Main](./services/payment-service/src/main.py)
 - [Admin Service Main](./services/admin-service/src/main.py)
