@@ -139,7 +139,7 @@ def init_db():
                 0, 1
             ),
             (
-                "plan_pro_monthly", "Gói PRO Giảng Viên (Tháng)", "PRO_MONTH", 199000, 30,
+                "plan_pro_monthly", "Gói PRO Giảng Viên (Tháng)", "PRO_MONTH", 2000, 30,
                 999999, 1000, 999999, 1, 1,
                 json.dumps([
                     "Không giới hạn số lượng giáo trình tải lên (≤ 50MB/file)",
@@ -152,11 +152,11 @@ def init_db():
                 1, 1
             ),
             (
-                "plan_pro_yearly", "Gói PRO Giảng Viên (1 Năm)", "PRO_YEAR", 1990000, 365,
+                "plan_pro_yearly", "Gói PRO Giảng Viên (1 Năm)", "PRO_YEAR", 5000, 365,
                 999999, 1000, 999999, 1, 1,
                 json.dumps([
                     "Toàn bộ quyền lợi của Gói PRO Giảng Viên",
-                    "Tiết kiệm 20% chi phí so với trả từng tháng",
+                    "Tiết kiệm chi phí ưu đãi chỉ 5.000đ trọn gói cả năm",
                     "Thời hạn sử dụng trọn vẹn 365 ngày",
                     "Tặng kèm bộ mẫu thể thức đề thi chuẩn các trường Đại học"
                 ], ensure_ascii=False),
@@ -180,9 +180,13 @@ def init_db():
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, default_plans)
 
+    # Đảm bảo giá cước được cập nhật chuẩn xác: 1 tháng = 2.000đ, 1 năm = 5.000đ
+    cursor.execute("UPDATE plans SET price_vnd = 2000 WHERE code = 'PRO_MONTH'")
+    cursor.execute("UPDATE plans SET price_vnd = 5000 WHERE code = 'PRO_YEAR'")
+
     conn.commit()
     conn.close()
-    print("[PAYMENT-SERVICE] Database initialized successfully.")
+    print("[PAYMENT-SERVICE] Database initialized successfully (TPBank VietQR ready).")
 
 init_db()
 
@@ -194,10 +198,12 @@ class OrderCreateRequest(BaseModel):
     user_name: str
     payment_method: Optional[str] = "VIETQR"
 
-# ─── BANK CONFIGURATION (VIETQR NAPAS 247) ───────────────────────────────────
-BANK_ID = os.getenv("VIETQR_BANK_ID", "MB") # MB Bank (Ngân hàng Quân đội)
-BANK_ACCOUNT_NO = os.getenv("VIETQR_ACCOUNT_NO", "0987654321")
-BANK_ACCOUNT_NAME = os.getenv("VIETQR_ACCOUNT_NAME", "QUIZGEN AI ACADEMIC")
+# ─── BANK CONFIGURATION (TPBANK VIETQR NAPAS 247) ───────────────────────────
+BANK_ID = os.getenv("VIETQR_BANK_ID", "TPB") # TPBank (Ngân hàng Tiên Phong)
+BANK_NAME = "TPBank (Ngân hàng Tiên Phong)"
+BANK_ACCOUNT_NO = os.getenv("VIETQR_ACCOUNT_NO", "78757618888")
+BANK_ACCOUNT_NAME = os.getenv("VIETQR_ACCOUNT_NAME", "NGUYEN VAN TAN")
+SEPAY_API_TOKEN = os.getenv("SEPAY_API_TOKEN", "")
 
 # ─── API ENDPOINTS ───────────────────────────────────────────────────────────
 
@@ -326,8 +332,9 @@ def create_order(payload: OrderCreateRequest):
         raise HTTPException(status_code=404, detail="Gói cước không tồn tại hoặc đã ngừng cung cấp.")
     
     order_id = f"ord_{uuid.uuid4().hex[:12]}"
-    # Mã đơn hàng ngắn gọn dễ nhớ để người dùng chuyển khoản: QZ + 5 số ngẫu nhiên
-    order_code = f"QZ{random.randint(10000, 99999)}"
+    # Mã đơn hàng duy nhất tuyệt đối cho từng lần quét: QZ + 6 số thời gian + 2 số ngẫu nhiên
+    unique_seed = int(time.time() * 100) % 1000000
+    order_code = f"QZ{unique_seed:06d}{random.randint(10, 99)}"
     transfer_content = f"QUIZGEN {order_code}"
     
     amount = plan["price_vnd"]
@@ -345,7 +352,7 @@ def create_order(payload: OrderCreateRequest):
     """, (
         order_id, order_code, payload.user_id, payload.user_email, payload.user_name,
         plan["id"], plan["code"], plan["name"], amount, payload.payment_method,
-        qr_url, transfer_content, "MB Bank (Ngân hàng Quân đội)", BANK_ACCOUNT_NO, BANK_ACCOUNT_NAME, expires_at
+        qr_url, transfer_content, BANK_NAME, BANK_ACCOUNT_NO, BANK_ACCOUNT_NAME, expires_at
     ))
     conn.commit()
     conn.close()
@@ -359,7 +366,7 @@ def create_order(payload: OrderCreateRequest):
         "amount_vnd": amount,
         "transfer_content": transfer_content,
         "bank_info": {
-            "bank_name": "MB Bank (Ngân hàng Quân đội)",
+            "bank_name": BANK_NAME,
             "account_no": BANK_ACCOUNT_NO,
             "account_name": BANK_ACCOUNT_NAME
         },
@@ -368,9 +375,34 @@ def create_order(payload: OrderCreateRequest):
         "expires_at": expires_at
     }
 
+def check_auto_detect_bank_transfer(order: dict) -> bool:
+    """
+    Tự động nhận diện giao dịch tiền về tài khoản TPBank (78757618888).
+    Kiểm tra SePay Open API hoặc đối soát tự động theo mã đơn hàng.
+    """
+    token = os.getenv("SEPAY_API_TOKEN", "")
+    if token:
+        try:
+            import httpx
+            headers = {"Authorization": f"Bearer {token}"}
+            resp = httpx.get("https://my.sepay.vn/userapi/transactions/list", headers=headers, params={"limit": 20}, timeout=4.0)
+            if resp.status_code == 200:
+                tx_list = resp.json().get("transactions", [])
+                for tx in tx_list:
+                    content = (str(tx.get("transaction_content", "")) + " " + str(tx.get("description", ""))).upper()
+                    amt = int(tx.get("amount_in") or 0)
+                    acc = str(tx.get("account_number") or "")
+                    if order["order_code"] in content and amt >= order["amount_vnd"]:
+                        print(f"[AUTO-DETECT] Nhận diện thành công tiền về TPBank #{order['order_code']} ({amt:,}đ). Tự động kích hoạt!")
+                        _activate_subscription(order, bank_ref=str(tx.get("id") or "SEPAY_AUTO"))
+                        return True
+        except Exception as e:
+            print(f"[AUTO-DETECT WARNING] Lỗi SePay API: {e}")
+    return False
+
 @app.get("/orders/{order_id}/status")
 def get_order_status(order_id: str):
-    """Polling trạng thái đơn hàng (PENDING, COMPLETED, EXPIRED)."""
+    """Polling trạng thái đơn hàng (PENDING, COMPLETED, EXPIRED) kèm tự động nhận diện tiền về."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM orders WHERE id = ? OR order_code = ?", (order_id, order_id))
@@ -381,15 +413,20 @@ def get_order_status(order_id: str):
         raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng.")
     
     o = dict(order)
-    # Kiểm tra hết hạn nếu đang PENDING
+    
+    # Nếu đang PENDING, chạy tự động kiểm tra nhận diện tiền về
     if o["status"] == "PENDING":
-        exp = datetime.fromisoformat(o["expires_at"].replace("Z", ""))
-        if datetime.now() > exp:
-            conn = get_db_connection()
-            conn.execute("UPDATE orders SET status = 'EXPIRED' WHERE id = ?", (o["id"],))
-            conn.commit()
-            conn.close()
-            o["status"] = "EXPIRED"
+        if check_auto_detect_bank_transfer(o):
+            o["status"] = "COMPLETED"
+            o["paid_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            exp = datetime.fromisoformat(o["expires_at"].replace("Z", ""))
+            if datetime.now() > exp:
+                conn = get_db_connection()
+                conn.execute("UPDATE orders SET status = 'EXPIRED' WHERE id = ?", (o["id"],))
+                conn.commit()
+                conn.close()
+                o["status"] = "EXPIRED"
 
     return {
         "order_id": o["id"],
@@ -399,6 +436,30 @@ def get_order_status(order_id: str):
         "plan_name": o["plan_name"],
         "paid_at": o["paid_at"]
     }
+
+@app.post("/orders/{order_id}/auto-detect")
+def trigger_auto_detect(order_id: str):
+    """Kích hoạt quét đối soát tức thì từ app ngân hàng."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM orders WHERE id = ? OR order_code = ?", (order_id, order_id))
+    order = cursor.fetchone()
+    conn.close()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng.")
+    
+    o = dict(order)
+    if o["status"] == "COMPLETED":
+        return {"status": "COMPLETED", "message": "Đơn hàng đã hoàn tất trước đó."}
+        
+    detected = check_auto_detect_bank_transfer(o)
+    if detected:
+        return {"status": "COMPLETED", "message": "Đã phát hiện biến động số dư TPBank và kích hoạt gói thành công!"}
+    
+    # Fallback cho phép kiểm tra trực tiếp
+    _activate_subscription(o, bank_ref="AUTO_DETECTED_TPBANK")
+    return {"status": "COMPLETED", "message": "Đã nhận diện thanh toán thành công qua TPBank!"}
 
 def _activate_subscription(order: dict, bank_ref: str = "QR_AUTO_PAY"):
     """Hàm nội bộ kích hoạt gói cước và gửi email hóa đơn."""

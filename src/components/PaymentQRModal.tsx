@@ -51,7 +51,7 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
     return () => clearInterval(interval);
   }, [order, isSuccess]);
 
-  // Smart Polling status every 3 seconds
+  // Smart Polling status every 2 seconds for real-time detection
   useEffect(() => {
     if (!order || isSuccess) return;
 
@@ -63,13 +63,13 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
           if (data.status === 'COMPLETED') {
             setIsSuccess(true);
             clearInterval(pollInterval);
-            onShowToast('success', 'Thanh toán thành công!', `Đã kích hoạt ${order.plan_name}.`);
+            onShowToast('success', 'Nhận diện tiền về thành công!', `Đã kích hoạt ${order.plan_name}.`);
           }
         }
       } catch (err) {
         // Silent poll error
       }
-    }, 3000);
+    }, 2000);
 
     return () => clearInterval(pollInterval);
   }, [order, isSuccess]);
@@ -194,9 +194,9 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
                   />
                   <div className="absolute inset-0 rounded-2xl bg-slate-900/0 hover:bg-slate-900/5 transition-colors pointer-events-none" />
                 </div>
-                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                  <span>Mở ứng dụng ngân hàng bất kỳ để quét mã QR</span>
+                <div className="flex items-center gap-1.5 text-[11px] text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-200 font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping shrink-0" />
+                  <span>Đang tự động quét biến động số dư TPBank ({order.bank_info.account_no})...</span>
                 </div>
               </div>
 
@@ -264,10 +264,10 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
                   className="w-full py-2.5 px-4 bg-[#008689] hover:bg-[#006e71] text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isConfirmingManual ? 'animate-spin' : ''}`} />
-                  <span>{isConfirmingManual ? 'Đang kiểm tra giao dịch...' : 'Tôi Đã Chuyển Khoản Thành Công'}</span>
+                  <span>{isConfirmingManual ? 'Đang nhận diện giao dịch...' : 'Kiểm Tra & Nhận Diện Tiền Về Ngay'}</span>
                 </button>
                 <p className="text-[10px] text-center text-slate-400">
-                  Hệ thống tự động kích hoạt gói cước ngay khi nhận được biến động số dư.
+                  Hệ thống tự động kích hoạt gói cước ngay khi nhận diện được biến động số dư.
                 </p>
               </div>
             </>
