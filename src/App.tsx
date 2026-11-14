@@ -706,6 +706,7 @@ export const App: React.FC = () => {
           currentUser={currentUser}
           onLogout={handleLogout}
           onNavigate={setCurrentScreen}
+          onAdminTabChange={setAdminTab}
           onRoleSwitch={handleRoleSwitch}
           onShowToast={handleShowToast}
         />

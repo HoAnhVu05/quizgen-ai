@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   Users,
   Server,
-  KeyRound,
   Terminal,
   Activity,
   Layers,
@@ -132,13 +131,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const filteredNavItems = useMemo<NavItem[]>(() => {
-    // Nếu là Quản trị viên: Hiển thị bộ chức năng Quản trị Tối cao chuyên biệt, không hiển thị quy trình của giảng viên
+    // Nếu là Quản trị viên: Hiển thị bộ chức năng quản trị chuyên biệt, không hiển thị quy trình của giảng viên
     if (activeRole === 'admin') {
       return [
         {
           id: 'admin_portal',
           adminSubTab: 'overview',
-          label: 'Tổng quan & Chỉ số Tối cao',
+          label: 'Tổng quan',
           icon: Activity,
         },
         {
@@ -150,14 +149,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {
           id: 'admin_portal',
           adminSubTab: 'services',
-          label: 'Giám sát 6 Microservices',
+          label: 'Kiểm tra Sức khỏe Cụm 7 Services',
           icon: Server,
-        },
-        {
-          id: 'admin_portal',
-          adminSubTab: 'security',
-          label: 'Bảo mật & Cấu hình 2FA',
-          icon: KeyRound,
         },
         {
           id: 'admin_portal',
@@ -252,7 +245,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </h1>
           <p className="text-[11px] text-slate-400 truncate">
-            {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Trợ lý Đề thi Giảng viên'}
+            {isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}
           </p>
         </div>
       </div>
@@ -260,7 +253,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Role Title Section Header */}
       <div className="px-4 pt-3 pb-1">
         <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-          {isSystemAdmin ? 'Phân Hệ Quản Trị Tối Cao' : 'Quy Trình Biên Soạn Đề'}
+          {isSystemAdmin ? 'Phân Hệ Quản Trị' : 'Quy Trình Biên Soạn Đề'}
         </span>
       </div>
 
@@ -366,7 +359,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="min-w-0">
               <div className="text-xs font-bold text-slate-800 truncate">{displayName}</div>
               <div className="text-[10px] text-slate-500 truncate">
-                {isSystemAdmin ? 'Quản trị Hệ thống (2FA)' : 'Giảng viên Học thuật'}
+                {isSystemAdmin ? 'Quản trị Hệ thống' : 'Giảng viên Học thuật'}
               </div>
             </div>
           </div>
