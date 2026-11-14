@@ -461,7 +461,7 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         doc_chunks = ctx.get("docChunks") or ctx.get("chunks") or []
 
         system_instruction = f"""
-Bạn là Qurator — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.
+Bạn là Quanta — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.
 Bạn đang đồng hành trực tiếp cùng {user_name} trong nghiên cứu tài liệu, thẩm định tri thức và biên soạn đề thi.
 Tuyệt đối không tự ý nhắc đến bất kỳ tên trường đại học cụ thể nào.
 

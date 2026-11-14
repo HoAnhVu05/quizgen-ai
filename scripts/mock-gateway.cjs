@@ -35,7 +35,7 @@ async function callGeminiChat({ message, history, context }) {
   const allDocs = (context && context.allDocuments) || [];
   const docChunks = (context && (context.docChunks || context.chunks)) || [];
 
-  let sysText = `Bạn là Qurator — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.\n` +
+  let sysText = `Bạn là Quanta — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.\n` +
     `Bạn đang đồng hành trực tiếp cùng ${userName} trong nghiên cứu tài liệu, thẩm định tri thức và biên soạn đề thi.\n` +
     `Màn hình làm việc hiện tại: ${screenLabel}.\n\n` +
     `QUY ĐỊNH BẮT BUỘC VỀ VAI TRÒ & NĂNG LỰC (NGHIÊM CẤM TỪ CHỐI):\n` +
@@ -1049,7 +1049,7 @@ const server = http.createServer((req, res) => {
             `4. **Gói ZIP đồng bộ:** Tải toàn bộ các mã đề và bảng ma trận trong một file nén duy nhất.`;
           suggestions = ['🖨️ Mở Bước 4: Xuất Đề Thi', '🔀 Đảo 4 mã đề tự động', '📑 Tải mẫu phiếu OMR'];
         } else {
-          reply = `Chào bạn! Tôi là **Qurator** — Trợ lý Khảo thí & Phân tích Giáo trình AI của QuizGen AI.\n\n` +
+          reply = `Chào bạn! Tôi là **Quanta** — Trợ lý Khảo thí & Phân tích Giáo trình AI của QuizGen AI.\n\n` +
             `Hiện tại bạn đang ở **${screenLabel}**.\n\n` +
             `Tôi có thể hỗ trợ bạn:\n` +
             `• Phân tích sâu, tóm tắt và trích xuất kiến thức trọng tâm từ giáo trình đã nạp.\n` +

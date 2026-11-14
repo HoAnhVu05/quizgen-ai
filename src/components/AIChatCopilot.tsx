@@ -44,7 +44,7 @@ const SCREEN_LABELS: Record<ScreenId, string> = {
 const DEFAULT_WELCOME_MESSAGE = (userName: string, screenLabel: string, bookName?: string): ChatMessage => ({
   id: 'welcome-msg',
   role: 'assistant',
-  content: `Kính chào **${userName || 'Thầy/Cô'}**! Tôi là **Qurator** — Trợ lý Khảo thí Học thuật & Phân tích Giáo trình AI của hệ thống QuizGen AI.\n\n` +
+  content: `Kính chào **${userName || 'Thầy/Cô'}**! Tôi là **Quanta** — Trợ lý Khảo thí Học thuật & Phân tích Giáo trình AI của hệ thống QuizGen AI.\n\n` +
     `Tôi có toàn quyền **truy cập, đọc hiểu và phân tích sâu toàn bộ giáo trình/tài liệu** mà Thầy/Cô đã nạp${bookName ? ` (đang kết nối trực tiếp: *${bookName}*)` : ''}.\n\n` +
     `Thầy/Cô có thể yêu cầu tôi bất kỳ điều gì: tóm tắt giáo trình, tra cứu định nghĩa hay công thức ở trang mấy, phân tích ma trận Bloom, hoặc giải thích câu hỏi chuyên sâu!`,
   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -248,7 +248,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           {/* Subtle floating badge tooltip */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 text-slate-700 text-xs font-semibold shadow-md border border-slate-200 select-none animate-bounce">
             <Sparkles className="w-3.5 h-3.5 text-[#008689]" />
-            <span>Hỏi Qurator AI</span>
+            <span>Hỏi Quanta AI</span>
           </div>
 
           <button
@@ -278,7 +278,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-extrabold tracking-tight truncate">Qurator</h3>
+                  <h3 className="text-xs font-extrabold tracking-tight truncate">Quanta</h3>
                   <span className="inline-flex items-center px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
                     AI Scholar
                   </span>
@@ -440,7 +440,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                       <Bot className="w-3.5 h-3.5" />
                     </div>
                     <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-none bg-white border border-slate-200 shadow-sm flex items-center gap-1.5 text-slate-400 text-xs">
-                      <span>Qurator đang tra cứu tài liệu & suy nghĩ</span>
+                      <span>Quanta đang tra cứu tài liệu & suy nghĩ</span>
                       <span className="flex gap-1 items-center">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" />
                         <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce [animation-delay:0.2s]" />
