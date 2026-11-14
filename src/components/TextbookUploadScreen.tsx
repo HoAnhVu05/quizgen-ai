@@ -436,76 +436,36 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         />
       </div>
 
-      {/* Quota & Subscription Status Banner */}
-      {isPro ? (
-        <div className="bg-gradient-to-r from-amber-500/10 via-amber-400/5 to-teal-500/10 border border-amber-300/60 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-sm shrink-0">
-              <Crown className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-md border border-amber-200">
-                  {subscriptionInfo?.plan_name || 'Gói PRO Giảng Viên'}
-                </span>
-                <span className="text-[11px] font-bold text-teal-700 bg-teal-100 px-2 py-0.5 rounded-md">
-                  👑 Không giới hạn tài liệu
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 mt-0.5">
-                Tài khoản của bạn đã được mở khóa toàn diện: Tải lên không giới hạn giáo trình và sinh đề thi AI cao cấp.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 text-xs font-bold text-amber-800 bg-white/80 border border-amber-200 px-3 py-1.5 rounded-xl shadow-2xs">
-            <Sparkles className="w-4 h-4 text-amber-500 animate-spin" style={{ animationDuration: '4s' }} />
-            <span>Đã lưu trữ {activeDocsCount} tài liệu</span>
-          </div>
-        </div>
-      ) : (
-        <div className={`border rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs transition-all ${
-          activeDocsCount >= 3 ? 'bg-rose-50/80 border-rose-200' : 'bg-slate-50 border-slate-200'
-        }`}>
+      {/* Quota Alert Banner (chỉ hiển thị khi tài khoản Free chạm hạn mức 3 tài liệu) */}
+      {!isPro && activeDocsCount >= 3 && (
+        <div className="bg-rose-50/90 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs transition-all">
           <div className="flex items-center gap-3 flex-1">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-2xs shrink-0 ${
-              activeDocsCount >= 3 ? 'bg-rose-100 text-rose-600' : 'bg-[#e0f7fa] text-[#008689]'
-            }`}>
-              {activeDocsCount >= 3 ? <AlertCircle className="w-5 h-5" /> : <Zap className="w-5 h-5" />}
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-2xs shrink-0 bg-rose-100 text-rose-600">
+              <AlertCircle className="w-5 h-5" />
             </div>
             <div className="flex-1">
               <div className="flex items-center justify-between max-w-md">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-700">
                   Hạn mức Gói Miễn Phí (Free):
                 </span>
-                <span className={`text-xs font-black ${activeDocsCount >= 3 ? 'text-rose-600' : 'text-[#008689]'}`}>
+                <span className="text-xs font-black text-rose-600">
                   {activeDocsCount} / 3 tài liệu
                 </span>
               </div>
               <div className="w-full max-w-md bg-slate-200 rounded-full h-2 mt-1.5 overflow-hidden">
-                <div
-                  className={`h-2 rounded-full transition-all duration-300 ${
-                    activeDocsCount >= 3 ? 'bg-rose-500' : activeDocsCount === 2 ? 'bg-amber-500' : 'bg-[#008689]'
-                  }`}
-                  style={{ width: `${Math.min(100, (activeDocsCount / 3) * 100)}%` }}
-                />
+                <div className="h-2 rounded-full bg-rose-500 w-full" />
               </div>
               <p className="text-[11px] text-slate-500 mt-1">
-                {activeDocsCount >= 3
-                  ? '⚠️ Bạn đã đạt tối đa 3/3 tài liệu của Gói Free. Nâng cấp Gói PRO để mở khóa không giới hạn ngay!'
-                  : `Bạn còn ${3 - activeDocsCount} lượt lưu trữ giáo trình miễn phí.`}
+                ⚠️ Bạn đã đạt tối đa 3/3 tài liệu của Gói Free. Nâng cấp Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn ngay!
               </p>
             </div>
           </div>
           {onOpenPricingModal && (
             <button
               onClick={onOpenPricingModal}
-              className={`shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all ${
-                activeDocsCount >= 3
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-200 animate-pulse'
-                  : 'bg-white hover:bg-amber-50 text-amber-700 border border-amber-300'
-              }`}
+              className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-200 animate-pulse"
             >
-              <Crown className="w-4 h-4 text-amber-400" />
+              <Crown className="w-4 h-4 text-amber-300" />
               <span>Nâng cấp PRO (chỉ 2.000đ)</span>
             </button>
           )}
