@@ -765,6 +765,8 @@ export const App: React.FC = () => {
             <TextbookUploadScreen
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
+              subscriptionInfo={subscriptionInfo}
+              onOpenPricingModal={() => setIsPricingModalOpen(true)}
             />
           )}
 
