@@ -133,12 +133,29 @@ def startup_db():
     try:
         Base.metadata.create_all(bind=engine)
         
-        # Tự động đảm bảo schema SQLite có đầy đủ cột token_type
+        # Tự động đảm bảo schema SQLite có đầy đủ cột token_type, Google OAuth và Khóa tài khoản
         try:
             with engine.begin() as conn:
                 conn.exec_driver_sql("ALTER TABLE user_tokens ADD COLUMN token_type VARCHAR(20) DEFAULT 'refresh'")
         except Exception:
             pass
+
+        for col_def in [
+            "google_id VARCHAR(100)",
+            "avatar_url TEXT",
+            "auth_provider VARCHAR(30) DEFAULT 'local'",
+            "status VARCHAR(30) DEFAULT 'active'",
+            "lock_type VARCHAR(30)",
+            "lock_reason TEXT",
+            "locked_until TIMESTAMP",
+            "locked_at TIMESTAMP",
+            "plan_tier VARCHAR(20) DEFAULT 'free'"
+        ]:
+            try:
+                with engine.begin() as conn:
+                    conn.exec_driver_sql(f"ALTER TABLE users ADD COLUMN {col_def}")
+            except Exception:
+                pass
 
         db = next(get_db())
 

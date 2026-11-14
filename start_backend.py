@@ -82,6 +82,7 @@ def main():
         print(f"[*] Starting {svc['name']:<18} on http://127.0.0.1:{svc['port']}...")
         sub_env = dict(os.environ)
         sub_env["PYTHONIOENCODING"] = "utf-8"
+        sub_env["PYTHONPATH"] = svc["cwd"]
         p = subprocess.Popen(
             cmd,
             cwd=svc["cwd"],
@@ -90,7 +91,7 @@ def main():
         processes.append((svc["name"], p, svc["port"]))
         time.sleep(0.5)
 
-    print("\n[OK] All 6 backend services launched!")
+    print("\n[OK] All 8 backend services launched!")
     print("API Gateway ready at http://127.0.0.1:8000")
     print("Press Ctrl+C to stop all services.\n")
 

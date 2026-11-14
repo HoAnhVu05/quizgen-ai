@@ -329,6 +329,19 @@ def calculate_bloom_taxonomy_stats(
 def startup_db():
     try:
         Base.metadata.create_all(bind=engine)
+
+        # Tự động đảm bảo schema SQLite có đầy đủ cột Multimodal SCRUM-90
+        for col_def in [
+            "image_url TEXT",
+            "has_formula BOOLEAN DEFAULT 0",
+            "image_caption TEXT"
+        ]:
+            try:
+                with engine.begin() as conn:
+                    conn.exec_driver_sql(f"ALTER TABLE questions ADD COLUMN {col_def}")
+            except Exception:
+                pass
+
         db = SessionLocal()
 
         # 1. Seed Subjects if empty
