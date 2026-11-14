@@ -39,8 +39,8 @@ RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://127.0.0.1:8003")
 if "rag-service" in RAG_SERVICE_URL and not os.path.exists("/.dockerenv"):
     RAG_SERVICE_URL = "http://127.0.0.1:8003"
 
-MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "25"))
-RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "120"))
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
+RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "300"))
 STORAGE_DIR = Path(os.getenv("DOCUMENT_STORAGE_DIR", "./data/uploads"))
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -330,6 +330,7 @@ async def upload_document(
     plan_tier = get_user_plan_tier(user_id)
     is_pro = plan_tier in ["PRO_MONTH", "PRO_YEAR", "ENTERPRISE"]
     max_allowed_docs = 999999 if is_pro else 3
+    max_upload_mb = 100 if plan_tier == "ENTERPRISE" else 50 if is_pro else 15
 
     current_doc_count = db.query(DocumentDB).filter(
         DocumentDB.user_id == user_id,
@@ -357,11 +358,11 @@ async def upload_document(
             detail="Tệp rỗng (0 bytes). Vui lòng chọn tệp có nội dung hợp lệ.",
         )
 
-    max_bytes = MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    max_bytes = max_upload_mb * 1024 * 1024
     if len(content) > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Kích thước tệp ({_format_file_size(len(content))}) vượt quá giới hạn cho phép {MAX_UPLOAD_SIZE_MB} MB.",
+            detail=f"Kích thước tệp ({_format_file_size(len(content))}) vượt quá giới hạn cho phép {max_upload_mb} MB của gói {plan_tier}.",
         )
 
     # Sinh mã định danh giáo trình mới an toàn không bao giờ trùng lặp
@@ -426,16 +427,29 @@ async def upload_document(
 @app.get("/progress/{document_id}")
 @app.get("/documents/{document_id}/progress")
 def get_document_progress(document_id: str, db: Session = Depends(get_db)):
+    doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy giáo trình.")
+    if doc.status == "ready":
+        return {
+            "documentId": doc.id,
+            "document_id": doc.id,
+            "progress": 100,
+            "status": "ready",
+            "stage": "completed",
+            "totalPages": doc.total_pages,
+            "total_pages": doc.total_pages,
+            "chaptersCount": doc.chapters_count,
+            "chapters_count": doc.chapters_count,
+            "errorMessage": None
+        }
     cached = cache.get_upload_progress(document_id)
-    if cached:
+    if cached and cached.get("status") != "error":
         return {
             **cached,
             "documentId": cached.get("document_id") or document_id,
             "totalPages": cached.get("total_pages", 0)
         }
-    doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-    if not doc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy giáo trình.")
     return {
         "documentId": doc.id,
         "document_id": doc.id,

@@ -71,6 +71,36 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         if (saved) {
           allQuestions = JSON.parse(saved);
         }
+        if (!allQuestions || allQuestions.length === 0) {
+          const savedExamsStr = localStorage.getItem('quizgen_saved_exams');
+          if (savedExamsStr) {
+            const exams = JSON.parse(savedExamsStr);
+            const map = new Map<string, Question>();
+            exams.forEach((ex: any) => {
+              if (Array.isArray(ex.questions)) {
+                ex.questions.forEach((q: any) => {
+                  if (q && q.id) map.set(q.id, q);
+                });
+              }
+            });
+            allQuestions = Array.from(map.values());
+          }
+        }
+        if (!allQuestions || allQuestions.length === 0) {
+          const savedHistStr = localStorage.getItem('quizgen_generation_history');
+          if (savedHistStr) {
+            const hist = JSON.parse(savedHistStr);
+            const map = new Map<string, Question>();
+            hist.forEach((h: any) => {
+              if (Array.isArray(h.questions)) {
+                h.questions.forEach((q: any) => {
+                  if (q && q.id) map.set(q.id, q);
+                });
+              }
+            });
+            allQuestions = Array.from(map.values());
+          }
+        }
       } catch {}
     }
 
@@ -270,13 +300,41 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     try {
       const savedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
       const validDocs = savedDocs.filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+      const savedExams = JSON.parse(localStorage.getItem('quizgen_saved_exams') || '[]');
+      const totalExamQuestions = savedExams.reduce((sum: number, e: any) => sum + (e.questionCount || e.questions?.length || 0), 0);
+      const totalGen = Math.max(approvedCount + pendingReviewCount, computedBloomData.total, totalExamQuestions);
+
       setStatsSummary(prev => ({
         ...prev,
-        textbooksIndexed: validDocs.length,
-        totalGenerated: approvedCount + pendingReviewCount
+        textbooksIndexed: Math.max(validDocs.length, prev.textbooksIndexed),
+        totalGenerated: totalGen
       }));
+
+      // Tự động sinh danh sách hoạt động gần đây từ Kho Đề & Giáo trình thực tế
+      const activities: any[] = [];
+      savedExams.forEach((ex: any, idx: number) => {
+        activities.push({
+          id: ex.id || `act-ex-${idx}`,
+          action: 'Đã đóng gói Đề thi',
+          subject: `${ex.subject || 'Môn học'} (${ex.questionCount || ex.questions?.length || 0} câu · ${ex.examCodeCount || 4} mã đề)`,
+          time: ex.createdAt || 'Hôm nay',
+          status: 'Hoàn tất'
+        });
+      });
+      validDocs.forEach((d: any, idx: number) => {
+        activities.push({
+          id: d.id || `act-doc-${idx}`,
+          action: 'Đã nạp giáo trình',
+          subject: `${d.name} (${d.totalPages || 0} trang)`,
+          time: d.uploadedAt || 'Hôm nay',
+          status: 'Sẵn sàng'
+        });
+      });
+      if (activities.length > 0) {
+        setRecentActivity(activities.slice(0, 5));
+      }
     } catch {}
-  }, [approvedCount, pendingReviewCount]);
+  }, [approvedCount, pendingReviewCount, computedBloomData.total]);
 
   useEffect(() => {
     let isMounted = true;

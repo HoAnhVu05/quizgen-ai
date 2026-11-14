@@ -256,6 +256,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   const [showForgotNewPass, setShowForgotNewPass] = useState(false);
   const [forgotError, setForgotError] = useState('');
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [isSubmittingReset, setIsSubmittingReset] = useState(false);
   const [forgotResendTimer, setForgotResendTimer] = useState(0);
 
   useEffect(() => {
@@ -622,8 +624,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       setForgotError('Định dạng email không hợp lệ (ví dụ: canbo@vnu.edu.vn).');
       return;
     }
+    if (targetEmail.includes('@gamil.') || targetEmail.includes('@gmial.') || targetEmail.includes('@gmai.')) {
+      setForgotError('Bạn đã nhập nhầm đuôi hòm thư (ví dụ: gamil.com thay vì gmail.com). Vui lòng sửa lại chính xác!');
+      return;
+    }
 
-    setForgotLoading(true);
+    const isResend = forgotStep === 2;
+    if (isResend) {
+      setIsResendingOtp(true);
+    } else {
+      setForgotLoading(true);
+    }
     try {
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       try {
@@ -639,11 +650,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           setForgotResendTimer(60);
           setForgotStep(2);
           setForgotLoading(false);
+          setIsResendingOtp(false);
           return;
         } else if (res.status === 404 || res.status === 400) {
           const errData = await res.json().catch(() => ({}));
           setForgotError(errData.detail || 'Email này chưa được đăng ký trong hệ thống.');
           setForgotLoading(false);
+          setIsResendingOtp(false);
           return;
         }
       } catch {
@@ -664,6 +677,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       if (!existsLocal) {
         setForgotError('Tài khoản email này chưa được đăng ký trong hệ thống Khảo thí ĐHQG.');
         setForgotLoading(false);
+        setIsResendingOtp(false);
         return;
       }
 
@@ -675,6 +689,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       setForgotError(err.message || 'Không thể xử lý yêu cầu khôi phục mật khẩu.');
     } finally {
       setForgotLoading(false);
+      setIsResendingOtp(false);
     }
   };
 
@@ -698,7 +713,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       return;
     }
 
-    setForgotLoading(true);
+    setIsSubmittingReset(true);
     try {
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       let updatedViaBackend = false;
@@ -719,7 +734,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         } else if (res.status === 400 || res.status === 404) {
           const errData = await res.json().catch(() => ({}));
           setForgotError(errData.detail || 'Mã OTP không chính xác hoặc đã hết hạn.');
-          setForgotLoading(false);
+          setIsSubmittingReset(false);
           return;
         }
       } catch {
@@ -729,7 +744,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       if (!updatedViaBackend) {
         if (forgotDevOtp && trimmedOtp !== forgotDevOtp) {
           setForgotError('Mã xác minh OTP không chính xác. Vui lòng kiểm tra lại.');
-          setForgotLoading(false);
+          setIsSubmittingReset(false);
           return;
         }
       }
@@ -759,7 +774,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     } catch (err: any) {
       setForgotError(err.message || 'Lỗi đặt lại mật khẩu.');
     } finally {
-      setForgotLoading(false);
+      setIsSubmittingReset(false);
     }
   };
 
@@ -1280,7 +1295,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                       setEmail(e.target.value);
                       setErrors((p) => ({ ...p, email: undefined, general: undefined }));
                     }}
-                    placeholder="canbo@ut.edu.vn"
+                    placeholder="giangvien@truong.edu.vn"
                     className={`w-full bg-slate-50 border rounded-xl pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white focus:ring-2 focus:ring-[#008689]/20 ${
                       errors.email
                         ? 'border-[#da1c2d] focus:border-[#da1c2d]'
@@ -1525,7 +1540,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                         setForgotEmail(e.target.value);
                         setForgotError('');
                       }}
-                      placeholder="canbo@ut.edu.vn"
+                      placeholder="giangvien@truong.edu.vn"
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689] focus:ring-2 focus:ring-[#008689]/20"
                     />
                   </div>
@@ -1568,23 +1583,26 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   </div>
                 </div>
 
+
+
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-[11px] font-bold text-slate-700 uppercase">Mã xác minh OTP (6 chữ số)</label>
                     <button
                       type="button"
-                      disabled={forgotResendTimer > 0 || forgotLoading}
+                      disabled={forgotResendTimer > 0 || isResendingOtp || isSubmittingReset}
                       onClick={handleRequestResetOtp}
-                      className="text-[11px] font-semibold text-[#008689] hover:text-[#006062] disabled:text-slate-400 disabled:cursor-not-allowed transition-colors"
+                      className="text-[11px] font-semibold text-[#008689] hover:text-[#006062] disabled:text-slate-400 disabled:cursor-not-allowed transition-colors flex items-center gap-1 cursor-pointer"
                     >
-                      {forgotResendTimer > 0 ? `Gửi lại sau (${forgotResendTimer}s)` : 'Gửi lại mã OTP'}
+                      {isResendingOtp && <div className="w-2.5 h-2.5 border-2 border-[#008689]/30 border-t-[#008689] rounded-full animate-spin" />}
+                      <span>{forgotResendTimer > 0 ? `Gửi lại sau (${forgotResendTimer}s)` : 'Gửi lại mã OTP'}</span>
                     </button>
                   </div>
                   <input
                     type="text"
                     maxLength={6}
                     value={forgotOtp}
-                    disabled={forgotLoading}
+                    disabled={isSubmittingReset}
                     onChange={(e) => {
                       setForgotOtp(e.target.value.replace(/\D/g, ''));
                       setForgotError('');
@@ -1600,7 +1618,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                     <input
                       type={showForgotNewPass ? 'text' : 'password'}
                       value={forgotNewPass}
-                      disabled={forgotLoading}
+                      disabled={isSubmittingReset}
                       onChange={(e) => {
                         setForgotNewPass(e.target.value);
                         setForgotError('');
@@ -1623,7 +1641,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   <input
                     type={showForgotNewPass ? 'text' : 'password'}
                     value={forgotConfirmPass}
-                    disabled={forgotLoading}
+                    disabled={isSubmittingReset}
                     onChange={(e) => {
                       setForgotConfirmPass(e.target.value);
                       setForgotError('');
@@ -1646,10 +1664,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                   </button>
                   <button
                     type="submit"
-                    disabled={forgotLoading}
-                    className="flex-1 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-50"
+                    disabled={isSubmittingReset}
+                    className="flex-1 py-2.5 rounded-xl font-bold text-xs text-white bg-emerald-600 hover:bg-emerald-500 transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
                   >
-                    {forgotLoading ? (
+                    {isSubmittingReset ? (
                       <>
                         <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                         <span>Đang lưu mật khẩu...</span>

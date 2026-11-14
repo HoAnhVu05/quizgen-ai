@@ -28,6 +28,7 @@ import {
   Zap,
   Globe,
   Sliders,
+  Plus,
   Award,
   Layers,
   FileText,
@@ -199,6 +200,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [paymentSearch, setPaymentSearch] = useState('');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<'all' | 'COMPLETED' | 'PENDING' | 'EXPIRED'>('all');
   const [editingPlan, setEditingPlan] = useState<PlanItem | null>(null);
+  const [newFeatureText, setNewFeatureText] = useState('');
   const [isSavingPlan, setIsSavingPlan] = useState(false);
   const [approvingOrderId, setApprovingOrderId] = useState<string | null>(null);
 
@@ -239,7 +241,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     { name: 'AI Service', port: 8004, role: 'Sinh câu hỏi ma trận Bloom, Prompt Engineering (Zero Mock)', technology: 'Google Gemini 2.5 Flash', status: 'healthy', latencyMs: 138, details: 'Zero Mock Policy active' },
     { name: 'Exam Service', port: 8005, role: 'Trộn 4 mã đề, Đóng gói xuất Word DOCX / PDF OMR 50 câu', technology: 'FastAPI, python-docx, ReportLab', status: 'healthy', latencyMs: 28, details: 'Version 1.2.0' },
     { name: 'Admin Service', port: 8006, role: 'Quản trị RBAC, Giám sát 8 Services & Khóa tài khoản tức thì', technology: 'FastAPI, SQLite, SQLAlchemy', status: 'healthy', latencyMs: 12, details: 'Port 8006 live' },
-    { name: 'Payment Service', port: 8007, role: 'Quản lý Gói cước, Sinh mã VietQR TPBank & Kích hoạt thuê bao tự động', technology: 'FastAPI, SQLite, SePay API', status: 'healthy', latencyMs: 16, details: 'TPBank 78757618888' },
+    { name: 'Payment Service', port: 8007, role: 'Quản lý Gói cước, Sinh mã VietQR PRO MB Bank & Tự động kích hoạt', technology: 'FastAPI, SQLite, PayOS SDK', status: 'healthy', latencyMs: 16, details: 'MB Bank 06020501360812' },
   ]);
   const [isCheckingServices, setIsCheckingServices] = useState(false);
 
@@ -311,6 +313,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           duration_days: editingPlan.duration_days,
           max_documents: editingPlan.max_documents,
           max_questions_month: editingPlan.max_questions_month,
+          features: editingPlan.features || [],
           is_popular: editingPlan.is_popular,
           is_active: editingPlan.is_active,
         }),
@@ -1739,25 +1742,25 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
             </div>
           </div>
 
-          {/* TPBank Real Account Config Banner */}
+          {/* MB Bank Real Account Config Banner (PayOS VietQR PRO) */}
           <div className="p-4 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-white border border-emerald-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-[#008689] text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
-                TPB
+              <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
+                MB
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="font-extrabold text-slate-900 text-sm">TPBank (Ngân hàng Tiên Phong)</span>
+                  <span className="font-extrabold text-slate-900 text-sm">MB Bank (Ngân hàng Quân Đội)</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                    Tài khoản nhận tiền thực tế
+                    Tài khoản nhận tiền thực tế PayOS
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 mt-1">
-                  <span>Số tài khoản: <strong className="font-mono text-slate-900 text-sm">78757618888</strong></span>
+                  <span>Số tài khoản: <strong className="font-mono text-slate-900 text-sm">06020501360812</strong></span>
                   <span>•</span>
-                  <span>Chủ tài khoản: <strong className="font-bold text-slate-900">NGUYEN VAN TAN</strong></span>
+                  <span>Chủ tài khoản: <strong className="font-bold text-slate-900">HO ANH VU</strong></span>
                   <span>•</span>
-                  <span className="text-emerald-700 font-semibold">Cổng VietQR NAPAS 24/7 &amp; SePay Webhook Auto-Detect</span>
+                  <span className="text-emerald-700 font-semibold">Cổng VietQR PRO NAPAS 24/7 &amp; PayOS Auto-Detect</span>
                 </div>
               </div>
             </div>
@@ -1854,7 +1857,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-[#008689] hover:text-white text-slate-700 font-bold text-xs border border-slate-200 transition-colors shadow-2xs"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
-                          <span>Chỉnh sửa giá</span>
+                          <span>Chỉnh sửa gói &amp; ưu đãi</span>
                         </button>
                       </td>
                     </tr>
@@ -2136,6 +2139,88 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                     <span className="text-[10px] text-slate-500">Hiển thị viền vàng và nhãn nổi bật trong bảng giá</span>
                   </div>
                 </label>
+              </div>
+
+              {/* Features / Ưu đãi gói cước Editor */}
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-slate-700">
+                    Danh sách ưu đãi &amp; đặc quyền gói cước ({editingPlan.features?.length || 0})
+                  </label>
+                  <span className="text-[10px] text-slate-400">Hiển thị trực tiếp trên thẻ bảng giá</span>
+                </div>
+
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {(editingPlan.features || []).map((feat, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 p-2 bg-slate-50 border border-slate-200/80 rounded-xl text-xs">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="w-5 h-5 rounded-md bg-teal-100 text-[#008689] flex items-center justify-center font-bold text-[10px] shrink-0">
+                          {idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          value={feat}
+                          onChange={(e) => {
+                            const updated = [...(editingPlan.features || [])];
+                            updated[idx] = e.target.value;
+                            setEditingPlan({ ...editingPlan, features: updated });
+                          }}
+                          className="bg-transparent text-slate-800 text-xs font-medium outline-none w-full focus:bg-white focus:px-1.5 py-0.5 rounded border-b border-transparent focus:border-[#008689]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (editingPlan.features || []).filter((_, i) => i !== idx);
+                          setEditingPlan({ ...editingPlan, features: updated });
+                        }}
+                        className="p-1 hover:bg-rose-100 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer shrink-0"
+                        title="Xóa ưu đãi này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add new feature input */}
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={newFeatureText}
+                    onChange={(e) => setNewFeatureText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newFeatureText.trim()) {
+                          setEditingPlan({
+                            ...editingPlan,
+                            features: [...(editingPlan.features || []), newFeatureText.trim()]
+                          });
+                          setNewFeatureText('');
+                        }
+                      }
+                    }}
+                    placeholder="Thêm ưu đãi mới (nhập rồi nhấn Enter hoặc bấm nút)..."
+                    className="flex-1 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] outline-none text-xs text-slate-800"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newFeatureText.trim()) {
+                        setEditingPlan({
+                          ...editingPlan,
+                          features: [...(editingPlan.features || []), newFeatureText.trim()]
+                        });
+                        setNewFeatureText('');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-teal-50 hover:bg-teal-100 text-[#008689] font-bold text-xs border border-teal-200 transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Thêm ưu đãi</span>
+                  </button>
+                </div>
               </div>
 
               {/* Action Buttons */}

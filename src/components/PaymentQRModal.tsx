@@ -115,7 +115,11 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
         throw new Error(err.detail || 'Chưa nhận diện được số dư. Vui lòng thử lại sau 3-5 giây.');
       }
     } catch (err: any) {
-      onShowToast('warning', 'Đang xác thực', 'Hệ thống đang quét biến động số dư TPBank. Vui lòng đợi trong giây lát hoặc thử lại.');
+      onShowToast(
+        'error',
+        'Chưa nhận được thanh toán',
+        err.message || 'Hệ thống chưa tìm thấy giao dịch chuyển khoản tương ứng. Vui lòng hoàn tất chuyển khoản và thử lại sau giây lát.'
+      );
     } finally {
       setIsConfirmingManual(false);
     }
@@ -303,7 +307,7 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
                 <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <Building2 className="w-3.5 h-3.5 text-[#008689]" />
-                    <span className="text-xs font-bold text-slate-800">Ngân hàng TPBank</span>
+                    <span className="text-xs font-bold text-slate-800">{order.bank_info.bank_name || 'Ngân hàng MB Bank'}</span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-50 text-[#008689] border border-teal-200">
                     Napas 247
@@ -403,8 +407,19 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
                   </div>
                 </div>
 
-                {/* Primary Action Button */}
-                <div className="pt-1.5 space-y-1.5">
+                {/* Status Bar & Action */}
+                <div className="pt-1.5 space-y-2">
+                  <div className="flex items-center justify-between p-2 rounded-xl bg-teal-50/90 border border-teal-200 text-[11px] text-teal-800">
+                    <div className="flex items-center gap-1.5">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                      </span>
+                      <span className="font-medium">Tự động đối soát TPBank mỗi 2s</span>
+                    </div>
+                    <span className="font-mono font-bold text-teal-900">{formattedTime}</span>
+                  </div>
+
                   <button
                     onClick={handleManualConfirm}
                     disabled={isConfirmingManual}
@@ -412,14 +427,9 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${isConfirmingManual ? 'animate-spin' : ''}`} />
                     <span>
-                      {isConfirmingManual ? 'Đang nhận diện biến động số dư...' : 'Tôi Đã Chuyển Khoản — Nhận Diện Ngay'}
+                      {isConfirmingManual ? 'Đang kiểm tra biến động số dư...' : 'Kiểm tra trạng thái thanh toán'}
                     </span>
                   </button>
-
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 text-center">
-                    <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                    <span>Tự động quét TPBank 2.0s • Kích hoạt tức thì</span>
-                  </div>
                 </div>
 
               </div>

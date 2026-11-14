@@ -94,13 +94,21 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   const [isFetchingChunks, setIsFetchingChunks] = useState(false);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgressState, setUploadProgressState] = useState<{
+    fileName: string;
+    fileSize: string;
+    progress: number;
+    stage: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasWarnedRef = useRef(false);
 
+  const isEnterprise = subscriptionInfo?.plan_code === 'ENTERPRISE';
   const isPro =
     subscriptionInfo?.plan_code === 'PRO_MONTH' ||
     subscriptionInfo?.plan_code === 'PRO_YEAR' ||
-    subscriptionInfo?.plan_code === 'ENTERPRISE';
+    isEnterprise;
+  const maxUploadMb = isEnterprise ? 100 : isPro ? 50 : 15;
 
   const activeDocsCount = textbooks.filter((t) => t.status !== 'error').length;
 
@@ -204,11 +212,32 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       return;
     }
 
-    if (file.size > MAX_UPLOAD_SIZE_MB * 1024 * 1024) {
-      onShowToast('error', 'Tệp quá lớn', `Dung lượng tệp tối đa cho phép là ${MAX_UPLOAD_SIZE_MB}MB.`);
+    if (file.size > maxUploadMb * 1024 * 1024) {
+      onShowToast('error', 'Tệp quá lớn', `Dung lượng tệp tối đa cho phép của ${subscriptionInfo?.plan_name || 'Gói hiện tại'} là ${maxUploadMb}MB.`);
       return;
     }
     setIsUploading(true);
+    setUploadProgressState({
+      fileName: file.name,
+      fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      progress: 18,
+      stage: 'Đang truyền tải tệp tin lên máy chủ API Gateway...',
+    });
+
+    const progressTimer = setInterval(() => {
+      setUploadProgressState((prev) => {
+        if (!prev) return null;
+        if (prev.progress < 45) {
+          return { ...prev, progress: prev.progress + 12, stage: 'Đang phân tích cấu trúc mục lục & bóc tách trang...' };
+        } else if (prev.progress < 75) {
+          return { ...prev, progress: prev.progress + 8, stage: 'Đang trích xuất nội dung học thuật & OCR hình ảnh...' };
+        } else if (prev.progress < 92) {
+          return { ...prev, progress: prev.progress + 4, stage: 'Đang nạp dữ liệu vector store & chỉ mục RAG...' };
+        }
+        return prev;
+      });
+    }, 450);
+
     try {
       const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
       const headers: Record<string, string> = {};
@@ -307,7 +336,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     } catch (error: any) {
       onShowToast('error', 'Lỗi kết nối máy chủ', error?.message || 'Không thể tải tệp lên máy chủ.');
     } finally {
-      setIsUploading(false);
+      clearInterval(progressTimer);
+      setUploadProgressState((prev) => (prev ? { ...prev, progress: 100, stage: 'Nạp giáo trình thành công!' } : null));
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgressState(null);
+      }, 700);
     }
   };
 
@@ -399,9 +433,20 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
             Kho Giáo trình Môn học
 
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Tải lên tài liệu PDF hoặc DOCX (tối đa {MAX_UPLOAD_SIZE_MB}MB) để bóc tách nội dung và nạp vào vector store RAG.
-          </p>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <p className="text-xs text-slate-500">
+              Tải lên tài liệu PDF hoặc DOCX (tối đa {maxUploadMb}MB) để bóc tách nội dung và nạp vào vector store RAG.
+            </p>
+            {isEnterprise ? (
+              <span className="px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 font-bold text-[10px]">
+                Gói Khoa & Bộ Môn: Tối đa 100MB/file
+              </span>
+            ) : isPro ? (
+              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-bold text-[10px]">
+                Gói PRO VIP: Tối đa 50MB/file
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <button
@@ -473,46 +518,119 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         </div>
       )}
 
-      {/* 2. Compact Drag & Drop Zone */}
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
-        onClick={() => {
-          if (!isPro && activeDocsCount >= 3) {
-            onShowToast(
-              'warning',
-              'Đã Đạt Hạn Mức Gói Miễn Phí',
-              'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
-            );
-            onOpenPricingModal?.();
-            return;
-          }
-          fileInputRef.current?.click();
-        }}
-        className={`rounded-2xl p-6 text-center transition-all cursor-pointer border-2 border-dashed ${
-          isDragging
-            ? 'border-[#008689] bg-[#e0f7fa]/50'
-            : activeDocsCount >= 3 && !isPro
-            ? 'bg-rose-50/30 border-rose-200 hover:border-rose-400'
-            : 'bg-white border-slate-300 hover:border-[#008689]'
-        }`}
-      >
-        <div className="flex flex-col items-center space-y-2">
-          <div className="w-11 h-11 rounded-xl bg-[#e0f7fa] text-[#008689] flex items-center justify-center">
-            <UploadCloud className="w-5 h-5" />
+      {/* 2. Drag & Drop Zone or Dynamic Upload Progress Card */}
+      {isUploading && uploadProgressState ? (
+        <div className="rounded-2xl p-6 sm:p-7 bg-gradient-to-br from-teal-50/90 via-white to-emerald-50/80 border-2 border-teal-500 shadow-md transition-all animate-in zoom-in-95 duration-200">
+          <div className="max-w-xl mx-auto space-y-4">
+            {/* Header info */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-12 h-12 rounded-2xl bg-teal-100 text-[#008689] flex items-center justify-center shrink-0 shadow-xs relative">
+                  <BookOpen className="w-6 h-6 animate-pulse" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-teal-500"></span>
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-extrabold text-slate-900 truncate">
+                    {uploadProgressState.fileName}
+                  </h4>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                    <span className="font-medium">{uploadProgressState.fileSize}</span>
+                    <span>•</span>
+                    <span className="text-[#008689] font-bold">Đang tải & bóc tách học thuật</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-right shrink-0">
+                <span className="text-2xl font-black text-[#008689] font-mono tracking-tight">
+                  {Math.round(uploadProgressState.progress)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Dynamic Animated Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="w-full bg-slate-200/90 rounded-full h-3 overflow-hidden p-0.5 border border-slate-300/40">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#008689] via-teal-400 to-emerald-400 transition-all duration-300 relative shadow-sm"
+                  style={{ width: `${uploadProgressState.progress}%` }}
+                >
+                  <div className="absolute inset-0 bg-white/20 animate-pulse rounded-full" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                <span className="flex items-center gap-1.5 text-teal-800 font-semibold">
+                  <RefreshCw className="w-3 h-3 animate-spin text-[#008689]" />
+                  {uploadProgressState.stage}
+                </span>
+                <span className="text-slate-400">Vui lòng không đóng trang</span>
+              </div>
+            </div>
+
+            {/* Visual Step Pills */}
+            <div className="grid grid-cols-3 gap-2 pt-1 border-t border-teal-100/80">
+              <div className={`p-2 rounded-xl text-center text-[10px] font-bold transition-colors ${
+                uploadProgressState.progress >= 25 ? 'bg-teal-100/90 text-teal-900 border border-teal-200' : 'bg-slate-100 text-slate-400'
+              }`}>
+                1. Tải lên tệp
+              </div>
+              <div className={`p-2 rounded-xl text-center text-[10px] font-bold transition-colors ${
+                uploadProgressState.progress >= 60 ? 'bg-teal-100/90 text-teal-900 border border-teal-200' : 'bg-slate-100 text-slate-400'
+              }`}>
+                2. Bóc tách mục lục
+              </div>
+              <div className={`p-2 rounded-xl text-center text-[10px] font-bold transition-colors ${
+                uploadProgressState.progress >= 90 ? 'bg-teal-100/90 text-teal-900 border border-teal-200' : 'bg-slate-100 text-slate-400'
+              }`}>
+                3. Chỉ mục RAG
+              </div>
+            </div>
           </div>
-          <p className="text-xs font-bold text-slate-800">
-            Kéo thả tệp giáo trình (.pdf, .docx) vào đây hoặc bấm để chọn tệp
-          </p>
-          <span className="text-[11px] text-slate-400">
-            Tự động phân tích chương mục và số trang
-          </span>
         </div>
-      </div>
+      ) : (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => {
+            if (!isPro && activeDocsCount >= 3) {
+              onShowToast(
+                'warning',
+                'Đã Đạt Hạn Mức Gói Miễn Phí',
+                'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
+              );
+              onOpenPricingModal?.();
+              return;
+            }
+            fileInputRef.current?.click();
+          }}
+          className={`rounded-2xl p-6 text-center transition-all cursor-pointer border-2 border-dashed ${
+            isDragging
+              ? 'border-[#008689] bg-[#e0f7fa]/50'
+              : activeDocsCount >= 3 && !isPro
+              ? 'bg-rose-50/30 border-rose-200 hover:border-rose-400'
+              : 'bg-white border-slate-300 hover:border-[#008689]'
+          }`}
+        >
+          <div className="flex flex-col items-center space-y-2">
+            <div className="w-11 h-11 rounded-xl bg-[#e0f7fa] text-[#008689] flex items-center justify-center">
+              <UploadCloud className="w-5 h-5" />
+            </div>
+            <p className="text-xs font-bold text-slate-800">
+              Kéo thả tệp giáo trình (.pdf, .docx) vào đây hoặc bấm để chọn tệp
+            </p>
+            <span className="text-[11px] text-slate-400">
+              Tự động phân tích chương mục và số trang
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* 3. Data Table of Uploaded Documents */}
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">

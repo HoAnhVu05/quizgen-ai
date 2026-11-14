@@ -182,9 +182,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [bloomDistribution, setBloomDistribution] = useState({
-    nhanBiet: 4,
-    thongHieu: 4,
-    vanDung: 2,
+    nhanBiet: 8,
+    thongHieu: 8,
+    vanDung: 4,
     phanTich: 0,
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -443,13 +443,13 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setActivePreset(preset);
     if (preset === 'giuaKy') {
       setBloomDistribution({ nhanBiet: 8, thongHieu: 8, vanDung: 4, phanTich: 0 });
-      onShowToast('info', 'Áp dụng khuôn mẫu', 'Đề thi Giữa kỳ: 40% Nhận biết, 40% Thông hiểu, 20% Vận dụng');
+      onShowToast('info', 'Áp dụng khuôn mẫu', 'Đề thi Giữa kỳ (20 câu): 40% Nhận biết, 40% Thông hiểu, 20% Vận dụng');
     } else if (preset === 'cuoiKy') {
-      setBloomDistribution({ nhanBiet: 6, thongHieu: 8, vanDung: 4, phanTich: 2 });
-      onShowToast('info', 'Áp dụng khuôn mẫu', 'Đề thi Cuối kỳ: 30% Nhận biết, 40% Thông hiểu, 20% Vận dụng, 10% Phân tích');
+      setBloomDistribution({ nhanBiet: 12, thongHieu: 16, vanDung: 8, phanTich: 4 });
+      onShowToast('info', 'Áp dụng khuôn mẫu', 'Đề thi Cuối kỳ (40 câu): 30% Nhận biết, 40% Thông hiểu, 20% Vận dụng, 10% Phân tích');
     } else if (preset === 'quiz15p') {
       setBloomDistribution({ nhanBiet: 7, thongHieu: 3, vanDung: 0, phanTich: 0 });
-      onShowToast('info', 'Áp dụng khuôn mẫu', 'Kiểm tra 15 phút: 70% Nhận biết, 30% Thông hiểu');
+      onShowToast('info', 'Áp dụng khuôn mẫu', 'Kiểm tra 15 phút (10 câu): 70% Nhận biết, 30% Thông hiểu');
     }
   };
 
@@ -481,21 +481,22 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
     const defaultChapter = selectedChapters[0] || 'Chương tổng hợp';
 
-    // Timeout Controller (60 giây cho các đề thi lớn)
+    // Timeout Controller mở rộng lên 5 phút (300 giây) bảo đảm sinh an toàn cho bộ đề lớn (20-50 câu)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 60000);
+    }, 300000);
 
-    // Tiến trình hiển thị động giả lập nhịp bước trong lúc chờ Gemini phản hồi
+    // Tiến trình hiển thị động mượt mà trong lúc chờ Gemini phản hồi
     const progressTimer = setInterval(() => {
       setGenerationProgress((prev) => {
-        if (prev < 40) return prev + 6;
-        if (prev < 78) return prev + 3;
-        if (prev < 92) return prev + 1;
+        if (prev < 30) return prev + 4;
+        if (prev < 65) return prev + 2;
+        if (prev < 88) return prev + 1;
+        if (prev < 95) return prev + 0.5;
         return prev;
       });
-    }, 900);
+    }, 1200);
 
     const stepTimer2 = setTimeout(() => {
       setGenerationStep('Mô hình Gemini AI đang tổng hợp kiến thức và sinh câu hỏi theo Thang đo Bloom...');
@@ -622,7 +623,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         err.message?.toLowerCase().includes('failed to fetch');
 
       if (err.name === 'AbortError') {
-        msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 60s). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
+        msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 5 phút). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
       } else if (isNetworkErr) {
         msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng AI RAG Engine" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
       } else {
@@ -804,8 +805,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                   <span className="text-[#008689] font-bold shrink-0">{generationProgress}%</span>
                 </div>
 
-                <p className="text-center text-[10px] text-slate-400 font-mono mt-3">
-                  POST /api/v1/ai/generate · Timeout: 60s
+                <p className="text-center text-[10px] text-teal-600/80 font-medium mt-3 flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-teal-600" />
+                  Mô hình Gemini 2.5 Flash · Xử lý liên tục không ngắt quãng
                 </p>
               </div>
             )}
@@ -869,7 +871,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             <div className="flex items-center gap-1.5">
               {[
                 { id: 'giuaKy', label: 'Giữa kỳ (20 câu)' },
-                { id: 'cuoiKy', label: 'Cuối kỳ (20 câu)' },
+                { id: 'cuoiKy', label: 'Cuối kỳ (40 câu)' },
                 { id: 'quiz15p', label: '15p (10 câu)' },
               ].map((preset) => (
                 <button

@@ -141,8 +141,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <ScreenIcon className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-slate-800 truncate leading-snug">
-            {screenMeta.label}
+          <h2 className="text-xs sm:text-sm font-bold text-slate-800 truncate leading-snug">
+            <span className="hidden sm:inline">{screenMeta.label}</span>
+            <span className="sm:hidden">{screenMeta.shortLabel}</span>
           </h2>
         </div>
       </div>
@@ -197,14 +198,35 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
         {/* Subscription Plan Badge & Upgrade Action */}
         <div className="flex items-center gap-2">
-          {subscriptionInfo?.plan_code === 'PRO_MONTH' || subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
+          {subscriptionInfo?.plan_code === 'PRO_MONTH' ? (
+            <div className="flex items-center gap-2">
+              <div 
+                title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-amber-100/80 transition-colors"
+                onClick={onOpenPricingModal}
+              >
+                <Crown className="w-3.5 h-3.5 text-amber-600" />
+                <span>Gói PRO (Tháng)</span>
+              </div>
+              {onOpenPricingModal && (
+                <button
+                  onClick={onOpenPricingModal}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer"
+                  title="Nâng cấp lên gói 1 Năm để tiết kiệm 80%"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-200" />
+                  <span>Lên gói 1 Năm</span>
+                </button>
+              )}
+            </div>
+          ) : subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
             <div 
-              title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-amber-100/80 transition-colors"
+              title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên VIP (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên 1 Năm'}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500 text-white border border-amber-400 text-[11px] font-black shadow-xs cursor-pointer hover:bg-amber-600 transition-colors"
               onClick={onOpenPricingModal}
             >
-              <Crown className="w-3.5 h-3.5 text-amber-600" />
-              <span>Gói PRO Giảng Viên</span>
+              <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
+              <span>Gói PRO (1 Năm VIP)</span>
             </div>
           ) : subscriptionInfo?.plan_code === 'ENTERPRISE' ? (
             <div 

@@ -53,6 +53,7 @@ interface QuestionBankScreenProps {
   ) => void;
   currentUser?: UserProfile | null;
   onNavigate?: (screen: any) => void;
+  onLoadQuestions?: (questions: Question[]) => void;
 }
 
 const BLOOM_ORDER: BloomLevel[] = ['Nhận biết', 'Thông hiểu', 'Vận dụng', 'Phân tích'];
@@ -110,7 +111,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   onShowToast,
   currentUser,
   onNavigate,
+  onLoadQuestions,
 }) => {
+  const [internalLoadedQuestions, setInternalLoadedQuestions] = useState<Question[] | null>(null);
   const [viewMode, setViewMode] = useState<'preview_paper' | 'question_list' | 'answer_key'>(
     'preview_paper'
   );
@@ -256,25 +259,33 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     if (item.examCodeCount) setExamCodeCount(item.examCodeCount);
     else if (item.examCodes?.length) setExamCodeCount(item.examCodes.length);
 
+    let examQs: Question[] = [];
     if (item.questions && item.questions.length > 0) {
-      setSelectedIds(item.questions.map((q) => q.id));
+      examQs = item.questions;
     } else {
       try {
         const res = await apiClient.fetch(`${API_BASE}/exams/${item.id}`);
         if (res.ok) {
           const detail = await res.json();
           if (Array.isArray(detail?.questions) && detail.questions.length > 0) {
-            setSelectedIds(detail.questions.map((q: any) => q.id));
+            examQs = detail.questions;
           }
         }
       } catch {}
+    }
+
+    if (examQs.length > 0) {
+      setInternalLoadedQuestions(examQs);
+      onLoadQuestions?.(examQs);
+      setSelectedIds(examQs.map((q) => q.id));
+      setSelectedSubject('all');
     }
 
     setIsExamHistoryOpen(false);
     onShowToast(
       'success',
       'Đã nạp đề thi thành công',
-      `Đề "${item.title}" (${item.subject}) đã sẵn sàng để in và xuất bản.`
+      `Đã nạp ${examQs.length || item.questionCount} câu hỏi từ đề "${item.title}". Đang hiển thị bản in A4 và phiếu OMR.`
     );
   };
 
@@ -315,8 +326,11 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     }
   }, [selectedSubject]);
 
-  const bankPool = questions.filter((q) => q.status !== 'rejected');
-  const effectivePool = bankPool.length > 0 ? bankPool : questions;
+  const activeQuestionsPool = (internalLoadedQuestions && internalLoadedQuestions.length > 0)
+    ? internalLoadedQuestions
+    : questions;
+  const bankPool = activeQuestionsPool.filter((q) => q.status !== 'rejected');
+  const effectivePool = bankPool.length > 0 ? bankPool : activeQuestionsPool;
 
   const subjects = Array.from(new Set(effectivePool.map((q) => q.textbookName)));
 

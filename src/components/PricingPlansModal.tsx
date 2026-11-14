@@ -18,7 +18,8 @@ import {
   Cpu,
   Download,
   BookOpen,
-  Headphones
+  Headphones,
+  Building2
 } from 'lucide-react';
 import { SubscriptionPlan, UserSubscriptionInfo, OrderData, UserProfile } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -58,8 +59,8 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
       if (res.ok) {
         const data = await res.json();
         const rawPlans: SubscriptionPlan[] = data.plans || [];
-        // Ưu tiên hiển thị: Free, Pro Tháng, Pro Năm
-        setPlans(rawPlans.filter((p) => p.code !== 'ENTERPRISE'));
+        // Hiển thị đầy đủ danh mục gói cước: Free, Pro Tháng, Pro Năm, Enterprise
+        setPlans(rawPlans);
       }
     } catch (err) {
       console.error('Lỗi tải danh mục gói cước:', err);
@@ -115,7 +116,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[94vh] overflow-hidden shadow-2xl border border-slate-200/80 flex flex-col animate-in zoom-in-95 duration-200">
+      <div className="bg-white rounded-3xl max-w-7xl w-full max-h-[94vh] overflow-hidden shadow-2xl border border-slate-200/80 flex flex-col animate-in zoom-in-95 duration-200">
         
         {/* ===== 1. Premium Animated Aurora Wave Header ===== */}
         <div className="wave-gradient-flow relative px-6 pt-7 pb-10 text-white shrink-0 overflow-visible shadow-md">
@@ -130,11 +131,15 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                   <Crown className="w-3.5 h-3.5 text-amber-300" />
                   Nâng Cấp Bản Quyền Giảng Viên
                 </span>
-                {isUserPro && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-white/20 text-white border border-white/30">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-300" /> Đã Kích Hoạt PRO
+                {currentPlanCode === 'PRO_MONTH' ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-400/25 text-amber-200 border border-amber-300/40">
+                    <Crown className="w-3 h-3 text-amber-300" /> Đang dùng gói Tháng • Nâng cấp 1 Năm chỉ 5.000đ
                   </span>
-                )}
+                ) : currentPlanCode === 'PRO_YEAR' ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-400/25 text-emerald-200 border border-emerald-300/40">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-300" /> Đã Kích Hoạt PRO 1 Năm VIP
+                  </span>
+                ) : null}
               </div>
               <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2">
                 Mở Khóa Toàn Bộ Sức Mạnh QuizGen AI
@@ -223,19 +228,22 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
           )}
 
           {/* Pricing Tier Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
             {plans.map((p) => {
               const isCurrent = currentPlanCode === p.code;
               const isHeroPlan = p.code === 'PRO_YEAR';
               const isProMonth = p.code === 'PRO_MONTH';
+              const isEnterprise = p.code === 'ENTERPRISE';
               const isFree = p.code === 'FREE';
 
               return (
                 <div
                   key={p.id}
-                  className={`relative rounded-3xl p-6 transition-all duration-300 flex flex-col justify-between ${
+                  className={`relative rounded-3xl p-5 sm:p-6 transition-all duration-300 flex flex-col justify-between ${
                     isHeroPlan
-                      ? 'bg-gradient-to-b from-amber-500/[0.04] via-white to-teal-500/[0.04] border-2 border-amber-400 shadow-xl shadow-amber-500/10 ring-4 ring-amber-400/15 scale-[1.02]'
+                      ? 'bg-gradient-to-b from-amber-500/[0.04] via-white to-teal-500/[0.04] border-2 border-amber-400 shadow-xl shadow-amber-500/10 ring-4 ring-amber-400/15 scale-[1.01]'
+                      : isEnterprise
+                      ? 'bg-gradient-to-b from-purple-500/[0.04] via-white to-indigo-500/[0.04] border-2 border-purple-400/80 shadow-lg shadow-purple-500/10 hover:border-purple-500'
                       : isProMonth
                       ? 'bg-white border-2 border-teal-500/60 shadow-md hover:shadow-lg hover:border-[#008689]'
                       : 'bg-white border border-slate-200 shadow-2xs hover:border-slate-300'
@@ -243,14 +251,20 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                 >
                   {/* Top Floating Badge */}
                   {isHeroPlan && (
-                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[11px] font-black uppercase tracking-wider rounded-full shadow-md flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                    <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-3.5 py-1 bg-gradient-to-r from-amber-500 to-amber-600 text-white text-[10px] sm:text-[11px] font-black uppercase tracking-wider rounded-full shadow-md flex items-center gap-1.5 shrink-0 whitespace-nowrap">
                       <Flame className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
                       <span>Tiết kiệm 80% • Khuyên Dùng</span>
                     </div>
                   )}
 
+                  {isEnterprise && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-[10px] font-bold uppercase tracking-wider rounded-full shadow-xs whitespace-nowrap">
+                      Khoa &amp; Bộ Môn
+                    </div>
+                  )}
+
                   {isProMonth && (
-                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-[#008689] text-white text-[10px] font-bold uppercase tracking-wider rounded-full shadow-xs">
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-[#008689] text-white text-[10px] font-bold uppercase tracking-wider rounded-full shadow-xs whitespace-nowrap">
                       Linh Hoạt Từng Tháng
                     </div>
                   )}
@@ -260,54 +274,58 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                     <div className="pt-1">
                       <div className="flex items-center justify-between mb-1.5">
                         <span className={`text-[11px] font-black uppercase tracking-wider ${
-                          isHeroPlan ? 'text-amber-700' : isProMonth ? 'text-[#008689]' : 'text-slate-500'
+                          isHeroPlan ? 'text-amber-700' : isEnterprise ? 'text-purple-700' : isProMonth ? 'text-[#008689]' : 'text-slate-500'
                         }`}>
-                          {isFree ? 'Trải Nghiệm' : isProMonth ? 'Gói Tháng' : 'Gói 1 Năm VIP'}
+                          {isFree ? 'Trải Nghiệm' : isProMonth ? 'Gói Tháng' : isHeroPlan ? 'Gói 1 Năm VIP' : 'Khoa & Bộ Môn'}
                         </span>
                         {isCurrent && (
                           <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            Đang Hoạt Động
+                            Đang Dùng
                           </span>
                         )}
                       </div>
 
-                      <h3 className="font-extrabold text-slate-900 text-lg">{p.name}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <h3 className="font-extrabold text-slate-900 text-base sm:text-lg">{p.name}</h3>
+                      <p className="text-xs text-slate-500 mt-0.5 min-h-[36px]">
                         {isFree
                           ? 'Dành cho giảng viên muốn thử nghiệm tính năng cơ bản.'
                           : isProMonth
                           ? 'Mở khóa toàn bộ tính năng theo từng tháng.'
-                          : 'Tối ưu nhất cho cả năm học, sinh đề không giới hạn.'}
+                          : isHeroPlan
+                          ? 'Tối ưu nhất cho cả năm học, sinh đề không giới hạn.'
+                          : 'Chia sẻ ngân hàng đề thi dùng chung cho toàn Khoa & Bộ môn.'}
                       </p>
 
                       {/* Pricing Tag */}
-                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-baseline gap-1.5">
-                        <span className={`text-3xl font-black tracking-tight ${
-                          isHeroPlan ? 'text-amber-600' : isProMonth ? 'text-[#008689]' : 'text-slate-900'
+                      <div className="mt-3 pt-3 border-t border-slate-100 flex items-baseline gap-1.5 flex-wrap">
+                        <span className={`text-2xl sm:text-3xl font-black tracking-tight ${
+                          isHeroPlan ? 'text-amber-600' : isEnterprise ? 'text-purple-600' : isProMonth ? 'text-[#008689]' : 'text-slate-900'
                         }`}>
                           {p.price_vnd === 0 ? '0đ' : `${p.price_vnd.toLocaleString('vi-VN')}đ`}
                         </span>
                         {p.duration_days > 0 ? (
-                          <span className="text-xs text-slate-500 font-semibold">
-                            / {p.duration_days === 365 ? 'năm (chỉ ~416đ/tháng)' : 'tháng'}
+                          <span className="text-[11px] text-slate-500 font-semibold">
+                            / {p.duration_days === 365 ? (isEnterprise ? 'năm trọn gói' : 'năm (~416đ/tháng)') : 'tháng'}
                           </span>
                         ) : (
-                          <span className="text-xs text-slate-400 font-medium">/ vĩnh viễn</span>
+                          <span className="text-[11px] text-slate-400 font-medium">/ vĩnh viễn</span>
                         )}
                       </div>
                     </div>
 
                     {/* Features List */}
-                    <div className="border-t border-slate-100 pt-4 space-y-2.5">
-                      <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                    <div className="border-t border-slate-100 pt-3 space-y-2">
+                      <div className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
                         Đặc quyền gói cước:
                       </div>
 
                       {p.features.map((featureText, idx) => (
-                        <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-700 leading-snug">
-                          <div className={`mt-0.5 w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
+                        <div key={idx} className="flex items-start gap-2 text-xs text-slate-700 leading-snug">
+                          <div className={`mt-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center shrink-0 ${
                             isHeroPlan
                               ? 'bg-amber-100 text-amber-700'
+                              : isEnterprise
+                              ? 'bg-purple-100 text-purple-700'
                               : isProMonth
                               ? 'bg-teal-100 text-[#008689]'
                               : 'bg-slate-100 text-slate-600'
@@ -323,34 +341,42 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                   </div>
 
                   {/* CTA Button */}
-                  <div className="pt-6 mt-6 border-t border-slate-100">
+                  <div className="pt-4 mt-5 border-t border-slate-100">
                     <button
                       onClick={() => handleBuyPlan(p)}
                       disabled={isCurrent || isCreatingOrder}
-                      className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
                         isCurrent
                           ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                           : isHeroPlan
                           ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white shadow-md shadow-amber-500/25 hover:scale-[1.01]'
+                          : isEnterprise
+                          ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-sm hover:scale-[1.01]'
                           : isProMonth
                           ? 'bg-[#008689] hover:bg-[#006e71] text-white shadow-sm hover:scale-[1.01]'
                           : 'bg-slate-800 hover:bg-slate-900 text-white'
                       }`}
                     >
                       {isCurrent ? (
-                        <span>✓ Bạn Đang Dùng Gói Này</span>
+                        <span>✓ Đang Dùng Gói Này</span>
                       ) : isFree ? (
                         <span>Gói Mặc Định</span>
                       ) : isHeroPlan ? (
                         <>
-                          <Crown className="w-4 h-4 text-amber-200" />
-                          <span>Nâng Cấp Trọn Năm (5.000đ)</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          <Crown className="w-3.5 h-3.5 text-amber-200" />
+                          <span>Nâng Cấp Năm (5.000đ)</span>
+                          <ArrowRight className="w-3 h-3" />
+                        </>
+                      ) : isEnterprise ? (
+                        <>
+                          <Building2 className="w-3.5 h-3.5 text-purple-200" />
+                          <span>Đăng Ký Gói Bộ Môn</span>
+                          <ArrowRight className="w-3 h-3" />
                         </>
                       ) : (
                         <>
-                          <span>Nâng Cấp 1 Tháng (2.000đ)</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
+                          <span>Nâng Cấp Tháng (2.000đ)</span>
+                          <ArrowRight className="w-3 h-3" />
                         </>
                       )}
                     </button>
@@ -418,7 +444,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
               <div>
                 <span className="font-extrabold text-white text-sm">Thanh toán chuẩn VietQR NAPAS 24/7 an toàn tuyệt đối.</span>
                 <span className="text-white/85 block text-[11px] mt-0.5">
-                  Tự động quét biến động số dư TPBank và mở khóa gói cước tức thì sau 2 giây.
+                  Tự động quét biến động số dư MB Bank (PayOS) và mở khóa gói cước tức thì sau 2 giây.
                 </span>
               </div>
             </div>

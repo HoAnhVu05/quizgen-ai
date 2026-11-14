@@ -96,6 +96,17 @@ function authOtpDevPlugin() {
               // Xóa OTP đã sử dụng
               otpStore.delete(email);
 
+              // Cập nhật trực tiếp mật khẩu mới vào CSDL SQLite auth.db
+              try {
+                const { execSync } = require('child_process');
+                const safePass = newPassword.replace(/'/g, "\\'");
+                const pyScript = `import sqlite3, bcrypt; pwd_bytes = '${safePass}'.encode('utf-8')[:72]; salt = bcrypt.gensalt(); hashed = bcrypt.hashpw(pwd_bytes, salt).decode('utf-8'); conn = sqlite3.connect('services/auth-service/data/auth.db'); conn.execute('UPDATE users SET password_hash = ? WHERE email = ?', (hashed, '${email}')); conn.commit(); conn.close()`;
+                execSync(`python -c "${pyScript}"`);
+                console.log(`[QuizGen Auth] Đã cập nhật mật khẩu mới vào auth.db cho ${email}.`);
+              } catch (dbErr: any) {
+                console.error('[QuizGen Auth] Lỗi cập nhật auth.db:', dbErr?.message || dbErr);
+              }
+
               console.log(`[QuizGen Auth] Đặt lại mật khẩu thành công cho ${email}.`);
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json');
@@ -123,8 +134,14 @@ export default defineConfig({
   plugins: [react(), authOtpDevPlugin()],
   server: {
     port: 3000,
-    host: 'localhost',
-    open: true,
-    allowedHosts: true
+    host: true,
+    open: false,
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true
+      }
+    }
   }
 });

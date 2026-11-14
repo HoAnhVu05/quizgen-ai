@@ -106,9 +106,15 @@ def init_db():
         paid_at TIMESTAMP,
         bank_reference TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP NOT NULL
+        expires_at TIMESTAMP NOT NULL,
+        payos_order_code INTEGER
     );
     """)
+
+    try:
+        cursor.execute("ALTER TABLE orders ADD COLUMN payos_order_code INTEGER")
+    except Exception:
+        pass
 
     # 4. Bảng hạn mức sử dụng người dùng
     cursor.execute("""
@@ -211,12 +217,30 @@ class PlanUpdateRequest(BaseModel):
     is_popular: Optional[bool] = None
     is_active: Optional[bool] = None
 
-# ─── BANK CONFIGURATION (TPBANK VIETQR NAPAS 247) ───────────────────────────
-BANK_ID = os.getenv("VIETQR_BANK_ID", "TPB") # TPBank (Ngân hàng Tiên Phong)
-BANK_NAME = "TPBank (Ngân hàng Tiên Phong)"
-BANK_ACCOUNT_NO = os.getenv("VIETQR_ACCOUNT_NO", "78757618888")
-BANK_ACCOUNT_NAME = os.getenv("VIETQR_ACCOUNT_NAME", "NGUYEN VAN TAN")
+# ─── BANK & PAYOS GATEWAY CONFIGURATION ─────────────────────────────────────
+BANK_ID = os.getenv("VIETQR_BANK_ID", "970422") # MB Bank VietQR PRO
+BANK_NAME = os.getenv("VIETQR_BANK_NAME", "MB Bank (Ngân hàng Quân Đội)")
+BANK_ACCOUNT_NO = os.getenv("VIETQR_ACCOUNT_NO", "06020501360812")
+BANK_ACCOUNT_NAME = os.getenv("VIETQR_ACCOUNT_NAME", "HO ANH VU")
 SEPAY_API_TOKEN = os.getenv("SEPAY_API_TOKEN", "")
+
+# PayOS Open Banking Integration (Unlimited Free VietQR PRO)
+PAYOS_CLIENT_ID = os.getenv("PAYOS_CLIENT_ID", "eea608e2-aa77-4195-88f3-e500edc5dd4f")
+PAYOS_API_KEY = os.getenv("PAYOS_API_KEY", "c5d4ff6c-b0a6-498e-9b7a-47ae5628c1ff")
+PAYOS_CHECKSUM_KEY = os.getenv("PAYOS_CHECKSUM_KEY", "ded68d48280b1271d40839b32e35019c507023c22a67587b77d3d447802ff4f0")
+
+payos_client = None
+if PAYOS_CLIENT_ID and PAYOS_API_KEY and PAYOS_CHECKSUM_KEY:
+    try:
+        from payos import PayOS
+        payos_client = PayOS(
+            client_id=PAYOS_CLIENT_ID,
+            api_key=PAYOS_API_KEY,
+            checksum_key=PAYOS_CHECKSUM_KEY
+        )
+        print("[PAYMENT-SERVICE] PayOS Gateway ready with MB Bank VietQR PRO (HO ANH VU - 06020501360812)!")
+    except Exception as err:
+        print(f"[PAYMENT-SERVICE] Warning: Không thể khởi tạo PayOS: {err}")
 
 # ─── API ENDPOINTS ───────────────────────────────────────────────────────────
 
@@ -484,7 +508,7 @@ def get_my_subscription(user_id: str = Query(...)):
 
 @app.post("/orders/create")
 def create_order(payload: OrderCreateRequest):
-    """Khởi tạo đơn hàng nâng cấp và sinh mã VietQR động."""
+    """Khởi tạo đơn hàng nâng cấp và sinh mã VietQR PRO qua PayOS (MB Bank 06020501360812)."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -495,27 +519,53 @@ def create_order(payload: OrderCreateRequest):
         raise HTTPException(status_code=404, detail="Gói cước không tồn tại hoặc đã ngừng cung cấp.")
     
     order_id = f"ord_{uuid.uuid4().hex[:12]}"
-    # Mã đơn hàng duy nhất tuyệt đối cho từng lần quét: QZ + 6 số thời gian + 2 số ngẫu nhiên
-    unique_seed = int(time.time() * 100) % 1000000
-    order_code = f"QZ{unique_seed:06d}{random.randint(10, 99)}"
+    
+    # Sinh mã đơn hàng số nguyên ngẫu nhiên cho PayOS (6 chữ số cuối timestamp + 2 số ngẫu nhiên)
+    unique_seed = int(time.time() * 10) % 900000000 + 100000000
+    payos_order_code = unique_seed
+    order_code = f"QZ{str(unique_seed)[-6:]}"
     transfer_content = f"QUIZGEN {order_code}"
     
     amount = plan["price_vnd"]
     expires_at = (datetime.now() + timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S")
     
-    # Sinh link mã VietQR chuẩn NAPAS 247
+    bank_name = BANK_NAME
+    bank_account = BANK_ACCOUNT_NO
+    bank_account_name = BANK_ACCOUNT_NAME
     qr_url = f"https://img.vietqr.io/image/{BANK_ID}-{BANK_ACCOUNT_NO}-compact2.png?amount={amount}&addInfo=QUIZGEN%20{order_code}&accountName={BANK_ACCOUNT_NAME.replace(' ', '%20')}"
+    
+    # Tích hợp PayOS VietQR PRO
+    if payos_client:
+        try:
+            from payos.types import CreatePaymentLinkRequest
+            payos_req = CreatePaymentLinkRequest(
+                order_code=payos_order_code,
+                amount=amount,
+                description=transfer_content[:25],
+                cancel_url="http://localhost:3000",
+                return_url="http://localhost:3000"
+            )
+            payos_res = payos_client.payment_requests.create(payos_req)
+            if payos_res:
+                bank_name = "MB Bank (Ngân hàng Quân Đội)"
+                bank_account = payos_res.account_number or BANK_ACCOUNT_NO
+                bank_account_name = payos_res.account_name or BANK_ACCOUNT_NAME
+                bin_code = payos_res.bin or "970422"
+                qr_url = f"https://img.vietqr.io/image/{bin_code}-{bank_account}-compact2.png?amount={amount}&addInfo={transfer_content.replace(' ', '%20')}&accountName={bank_account_name.replace(' ', '%20')}"
+                print(f"[PAYOS] Đã sinh mã VietQR PRO PayOS #{payos_order_code} cho {bank_account_name} ({bank_account})")
+        except Exception as err:
+            print(f"[PAYOS WARNING] Lỗi tạo link PayOS: {err}. Chuyển sang VietQR chuẩn.")
     
     cursor.execute("""
     INSERT INTO orders (
         id, order_code, user_id, user_email, user_name, plan_id, plan_code, plan_name,
         amount_vnd, payment_method, status, qr_url, transfer_content,
-        bank_name, bank_account, bank_account_name, expires_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)
+        bank_name, bank_account, bank_account_name, expires_at, payos_order_code
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?)
     """, (
         order_id, order_code, payload.user_id, payload.user_email, payload.user_name,
         plan["id"], plan["code"], plan["name"], amount, payload.payment_method,
-        qr_url, transfer_content, BANK_NAME, BANK_ACCOUNT_NO, BANK_ACCOUNT_NAME, expires_at
+        qr_url, transfer_content, bank_name, bank_account, bank_account_name, expires_at, payos_order_code
     ))
     conn.commit()
     conn.close()
@@ -529,9 +579,9 @@ def create_order(payload: OrderCreateRequest):
         "amount_vnd": amount,
         "transfer_content": transfer_content,
         "bank_info": {
-            "bank_name": BANK_NAME,
-            "account_no": BANK_ACCOUNT_NO,
-            "account_name": BANK_ACCOUNT_NAME
+            "bank_name": bank_name,
+            "account_no": bank_account,
+            "account_name": bank_account_name
         },
         "qr_url": qr_url,
         "countdown_seconds": 900,
@@ -540,9 +590,32 @@ def create_order(payload: OrderCreateRequest):
 
 def check_auto_detect_bank_transfer(order: dict) -> bool:
     """
-    Tự động nhận diện giao dịch tiền về tài khoản TPBank (78757618888).
-    Kiểm tra SePay Open API hoặc đối soát tự động theo mã đơn hàng.
+    Tự động nhận diện giao dịch tiền về tài khoản MB Bank qua PayOS API hoặc SePay.
     """
+    # 1. Tra cứu trực tiếp trạng thái thanh toán từ PayOS Open API
+    if payos_client:
+        try:
+            payos_code = order.get("payos_order_code")
+            if not payos_code:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("SELECT payos_order_code FROM orders WHERE id = ? OR order_code = ?", (order.get("id"), order.get("order_code")))
+                r = c.fetchone()
+                conn.close()
+                if r and r["payos_order_code"]:
+                    payos_code = r["payos_order_code"]
+            
+            if payos_code:
+                info = payos_client.payment_requests.get(int(payos_code))
+                if info and getattr(info, "status", "") == "PAID":
+                    amt = getattr(info, "amount_paid", 0) or order["amount_vnd"]
+                    print(f"[PAYOS AUTO-DETECT] Nhận diện thành công tiền về MB Bank #{order['order_code']} ({amt:,}đ). Tự động kích hoạt!")
+                    _activate_subscription(order, bank_ref=f"PAYOS_{payos_code}")
+                    return True
+        except Exception as e:
+            pass
+
+    # 2. Fallback qua SePay nếu có cấu hình
     token = os.getenv("SEPAY_API_TOKEN", "")
     if token:
         try:
@@ -556,7 +629,7 @@ def check_auto_detect_bank_transfer(order: dict) -> bool:
                     amt = int(tx.get("amount_in") or 0)
                     acc = str(tx.get("account_number") or "")
                     if order["order_code"] in content and amt >= order["amount_vnd"]:
-                        print(f"[AUTO-DETECT] Nhận diện thành công tiền về TPBank #{order['order_code']} ({amt:,}đ). Tự động kích hoạt!")
+                        print(f"[AUTO-DETECT] Nhận diện thành công tiền về #{order['order_code']} ({amt:,}đ). Tự động kích hoạt!")
                         _activate_subscription(order, bank_ref=str(tx.get("id") or "SEPAY_AUTO"))
                         return True
         except Exception as e:
@@ -620,9 +693,11 @@ def trigger_auto_detect(order_id: str):
     if detected:
         return {"status": "COMPLETED", "message": "Đã phát hiện biến động số dư TPBank và kích hoạt gói thành công!"}
     
-    # Fallback cho phép kiểm tra trực tiếp
-    _activate_subscription(o, bank_ref="AUTO_DETECTED_TPBANK")
-    return {"status": "COMPLETED", "message": "Đã nhận diện thanh toán thành công qua TPBank!"}
+    # Tuyệt đối không kích hoạt nếu tài khoản chưa nhận được tiền thật
+    raise HTTPException(
+        status_code=400,
+        detail=f"Hệ thống chưa ghi nhận biến động số dư cho mã #{o['order_code']} ({o['amount_vnd']:,}đ). Vui lòng chuyển khoản đúng nội dung '{o['transfer_content']}' và đợi 10-30 giây để ngân hàng ghi nhận."
+    )
 
 def _activate_subscription(order: dict, bank_ref: str = "QR_AUTO_PAY"):
     """Hàm nội bộ kích hoạt gói cước và gửi email hóa đơn."""
@@ -710,20 +785,24 @@ def confirm_order(order_id: str, background_tasks: BackgroundTasks):
     if o["status"] == "COMPLETED":
         return {"message": "Đơn hàng đã được kích hoạt trước đó.", "status": "COMPLETED"}
         
-    # Kích hoạt gói và gửi email trong background
-    _activate_subscription(o, bank_ref="MANUAL_CONFIRMED")
+    detected = check_auto_detect_bank_transfer(o)
+    if detected:
+        return {
+            "message": f"Kích hoạt thành công gói {o['plan_name']}!",
+            "order_code": o["order_code"],
+            "status": "COMPLETED",
+            "plan_code": o["plan_code"]
+        }
     
-    return {
-        "message": f"Kích hoạt thành công gói {o['plan_name']}!",
-        "order_code": o["order_code"],
-        "status": "COMPLETED",
-        "plan_code": o["plan_code"]
-    }
+    raise HTTPException(
+        status_code=400,
+        detail=f"Chưa nhận được giao dịch chuyển khoản cho đơn hàng #{o['order_code']} ({o['amount_vnd']:,}đ). Vui lòng hoàn tất chuyển khoản trên ứng dụng ngân hàng với đúng nội dung '{o['transfer_content']}'."
+    )
 
 @app.post("/webhook")
 async def payment_webhook(request: Request):
     """
-    Webhook tiếp nhận biến động số dư từ cổng thanh toán (SePay / PayOS / Casso).
+    Webhook tiếp nhận biến động số dư từ cổng thanh toán (PayOS / SePay / Casso).
     Khớp nội dung chuyển khoản cú pháp QUIZGEN QZxxxxx để duyệt tự động.
     """
     try:
@@ -732,7 +811,26 @@ async def payment_webhook(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    # Nhận diện chuỗi nội dung chuyển khoản
+    # A. Xử lý webhook PayOS
+    if payos_client and isinstance(data, dict) and "data" in data and isinstance(data["data"], dict) and "orderCode" in data["data"]:
+        try:
+            verified_data = payos_client.verifyPaymentWebhookData(data)
+            order_code_num = verified_data.orderCode
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM orders WHERE payos_order_code = ?", (order_code_num,))
+            order = cursor.fetchone()
+            conn.close()
+            if order:
+                o = dict(order)
+                if o["status"] != "COMPLETED":
+                    _activate_subscription(o, bank_ref=f"PAYOS_WEBHOOK_{order_code_num}")
+                    print(f"[PAYOS WEBHOOK] Kích hoạt thành công đơn hàng #{o['order_code']}!")
+                return {"status": "success", "message": f"Duyệt thành công PayOS đơn #{order_code_num}"}
+        except Exception as err:
+            print(f"[PAYOS WEBHOOK WARNING] Xác thực webhook PayOS lỗi: {err}")
+
+    # B. Xử lý webhook SePay / Casso
     content = str(data.get("content") or data.get("description") or data.get("transfer_content") or "")
     amount = int(data.get("transferAmount") or data.get("amount") or 0)
     

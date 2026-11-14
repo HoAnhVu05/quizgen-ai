@@ -244,7 +244,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     <>
       {/* ─── Floating Action Button (FAB) ─────────────────────────────────── */}
       {!isOpen && (
-        <div className="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex items-center gap-3">
           {/* Subtle floating badge tooltip */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 text-slate-700 text-xs font-semibold shadow-md border border-slate-200 select-none animate-bounce">
             <Sparkles className="w-3.5 h-3.5 text-[#008689]" />
@@ -254,11 +254,11 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           <button
             onClick={() => setIsOpen(true)}
             aria-label="Mở Trợ lý Khảo thí AI"
-            className="w-14 h-14 rounded-full bg-gradient-to-tr from-[#008689] to-[#00b4b8] text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center relative group"
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-[#008689] to-[#00b4b8] text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center relative group"
           >
             <div className="absolute inset-0 rounded-full bg-[#008689] opacity-25 animate-ping" />
-            <Sparkles className="w-6 h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10" />
-            <span className="absolute top-0 right-0 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full" />
+            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10" />
+            <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-emerald-400 border-2 border-white rounded-full" />
           </button>
         </div>
       )}
@@ -266,8 +266,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       {/* ─── Modern AI Chat Drawer / Window ───────────────────────────────── */}
       {isOpen && (
         <div
-          className={`fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ${
-            isMinimized ? 'h-16' : 'h-[540px] max-h-[85vh]'
+          className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-96 ${
+            isMinimized ? 'h-14 sm:h-16' : 'h-[520px] max-h-[82vh] sm:max-h-[85vh]'
           }`}
         >
           {/* Header */}

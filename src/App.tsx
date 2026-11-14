@@ -78,10 +78,10 @@ export const App: React.FC = () => {
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
-      if (!saved) return INITIAL_QUESTIONS;
-      const parsed = JSON.parse(saved);
-      return Array.isArray(parsed)
-        ? parsed.filter(
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const filtered = parsed.filter(
             (q: any) =>
               q &&
               !q.id?.startsWith('q-init-') &&
@@ -91,11 +91,60 @@ export const App: React.FC = () => {
               q.id !== 'q-4' &&
               q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
               q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
-          )
-        : INITIAL_QUESTIONS;
+          );
+          if (filtered.length > 0) return filtered;
+        }
+      }
+
+      // Khôi phục từ Kho Đề Đã Sinh (quizgen_saved_exams) nếu có
+      const savedExamsStr = localStorage.getItem('quizgen_saved_exams');
+      if (savedExamsStr) {
+        const exams = JSON.parse(savedExamsStr);
+        if (Array.isArray(exams) && exams.length > 0) {
+          const map = new Map<string, Question>();
+          exams.forEach((ex: any) => {
+            if (Array.isArray(ex.questions)) {
+              ex.questions.forEach((q: any) => {
+                if (q && q.id) map.set(q.id, q);
+              });
+            }
+          });
+          if (map.size > 0) {
+            const recovered = Array.from(map.values());
+            try {
+              localStorage.setItem('quizgen_questions', JSON.stringify(recovered));
+            } catch {}
+            return recovered;
+          }
+        }
+      }
+
+      // Khôi phục từ Lịch sử sinh AI (quizgen_generation_history) nếu có
+      const savedHistStr = localStorage.getItem('quizgen_generation_history');
+      if (savedHistStr) {
+        const hist = JSON.parse(savedHistStr);
+        if (Array.isArray(hist) && hist.length > 0) {
+          const map = new Map<string, Question>();
+          hist.forEach((h: any) => {
+            if (Array.isArray(h.questions)) {
+              h.questions.forEach((q: any) => {
+                if (q && q.id) map.set(q.id, q);
+              });
+            }
+          });
+          if (map.size > 0) {
+            const recovered = Array.from(map.values());
+            try {
+              localStorage.setItem('quizgen_questions', JSON.stringify(recovered));
+            } catch {}
+            return recovered;
+          }
+        }
+      }
     } catch {
       return INITIAL_QUESTIONS;
     }
+    return INITIAL_QUESTIONS;
   });
   // Dọn dẹp dữ liệu mẫu còn lưu trong localStorage nếu có
   useEffect(() => {
@@ -527,6 +576,9 @@ export const App: React.FC = () => {
   const handleGenerateSuccess = (newQuestions?: Question[]) => {
     if (newQuestions && newQuestions.length > 0) {
       setQuestions(newQuestions);
+      try {
+        localStorage.setItem('quizgen_questions', JSON.stringify(newQuestions));
+      } catch {}
     }
     setCurrentScreen('review');
   };
@@ -917,6 +969,12 @@ export const App: React.FC = () => {
               onShowToast={handleShowToast}
               currentUser={currentUser}
               onNavigate={setCurrentScreen}
+              onLoadQuestions={(loadedQs) => {
+                setQuestions(loadedQs);
+                try {
+                  localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                } catch {}
+              }}
             />
           )}
         </div>

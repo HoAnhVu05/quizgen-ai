@@ -57,12 +57,12 @@ class QuestionGenerator:
         # Lấy API Key từ biến môi trường
         self.api_key = os.getenv("GEMINI_API_KEY", "")
         self.model = None
-        self.model_name = "gemini-2.5-flash"
+        self.model_name = "gemini-2.5-flash-lite"
         self._init_model()
 
     def _init_model(self):
         if self.api_key:
-            for candidate in ["gemini-2.5-flash", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-pro"]:
+            for candidate in ["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
                 try:
                     genai.configure(api_key=self.api_key)
                     self.model = genai.GenerativeModel(candidate)
@@ -72,6 +72,29 @@ class QuestionGenerator:
                 except Exception as e:
                     print(f"[AI-SERVICE] Model {candidate} test failed: {e}")
                     self.model = None
+
+    def _generate_with_fallback(self, **kwargs):
+        """Tự động chuyển tiếp mô hình dự phòng nếu một mô hình chạm hạn mức Quota (429)"""
+        candidates = [self.model_name, "gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"]
+        seen = set()
+        unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+        last_err = None
+        for cand in unique_candidates:
+            try:
+                m = genai.GenerativeModel(cand)
+                res = m.generate_content(**kwargs)
+                self.model = m
+                self.model_name = cand
+                return res
+            except Exception as e:
+                last_err = e
+                err_str = str(e).lower()
+                if "429" in err_str or "quota" in err_str or "not found" in err_str or "404" in err_str:
+                    print(f"[AI-SERVICE] Chuyển đổi mô hình dự phòng sau lỗi {cand}: {e}")
+                    continue
+                raise e
+        if last_err:
+            raise last_err
 
     def _prepare_image_part(self, img_data: Any) -> Optional[Image.Image]:
         """Chuyển đổi dữ liệu ảnh (file path, bytes, base64 hoặc PIL.Image) thành đối tượng PIL.Image"""
@@ -223,7 +246,7 @@ LƯU Ý QUAN TRỌNG:
             if loaded_pil_images:
                 parts.extend(loaded_pil_images)
 
-            response = self.model.generate_content(
+            response = self._generate_with_fallback(
                 contents=[{"role": "user", "parts": parts}],
                 generation_config={"response_mime_type": "application/json"}
             )
@@ -292,7 +315,7 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
                 if loaded_pil:
                     parts.append(loaded_pil)
 
-                response = self.model.generate_content(
+                response = self._generate_with_fallback(
                     contents=[{"role": "user", "parts": parts}],
                     generation_config={"response_mime_type": "application/json"}
                 )
@@ -512,6 +535,25 @@ Khi người dùng hỏi về cuốn sách này (tóm tắt, phân tích khái n
   + Lời giải thích: {exp}
 """
 
+        system_stats = ctx.get("system_stats") or {}
+        if system_stats:
+            system_instruction += f"""
+THỐNG KÊ HỆ THỐNG THỰC TẾ (CƠ SỞ DỮ LIỆU auth.db - KHÔNG DỮ LIỆU ẢO):
+- Tổng số tài khoản người dùng thực tế trong hệ thống: {system_stats.get('total_users', 3)} người dùng.
+- Giảng viên: {system_stats.get('lecturers', 2)} người.
+- Quản trị viên (Admin): {system_stats.get('admins', 1)} người.
+
+QUY TẮC BẢO ĐẢM TÍNH XÁC THỰC VÀ CHỐNG BỊA ĐẶT SỐ LIỆU (ANTI-HALLUCINATION):
+- Khi người dùng hỏi về các chỉ số hệ thống (số lượng người dùng, tài khoản đăng ký, số giảng viên...):
+  BẮT BUỘC CHỈ ĐƯỢC PHÉP trả lời dựa trên số liệu thực tế ở trên ({system_stats.get('total_users', 3)} người dùng đăng ký).
+- TUYỆT ĐỐI NGHIÊM CẤM tự ý bịa đặt hoặc tưởng tượng ra các con số ảo (như 15,873 hay bất kỳ con số không có thật nào khác).
+"""
+        else:
+            system_instruction += """
+QUY TẮC CHỐNG BỊA ĐẶT SỐ LIỆU (ANTI-HALLUCINATION):
+- Nếu người dùng hỏi về số lượng người dùng hay số liệu thống kê mà hệ thống chưa cung cấp, bạn phải trả lời rõ ràng rằng bạn chỉ có thể báo cáo số liệu thực tế được quản trị viên đồng bộ, tuyệt đối không tự ý bịa đặt con số ảo.
+"""
+
         system_instruction += """
 NGUYÊN TẮC PHẢN HỒI:
 1. Luôn giữ văn phong sư phạm chuẩn mực, chuyên nghiệp, súc tích và giải quyết trực diện vấn đề.
@@ -544,7 +586,7 @@ NGUYÊN TẮC PHẢN HỒI:
 
             conversation_parts.append(f"Giảng viên: {message}\nCopilot:")
 
-            response = self.model.generate_content(
+            response = self._generate_with_fallback(
                 contents=[{"role": "user", "parts": conversation_parts}]
             )
             reply_text = response.text.strip() if response and response.text else "Tôi đã ghi nhận yêu cầu của bạn."

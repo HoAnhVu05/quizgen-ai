@@ -80,8 +80,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-async def proxy_request(service_url: str, path: str, request: Request) -> Response:
-    client = httpx.AsyncClient(base_url=service_url, timeout=60.0, follow_redirects=True)
+async def proxy_request(service_url: str, path: str, request: Request, timeout: float = 300.0) -> Response:
+    client = httpx.AsyncClient(base_url=service_url, timeout=timeout, follow_redirects=True)
     url = httpx.URL(path=path, query=request.url.query.encode("utf-8"))
     body = await request.body()
     

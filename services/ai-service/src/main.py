@@ -313,6 +313,25 @@ async def chat_copilot_endpoint(
     if user_id:
         context["userId"] = user_id
 
+    # Tự động nạp số liệu thống kê người dùng thực tế từ auth.db để Quanta chống bịa đặt (Anti-Hallucination)
+    try:
+        import sqlite3
+        auth_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../auth-service/data/auth.db"))
+        if os.path.exists(auth_db_path):
+            with sqlite3.connect(auth_db_path) as a_conn:
+                ac = a_conn.cursor()
+                total_users = ac.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+                lecturers = ac.execute("SELECT COUNT(*) FROM users WHERE role='lecturer'").fetchone()[0]
+                admins = ac.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
+                context["system_stats"] = {
+                    "total_users": total_users,
+                    "lecturers": lecturers,
+                    "admins": admins,
+                    "verified": True
+                }
+    except Exception as e:
+        print(f"[AI-SERVICE] Warning loading system stats: {e}")
+
     result = await generator.chat_with_copilot(
         message=message,
         history=history,

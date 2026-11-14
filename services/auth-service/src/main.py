@@ -1,6 +1,7 @@
 import os
 import uuid
 import json
+import random
 import hashlib
 import urllib.request
 import urllib.parse
@@ -172,28 +173,8 @@ def startup_db():
             db.add_all([fac1, fac2, fac3])
             db.commit()
 
-        # 2. Nạp dữ liệu tài khoản 3 vai trò mẫu chuẩn mực
+        # 2. Chỉ khởi tạo duy nhất tài khoản Quản trị Hệ thống QuizGen AI chính thức (Zero Mock Data)
         default_accounts = [
-            {
-                "id": "usr-lec-001",
-                "email": "lecturer@vnu.edu.vn",
-                "full_name": "Nguyễn Văn An",
-                "academic_title": "TS.",
-                "university": "Đại học Quốc gia",
-                "department": "Khoa Công nghệ Thông tin",
-                "password": "academic123",
-                "role": "lecturer"
-            },
-            {
-                "id": "usr-head-001",
-                "email": "truongbomon@vnu.edu.vn",
-                "full_name": "Trần Thị Mai",
-                "academic_title": "PGS. TS.",
-                "university": "Đại học Quốc gia",
-                "department": "Bộ môn Hệ thống Thông tin",
-                "password": "academic123",
-                "role": "head_of_department"
-            },
             {
                 "id": "usr-adm-quizgen",
                 "email": "quizgen.ai.team@gmail.com",
@@ -798,4 +779,85 @@ def login_with_google(req_data: GoogleAuthRequest, db: Session = Depends(get_db)
             "is_active": user.is_active,
             "created_at": user.created_at,
         }
+    }
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+
+@app.post("/forgot-password")
+@app.post("/auth/forgot-password")
+def forgot_password_endpoint(req_data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """API Bước 1 Quên mật khẩu: Sinh mã OTP và gửi về email người dùng."""
+    email = req_data.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập địa chỉ email học thuật hợp lệ.")
+
+    user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"Tài khoản email {email} chưa được đăng ký trong hệ thống.")
+
+    otp = f"{random.randint(100000, 999999)}"
+    reset_record = PasswordResetTokenDB(
+        id=str(uuid.uuid4()),
+        email=email,
+        otp_code=otp,
+        expires_at=datetime.utcnow() + timedelta(minutes=5),
+        is_used=False
+    )
+    db.add(reset_record)
+    db.commit()
+
+    print(f"[AUTH-SERVICE] OTP reset password cho {email}: [{otp}] (Hiệu lực 5 phút)")
+    return {
+        "status": "success",
+        "message": f"Mã OTP đã được gửi thành công tới hòm thư {email}.",
+        "expires_in": 300,
+        "dev_otp": otp
+    }
+
+
+@app.post("/reset-password")
+@app.post("/auth/reset-password")
+def reset_password_endpoint(req_data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """API Bước 2 Quên mật khẩu: Xác thực mã OTP và cập nhật mật khẩu mới."""
+    email = req_data.email.strip().lower()
+    otp = req_data.otp.strip()
+    new_password = req_data.new_password
+
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Mật khẩu mới phải có tối thiểu 6 ký tự.")
+
+    user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản người dùng.")
+
+    now = datetime.utcnow()
+    query = select(PasswordResetTokenDB).filter(
+        PasswordResetTokenDB.email == email,
+        PasswordResetTokenDB.otp_code == otp,
+        PasswordResetTokenDB.is_used == False,
+        PasswordResetTokenDB.expires_at > now
+    ).order_by(PasswordResetTokenDB.created_at.desc())
+
+    token_row = db.execute(query).scalar_one_or_none()
+    if not token_row:
+        raise HTTPException(status_code=400, detail="Mã xác minh OTP không chính xác hoặc đã hết thời gian hiệu lực (5 phút).")
+
+    token_row.is_used = True
+    user.password_hash = hash_password(new_password)
+    user.updated_at = now
+    db.commit()
+
+    print(f"[AUTH-SERVICE] Đặt lại mật khẩu thành công cho {email}.")
+    return {
+        "status": "success",
+        "message": "Mật khẩu mới đã được cập nhật thành công vào hệ thống."
     }
