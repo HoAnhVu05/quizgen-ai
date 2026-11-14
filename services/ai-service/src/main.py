@@ -183,7 +183,8 @@ async def generate_questions(
             bloom_matrix=bloom_matrix,
             document_id=document_id,
             chapter_name=primary_chapter,
-            textbook_name=textbook_name
+            textbook_name=textbook_name,
+            images=req.get_images()
         )
 
         # Cập nhật kết quả Job vào DB
@@ -231,11 +232,19 @@ async def regenerate_question_endpoint(
     }
     bloom_lvl = current_q.get("bloomLevel") or current_q.get("bloom_level") or "Thông hiểu"
 
+    img_ctx = current_q.get("imageContext") or current_q.get("image_context")
+    if not img_ctx and (current_q.get("hasImage") or current_q.get("has_image")):
+        img_ctx = {
+            "url": current_q.get("imageUrl") or current_q.get("image_url"),
+            "caption": current_q.get("imageCaption") or current_q.get("image_caption")
+        }
+
     new_q = await generator.regenerate_single_question(
         question_id=question_id,
         current_question=current_q,
         chunk_context=chunk_context,
-        bloom_level=bloom_lvl
+        bloom_level=bloom_lvl,
+        image_context=img_ctx
     )
     return {
         "success": True,

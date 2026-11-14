@@ -740,7 +740,15 @@ function generateQuestionsFromRequest(body) {
         confidence_score: Math.floor(92 + Math.random() * 7),
         confidenceScore: Math.floor(92 + Math.random() * 7),
         status: 'pending',
-        created_at: 'Vừa sinh AI (Gemini Pro)',
+        has_image: Boolean(body.images && body.images.length > 0 && counter === 1),
+        hasImage: Boolean(body.images && body.images.length > 0 && counter === 1),
+        image_url: (body.images && body.images.length > 0 && counter === 1) ? (body.images[0].url || '/uploads/figures/fig-01.png') : null,
+        imageUrl: (body.images && body.images.length > 0 && counter === 1) ? (body.images[0].url || '/uploads/figures/fig-01.png') : null,
+        image_caption: (body.images && body.images.length > 0 && counter === 1) ? (body.images[0].caption || 'Hình 1: Đồ thị minh họa') : null,
+        imageCaption: (body.images && body.images.length > 0 && counter === 1) ? (body.images[0].caption || 'Hình 1: Đồ thị minh họa') : null,
+        has_formula: Boolean(tmpl.q.includes('$') || tmpl.q.includes('=')),
+        hasFormula: Boolean(tmpl.q.includes('$') || tmpl.q.includes('=')),
+        created_at: 'Vừa sinh AI (Gemini 2.5 Flash Multimodal)',
       });
       counter++;
     }
