@@ -19,6 +19,9 @@ CREATE TABLE IF NOT EXISTS exams.questions (
     explanation TEXT,                                       -- Lời giải thích học thuật trích từ giáo trình
     confidence_score INT DEFAULT 95,                        -- Điểm độ tin cậy của AI (0 - 100%)
     status VARCHAR(20) NOT NULL DEFAULT 'pending',          -- 'pending' (chờ duyệt) | 'approved' (đã duyệt) | 'rejected' (loại)
+    image_url TEXT,                                         -- [SCRUM-90] Đường dẫn tệp hình vẽ, sơ đồ đồ thị hoặc Base64
+    has_formula BOOLEAN NOT NULL DEFAULT FALSE,             -- [SCRUM-90] Cờ đánh dấu câu hỏi có công thức LaTeX ($...$)
+    image_caption TEXT,                                     -- [SCRUM-90] Chú thích hình vẽ học thuật
     created_by VARCHAR(50) NOT NULL DEFAULT 'lec-001',      -- Giảng viên phụ trách
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -57,5 +60,6 @@ CREATE INDEX IF NOT EXISTS idx_questions_bloom ON exams.questions(bloom_level);
 CREATE INDEX IF NOT EXISTS idx_questions_bloom_level ON exams.questions(bloom_level);
 CREATE INDEX IF NOT EXISTS idx_questions_chunk ON exams.questions(source_chunk_id);
 CREATE INDEX IF NOT EXISTS idx_questions_created_at ON exams.questions(created_at);
+CREATE INDEX IF NOT EXISTS idx_questions_has_formula ON exams.questions(has_formula);
 CREATE INDEX IF NOT EXISTS idx_exams_user_id ON exams.exams(user_id);
 CREATE INDEX IF NOT EXISTS idx_exams_created_at ON exams.exams(created_at);
