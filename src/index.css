@@ -1,0 +1,454 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-[#f7f9fb] text-slate-800 selection:bg-[#008689] selection:text-white font-sans;
+  }
+}
+
+/* Portal UTH Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #008689;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #006d70;
+}
+
+/* Portal White Card & Subtle Elevation */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid #e2e8f0;
+}
+
+.glass-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 10px -2px rgba(15, 23, 42, 0.05);
+}
+
+.glass-card:hover {
+  border-color: rgba(0, 134, 137, 0.35);
+  box-shadow: 0 10px 25px -8px rgba(0, 134, 137, 0.14);
+}
+
+.ambient-glow-blue {
+  background: radial-gradient(circle at 50% 0%, rgba(0, 134, 137, 0.1) 0%, transparent 70%);
+}
+
+.ambient-glow-purple {
+  background: radial-gradient(circle at 50% 0%, rgba(218, 28, 45, 0.06) 0%, transparent 70%);
+}
+
+/* Animations */
+@keyframes pulseSubtle {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes scanBeam {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(400%);
+  }
+}
+
+@keyframes shimmerWave {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-scan-beam {
+  animation: scanBeam 2.5s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0) 100%);
+  background-size: 200% 100%;
+  animation: shimmerWave 2s infinite;
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 3s ease-in-out infinite;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideIn {
+  animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Shadow glow utilities (supplement Tailwind extend) */
+.shadow-glow-emerald {
+  box-shadow: 0 0 20px -5px rgba(16, 185, 129, 0.4);
+}
+
+/* Floating dock backdrop */
+.dock-glass {
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 12px 32px -6px rgba(0, 134, 137, 0.16);
+}
+
+/* Generation overlay shimmer */
+.shimmer-bar {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 134, 137, 0) 0%,
+    rgba(0, 134, 137, 0.75) 45%,
+    rgba(29, 153, 157, 0.85) 60%,
+    rgba(0, 134, 137, 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmerWave 1.8s ease-in-out infinite;
+}
+
+/* Animated Liquid Waves & Ocean Gradient Shift for Payment */
+@keyframes auroraGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes waveFlowFront {
+  0% {
+    transform: translateX(0) scaleY(1);
+  }
+  50% {
+    transform: translateX(-25%) scaleY(1.3);
+  }
+  100% {
+    transform: translateX(-50%) scaleY(1);
+  }
+}
+
+@keyframes waveFlowBack {
+  0% {
+    transform: translateX(-50%) scaleY(1.2);
+  }
+  50% {
+    transform: translateX(-25%) scaleY(0.8);
+  }
+  100% {
+    transform: translateX(0) scaleY(1.2);
+  }
+}
+
+@keyframes waveFlowVerticalFront {
+  0% {
+    transform: translateY(0) scaleX(1);
+  }
+  50% {
+    transform: translateY(-25%) scaleX(1.35);
+  }
+  100% {
+    transform: translateY(-50%) scaleX(1);
+  }
+}
+
+@keyframes waveFlowVerticalBack {
+  0% {
+    transform: translateY(-50%) scaleX(1.2);
+  }
+  50% {
+    transform: translateY(-25%) scaleX(0.85);
+  }
+  100% {
+    transform: translateY(0) scaleX(1.2);
+  }
+}
+
+@keyframes organicFluidDrift {
+  0%, 100% {
+    border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+    transform: translate(0, 0) scale(1) rotate(0deg);
+  }
+  33% {
+    border-radius: 70% 30% 50% 50% / 30% 60% 40% 70%;
+    transform: translate(25px, -18px) scale(1.1) rotate(120deg);
+  }
+  66% {
+    border-radius: 50% 60% 30% 60% / 60% 30% 70% 40%;
+    transform: translate(-18px, 20px) scale(0.95) rotate(240deg);
+  }
+}
+
+.wave-animate-front {
+  animation: waveFlowFront 6s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.wave-animate-back {
+  animation: waveFlowBack 8s ease-in-out infinite;
+}
+
+.wave-animate-vertical-front {
+  animation: waveFlowVerticalFront 6.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}
+
+.wave-animate-vertical-back {
+  animation: waveFlowVerticalBack 8.5s ease-in-out infinite;
+}
+
+.fluid-blob-animate {
+  animation: organicFluidDrift 8s ease-in-out infinite;
+}
+
+.wave-gradient-flow,
+.wave-canopy-flow {
+  background: linear-gradient(
+    125deg,
+    #008689 0%,
+    #06b6d4 22%,
+    #2563eb 45%,
+    #6366f1 65%,
+    #10b981 85%,
+    #008689 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7s ease-in-out infinite;
+}
+
+.wave-panel-flow {
+  background: linear-gradient(
+    155deg,
+    #005a5d 0%,
+    #0891b2 20%,
+    #1e40af 45%,
+    #059669 70%,
+    #005a5d 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7.5s ease-in-out infinite;
+}
+
+.aurora-header-slow {
+  background: linear-gradient(
+    125deg,
+    #008689 0%,
+    #06b6d4 22%,
+    #2563eb 45%,
+    #6366f1 65%,
+    #10b981 85%,
+    #008689 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7s ease-in-out infinite;
+}
+
+.aurora-panel-slow {
+  background: linear-gradient(
+    155deg,
+    #005a5d 0%,
+    #0891b2 20%,
+    #1e40af 45%,
+    #059669 70%,
+    #005a5d 100%
+  );
+  background-size: 250% 250%;
+  animation: auroraGradientShift 7.5s ease-in-out infinite;
+}
+
+/* Print Stylesheet - Only print exam paper, hide all UI chrome */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Hide everything on the page by default */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* Only show the exam paper container and its children */
+  #printable-exam-paper,
+  #printable-exam-paper * {
+    visibility: visible !important;
+  }
+
+  /* Position printable paper at top-left */
+  #printable-exam-paper {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  .no-print,
+  .no-print * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .exam-question-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}
+
+/* ====================================================================
+ * KATEX HIGH-DEFINITION MATH & PHYSICS RENDERING STYLES
+ * ==================================================================== */
+.katex {
+  font-size: 1.05em !important;
+  text-rendering: optimizeLegibility !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  line-height: 1.25 !important;
+}
+
+/* Inline Math Alignment with Vietnamese typography */
+.inline-math-wrapper {
+  display: inline-block;
+  vertical-align: -0.1em;
+  padding: 0 0.15em;
+}
+
+.inline-math-wrapper .katex {
+  color: inherit;
+}
+
+/* Display / Block Math Equations */
+.katex-display {
+  margin: 0.6em 0 !important;
+  padding: 0.4em 0.8em !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  border-radius: 0.5rem;
+  background-color: rgba(248, 250, 252, 0.7);
+  border: 1px dashed rgba(203, 213, 225, 0.8);
+}
+
+.katex-display > .katex {
+  text-align: center;
+  min-width: fit-content;
+}
+
+/* Clean mini scrollbar for wide equations on mobile and desktop */
+.math-block-scroll::-webkit-scrollbar,
+.katex-display::-webkit-scrollbar {
+  height: 4px;
+}
+
+.math-block-scroll::-webkit-scrollbar-thumb,
+.katex-display::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 9999px;
+}
+
+.math-block-scroll::-webkit-scrollbar-thumb:hover,
+.katex-display::-webkit-scrollbar-thumb:hover {
+  background: #008689;
+}
+
+/* Crisp fraction line & radical sign rendering */
+.katex .frac-line {
+  border-bottom-width: 0.06em !important;
+}
+
+.katex .sqrt > .root {
+  margin-left: 0.25em;
+  margin-right: -0.55em;
+}
+
+/* Vector, overline, and math accent sharpness */
+.katex .accent-vec {
+  transform: scaleX(0.95);
+}
+
+/* High-contrast clarity for Print Mode (A4 Exam Papers) */
+@media print {
+  .katex,
+  .katex * {
+    color: #000000 !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .katex-display {
+    background: transparent !important;
+    border: none !important;
+    margin: 0.3em 0 !important;
+    padding: 0.2em 0 !important;
+  }
+}
+
+
+
