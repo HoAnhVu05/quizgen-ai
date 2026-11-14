@@ -15,6 +15,9 @@ import {
   FileCheck2,
   UploadCloud,
   CheckSquare,
+  Check,
+  Calendar,
+  BarChart2,
 } from 'lucide-react';
 import { ScreenId, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
@@ -121,7 +124,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             sub: 'Tài liệu cá nhân đã băm Vector',
             icon: BookOpen,
             color: 'text-[#008689]',
-            bg: 'bg-[#e6f4f4]',
+            bg: 'bg-[#cbf0ee]',
+            cardBg: 'bg-[#f0faf9]',
+            cardBorder: 'border-[#bdeae7]',
+            arrowBg: 'bg-[#d0f2f0] text-[#008689]',
             badge: null
           },
           {
@@ -129,17 +135,24 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             value: String(statsSummary.totalGenerated),
             sub: 'Sinh tự động qua RAG Pipeline',
             icon: Sparkles,
-            color: 'text-[#008689]',
-            bg: 'bg-[#e6f4f4]',
+            color: 'text-blue-600',
+            bg: 'bg-blue-100',
+            cardBg: 'bg-[#eff6ff]',
+            cardBorder: 'border-blue-200/80',
+            arrowBg: 'bg-blue-100 text-blue-600',
             badge: null
           },
           {
             label: 'Câu hỏi chờ đối soát',
             value: String(pendingReviewCount),
+            valueColor: 'text-amber-600',
             sub: 'Cần kiểm tra trích dẫn & gửi duyệt',
             icon: Clock,
             color: 'text-amber-600',
-            bg: 'bg-amber-50',
+            bg: 'bg-amber-100',
+            cardBg: 'bg-[#fffbeb]',
+            cardBorder: 'border-amber-200/80',
+            arrowBg: 'bg-amber-100 text-amber-600',
             badge: {
               text: 'Cần đối soát',
               className: 'bg-amber-100 text-amber-800 border-amber-300'
@@ -150,8 +163,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             value: String(approvedCount > 0 ? 1 : 0),
             sub: `${approvedCount} câu hỏi đã đạt chuẩn`,
             icon: FileText,
-            color: 'text-emerald-600',
-            bg: 'bg-emerald-50',
+            color: 'text-purple-600',
+            bg: 'bg-purple-100',
+            cardBg: 'bg-[#faf5ff]',
+            cardBorder: 'border-purple-200/80',
+            arrowBg: 'bg-purple-100 text-purple-600',
             badge: null
           }
         ]
@@ -242,13 +258,25 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   return (
     <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
       {/* Clean Welcome Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#008689] bg-[#e6f4f4] px-2.5 py-1 rounded-md">
-            <span>{roleHeaderConfig.badge}</span>
+      <div className="bg-gradient-to-r from-[#d0f2f0] via-[#ebfaf9] to-white rounded-2xl border border-[#b2e5e7]/80 p-4 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="flex items-center gap-4">
+          {/* Document Sheet Graphic with Checkmark Circle */}
+          <div className="hidden sm:flex relative w-12 h-14 bg-white/95 rounded-xl shadow-xs border border-teal-100 flex-col justify-center px-2.5 space-y-1.5 shrink-0">
+            <div className="w-4 h-1 bg-slate-200 rounded-full" />
+            <div className="w-7 h-1 bg-slate-200 rounded-full" />
+            <div className="w-5 h-1 bg-slate-200 rounded-full" />
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-xs border-2 border-white">
+              <Check className="w-3 h-3 stroke-[3]" />
+            </div>
           </div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-800 pt-1">{roleHeaderConfig.title}</h2>
-          <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">{roleHeaderConfig.subtitle}</p>
+
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-[#007d80] bg-[#cbf0ee] px-3 py-0.5 rounded-full">
+              <span>{roleHeaderConfig.badge}</span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-extrabold text-slate-800 pt-0.5">{roleHeaderConfig.title}</h2>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">{roleHeaderConfig.subtitle}</p>
+          </div>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0">
@@ -256,14 +284,14 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             <>
               <button
                 onClick={() => onNavigate('upload')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto"
               >
-                <FileText className="w-4 h-4" />
+                <BookOpen className="w-4 h-4" />
                 Nạp Giáo trình Mới
               </button>
               <button
                 onClick={() => onNavigate('generate')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs sm:text-sm rounded-lg transition-colors w-full sm:w-auto"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/95 hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto"
               >
                 <Sparkles className="w-4 h-4 text-[#008689]" />
                 Sinh Đề Thi AI
@@ -311,36 +339,48 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       {/* Role-Specific 4 KPI Stat Cards (AC-1.2) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        {kpiCards.map((stat, idx) => {
+        {kpiCards.map((stat: any, idx) => {
           const Icon = stat.icon;
           return (
             <div
               key={idx}
-              className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col justify-between"
+              className={`${stat.cardBg || 'bg-white'} rounded-2xl p-4 sm:p-5 border ${
+                stat.cardBorder || 'border-slate-200'
+              } shadow-xs flex flex-col justify-between`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  {stat.label}
-                </p>
+              <div className="flex items-center gap-2.5">
                 <div
-                  className={`w-9 h-9 rounded-lg ${stat.bg} flex items-center justify-center shrink-0`}
+                  className={`w-9 h-9 rounded-xl ${stat.bg} flex items-center justify-center shrink-0`}
                 >
                   <Icon className={`w-4 h-4 ${stat.color}`} />
                 </div>
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider truncate">
+                  {stat.label}
+                </p>
               </div>
-              <div className="mt-3">
+
+              <div className="mt-4 flex items-center justify-between">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-2xl font-bold text-slate-800">{stat.value}</span>
+                  <span className={`text-2xl sm:text-3xl font-extrabold ${stat.valueColor || 'text-slate-800'}`}>
+                    {stat.value}
+                  </span>
                   {stat.badge && (
                     <span
-                      className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${stat.badge.className}`}
+                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${stat.badge.className}`}
                     >
                       {stat.badge.text}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 mt-1">{stat.sub}</p>
+
+                <div
+                  className={`w-7 h-7 rounded-full ${stat.arrowBg || 'bg-slate-100 text-slate-600'} flex items-center justify-center shrink-0`}
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </div>
               </div>
+
+              <p className="text-xs text-slate-400 mt-2">{stat.sub}</p>
             </div>
           );
         })}
@@ -349,9 +389,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       {/* Main Content Split: Quick Workflow Steps & Bloom Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Workflow Quick Navigation */}
-        <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col justify-between">
+        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-[#cbf0ee] text-[#008689] flex items-center justify-center shrink-0">
+                <Calendar className="w-4 h-4" />
+              </div>
               <div>
                 <h3 className="text-sm sm:text-base font-bold text-slate-800">
                   {role === 'lecturer'
@@ -374,86 +417,77 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 {[
                   {
+                    stepNum: '1',
                     step: 'Bước 1',
                     title: 'Nạp Giáo trình PDF/DOCX',
                     desc: 'Trích xuất văn bản & lập chỉ mục Vector',
                     screen: 'upload' as ScreenId,
-                    icon: UploadCloud,
-                    badgeStyle: 'bg-teal-50 text-[#008689] border-teal-200',
-                    borderHover: 'hover:border-[#008689] hover:bg-teal-50/20',
-                    iconBox: 'bg-teal-50 text-[#008689] border border-teal-200/60',
-                    actionColor: 'text-[#008689]',
-                    titleHover: 'group-hover:text-[#008689]',
+                    circleStyle: 'bg-[#d7f3f2] text-[#008689]',
+                    arrowStyle: 'bg-[#d7f3f2] text-[#008689]',
+                    stepTagColor: 'text-[#008689]',
                   },
                   {
+                    stepNum: '2',
                     step: 'Bước 2',
                     title: 'Cấu hình Ma trận Bloom',
                     desc: 'Thiết lập tỷ lệ 4 mức độ nhận thức AI',
                     screen: 'generate' as ScreenId,
-                    icon: Sparkles,
-                    badgeStyle: 'bg-blue-50 text-blue-700 border-blue-200',
-                    borderHover: 'hover:border-blue-500 hover:bg-blue-50/20',
-                    iconBox: 'bg-blue-50 text-blue-600 border border-blue-200/60',
-                    actionColor: 'text-blue-600',
-                    titleHover: 'group-hover:text-blue-600',
+                    circleStyle: 'bg-blue-100 text-blue-600',
+                    arrowStyle: 'bg-blue-100 text-blue-600',
+                    stepTagColor: 'text-blue-600',
                   },
                   {
+                    stepNum: '3',
                     step: 'Bước 3',
                     title: 'Đối soát & Biên tập Đề',
                     desc: `Kiểm tra ${pendingReviewCount} câu hỏi chờ gửi duyệt`,
                     screen: 'review' as ScreenId,
-                    icon: CheckSquare,
-                    badgeStyle: 'bg-amber-50 text-amber-800 border-amber-200',
-                    borderHover: 'hover:border-amber-500 hover:bg-amber-50/20',
-                    iconBox: 'bg-amber-50 text-amber-600 border border-amber-200/60',
-                    actionColor: 'text-amber-700',
-                    titleHover: 'group-hover:text-amber-700',
+                    circleStyle: 'bg-amber-100 text-amber-700',
+                    arrowStyle: 'bg-amber-100 text-amber-700',
+                    stepTagColor: 'text-amber-700',
                   },
                   {
+                    stepNum: '4',
                     step: 'Bước 4',
                     title: 'Đóng gói & Xuất Đề Thi',
-                    desc: 'Xuất bản Word (.docx), In PDF OMR và gói LMS Canvas',
+                    desc: 'Xuất bản Word (.docx), In PDF OMR và gói LMS',
                     screen: 'bank' as ScreenId,
-                    icon: Database,
-                    badgeStyle: 'bg-purple-50 text-purple-700 border-purple-200',
-                    borderHover: 'hover:border-purple-500 hover:bg-purple-50/20',
-                    iconBox: 'bg-purple-50 text-purple-600 border border-purple-200/60',
-                    actionColor: 'text-purple-700',
-                    titleHover: 'group-hover:text-purple-700',
+                    circleStyle: 'bg-purple-100 text-purple-700',
+                    arrowStyle: 'bg-purple-100 text-purple-700',
+                    stepTagColor: 'text-purple-700',
                   },
                 ].map((item, i) => {
-                  const ItemIcon = item.icon;
                   return (
                     <button
                       key={i}
                       onClick={() => onNavigate(item.screen)}
-                      className={`group text-left p-4 rounded-xl border border-slate-200 bg-white transition-all flex flex-col justify-between shadow-2xs hover:shadow-xs ${item.borderHover}`}
+                      className="group text-left p-3.5 rounded-2xl border border-slate-200/90 bg-white hover:border-[#008689]/40 hover:bg-slate-50/60 transition-all flex items-center justify-between shadow-2xs hover:shadow-xs gap-3"
                     >
-                      <div>
-                        <div className="flex items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-8 h-8 rounded-full ${item.circleStyle} font-extrabold text-sm flex items-center justify-center shrink-0`}
+                        >
+                          {item.stepNum}
+                        </div>
+                        <div className="min-w-0">
                           <span
-                            className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md border tracking-wider ${item.badgeStyle}`}
+                            className={`block text-[10px] font-bold uppercase tracking-wider ${item.stepTagColor}`}
                           >
                             {item.step}
                           </span>
-                          <div
-                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${item.iconBox}`}
-                          >
-                            <ItemIcon className="w-3.5 h-3.5" />
-                          </div>
+                          <h4 className="text-xs font-bold text-slate-800 truncate group-hover:text-[#008689] transition-colors">
+                            {item.title}
+                          </h4>
+                          <p className="text-[11px] text-slate-400 truncate">
+                            {item.desc}
+                          </p>
                         </div>
-                        <h4
-                          className={`text-sm font-bold text-slate-800 transition-colors leading-snug ${item.titleHover}`}
-                        >
-                          {item.title}
-                        </h4>
-                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">{item.desc}</p>
                       </div>
+
                       <div
-                        className={`mt-3 flex items-center gap-1 text-xs font-bold ${item.actionColor}`}
+                        className={`w-6 h-6 rounded-full ${item.arrowStyle} flex items-center justify-center shrink-0 group-hover:translate-x-0.5 transition-transform`}
                       >
-                        <span>Mở công cụ</span>
-                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </div>
                     </button>
                   );
@@ -548,14 +582,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         </div>
 
         {/* Bloom Cognitive Distribution */}
-        <div className="lg:col-span-5 bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col justify-between">
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-xs flex flex-col justify-between">
           <div>
-            <h3 className="text-sm sm:text-base font-bold text-slate-800">
-              Phân bổ Thang đo Nhận thức Bloom
-            </h3>
-            <p className="text-xs text-slate-500 mt-0.5 mb-5">
-              Tỷ lệ câu hỏi theo 4 mức độ nhận thức trong Ngân hàng Đề
-            </p>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0">
+                <BarChart2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-bold text-slate-800">
+                  Phân bổ Thang đo Nhận thức Bloom
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Tỷ lệ câu hỏi theo 4 mức độ nhận thức trong Ngân hàng Đề
+                </p>
+              </div>
+            </div>
 
             <div className="space-y-4">
               {bloomDistribution.map((item, idx) => (

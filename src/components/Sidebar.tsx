@@ -276,22 +276,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Role Title Section Header */}
-      <div className="px-4 pt-3 pb-1">
-        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-          {isSystemAdmin ? 'Phân Hệ Quản Trị' : 'Quy Trình Biên Soạn Đề'}
-        </span>
-      </div>
+      {/* Role Title Section Header (Admin only) */}
+      {isSystemAdmin && (
+        <div className="px-4 pt-3 pb-1">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            Phân Hệ Quản Trị
+          </span>
+        </div>
+      )}
 
       {/* Navigation List */}
-      {/* Navigation List */}
-      <nav className="flex-1 py-2 px-3 space-y-1.5 overflow-y-auto">
+      <nav className="flex-1 py-3 px-3 space-y-1.5 overflow-y-auto">
         {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = isSystemAdmin
             ? currentScreen === 'admin_portal' && adminTab === item.adminSubTab
             : currentScreen === item.id;
-          const theme = NAV_ITEM_STYLES[item.id] || NAV_ITEM_STYLES.dashboard;
 
           return (
             <button
@@ -306,34 +306,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onNavigate(item.id);
                 }
               }}
-              className={`w-full group flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all duration-150 ${
+              className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left transition-all duration-150 ${
                 isActive
                   ? isSystemAdmin
                     ? 'bg-rose-50 text-[#da1c2d] font-bold border border-rose-200 shadow-2xs'
-                    : theme.activeContainer
+                    : 'bg-[#dff5f4] text-[#007d80] font-bold shadow-2xs'
                   : isSystemAdmin
-                  ? 'text-slate-600 hover:text-slate-900 hover:bg-rose-50/50 font-medium border border-transparent'
-                  : theme.inactiveContainer
+                  ? 'text-slate-600 hover:text-slate-900 hover:bg-rose-50/50 font-medium'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${
                     isActive
                       ? isSystemAdmin
-                        ? 'bg-[#da1c2d] text-white shadow-xs'
-                        : theme.activeIconBox
-                      : isSystemAdmin
-                      ? 'bg-rose-50 text-[#da1c2d] border border-rose-200 group-hover:bg-rose-100'
-                      : theme.inactiveIconBox
+                        ? 'text-[#da1c2d]'
+                        : 'text-[#008689]'
+                      : 'text-slate-400'
                   }`}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                </div>
+                />
                 <div className="min-w-0">
                   {item.stepTag && (
                     <span
-                      className={`block text-[9px] font-extrabold uppercase tracking-wider ${theme.stepTagClass}`}
+                      className={`block text-[9px] font-bold uppercase tracking-wider ${
+                        isActive ? 'text-[#008689]' : 'text-slate-400'
+                      }`}
                     >
                       {item.stepTag}
                     </span>
@@ -342,9 +340,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className={`text-xs truncate block leading-snug ${
                       isActive
                         ? isSystemAdmin
-                          ? 'text-[#da1c2d]'
-                          : theme.activeText
-                        : 'text-slate-700'
+                          ? 'text-[#da1c2d] font-bold'
+                          : 'text-[#007d80] font-bold'
+                        : 'text-slate-700 font-medium'
                     }`}
                   >
                     {item.label}
@@ -371,12 +369,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 src={currentUser.avatarUrl}
                 alt={displayName}
                 referrerPolicy="no-referrer"
-                className="w-8 h-8 rounded-lg object-cover border border-slate-200 shrink-0 bg-white"
+                className="w-9 h-9 rounded-full object-cover border border-slate-200 shrink-0 bg-white"
               />
             ) : (
               <div
-                className={`w-8 h-8 rounded-lg bg-gradient-to-br ${
-                  isSystemAdmin ? 'from-[#da1c2d] to-rose-700' : 'from-[#008689] to-[#1d999d]'
+                className={`w-9 h-9 rounded-full ${
+                  isSystemAdmin ? 'bg-[#da1c2d]' : 'bg-[#008689]'
                 } flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-xs`}
               >
                 {initials}
