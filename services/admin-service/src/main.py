@@ -37,6 +37,7 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 AUTH_DB_PATH = os.path.join(BASE_DIR, "auth-service", "data", "auth.db")
 DOC_DB_PATH = os.path.join(BASE_DIR, "document-service", "data", "documents.db")
 EXAM_DB_PATH = os.path.join(BASE_DIR, "exam-service", "data", "exam.db")
+PAYMENT_DB_PATH = os.path.join(BASE_DIR, "payment-service", "data", "payment.db")
 
 def get_auth_connection():
     os.makedirs(os.path.dirname(AUTH_DB_PATH), exist_ok=True)
@@ -58,6 +59,15 @@ def get_exam_connection():
         return conn
     return None
 
+def get_payment_connection():
+    if os.path.exists(PAYMENT_DB_PATH):
+        conn = sqlite3.connect(PAYMENT_DB_PATH, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+    return None
+
+ROOT_ADMIN_EMAIL = "quizgen.ai.team@gmail.com"
+
 # ─── Pydantic Schemas ────────────────────────────────────────────────────────
 class LockUserRequest(BaseModel):
     lock_type: str = "temporary"  # 'temporary' | 'permanent'
@@ -66,6 +76,7 @@ class LockUserRequest(BaseModel):
 
 class UpdateUserRoleRequest(BaseModel):
     role: str  # 'admin' | 'head_of_department' | 'lecturer'
+    actor_email: Optional[str] = None
 
 class CreateUserRequest(BaseModel):
     email: str
@@ -75,6 +86,7 @@ class CreateUserRequest(BaseModel):
     department: Optional[str] = "Khoa Công nghệ Thông tin"
     role: Optional[str] = "lecturer"
     password: Optional[str] = "Admin@123456"
+    actor_email: Optional[str] = None
 
 class UpdatePinRequest(BaseModel):
     current_pin: str
@@ -284,6 +296,14 @@ def list_real_users(
 def create_real_user(req: CreateUserRequest, db: Session = Depends(get_db)):
     """Tạo tài khoản người dùng thực tế trực tiếp vào auth.db"""
     clean_email = req.email.strip().lower()
+    clean_actor = (req.actor_email or "").strip().lower()
+
+    if req.role == "admin" and clean_actor != ROOT_ADMIN_EMAIL:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ tài khoản Quản trị viên chính gốc (quizgen.ai.team@gmail.com) mới có quyền khởi tạo tài khoản vai trò Admin."
+        )
+
     with get_auth_connection() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (clean_email,)).fetchone()
         if existing:
@@ -437,24 +457,42 @@ def unlock_user_endpoint(user_id: str, db: Session = Depends(get_db)):
 @app.put("/users/{user_id}/role")
 def update_user_role_endpoint(user_id: str, req: UpdateUserRoleRequest, db: Session = Depends(get_db)):
     """Nâng / Hạ quyền vai trò (Admin, Trưởng bộ môn, Giảng viên) trực tiếp trong auth.db"""
+    clean_actor = (req.actor_email or "").strip().lower()
+
     with get_auth_connection() as conn:
         user = conn.execute("SELECT id, email, role FROM users WHERE id = ?", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
 
-        if user["email"] == "quizgen.ai.team@gmail.com" and req.role != "admin":
+        user_email = user["email"].strip().lower()
+
+        # Không thể hạ quyền Quản trị viên tối cao (quizgen.ai.team@gmail.com)
+        if user_email == ROOT_ADMIN_EMAIL and req.role != "admin":
             raise HTTPException(status_code=400, detail="Không thể hạ quyền Quản trị viên tối cao.")
+
+        # Quy tắc bảo mật: Chỉ Quản trị viên chính gốc mới được cấp vai trò Admin
+        if req.role == "admin" and clean_actor != ROOT_ADMIN_EMAIL:
+            raise HTTPException(
+                status_code=403,
+                detail="Chỉ tài khoản Quản trị viên chính gốc (quizgen.ai.team@gmail.com) mới có quyền cấp vai trò Quản trị viên (Admin)."
+            )
+
+        # Quy tắc bảo mật: Tài khoản được cấp quyền Admin không được phép thay đổi vai trò của Admin khác
+        if user["role"] == "admin" and clean_actor != ROOT_ADMIN_EMAIL and user_email != clean_actor:
+            raise HTTPException(
+                status_code=403,
+                detail="Chỉ Quản trị viên chính gốc mới có quyền thay đổi vai trò của Quản trị viên khác."
+            )
 
         old_role = user["role"]
         now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute("UPDATE users SET role = ?, updated_at = ? WHERE id = ?", (req.role, now_str, user_id))
         conn.commit()
-        user_email = user["email"]
 
     db.add(AdminAuditLogDB(
-        actor_email="quizgen.ai.team@gmail.com",
+        actor_email=clean_actor or ROOT_ADMIN_EMAIL,
         action="ADMIN_UPDATE_USER_ROLE",
-        detail=f"Thay đổi phân quyền tài khoản {user_email} từ '{old_role}' sang '{req.role}'.",
+        detail=f"Thay đổi phân quyền tài khoản {user_email} từ '{old_role}' sang '{req.role}' (Bởi: {clean_actor or ROOT_ADMIN_EMAIL}).",
         severity="warning" if req.role == "admin" else "info"
     ))
     db.commit()
@@ -696,6 +734,34 @@ def get_user_full_details(user_id: str, db: Session = Depends(get_db)):
         for l in user_audit_logs
     ]
 
+    # 5. Lấy thông tin gói cước và lịch sử thanh toán từ payment.db
+    current_subscription = None
+    orders_list = []
+    try:
+        p_conn = get_payment_connection()
+        if p_conn:
+            p_cur = p_conn.cursor()
+            p_cur.execute("""
+                SELECT s.*, p.name as plan_name, p.price_vnd, p.duration_days
+                FROM subscriptions s
+                JOIN plans p ON s.plan_id = p.id
+                WHERE s.user_id = ? AND s.status = 'active'
+                ORDER BY s.created_at DESC LIMIT 1
+            """, (actual_user_id,))
+            s_row = p_cur.fetchone()
+            if s_row:
+                current_subscription = dict(s_row)
+            
+            p_cur.execute("""
+                SELECT * FROM orders
+                WHERE user_id = ? OR user_email = ?
+                ORDER BY created_at DESC LIMIT 50
+            """, (actual_user_id, actual_email))
+            orders_list = [dict(r) for r in p_cur.fetchall()]
+            p_conn.close()
+    except Exception as e:
+        print(f"[ADMIN USER DETAILS] Error reading payment.db: {e}")
+
     role_labels = {
         "admin": "Quản trị viên (Super Admin)",
         "head_of_department": "Trưởng bộ môn (HOD)",
@@ -736,7 +802,9 @@ def get_user_full_details(user_id: str, db: Session = Depends(get_db)):
         "questions": questions_list,
         "exams": exams_list,
         "loginHistory": login_history,
-        "auditLogs": audit_logs_list
+        "auditLogs": audit_logs_list,
+        "subscription": current_subscription,
+        "payments": orders_list
     }
 
 # ─── Microservices Monitor (Live Pings) ──────────────────────────────────────
@@ -747,7 +815,8 @@ SERVICES_CONFIG = [
     {"name": "RAG Service", "port": 8003, "role": "Vector Search, MMR Diversity Re-rank & SLA Window", "technology": "ChromaDB, all-MiniLM-L6-v2"},
     {"name": "AI Service", "port": 8004, "role": "Sinh câu hỏi ma trận Bloom, Prompt Engineering (Zero Mock)", "technology": "Google Gemini 2.5 Flash"},
     {"name": "Exam Service", "port": 8005, "role": "Trộn 4 mã đề, Đóng gói xuất Word DOCX / PDF OMR 50 câu", "technology": "FastAPI, python-docx, ReportLab"},
-    {"name": "Admin Service", "port": 8006, "role": "Quản trị RBAC, Giám sát 7 Services & Khóa/Mở khóa tài khoản", "technology": "FastAPI, SQLite, SQLAlchemy"}
+    {"name": "Admin Service", "port": 8006, "role": "Quản trị RBAC, Giám sát 8 Services & Khóa/Mở khóa tài khoản", "technology": "FastAPI, SQLite, SQLAlchemy"},
+    {"name": "Payment Service", "port": 8007, "role": "Quản lý Gói cước, Sinh mã VietQR TPBank & Kích hoạt thuê bao tự động", "technology": "FastAPI, SQLite, SePay API"}
 ]
 
 @app.get("/services/health")

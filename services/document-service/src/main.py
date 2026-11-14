@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import httpx
+import sqlite3
 
 from .database import engine, Base, get_db, SessionLocal
 from .models import DocumentDB, DocumentChapterDB, DocumentChunkDB
@@ -51,6 +52,55 @@ def _format_file_size(byte_count: int) -> str:
     if byte_count < 1024 * 1024:
         return f"{byte_count / 1024:.1f} KB"
     return f"{byte_count / (1024 * 1024):.1f} MB"
+
+
+PAYMENT_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "payment-service", "data", "payment.db"))
+AUTH_DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "auth-service", "data", "auth.db"))
+
+def get_user_plan_tier(user_id: str) -> str:
+    """Thẩm định gói cước thực tế của người dùng: PRO_MONTH, PRO_YEAR, ENTERPRISE hoặc FREE."""
+    # 1. Kiểm tra subscription đang active trong payment.db
+    if os.path.exists(PAYMENT_DB_PATH):
+        try:
+            conn = sqlite3.connect(PAYMENT_DB_PATH, timeout=3.0)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+            SELECT plan_code, status, expires_at FROM subscriptions 
+            WHERE user_id = ? AND status = 'active'
+            ORDER BY created_at DESC LIMIT 1
+            """, (user_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                exp = row["expires_at"]
+                if exp:
+                    exp_time = datetime.fromisoformat(exp.replace("Z", ""))
+                    if datetime.now() <= exp_time:
+                        return row["plan_code"]
+                else:
+                    return row["plan_code"]
+        except Exception:
+            pass
+
+    # 2. Kiểm tra plan_tier trong auth.db
+    if os.path.exists(AUTH_DB_PATH):
+        try:
+            conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT role, plan_tier FROM users WHERE id = ?", (user_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                if row["role"] == "admin":
+                    return "PRO_YEAR"
+                if row["plan_tier"]:
+                    return row["plan_tier"]
+        except Exception:
+            pass
+
+    return "FREE"
 
 
 @app.on_event("startup")
@@ -275,6 +325,22 @@ async def upload_document(
     """
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tên tệp không hợp lệ.")
+
+    # ─── SIẾT CHẶT HẠN MỨC GÓI CƯỚC (QUOTA ENFORCEMENT) ──────────────────────
+    plan_tier = get_user_plan_tier(user_id)
+    is_pro = plan_tier in ["PRO_MONTH", "PRO_YEAR", "ENTERPRISE"]
+    max_allowed_docs = 999999 if is_pro else 3
+
+    current_doc_count = db.query(DocumentDB).filter(
+        DocumentDB.user_id == user_id,
+        DocumentDB.status != "error"
+    ).count()
+
+    if current_doc_count >= max_allowed_docs:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Tài khoản Gói Miễn Phí đã đạt giới hạn tối đa {max_allowed_docs} giáo trình (hiện có: {current_doc_count} tài liệu). Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp giáo trình không giới hạn!"
+        )
 
     filename = Path(file.filename).name
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""

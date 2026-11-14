@@ -12,8 +12,10 @@ import { ToastContainer } from './components/ToastContainer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
+import { PricingPlansModal } from './components/PricingPlansModal';
+import { PaymentQRModal } from './components/PaymentQRModal';
 import { AIChatCopilot } from './components/AIChatCopilot';
-import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
+import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 
 const INITIAL_QUESTIONS: Question[] = [];
@@ -42,6 +44,31 @@ export const App: React.FC = () => {
     isOpen: boolean;
     message: string;
   } | null>(null);
+
+  // ─── Payment & Subscription State ─────────────────────────────────────────
+  const [subscriptionInfo, setSubscriptionInfo] = useState<UserSubscriptionInfo | null>(null);
+  const [isPricingModalOpen, setIsPricingModalOpen] = useState<boolean>(false);
+  const [activePaymentOrder, setActivePaymentOrder] = useState<OrderData | null>(null);
+
+  const fetchSubscription = useCallback(async (userId?: string) => {
+    const uid = userId || currentUser?.id;
+    if (!uid) return;
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/payment/subscription/my?user_id=${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscriptionInfo(data);
+      }
+    } catch (err) {
+      console.error('Lỗi tải thông tin gói cước:', err);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      fetchSubscription(currentUser.id);
+    }
+  }, [currentUser?.id, fetchSubscription]);
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
@@ -274,6 +301,35 @@ export const App: React.FC = () => {
             setIsAuthenticated(false);
             setAuthScreen('login');
             setLockedAlert({ isOpen: true, message: lockMsg });
+          } else if (data.role && currentUser && data.role !== currentUser.role) {
+            const newRole = data.role as UserRole;
+            const updatedUser: UserProfile = {
+              ...currentUser,
+              role: newRole,
+              roleLabel:
+                newRole === 'head_of_department'
+                  ? 'Trưởng bộ môn'
+                  : newRole === 'admin'
+                  ? 'Quản trị Hệ thống'
+                  : 'Giảng viên',
+            };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+            if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+              setCurrentScreen('dashboard');
+              handleShowToast(
+                'info',
+                'Thay đổi phân quyền',
+                `Vai trò của bạn đã được chuyển sang: ${updatedUser.roleLabel}.`
+              );
+            } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+              setCurrentScreen('admin_portal');
+              handleShowToast(
+                'info',
+                'Cấp quyền Quản trị viên',
+                'Tài khoản của bạn đã được nâng cấp lên Quản trị viên (Admin).'
+              );
+            }
           }
         }
       } catch {}
@@ -281,7 +337,61 @@ export const App: React.FC = () => {
 
     const intervalId = setInterval(checkLockStatus, 3500);
     return () => clearInterval(intervalId);
-  }, [isAuthenticated, API_BASE]);
+  }, [isAuthenticated, API_BASE, currentUser, currentScreen]);
+
+  // ─── Real-time Multi-Tab Role Synchronization Listener ─────────────────────
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'quizgen_role_sync' && e.newValue) {
+        try {
+          const syncData = JSON.parse(e.newValue);
+          if (
+            currentUser &&
+            (syncData.userId === currentUser.id ||
+             (syncData.email && syncData.email.toLowerCase() === currentUser.email.toLowerCase()))
+          ) {
+            const newRole = syncData.newRole as UserRole;
+            const updatedUser: UserProfile = {
+              ...currentUser,
+              role: newRole,
+              roleLabel:
+                newRole === 'head_of_department'
+                  ? 'Trưởng bộ môn'
+                  : newRole === 'admin'
+                  ? 'Quản trị Hệ thống'
+                  : 'Giảng viên',
+            };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+            if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+              setCurrentScreen('dashboard');
+              handleShowToast(
+                'info',
+                'Thay đổi phân quyền',
+                `Vai trò của bạn đã được cập nhật thành: ${updatedUser.roleLabel}.`
+              );
+            } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+              setCurrentScreen('admin_portal');
+              handleShowToast(
+                'info',
+                'Cấp quyền Quản trị viên',
+                'Tài khoản của bạn đã được nâng lên Quản trị viên (Admin).'
+              );
+            }
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [currentUser, currentScreen]);
+
+  // ─── Security Guard: Non-admin users cannot stay on admin_portal ───────────
+  useEffect(() => {
+    if (isAuthenticated && currentUser && currentUser.role !== 'admin' && currentScreen === 'admin_portal') {
+      setCurrentScreen('dashboard');
+    }
+  }, [isAuthenticated, currentUser?.role, currentScreen]);
 
   // ─── Lắng nghe sự kiện tài khoản bị khóa từ ApiClient ───────────────────────
   useEffect(() => {
@@ -591,6 +701,11 @@ export const App: React.FC = () => {
     if (newRole !== 'lecturer' && (currentScreen === 'upload' || currentScreen === 'generate')) {
       setCurrentScreen('dashboard');
     }
+    if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+      setCurrentScreen('dashboard');
+    } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+      setCurrentScreen('admin_portal');
+    }
     handleShowToast(
       'info',
       'Đã chuyển đổi vai trò',
@@ -719,6 +834,7 @@ export const App: React.FC = () => {
         adminTab={adminTab}
         onAdminTabChange={setAdminTab}
         onUpdateProfile={handleUpdateUserProfile}
+        onOpenPricingModal={() => setIsPricingModalOpen(true)}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
         onOpenProfileModal={() => setIsProfileModalOpen(true)}
@@ -730,6 +846,8 @@ export const App: React.FC = () => {
         <TopHeader
           currentScreen={currentScreen}
           currentUser={currentUser}
+          subscriptionInfo={subscriptionInfo}
+          onOpenPricingModal={() => setIsPricingModalOpen(true)}
           onLogout={handleLogout}
           onNavigate={(screen) => {
             setCurrentScreen(screen);
@@ -751,6 +869,7 @@ export const App: React.FC = () => {
               onShowToast={handleShowToast}
               activeTab={adminTab}
               onTabChange={setAdminTab}
+              onCurrentUserChange={setCurrentUser}
             />
           )}
 
@@ -768,6 +887,8 @@ export const App: React.FC = () => {
             <TextbookUploadScreen
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
+              subscriptionInfo={subscriptionInfo}
+              onOpenPricingModal={() => setIsPricingModalOpen(true)}
             />
           )}
 
@@ -799,6 +920,27 @@ export const App: React.FC = () => {
             />
           )}
         </div>
+
+        {/* Pricing Plans & Payment QR Modals */}
+        <PricingPlansModal
+          isOpen={isPricingModalOpen}
+          onClose={() => setIsPricingModalOpen(false)}
+          currentUser={currentUser}
+          subscriptionInfo={subscriptionInfo}
+          onSelectOrder={(order) => setActivePaymentOrder(order)}
+          onShowToast={handleShowToast}
+        />
+
+        <PaymentQRModal
+          order={activePaymentOrder}
+          onClose={() => setActivePaymentOrder(null)}
+          onSuccess={() => {
+            if (currentUser?.id) {
+              fetchSubscription(currentUser.id);
+            }
+          }}
+          onShowToast={handleShowToast}
+        />
       </main>
 
       {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}

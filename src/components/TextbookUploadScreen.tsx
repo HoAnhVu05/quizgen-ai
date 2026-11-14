@@ -18,14 +18,18 @@ import {
   ExternalLink,
   Layers,
   Cpu,
-  ArrowRight
+  ArrowRight,
+  Crown,
+  Zap
 } from 'lucide-react';
-import { TextbookFile, ScreenId } from '../types';
+import { TextbookFile, ScreenId, UserSubscriptionInfo } from '../types';
 import apiClient from '../services/apiClient';
 
 interface TextbookUploadScreenProps {
   onNavigate: (screen: ScreenId) => void;
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
+  subscriptionInfo?: UserSubscriptionInfo | null;
+  onOpenPricingModal?: () => void;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -76,7 +80,12 @@ const parseErrorMessage = async (res: Response): Promise<string> => {
   return `Yêu cầu thất bại (${res.status})`;
 };
 
-export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNavigate, onShowToast }) => {
+export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
+  onNavigate,
+  onShowToast,
+  subscriptionInfo,
+  onOpenPricingModal,
+}) => {
   const [textbooks, setTextbooks] = useState<TextbookFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,6 +96,13 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasWarnedRef = useRef(false);
+
+  const isPro =
+    subscriptionInfo?.plan_code === 'PRO_MONTH' ||
+    subscriptionInfo?.plan_code === 'PRO_YEAR' ||
+    subscriptionInfo?.plan_code === 'ENTERPRISE';
+
+  const activeDocsCount = textbooks.filter((t) => t.status !== 'error').length;
 
   const fetchDocuments = useCallback(async (silent = false) => {
     if (!silent) {
@@ -99,35 +115,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
       }
       const payload = await res.json();
       const list = Array.isArray(payload) ? payload.map(normalizeTextbook) : [];
-      const savedLocal: TextbookFile[] = JSON.parse(
-        localStorage.getItem('quizgen_uploaded_documents') || '[]'
-      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-
-      // Backend list lấy làm nguồn dữ liệu chuẩn (authoritative source)
-      const listMap = new Map<string, TextbookFile>();
-      // Chỉ giữ lại những tài liệu offline thuần túy (không phải tb-* từ backend) chưa kịp đồng bộ
-      savedLocal.forEach((doc) => {
-        if (!doc.id.startsWith('tb-')) {
-          listMap.set(doc.id, doc);
-        }
-      });
-      // Danh sách từ backend ghi đè và là chuẩn xác nhất
-      list.forEach((doc) => {
-        listMap.set(doc.id, doc);
-        // Nếu đã có bản ghi backend hoàn tất cùng tên, xóa bỏ bản nháp pending cục bộ
-        for (const [localId, localDoc] of listMap.entries()) {
-          if (localId !== doc.id && localDoc.name === doc.name && localDoc.status !== 'ready') {
-            listMap.delete(localId);
-          }
-        }
-      });
-      const unique = Array.from(listMap.values());
-
+      setTextbooks(list);
       try {
-        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(unique.slice(0, 20)));
+        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(list.slice(0, 20)));
       } catch {}
-
-      setTextbooks(unique);
     } catch {
       const savedLocal: TextbookFile[] = JSON.parse(
         localStorage.getItem('quizgen_uploaded_documents') || '[]'
@@ -194,6 +185,19 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
   const handleUploadFile = async (file: File) => {
     if (!file) return;
 
+    // Kiểm tra quota trước khi gửi lên máy chủ
+    if (!isPro && activeDocsCount >= 3) {
+      onShowToast(
+        'warning',
+        'Đã Đạt Hạn Mức Gói Miễn Phí',
+        'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
+      );
+      if (onOpenPricingModal) {
+        onOpenPricingModal();
+      }
+      return;
+    }
+
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (ext !== 'pdf' && ext !== 'docx') {
       onShowToast('error', 'Định dạng không hỗ trợ', 'Hệ thống chỉ chấp nhận tệp .pdf hoặc .docx.');
@@ -220,8 +224,33 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         body: formData,
       });
 
+      if (!res.ok) {
+        let errorMsg = 'Không thể tải lên giáo trình.';
+        try {
+          const errData = await res.json();
+          if (typeof errData?.detail === 'string') {
+            errorMsg = errData.detail;
+          } else if (typeof errData?.detail?.message === 'string') {
+            errorMsg = errData.detail.message;
+          } else if (typeof errData?.message === 'string') {
+            errorMsg = errData.message;
+          }
+        } catch {}
+
+        if (res.status === 402) {
+          onShowToast('warning', 'Đã Đạt Hạn Mức Gói Miễn Phí', errorMsg);
+          if (onOpenPricingModal) {
+            onOpenPricingModal();
+          }
+        } else {
+          onShowToast('error', 'Lỗi tải lên', errorMsg);
+        }
+        setIsUploading(false);
+        return;
+      }
+
       let uploadedDoc: TextbookFile = {
-        id: `doc-${Date.now()}`,
+        id: `tb-${Date.now()}`,
         name: file.name,
         size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
         totalPages: 0,
@@ -231,47 +260,40 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         uploadedAt: formatUploadedAt(new Date().toISOString()),
       };
 
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (data?.document) {
-          uploadedDoc = normalizeTextbook(data.document);
-        }
+      const data = await res.json().catch(() => ({}));
+      if (data?.document) {
+        uploadedDoc = normalizeTextbook(data.document);
+      }
 
-        // Tự động chờ tác vụ nền hoàn tất trong vài giây ngắn
-        if (uploadedDoc.status !== 'ready') {
-          for (let i = 0; i < 20; i++) {
-            await new Promise((r) => setTimeout(r, 600));
-            try {
-              const pRes = await apiClient.fetch(`${API_BASE}/documents/documents/${uploadedDoc.id}/progress`);
-              if (pRes.ok) {
-                const pData = await pRes.json();
-                if (pData?.status === 'ready' || pData?.progress === 100) {
-                  uploadedDoc = {
-                    ...uploadedDoc,
-                    status: 'ready',
-                    progress: 100,
-                    totalPages: pData.totalPages || uploadedDoc.totalPages,
-                    chaptersCount: pData.chaptersCount || uploadedDoc.chaptersCount,
-                  };
-                  break;
-                } else if (pData?.progress) {
-                  uploadedDoc.progress = pData.progress;
-                  uploadedDoc.status = pData.status || uploadedDoc.status;
-                }
+      // Tự động chờ tác vụ nền hoàn tất trong vài giây ngắn
+      if (uploadedDoc.status !== 'ready') {
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 600));
+          try {
+            const pRes = await apiClient.fetch(`${API_BASE}/documents/documents/${uploadedDoc.id}/progress`);
+            if (pRes.ok) {
+              const pData = await pRes.json();
+              if (pData?.status === 'ready' || pData?.progress === 100) {
+                uploadedDoc = {
+                  ...uploadedDoc,
+                  status: 'ready',
+                  progress: 100,
+                  totalPages: pData.totalPages || uploadedDoc.totalPages,
+                  chaptersCount: pData.chaptersCount || uploadedDoc.chaptersCount,
+                };
+                break;
+              } else if (pData?.progress) {
+                uploadedDoc.progress = pData.progress;
+                uploadedDoc.status = pData.status || uploadedDoc.status;
               }
-            } catch {
-              break;
             }
+          } catch {
+            break;
           }
         }
       }
 
       try {
-        const savedLocal: TextbookFile[] = JSON.parse(
-          localStorage.getItem('quizgen_uploaded_documents') || '[]'
-        ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-        const nextLocal = [uploadedDoc, ...savedLocal.filter((d) => d.id !== uploadedDoc.id && d.name !== uploadedDoc.name)];
-        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(nextLocal.slice(0, 20)));
         localStorage.setItem('quizgen_selected_book_id', uploadedDoc.id);
         localStorage.setItem('quizgen_selected_book_name', uploadedDoc.name);
       } catch {}
@@ -282,32 +304,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         'Đã nạp giáo trình thành công',
         `Tài liệu "${file.name}" đã sẵn sàng. Bấm "Bước 2: Sinh câu hỏi AI" để tạo đề ngay!`
       );
-    } catch {
-      const fallbackDoc: TextbookFile = {
-        id: `doc-${Date.now()}`,
-        name: file.name,
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        totalPages: 64,
-        chaptersCount: 4,
-        status: 'ready',
-        progress: 100,
-        uploadedAt: formatUploadedAt(new Date().toISOString()),
-      };
-      try {
-        const savedLocal: TextbookFile[] = JSON.parse(
-          localStorage.getItem('quizgen_uploaded_documents') || '[]'
-        ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-        savedLocal.unshift(fallbackDoc);
-        localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(savedLocal.slice(0, 20)));
-        localStorage.setItem('quizgen_selected_book_id', fallbackDoc.id);
-        localStorage.setItem('quizgen_selected_book_name', fallbackDoc.name);
-      } catch {}
-      await fetchDocuments(true);
-      onShowToast(
-        'success',
-        'Đã nạp giáo trình vào Kho cục bộ',
-        `Tài liệu "${file.name}" đã sẵn sàng để sinh câu hỏi AI ở Bước 2.`
-      );
+    } catch (error: any) {
+      onShowToast('error', 'Lỗi kết nối máy chủ', error?.message || 'Không thể tải tệp lên máy chủ.');
     } finally {
       setIsUploading(false);
     }
@@ -407,7 +405,18 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         </div>
 
         <button
-          onClick={() => fileInputRef.current?.click()}
+          onClick={() => {
+            if (!isPro && activeDocsCount >= 3) {
+              onShowToast(
+                'warning',
+                'Đã Đạt Hạn Mức Gói Miễn Phí',
+                'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
+              );
+              onOpenPricingModal?.();
+              return;
+            }
+            fileInputRef.current?.click();
+          }}
           disabled={isUploading}
           className="flex items-center justify-center space-x-2 px-4 py-2.5 sm:py-2 bg-[#008689] hover:bg-[#006d70] text-white text-xs font-bold rounded-xl shadow-sm transition-colors w-full sm:w-auto"
         >
@@ -428,6 +437,42 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         />
       </div>
 
+      {/* Quota Alert Banner (chỉ hiển thị khi tài khoản Free chạm hạn mức 3 tài liệu) */}
+      {!isPro && activeDocsCount >= 3 && (
+        <div className="bg-rose-50/90 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xs transition-all">
+          <div className="flex items-center gap-3 flex-1">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-2xs shrink-0 bg-rose-100 text-rose-600">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between max-w-md">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  Hạn mức Gói Miễn Phí (Free):
+                </span>
+                <span className="text-xs font-black text-rose-600">
+                  {activeDocsCount} / 3 tài liệu
+                </span>
+              </div>
+              <div className="w-full max-w-md bg-slate-200 rounded-full h-2 mt-1.5 overflow-hidden">
+                <div className="h-2 rounded-full bg-rose-500 w-full" />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                ⚠️ Bạn đã đạt tối đa 3/3 tài liệu của Gói Free. Nâng cấp Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn ngay!
+              </p>
+            </div>
+          </div>
+          {onOpenPricingModal && (
+            <button
+              onClick={onOpenPricingModal}
+              className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shadow-sm transition-all bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white shadow-amber-200 animate-pulse"
+            >
+              <Crown className="w-4 h-4 text-amber-300" />
+              <span>Nâng cấp PRO (chỉ 2.000đ)</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 2. Compact Drag & Drop Zone */}
       <div
         onDragOver={(e) => {
@@ -436,10 +481,23 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({ onNa
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          if (!isPro && activeDocsCount >= 3) {
+            onShowToast(
+              'warning',
+              'Đã Đạt Hạn Mức Gói Miễn Phí',
+              'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
+            );
+            onOpenPricingModal?.();
+            return;
+          }
+          fileInputRef.current?.click();
+        }}
         className={`rounded-2xl p-6 text-center transition-all cursor-pointer border-2 border-dashed ${
           isDragging
             ? 'border-[#008689] bg-[#e0f7fa]/50'
+            : activeDocsCount >= 3 && !isPro
+            ? 'bg-rose-50/30 border-rose-200 hover:border-rose-400'
             : 'bg-white border-slate-300 hover:border-[#008689]'
         }`}
       >
