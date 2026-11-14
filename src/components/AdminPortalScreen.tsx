@@ -42,7 +42,8 @@ import {
   TrendingUp,
   Edit3,
   ExternalLink,
-  Crown
+  Crown,
+  Copy
 } from 'lucide-react';
 import { UserProfile, SecurityAuditLog, ScreenId, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -2368,19 +2369,19 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           </div>
         </div>
       )}
-      {/* ── MODAL: CHI TIẾT 360° NGƯỜI DÙNG (NÚT CON MẮT) ── */}
+      {/* ── MODAL: CHI TIẾT 360° NGƯỜI DÙNG (THIẾT KẾ MỚI: 2-COLUMN ENTERPRISE WORKSPACE) ── */}
       {selectedUserDetails && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-              <div className="flex items-center gap-3.5">
-                <div className="w-11 h-11 rounded-2xl bg-[#008689]/10 text-[#008689] border border-[#008689]/20 flex items-center justify-center font-bold text-base shadow-xs">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-3 sm:p-5">
+          <div className="bg-white border border-slate-200/90 rounded-3xl w-full max-w-6xl h-[88vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* ── Compact Executive Top Header ── */}
+            <div className="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#008689] to-[#006f72] text-white flex items-center justify-center font-black text-base shadow-xs shrink-0">
                   {selectedUserDetails.user.fullName ? selectedUserDetails.user.fullName.slice(0, 2).toUpperCase() : 'ND'}
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-black text-slate-900">
+                    <h2 className="text-base font-extrabold text-slate-900 truncate">
                       {selectedUserDetails.user.academicTitle ? `${selectedUserDetails.user.academicTitle} ` : ''}
                       {selectedUserDetails.user.fullName}
                     </h2>
@@ -2401,108 +2402,99 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                       {selectedUserDetails.user.status === 'locked' ? 'Bị khóa' : 'Hoạt động'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  <p className="text-xs text-slate-500 font-mono mt-0.5 truncate">
                     {selectedUserDetails.user.email} • ID: {selectedUserDetails.user.id} • {selectedUserDetails.user.department}
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setSelectedUserDetails(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            {/* Quick Summary Cards (Real Numbers) */}
-            <div className="p-4 bg-white border-b border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
-                  <span>Tài liệu đã nạp</span>
-                  <FileText className="w-3.5 h-3.5 text-[#008689]" />
+              {/* Right: Sleek mini-metrics & close button */}
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="hidden lg:flex items-center gap-1.5 text-xs">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-2xs">
+                    <FileText className="w-3.5 h-3.5 text-[#008689]" />
+                    <span>{selectedUserDetails.stats.totalDocuments} files</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-2xs">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>{selectedUserDetails.stats.totalQuestions} câu hỏi</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-2xs">
+                    <Database className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>{selectedUserDetails.stats.totalExams} bộ đề</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white border border-slate-200 text-slate-700 font-semibold shadow-2xs">
+                    <KeyRound className="w-3.5 h-3.5 text-rose-500" />
+                    <span>{selectedUserDetails.stats.totalLogins} lượt</span>
+                  </span>
                 </div>
-                <div className="text-xl font-black text-slate-900">
-                  {selectedUserDetails.stats.totalDocuments} file
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  {selectedUserDetails.stats.totalDocumentPages} trang nội dung
-                </div>
-              </div>
 
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
-                  <span>Câu hỏi đã sinh</span>
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                </div>
-                <div className="text-xl font-black text-slate-900">
-                  {selectedUserDetails.stats.totalQuestions} câu
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  4 mức tư duy Bloom
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
-                  <span>Đề thi đã đóng gói/in</span>
-                  <Database className="w-3.5 h-3.5 text-indigo-600" />
-                </div>
-                <div className="text-xl font-black text-slate-900">
-                  {selectedUserDetails.stats.totalExams} bộ đề
-                </div>
-                <div className="text-[10px] text-slate-400">
-                  Word DOCX &amp; PDF OMR
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
-                  <span>Phiên đăng nhập</span>
-                  <KeyRound className="w-3.5 h-3.5 text-[#da1c2d]" />
-                </div>
-                <div className="text-xl font-black text-slate-900">
-                  {selectedUserDetails.stats.totalLogins} lượt
-                </div>
-                <div className="text-[10px] text-slate-400 truncate" title={selectedUserDetails.stats.lastLoginAt}>
-                  Gần nhất: {selectedUserDetails.stats.lastLoginAt.slice(0, 16)}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Internal Tab Navigation */}
-            <div className="flex items-center gap-1 px-4 pt-2 border-b border-slate-200 bg-slate-50/50 overflow-x-auto">
-              {[
-                { id: 'overview', label: 'Hồ Sơ & Tổng Quan', count: null },
-                { id: 'subscriptions', label: 'Gói Cước & Thanh Toán', count: selectedUserDetails.payments?.length ?? 0 },
-                { id: 'documents', label: 'Tài Liệu Giáo Trình', count: selectedUserDetails.documents.length },
-                { id: 'questions', label: 'Ngân Hàng Câu Hỏi', count: selectedUserDetails.questions.length },
-                { id: 'exams', label: 'Lịch Sử In & Xuất Đề', count: selectedUserDetails.exams.length },
-                { id: 'logins', label: 'Lịch Sử Đăng Nhập', count: selectedUserDetails.loginHistory.length },
-                { id: 'audits', label: 'Nhật Ký An Ninh', count: selectedUserDetails.auditLogs.length },
-              ].map((t) => (
                 <button
-                  key={t.id}
-                  onClick={() => setUserDetailsTab(t.id as any)}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition-all whitespace-nowrap ${
-                    userDetailsTab === t.id
-                      ? 'border-[#008689] text-[#008689] bg-white rounded-t-lg'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
-                  }`}
+                  onClick={() => setSelectedUserDetails(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors ml-1"
+                  title="Đóng cửa sổ"
                 >
-                  <span>{t.label}</span>
-                  {t.count !== null && (
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                      userDetailsTab === t.id ? 'bg-[#008689] text-white' : 'bg-slate-200 text-slate-600'
-                    }`}>
-                      {t.count}
-                    </span>
-                  )}
+                  <X className="w-5 h-5" />
                 </button>
-              ))}
+              </div>
             </div>
 
-            {/* Tab Body Viewport (Scrollable) */}
-            <div className="flex-1 overflow-y-auto p-5 text-xs text-slate-700 space-y-4">
+            {/* ── Main 2-Column Body: Left Navigation + Right Workspace ── */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Left Column Sidebar (Vertical Tabs) */}
+              <div className="w-64 shrink-0 bg-slate-50/70 border-r border-slate-200/80 p-3.5 flex flex-col justify-between overflow-y-auto">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-3 block mb-1.5">
+                    Hồ sơ &amp; Hoạt động
+                  </span>
+                  {[
+                    { id: 'subscriptions', label: 'Gói Cước & Thanh Toán', icon: Crown, count: selectedUserDetails.payments?.length ?? 0, highlight: true },
+                    { id: 'overview', label: 'Hồ Sơ Học Thuật', icon: UserCheck, count: null },
+                    { id: 'documents', label: 'Tài Liệu Giáo Trình', icon: FileText, count: selectedUserDetails.documents.length },
+                    { id: 'questions', label: 'Ngân Hàng Câu Hỏi', icon: Sparkles, count: selectedUserDetails.questions.length },
+                    { id: 'exams', label: 'Lịch Sử In & Xuất Đề', icon: Database, count: selectedUserDetails.exams.length },
+                    { id: 'logins', label: 'Phiên Đăng Nhập', icon: KeyRound, count: selectedUserDetails.loginHistory.length },
+                    { id: 'audits', label: 'Nhật Ký An Ninh', icon: Terminal, count: selectedUserDetails.auditLogs.length },
+                  ].map((t) => {
+                    const Icon = t.icon;
+                    const isActive = userDetailsTab === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => setUserDetailsTab(t.id as any)}
+                        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                          isActive
+                            ? 'bg-[#008689] text-white shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : t.highlight ? 'text-amber-500' : 'text-slate-400'}`} />
+                          <span className="truncate">{t.label}</span>
+                        </div>
+                        {t.count !== null && (
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono shrink-0 ${
+                            isActive
+                              ? 'bg-white/20 text-white font-bold'
+                              : t.highlight
+                              ? 'bg-amber-100 text-amber-800 font-bold'
+                              : 'bg-slate-200/80 text-slate-600'
+                          }`}>
+                            {t.count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="pt-3 border-t border-slate-200/60 mt-3 text-[11px] text-slate-400 font-mono px-2">
+                  <span>CSDL: auth.db • payment.db</span>
+                </div>
+              </div>
+
+              {/* Right Column: Spacious Workspace Viewport */}
+              <div className="flex-1 bg-white p-6 overflow-y-auto space-y-6">
               {/* TAB 1: OVERVIEW */}
               {userDetailsTab === 'overview' && (
                 <div className="space-y-4">
@@ -2917,16 +2909,17 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                   )}
                 </div>
               )}
+              </div>
             </div>
 
             {/* Modal Footer */}
-            <div className="p-3.5 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between">
+            <div className="px-6 py-3.5 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
               <span className="text-[11px] text-slate-400 font-mono">
-                Truy vấn từ CSDL microservices: auth.db • documents.db • exam.db • admin.db
+                Truy vấn từ CSDL microservices: auth.db • payment.db • documents.db • exam.db • admin.db
               </span>
               <button
                 onClick={() => setSelectedUserDetails(null)}
-                className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-xs transition-colors"
+                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all shadow-xs"
               >
                 Đóng Cửa Sổ
               </button>
