@@ -256,7 +256,8 @@
   animation: organicFluidDrift 8s ease-in-out infinite;
 }
 
-.wave-gradient-flow {
+.wave-gradient-flow,
+.wave-canopy-flow {
   background: linear-gradient(
     125deg,
     #008689 0%,
