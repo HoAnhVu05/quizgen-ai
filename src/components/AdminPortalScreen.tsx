@@ -689,85 +689,47 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#f7f9fb] p-6 space-y-6 select-none">
-      {/* ── Top Executive Admin Header Card ── */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              8/8 Microservices Online (Ports 8000–8007)
-            </span>
-          </div>
-          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
-            Bảng Điều Hành &amp; Quản Trị Hệ Thống
-          </h1>
-          <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
-            Giám sát tài khoản giảng viên toàn trường từ CSDL auth.db thực tế, phân quyền vai trò (Admin, Trưởng bộ môn, Giảng viên), quản lý đơn giá gói cước &amp; đối soát thanh toán VietQR TPBank, thực thi khóa tài khoản có hẹn giờ.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            onClick={loadAllRealData}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-[#008689] ${isLoading ? 'animate-spin' : ''}`} />
-            Làm mới dữ liệu thật
-          </button>
-          <button
-            onClick={handlePingServices}
-            disabled={isCheckingServices}
-            className="flex items-center gap-2 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-xl transition-all shadow-xs disabled:opacity-50"
-          >
-            <Zap className={`w-3.5 h-3.5 ${isCheckingServices ? 'animate-spin' : ''}`} />
-            <span>{isCheckingServices ? 'Đang ping 8 services...' : 'Kiểm tra Sức khỏe Cụm 8 Services'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* ── Tab Navigation Pills ── */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        {[
-          { id: 'overview', label: 'Tổng quan', icon: Activity },
-          { id: 'payments', label: 'Quản lý Gói cước & Doanh thu', icon: CreditCard, badge: paymentData?.orders?.length ? `${paymentData.orders.length} Đơn` : 'TPBank' },
-          { id: 'users', label: 'Quản lý Tài khoản & Khóa/Mở khóa', icon: Users, badge: usersList.length },
-          { id: 'rbac', label: 'Ma Trận Phân Quyền RBAC', icon: Layers },
-          { id: 'services', label: 'Giám sát 8 Microservices', icon: Server, badge: '8 Cổng Live' },
-          { id: 'audit', label: 'Nhật ký An ninh & Kiểm toán', icon: Terminal, badge: auditLogs.length },
-          { id: 'exams', label: 'Kho Đề Thi & Tuân Thủ Khảo Thí', icon: Database, badge: totalExams },
-        ].map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                isActive
-                  ? 'bg-rose-50 text-[#da1c2d] border border-rose-200 shadow-xs ring-1 ring-[#da1c2d]/20'
-                  : 'bg-white text-slate-600 hover:text-slate-900 border border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <Icon className={`w-4 h-4 ${isActive ? 'text-[#da1c2d]' : 'text-slate-400'}`} />
-              <span>{tab.label}</span>
-              {tab.badge !== undefined && (
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                    isActive ? 'bg-[#da1c2d] text-white' : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
       {/* ── TAB 1: EXECUTIVE OVERVIEW & KPIS (REAL DATA) ── */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* Executive Overview Header */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  8/8 Microservices Online (Ports 8000–8007)
+                </span>
+              </div>
+              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                <Activity className="w-5 h-5 text-[#da1c2d]" />
+                <span>Tổng Quan Hệ Thống &amp; Vận Hành Toàn Trường</span>
+              </h1>
+              <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
+                Giám sát số liệu thực tế từ các cơ sở dữ liệu auth.db, payment.db, documents.db và exam.db; đối soát thanh toán và vận hành toàn hệ thống.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                onClick={loadAllRealData}
+                disabled={isLoading}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#008689] ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Làm mới dữ liệu thật</span>
+              </button>
+              <button
+                onClick={handlePingServices}
+                disabled={isCheckingServices}
+                className="flex items-center gap-2 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-xl transition-all shadow-xs disabled:opacity-50"
+              >
+                <Zap className={`w-3.5 h-3.5 ${isCheckingServices ? 'animate-spin' : ''}`} />
+                <span>{isCheckingServices ? 'Đang ping 8 services...' : 'Kiểm tra Sức khỏe Cụm 8 Services'}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Executive Stat Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
@@ -921,6 +883,28 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       {/* ── TAB 2: USER MANAGEMENT & ACCOUNT LOCKING (100% REAL) ── */}
       {activeTab === 'users' && (
         <div className="space-y-4">
+          {/* Users Header Banner */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#008689]" />
+                <span>Quản Lý Tài Khoản &amp; Phân Quyền Giảng Viên (auth.db)</span>
+              </h3>
+              <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
+                Giám sát {usersList.length} tài khoản thực tế; phân quyền vai trò RBAC (Admin, Trưởng bộ môn, Giảng viên), thực thi khóa tài khoản có hẹn giờ và kiểm tra chi tiết 360° hoạt động.
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => setShowAddUserModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-[#da1c2d] hover:bg-[#b81725] text-white font-bold text-xs rounded-xl transition-all shadow-xs"
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Thêm Tài Khoản Mới</span>
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
             <div className="flex flex-1 flex-wrap items-center gap-3">
               <div className="relative flex-1 min-w-[240px]">
@@ -1359,6 +1343,29 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       {/* ── TAB 4: AUDIT LOGS (REAL FROM admin.db) ── */}
       {activeTab === 'audit' && (
         <div className="space-y-4">
+          {/* Audit Header Banner */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Terminal className="w-5 h-5 text-[#da1c2d]" />
+                <span>Nhật Ký An Ninh &amp; Kiểm Toán Hệ Thống (admin.db)</span>
+              </h3>
+              <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
+                Ghi nhận chi tiết mọi hành vi quản trị, thay đổi phân quyền, đăng nhập, khóa tài khoản và thao tác xuất đề thi để phục vụ thanh tra an toàn thông tin.
+              </p>
+            </div>
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                onClick={loadAllRealData}
+                disabled={isLoading}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#008689] ${isLoading ? 'animate-spin' : ''}`} />
+                <span>Tải lại log</span>
+              </button>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 font-semibold">Lọc theo mức độ:</span>

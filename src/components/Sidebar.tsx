@@ -188,6 +188,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'admin_portal',
+          adminSubTab: 'rbac',
+          label: 'Ma trận Phân quyền RBAC',
+          icon: Layers,
+        },
+        {
+          id: 'admin_portal',
           adminSubTab: 'services',
           label: 'Kiểm tra Sức khỏe Cụm 8 Services',
           icon: Server,
