@@ -78,6 +78,12 @@ def format_question_response(q: QuestionDB) -> dict:
         "explanation": q.explanation or "",
         "confidenceScore": q.confidence_score,
         "status": q.status,
+        "imageUrl": getattr(q, "image_url", None),
+        "image_url": getattr(q, "image_url", None),
+        "hasFormula": getattr(q, "has_formula", False),
+        "has_formula": getattr(q, "has_formula", False),
+        "imageCaption": getattr(q, "image_caption", None),
+        "image_caption": getattr(q, "image_caption", None),
         "createdBy": q.created_by,
         "createdAt": q.created_at.strftime("%d/%m/%Y") if q.created_at else "Hôm nay"
     }
@@ -564,6 +570,9 @@ def create_question(payload: QuestionCreateSchema, db: Session = Depends(get_db)
         explanation=payload.explanation or "",
         confidence_score=payload.get_confidence_score(),
         status=payload.status or "pending",
+        image_url=payload.get_image_url(),
+        has_formula=payload.get_has_formula(),
+        image_caption=payload.get_image_caption(),
         created_by=payload.created_by or "lec-001"
     )
     db.add(new_q)
@@ -645,6 +654,24 @@ def update_question(
     if new_conf is not None and new_conf != q.confidence_score:
         field_changes["confidenceScore"] = {"old": q.confidence_score, "new": new_conf}
         q.confidence_score = new_conf
+
+    new_img = payload.imageUrl if payload.imageUrl is not None else payload.image_url
+    if new_img is not None and new_img != q.image_url:
+        field_changes["image_url"] = {"old": q.image_url, "new": new_img}
+        changes_desc.append("hình vẽ sơ đồ")
+        q.image_url = new_img
+
+    new_formula = payload.hasFormula if payload.hasFormula is not None else payload.has_formula
+    if new_formula is not None and new_formula != q.has_formula:
+        field_changes["has_formula"] = {"old": q.has_formula, "new": new_formula}
+        changes_desc.append("cờ công thức LaTeX")
+        q.has_formula = new_formula
+
+    new_caption = payload.imageCaption if payload.imageCaption is not None else payload.image_caption
+    if new_caption is not None and new_caption != q.image_caption:
+        field_changes["image_caption"] = {"old": q.image_caption, "new": new_caption}
+        changes_desc.append("chú thích hình vẽ")
+        q.image_caption = new_caption
 
     # 3. Snapshot trạng thái mới
     new_state = {

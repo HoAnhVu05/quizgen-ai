@@ -69,6 +69,9 @@ class QuestionDB(Base):
     explanation = Column(Text, nullable=True)
     confidence_score = Column(Integer, default=95)
     status = Column(String(20), default="pending", index=True) # pending, approved, rejected
+    image_url = Column(Text, nullable=True) # [SCRUM-90] Đường dẫn ảnh sơ đồ / đồ thị hoặc base64 data URI
+    has_formula = Column(Boolean, default=False, nullable=False) # [SCRUM-90] Cờ câu hỏi có công thức LaTeX
+    image_caption = Column(Text, nullable=True) # [SCRUM-90] Chú thích hình vẽ
     created_by = Column(String(50), default="lec-001")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -208,6 +211,23 @@ class QuestionCreateSchema(BaseModel):
     confidenceScore: Optional[int] = None
     status: Optional[str] = "pending"
     created_by: Optional[str] = "lec-001"
+    image_url: Optional[str] = None
+    imageUrl: Optional[str] = None
+    has_formula: bool = False
+    hasFormula: Optional[bool] = None
+    image_caption: Optional[str] = None
+    imageCaption: Optional[str] = None
+
+    def get_image_url(self) -> Optional[str]:
+        return self.imageUrl or self.image_url
+
+    def get_has_formula(self) -> bool:
+        if self.hasFormula is not None:
+            return self.hasFormula
+        return self.has_formula
+
+    def get_image_caption(self) -> Optional[str]:
+        return self.imageCaption or self.image_caption
 
     def get_question_text(self) -> str:
         return self.question or self.question_text or ""
@@ -245,6 +265,12 @@ class QuestionUpdateSchema(BaseModel):
     editReason: Optional[str] = None
     edit_reason: Optional[str] = None
     action: Optional[str] = None
+    image_url: Optional[str] = None
+    imageUrl: Optional[str] = None
+    has_formula: Optional[bool] = None
+    hasFormula: Optional[bool] = None
+    image_caption: Optional[str] = None
+    imageCaption: Optional[str] = None
 
     def get_question_text(self) -> Optional[str]:
         return self.questionText or self.question or self.question_text
