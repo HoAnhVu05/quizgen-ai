@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     AI_SERVICE_URL: str = "http://127.0.0.1:8004"
     EXAM_SERVICE_URL: str = "http://127.0.0.1:8005"
     ADMIN_SERVICE_URL: str = "http://127.0.0.1:8006"
+    PAYMENT_SERVICE_URL: str = "http://127.0.0.1:8007"
 
     class Config:
         env_file = ".env"

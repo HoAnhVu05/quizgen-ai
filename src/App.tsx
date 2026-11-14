@@ -11,7 +11,9 @@ import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
-import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage } from './types';
+import { PricingPlansModal } from './components/PricingPlansModal';
+import { PaymentQRModal } from './components/PaymentQRModal';
+import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 
 const INITIAL_QUESTIONS: Question[] = [];
@@ -40,6 +42,31 @@ export const App: React.FC = () => {
     isOpen: boolean;
     message: string;
   } | null>(null);
+
+  // ─── Payment & Subscription State ─────────────────────────────────────────
+  const [subscriptionInfo, setSubscriptionInfo] = useState<UserSubscriptionInfo | null>(null);
+  const [isPricingModalOpen, setIsPricingModalOpen] = useState<boolean>(false);
+  const [activePaymentOrder, setActivePaymentOrder] = useState<OrderData | null>(null);
+
+  const fetchSubscription = useCallback(async (userId?: string) => {
+    const uid = userId || currentUser?.id;
+    if (!uid) return;
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/payment/subscription/my?user_id=${uid}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSubscriptionInfo(data);
+      }
+    } catch (err) {
+      console.error('Lỗi tải thông tin gói cước:', err);
+    }
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (currentUser?.id) {
+      fetchSubscription(currentUser.id);
+    }
+  }, [currentUser?.id, fetchSubscription]);
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
@@ -704,6 +731,8 @@ export const App: React.FC = () => {
         <TopHeader
           currentScreen={currentScreen}
           currentUser={currentUser}
+          subscriptionInfo={subscriptionInfo}
+          onOpenPricingModal={() => setIsPricingModalOpen(true)}
           onLogout={handleLogout}
           onNavigate={setCurrentScreen}
           onAdminTabChange={setAdminTab}
@@ -767,6 +796,27 @@ export const App: React.FC = () => {
             />
           )}
         </div>
+
+        {/* Pricing Plans & Payment QR Modals */}
+        <PricingPlansModal
+          isOpen={isPricingModalOpen}
+          onClose={() => setIsPricingModalOpen(false)}
+          currentUser={currentUser}
+          subscriptionInfo={subscriptionInfo}
+          onSelectOrder={(order) => setActivePaymentOrder(order)}
+          onShowToast={handleShowToast}
+        />
+
+        <PaymentQRModal
+          order={activePaymentOrder}
+          onClose={() => setActivePaymentOrder(null)}
+          onSuccess={() => {
+            if (currentUser?.id) {
+              fetchSubscription(currentUser.id);
+            }
+          }}
+          onShowToast={handleShowToast}
+        />
       </main>
     </div>
   );

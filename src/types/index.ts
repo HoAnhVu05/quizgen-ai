@@ -31,6 +31,61 @@ export interface UserProfile {
   lockedUntil?: string;
   lockedAt?: string;
   twoFactorVerified?: boolean;
+  planTier?: 'FREE' | 'PRO_MONTH' | 'PRO_YEAR' | 'ENTERPRISE' | string;
+  planExpiresAt?: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  code: string;
+  price_vnd: number;
+  duration_days: number;
+  max_documents: number;
+  max_questions_month: number;
+  max_exams_month: number;
+  allow_qti_export: boolean;
+  allow_full_bloom: boolean;
+  features: string[];
+  is_popular?: boolean;
+}
+
+export interface UserSubscriptionInfo {
+  user_id: string;
+  plan_code: string;
+  plan_name: string;
+  status: string;
+  is_free: boolean;
+  starts_at?: string;
+  expires_at?: string;
+  quotas: {
+    max_documents: number;
+    documents_used: number;
+    max_questions_month: number;
+    questions_used_month: number;
+    max_exams_month: number;
+    exams_used_month: number;
+    allow_qti_export: boolean;
+    allow_full_bloom: boolean;
+  };
+}
+
+export interface OrderData {
+  order_id: string;
+  order_code: string;
+  plan_id: string;
+  plan_name: string;
+  plan_code: string;
+  amount_vnd: number;
+  transfer_content: string;
+  bank_info: {
+    bank_name: string;
+    account_no: string;
+    account_name: string;
+  };
+  qr_url: string;
+  countdown_seconds: number;
+  expires_at: string;
 }
 
 export type BloomLevel = 'Nhận biết' | 'Thông hiểu' | 'Vận dụng' | 'Phân tích';

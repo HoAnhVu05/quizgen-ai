@@ -9,12 +9,15 @@ import {
   Database,
   ChevronRight,
   Check,
+  Crown,
 } from 'lucide-react';
-import { ScreenId, UserProfile, UserRole } from '../types';
+import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
 interface TopHeaderProps {
   currentScreen: ScreenId;
   currentUser: UserProfile | null;
+  subscriptionInfo?: UserSubscriptionInfo | null;
+  onOpenPricingModal?: () => void;
   onLogout: () => void;
   onNavigate?: (screen: ScreenId) => void;
   onAdminTabChange?: (tab: string) => void;
@@ -116,6 +119,8 @@ const WORKFLOW_STEPS: WorkflowStepConfig[] = [
 export const TopHeader: React.FC<TopHeaderProps> = ({
   currentScreen,
   currentUser,
+  subscriptionInfo,
+  onOpenPricingModal,
   onNavigate,
   onAdminTabChange,
 }) => {
@@ -257,6 +262,43 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             })}
           </nav>
         )}
+
+        {/* Subscription Plan Badge & Upgrade Action */}
+        <div className="flex items-center gap-2">
+          {subscriptionInfo?.plan_code === 'PRO_MONTH' || subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
+            <div 
+              title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-amber-100/80 transition-colors"
+              onClick={onOpenPricingModal}
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-600" />
+              <span>Gói PRO Giảng Viên</span>
+            </div>
+          ) : subscriptionInfo?.plan_code === 'ENTERPRISE' ? (
+            <div 
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-purple-100/80 transition-colors"
+              onClick={onOpenPricingModal}
+            >
+              <Crown className="w-3.5 h-3.5 text-purple-600" />
+              <span>Gói Bộ Môn Toàn Năng</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                Gói Miễn Phí
+              </span>
+              {onOpenPricingModal && (
+                <button
+                  onClick={onOpenPricingModal}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02]"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-200" />
+                  <span>Nâng cấp</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {isAdmin && (
           <div className="flex items-center gap-2">
