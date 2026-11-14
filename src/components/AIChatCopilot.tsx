@@ -45,7 +45,7 @@ const SCREEN_LABELS: Record<ScreenId, string> = {
 const DEFAULT_WELCOME_MESSAGE = (userName: string, screenLabel: string): ChatMessage => ({
   id: 'welcome-msg',
   role: 'assistant',
-  content: `Kính chào **${userName || 'Thầy/Cô'}**! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của Trường ĐH Giao thông Vận tải TP.HCM (UTH).\n\nHiện tại Thầy/Cô đang ở **${screenLabel}**. Thầy/Cô cần tôi hỗ trợ phân tích ma trận Bloom, giải thích cơ sở khoa học của câu hỏi, hay hướng dẫn xuất bản đề thi chuẩn A4?`,
+  content: `Kính chào **${userName || 'Thầy/Cô'}**! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của hệ thống QuizGen AI.\n\nHiện tại Thầy/Cô đang ở **${screenLabel}**. Thầy/Cô có câu hỏi nào cần tôi hỗ trợ ngay không?`,
   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
   suggestedActions: [
     '💡 Giải thích đáp án',
@@ -239,7 +239,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-xs font-extrabold tracking-tight truncate">QuizGen Copilot</h3>
                   <span className="inline-flex items-center px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
-                    AI UTH
+                    Copilot
                   </span>
                 </div>
                 <p className="text-[10px] text-white/80 truncate">
@@ -404,7 +404,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                   </button>
                 </form>
                 <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 px-1">
-                  <span>Trợ lý Khảo thí Học thuật AI UTH</span>
+                  <span>Trợ lý Khảo thí Học thuật AI</span>
                   <span>Gemini 2.5 Flash</span>
                 </div>
               </div>

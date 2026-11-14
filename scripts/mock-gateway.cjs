@@ -1,9 +1,113 @@
 const http = require('http');
 const https = require('https');
 const url = require('url');
+const fs = require('fs');
+const path = require('path');
 const { sendOtpEmail } = require('./emailService.cjs');
 
 const PORT = 8000;
+
+function getGeminiApiKey() {
+  if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY.trim();
+  try {
+    const envPath = path.resolve(__dirname, '../.env');
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      const match = content.match(/GEMINI_API_KEY=([^\r\n]+)/);
+      if (match && match[1]) return match[1].trim();
+    }
+  } catch {}
+  return '';
+}
+
+function callGeminiChat({ message, history, context }) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
+    return Promise.resolve(null);
+  }
+
+  const screenLabel = (context && context.screenLabel) || 'Bảng điều khiển';
+  const q = context && context.activeQuestion;
+  const userName = (context && context.userName) || 'Thầy/Cô';
+
+  let sysText = `Bạn là QuizGen Copilot — Trợ lý Khảo thí Học thuật AI chuyên nghiệp của nền tảng QuizGen AI.\n` +
+    `Bạn đang đồng hành và hỗ trợ người dùng (${userName}) biên soạn và xuất bản đề thi.\n` +
+    `Màn hình làm việc hiện tại: ${screenLabel}.\n` +
+    `QUY TẮC PHẢN HỒI:\n` +
+    `1. Trả lời trực tiếp, chính xác, súc tích và đúng trọng tâm câu hỏi của người dùng.\n` +
+    `2. Tuyệt đối không nhắc đến bất kỳ tên trường đại học cụ thể nào (không được xuất hiện chữ UTH).\n` +
+    `3. Khi viết công thức Toán, Lý, Hóa, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).\n` +
+    `4. Giữ văn phong sư phạm chuẩn mực, chuyên nghiệp.`;
+
+  if (q && q.question) {
+    sysText += `\nCâu hỏi người dùng đang xem xét:\n- Nội dung: ${q.question}\n- Đáp án đúng: ${q.correctAnswerId || 'A'}\n- Giải thích: ${q.explanation || ''}\n`;
+  }
+
+  const contents = [];
+  if (Array.isArray(history) && history.length > 0) {
+    for (const h of history.slice(-6)) {
+      contents.push({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: String(h.content || '') }]
+      });
+    }
+  }
+  contents.push({
+    role: 'user',
+    parts: [{ text: message }]
+  });
+
+  const payload = JSON.stringify({
+    system_instruction: {
+      parts: [{ text: sysText }]
+    },
+    contents: contents
+  });
+
+  return new Promise((resolve) => {
+    const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const req = https.request(
+      targetUrl,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(payload)
+        },
+        timeout: 15000
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (c) => raw += c);
+        res.on('end', () => {
+          try {
+            if (res.statusCode === 200) {
+              const data = JSON.parse(raw);
+              const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (reply && reply.trim()) {
+                resolve(reply.trim());
+                return;
+              }
+            }
+          } catch (e) {
+            console.error('[MockGateway] Lỗi parse Gemini response:', e);
+          }
+          resolve(null);
+        });
+      }
+    );
+    req.on('error', (err) => {
+      console.error('[MockGateway] Lỗi gọi Gemini API:', err.message);
+      resolve(null);
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(null);
+    });
+    req.write(payload);
+    req.end();
+  });
+}
 
 function fetchJsonHttps(targetUrl, headers = {}) {
   return new Promise((resolve, reject) => {
@@ -815,7 +919,7 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // AI Copilot Chat (QuizGen Copilot)
+    // AI Copilot Chat (QuizGen Copilot - Real Gemini 2.5 Flash Integration)
     if (pathname === '/api/v1/ai/chat' || pathname === '/ai/chat') {
       const message = String(jsonBody.message || '').trim();
       const ctx = jsonBody.context || {};
@@ -826,59 +930,73 @@ const server = http.createServer((req, res) => {
       let reply = '';
       let suggestions = [];
 
-      const lowerMsg = message.toLowerCase();
+      try {
+        // 1. Gọi trực tiếp mô hình Gemini 2.5 Flash thực tế
+        const realAiReply = await callGeminiChat({
+          message,
+          history: jsonBody.history,
+          context: ctx
+        });
 
-      if (lowerMsg.includes('bloom') || lowerMsg.includes('ma trận')) {
-        reply = `Theo Quy chuẩn Khảo thí UTH, cấu trúc ma trận Bloom tối ưu được khuyến nghị:\n\n` +
-          `• **Đề thi Giữa kỳ (60 phút):** 40% Nhận biết, 40% Thông hiểu, 20% Vận dụng.\n` +
-          `• **Đề thi Cuối kỳ (90 phút):** 30% Nhận biết, 40% Thông hiểu, 20% Vận dụng, 10% Phân tích.\n` +
-          `• **Kiểm tra 15 phút:** 70% Nhận biết, 30% Thông hiểu.\n\n` +
-          `Thầy/Cô có thể bấm vào tab **Bước 2: Sinh câu hỏi AI** và chọn các mẫu Preset có sẵn để hệ thống tự cân chỉnh tỷ lệ câu hỏi chính xác.`;
-        suggestions = ['📊 Áp dụng mẫu Giữa kỳ (40-40-20)', '📝 Áp dụng mẫu Cuối kỳ (30-40-20-10)', '💡 Sinh thêm câu hỏi Phân tích'];
-      } else if (lowerMsg.includes('giải thích') || lowerMsg.includes('tại sao') || lowerMsg.includes('đáp án')) {
-        if (q) {
-          reply = `**Giải thích sư phạm cho câu hỏi:** "${q.question}"\n\n` +
-            `• **Đáp án chính xác:** ${q.correctAnswerId ? q.correctAnswerId.toUpperCase() : 'A'}\n` +
-            `• **Cơ sở khoa học:** ${q.explanation || 'Theo nội dung chuẩn hóa trong giáo trình đã trích xuất.'}\n\n` +
-            `• **Phân tích các phương án gây nhiễu:** Các phương án còn lại cố tình đưa ra các yếu tố nghịch biến hoặc đảo ngược điều kiện tiên quyết để đánh giá năng lực phân biệt khái niệm của sinh viên.`;
-        } else {
-          reply = `Để tôi giải thích cặn kẽ một câu hỏi cụ thể, Thầy/Cô chỉ cần chọn hoặc mở câu hỏi đó trong danh sách tại **Bước 3: Đối soát đề**, sau đó bấm nút *Giải thích đáp án* nhé!`;
+        if (realAiReply && realAiReply.trim()) {
+          // Xóa triệt để mọi từ ngữ UTH nếu AI lỡ phát sinh
+          reply = realAiReply.replace(/\bUTH\b/gi, 'QuizGen AI');
+          suggestions = [
+            '💡 Giải thích chi tiết hơn',
+            '📈 Tăng độ khó Bloom',
+            '🖨️ Hướng dẫn xuất đề thi'
+          ];
         }
-        suggestions = ['📈 Tăng độ khó lên Vận dụng', '🎯 Tạo thêm 2 phương án bẫy', '📄 Xem trang sách nguồn'];
-      } else if (lowerMsg.includes('xuất') || lowerMsg.includes('in đề') || lowerMsg.includes('word') || lowerMsg.includes('pdf')) {
-        reply = `Hệ thống hỗ trợ xuất bản đề thi đa định dạng tại **Bước 4: Đóng gói & Xuất Đề Thi**:\n\n` +
-          `1. **Tệp Word (.docx):** Bản in đề thi chính thức chuẩn lề A4, bảng thông tin học phần và đáp án đính kèm cuối trang.\n` +
-          `2. **Tệp PDF + Phiếu OMR:** Tích hợp sẵn mẫu phiếu tô trắc nghiệm quang học 50 câu chuẩn thi tập trung.\n` +
-          `3. **Thuật toán Fisher-Yates:** Tự động xáo trộn và sinh từ 1 đến 8 mã đề thi độc lập, chống gian lận trong phòng thi.\n` +
-          `4. **Gói ZIP đồng bộ:** Tải toàn bộ các mã đề và bảng ma trận trong một file nén duy nhất.`;
-        suggestions = ['🖨️ Mở Bước 4: Xuất Đề Thi', '🔀 Đảo 4 mã đề tự động', '📑 Tải mẫu phiếu OMR'];
-      } else if (lowerMsg.includes('toán') || lowerMsg.includes('lý') || lowerMsg.includes('công thức') || lowerMsg.includes('latex')) {
-        reply = `QuizGen AI đã được nâng cấp toàn diện để hỗ trợ công thức Toán học & Vật lý theo chuẩn **LaTeX**:\n\n` +
-          `• Công thức dao động: $x = A\\cos(\\omega t + \\varphi)$, $v = -\\omega A\\sin(\\omega t + \\varphi)$\n` +
-          `• Công thức năng lượng: $E = \\frac{1}{2}m\\omega^2 A^2$, $E = mc^2$\n` +
-          `• Tích phân & Giải tích: $\\int_{a}^{b} f(x)dx = F(b) - F(a)$\n\n` +
-          `Toàn bộ công thức đều được render sắc nét trên giao diện và nhúng nguyên bản vào file Word in ra của Thầy/Cô.`;
-        suggestions = ['🔬 Soạn đề thi Vật lý đại cương', '📐 Soạn đề thi Toán giải tích', '📊 Kiểm tra render LaTeX'];
-      } else {
-        reply = `Chào Thầy/Cô! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của UTH.\n\n` +
-          `Hiện tại Thầy/Cô đang ở **${screenLabel}**.\n\n` +
-          `Tôi có thể hỗ trợ Thầy/Cô:\n` +
-          `• Giải thích chi tiết đáp án và cơ sở khoa học từng câu hỏi.\n` +
-          `• Viết lại, nâng/hạ độ khó câu hỏi theo Thang đo nhận thức Bloom.\n` +
-          `• Soạn thảo công thức Toán, Lý, Hóa chuẩn LaTeX ($...$).\n` +
-          `• Hướng dẫn xuất bản bộ đề thi Word/PDF OMR và thuật toán đảo mã đề.\n\n` +
-          `Thầy/Cô cần tôi hỗ trợ nội dung nào ngay bây giờ?`;
-        suggestions = ['💡 Giải thích đáp án', '📊 Tư vấn ma trận Bloom', '🖨️ Hướng dẫn xuất đề thi'];
+      } catch (geminiErr) {
+        console.error('[MockGateway] Lỗi gọi Gemini Copilot:', geminiErr);
       }
 
-      setTimeout(() => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          success: true,
-          reply,
-          suggestedActions: suggestions
-        }));
-      }, 500);
+      // 2. Fallback thông minh nếu không có kết nối internet hoặc API lỗi
+      if (!reply) {
+        const lowerMsg = message.toLowerCase();
+        if (lowerMsg.includes('bloom') || lowerMsg.includes('ma trận')) {
+          reply = `Cấu trúc ma trận Bloom tối ưu theo chuẩn Khảo thí được khuyến nghị:\n\n` +
+            `• **Đề thi Giữa kỳ (60 phút):** 40% Nhận biết, 40% Thông hiểu, 20% Vận dụng.\n` +
+            `• **Đề thi Cuối kỳ (90 phút):** 30% Nhận biết, 40% Thông hiểu, 20% Vận dụng, 10% Phân tích.\n` +
+            `• **Kiểm tra 15 phút:** 70% Nhận biết, 30% Thông hiểu.\n\n` +
+            `Bạn có thể bấm vào tab **Bước 2: Sinh câu hỏi AI** và chọn các mẫu Preset có sẵn để hệ thống tự cân chỉnh tỷ lệ câu hỏi chính xác.`;
+          suggestions = ['📊 Áp dụng mẫu Giữa kỳ (40-40-20)', '📝 Áp dụng mẫu Cuối kỳ (30-40-20-10)', '💡 Sinh thêm câu hỏi Phân tích'];
+        } else if (lowerMsg.includes('giải thích') || lowerMsg.includes('tại sao') || lowerMsg.includes('đáp án')) {
+          if (q) {
+            reply = `**Giải thích câu hỏi:** "${q.question}"\n\n` +
+              `• **Đáp án đúng:** ${q.correctAnswerId ? q.correctAnswerId.toUpperCase() : 'A'}\n` +
+              `• **Cơ sở khoa học:** ${q.explanation || 'Theo nội dung chuẩn hóa trong giáo trình đã trích xuất.'}\n\n` +
+              `• **Phương án gây nhiễu:** Các phương án còn lại kiểm tra khả năng phân biệt điều kiện tiên quyết và tránh nhầm lẫn khái niệm.`;
+          } else {
+            reply = `Để tôi giải thích cặn kẽ một câu hỏi cụ thể, bạn hãy chọn câu hỏi đó trong danh sách tại **Bước 3: Đối soát đề**, sau đó bấm nút *Giải thích đáp án* nhé!`;
+          }
+          suggestions = ['📈 Tăng độ khó lên Vận dụng', '🎯 Tạo thêm 2 phương án bẫy', '📄 Xem trang sách nguồn'];
+        } else if (lowerMsg.includes('xuất') || lowerMsg.includes('in đề') || lowerMsg.includes('word') || lowerMsg.includes('pdf')) {
+          reply = `Hệ thống hỗ trợ xuất bản đề thi đa định dạng tại **Bước 4: Đóng gói & Xuất Đề Thi**:\n\n` +
+            `1. **Tệp Word (.docx):** Bản in đề thi chính thức chuẩn lề A4, bảng thông tin học phần và đáp án đính kèm cuối trang.\n` +
+            `2. **Tệp PDF + Phiếu OMR:** Tích hợp sẵn mẫu phiếu tô trắc nghiệm quang học 50 câu chuẩn thi tập trung.\n` +
+            `3. **Thuật toán Fisher-Yates:** Tự động xáo trộn và sinh từ 1 đến 8 mã đề thi độc lập, chống gian lận trong phòng thi.\n` +
+            `4. **Gói ZIP đồng bộ:** Tải toàn bộ các mã đề và bảng ma trận trong một file nén duy nhất.`;
+          suggestions = ['🖨️ Mở Bước 4: Xuất Đề Thi', '🔀 Đảo 4 mã đề tự động', '📑 Tải mẫu phiếu OMR'];
+        } else {
+          reply = `Chào bạn! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của QuizGen AI.\n\n` +
+            `Hiện tại bạn đang ở **${screenLabel}**.\n\n` +
+            `Tôi có thể hỗ trợ bạn:\n` +
+            `• Giải thích chi tiết đáp án và cơ sở khoa học từng câu hỏi.\n` +
+            `• Viết lại, nâng/hạ độ khó câu hỏi theo Thang đo nhận thức Bloom.\n` +
+            `• Soạn thảo công thức Toán, Lý, Hóa chuẩn LaTeX ($...$).\n` +
+            `• Hướng dẫn xuất bản bộ đề thi Word/PDF OMR và thuật toán đảo mã đề.\n\n` +
+            `Bạn muốn tôi hỗ trợ nội dung nào?`;
+          suggestions = ['💡 Giải thích đáp án', '📊 Tư vấn ma trận Bloom', '🖨️ Hướng dẫn xuất đề thi'];
+        }
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        reply,
+        suggestedActions: suggestions
+      }));
       return;
     }
 
