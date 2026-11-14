@@ -7,14 +7,13 @@ import {
   Bot,
   User,
   ChevronDown,
-  HelpCircle,
   BookOpen,
-  Sliders,
   CheckCircle2,
   Copy,
   Check,
   Maximize2,
   Minimize2,
+  FileText,
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
 
@@ -42,15 +41,18 @@ const SCREEN_LABELS: Record<ScreenId, string> = {
   admin_portal: 'Cổng Quản trị Hệ thống',
 };
 
-const DEFAULT_WELCOME_MESSAGE = (userName: string, screenLabel: string): ChatMessage => ({
+const DEFAULT_WELCOME_MESSAGE = (userName: string, screenLabel: string, bookName?: string): ChatMessage => ({
   id: 'welcome-msg',
   role: 'assistant',
-  content: `Kính chào **${userName || 'Thầy/Cô'}**! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của hệ thống QuizGen AI.\n\nHiện tại Thầy/Cô đang ở **${screenLabel}**. Thầy/Cô có câu hỏi nào cần tôi hỗ trợ ngay không?`,
+  content: `Kính chào **${userName || 'Thầy/Cô'}**! Tôi là **Qurator** — Trợ lý Khảo thí Học thuật & Phân tích Giáo trình AI của hệ thống QuizGen AI.\n\n` +
+    `Tôi có toàn quyền **truy cập, đọc hiểu và phân tích sâu toàn bộ giáo trình/tài liệu** mà Thầy/Cô đã nạp${bookName ? ` (đang kết nối trực tiếp: *${bookName}*)` : ''}.\n\n` +
+    `Thầy/Cô có thể yêu cầu tôi bất kỳ điều gì: tóm tắt giáo trình, tra cứu định nghĩa hay công thức ở trang mấy, phân tích ma trận Bloom, hoặc giải thích câu hỏi chuyên sâu!`,
   timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
   suggestedActions: [
-    '💡 Giải thích đáp án',
-    '📊 Tư vấn ma trận Bloom',
-    '🖨️ Hướng dẫn xuất đề thi',
+    '📖 Tóm tắt giáo trình này',
+    '📑 Liệt kê cấu trúc các chương',
+    '💡 Giải thích chi tiết đáp án',
+    '📊 Đề xuất ma trận Bloom',
   ],
 });
 
@@ -66,10 +68,39 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // ─── Danh sách Giáo trình Người dùng Tải lên ─────────────────────────────
+  const [uploadedBooks, setUploadedBooks] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const [selectedBookId, setSelectedBookId] = useState<string>(() => {
+    return localStorage.getItem('quizgen_selected_book_id') || '';
+  });
+
   const screenLabel = SCREEN_LABELS[currentScreen] || 'Không gian làm việc';
   const userName = currentUser?.academicTitle
     ? `${currentUser.academicTitle} ${currentUser.fullName}`
     : currentUser?.fullName || 'Thầy/Cô';
+
+  // Tự động đồng bộ tài liệu mới nhất mỗi khi mở chat hoặc chuyển màn hình
+  useEffect(() => {
+    try {
+      const books = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+      setUploadedBooks(books);
+      const selId = localStorage.getItem('quizgen_selected_book_id');
+      if (selId && books.some((b: any) => b.id === selId)) {
+        setSelectedBookId(selId);
+      } else if (books.length > 0) {
+        setSelectedBookId(books[0].id);
+      }
+    } catch {}
+  }, [isOpen, currentScreen]);
+
+  const activeBook = uploadedBooks.find((b: any) => b.id === selectedBookId) || (uploadedBooks.length > 0 ? uploadedBooks[0] : null);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
@@ -79,7 +110,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return [DEFAULT_WELCOME_MESSAGE(userName, screenLabel)];
+    return [DEFAULT_WELCOME_MESSAGE(userName, screenLabel, activeBook?.name)];
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -123,10 +154,20 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         content: m.content,
       }));
 
+      // Nạp sâu toàn bộ dữ liệu giáo trình và câu hỏi vào context gửi sang Gemini
       const contextPayload = {
         currentScreen,
         screenLabel,
         userName,
+        documentId: activeBook?.id || null,
+        documentName: activeBook?.name || null,
+        documentPages: activeBook?.totalPages || null,
+        allDocuments: uploadedBooks.map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          totalPages: b.totalPages,
+          chaptersCount: b.chaptersCount,
+        })),
         activeQuestion: activeQuestion
           ? {
               id: activeQuestion.id,
@@ -186,7 +227,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   };
 
   const handleClearHistory = () => {
-    const welcome = DEFAULT_WELCOME_MESSAGE(userName, screenLabel);
+    const welcome = DEFAULT_WELCOME_MESSAGE(userName, screenLabel, activeBook?.name);
     setMessages([welcome]);
     try {
       localStorage.removeItem('quizgen_copilot_chat');
@@ -207,7 +248,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           {/* Subtle floating badge tooltip */}
           <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 text-slate-700 text-xs font-semibold shadow-md border border-slate-200 select-none animate-bounce">
             <Sparkles className="w-3.5 h-3.5 text-[#008689]" />
-            <span>Hỏi QuizGen Copilot</span>
+            <span>Hỏi Qurator AI</span>
           </div>
 
           <button
@@ -237,9 +278,9 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-xs font-extrabold tracking-tight truncate">QuizGen Copilot</h3>
+                  <h3 className="text-xs font-extrabold tracking-tight truncate">Qurator</h3>
                   <span className="inline-flex items-center px-1.5 py-0.2 text-[9px] font-bold rounded-full bg-emerald-400/20 text-emerald-200 border border-emerald-400/30">
-                    Copilot
+                    AI Scholar
                   </span>
                 </div>
                 <p className="text-[10px] text-white/80 truncate">
@@ -276,16 +317,50 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           {/* Body when not minimized */}
           {!isMinimized && (
             <>
-              {/* Active Context Banner */}
+              {/* Linked Textbook Context Selector */}
+              {uploadedBooks.length > 0 && (
+                <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-[11px] gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <BookOpen className="w-3.5 h-3.5 text-[#008689] shrink-0" />
+                    <span className="text-slate-500 shrink-0 font-medium">Giáo trình:</span>
+                    <select
+                      value={activeBook?.id || ''}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setSelectedBookId(newId);
+                        try {
+                          localStorage.setItem('quizgen_selected_book_id', newId);
+                          const matched = uploadedBooks.find((b) => b.id === newId);
+                          if (matched) {
+                            localStorage.setItem('quizgen_selected_book_name', matched.name);
+                          }
+                        } catch {}
+                      }}
+                      className="bg-white border border-slate-200 rounded px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 outline-none truncate max-w-[170px]"
+                    >
+                      {uploadedBooks.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.totalPages || '?'} tr)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
+                    RAG Connected
+                  </span>
+                </div>
+              )}
+
+              {/* Active Question Banner if available */}
               {activeQuestion && (
-                <div className="px-3 py-1.5 bg-[#e0f7fa]/60 border-b border-[#008689]/15 flex items-center justify-between text-[11px] text-slate-700">
+                <div className="px-3 py-1 bg-[#e0f7fa]/60 border-b border-[#008689]/15 flex items-center justify-between text-[10px] text-slate-700">
                   <div className="flex items-center gap-1.5 truncate">
                     <CheckCircle2 className="w-3 h-3 text-[#008689] shrink-0" />
                     <span className="truncate">
-                      Đang liên kết câu hỏi: <strong className="text-[#008689]">{activeQuestion.id}</strong> ({activeQuestion.bloomLevel})
+                      Liên kết câu hỏi: <strong className="text-[#008689]">{activeQuestion.id}</strong> ({activeQuestion.bloomLevel})
                     </span>
                   </div>
-                  <span className="text-[10px] text-slate-400 shrink-0">Tự động nạp context</span>
+                  <span className="text-[9px] text-slate-400 shrink-0">Sẵn sàng phân tích</span>
                 </div>
               )}
 
@@ -365,7 +440,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                       <Bot className="w-3.5 h-3.5" />
                     </div>
                     <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-none bg-white border border-slate-200 shadow-sm flex items-center gap-1.5 text-slate-400 text-xs">
-                      <span>QuizGen Copilot đang suy nghĩ</span>
+                      <span>Qurator đang tra cứu tài liệu & suy nghĩ</span>
                       <span className="flex gap-1 items-center">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" />
                         <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce [animation-delay:0.2s]" />
@@ -391,7 +466,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                     type="text"
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Hỏi về câu hỏi, ma trận Bloom, giáo trình..."
+                    placeholder="Hỏi về giáo trình, khái niệm trang mấy, công thức..."
                     disabled={isLoading}
                     className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689]/20 transition-all disabled:opacity-50"
                   />

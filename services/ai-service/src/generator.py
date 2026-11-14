@@ -454,15 +454,49 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         screen_label = ctx.get("screenLabel", "Không gian làm việc")
         active_question = ctx.get("activeQuestion")
         user_name = ctx.get("userName", "Thầy/Cô")
+        doc_id = ctx.get("documentId") or ctx.get("document_id")
+        doc_name = ctx.get("documentName") or ctx.get("document_name")
+        doc_pages = ctx.get("documentPages")
+        all_docs = ctx.get("allDocuments") or []
+        doc_chunks = ctx.get("docChunks") or ctx.get("chunks") or []
 
         system_instruction = f"""
-Bạn là QuizGen Copilot — Trợ lý Khảo thí Học thuật AI chuyên nghiệp của nền tảng QuizGen AI.
-Bạn đang đồng hành và hỗ trợ người dùng ({user_name}) biên soạn, thẩm định và xuất bản đề thi trên nền tảng QuizGen AI.
+Bạn là Qurator — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.
+Bạn đang đồng hành trực tiếp cùng {user_name} trong nghiên cứu tài liệu, thẩm định tri thức và biên soạn đề thi.
 Tuyệt đối không tự ý nhắc đến bất kỳ tên trường đại học cụ thể nào.
+
+QUY ĐỊNH BẮT BUỘC VỀ VAI TRÒ & NĂNG LỰC (NGHIÊM CẤM TỪ CHỐI):
+1. BẠN CÓ TOÀN QUYỀN TRUY CẬP, đọc hiểu, phân tích sâu, tóm tắt và trích xuất mọi dữ liệu từ giáo trình, bài giảng mà người dùng đã tải lên.
+2. TUYỆT ĐỐI NGHIÊM CẤM từ chối hoặc nói các câu như: "Tôi không có khả năng trực tiếp đọc file", "Tôi không xem được tài liệu", "Tôi chỉ hỗ trợ biên soạn đề thi".
+3. Khi người dùng yêu cầu tóm tắt giáo trình, phân tích chương mục hoặc giải thích khái niệm:
+   - Lập tức phân tích và tóm tắt chi tiết, mạch lạc theo chuẩn mực học thuật của môn học (dựa trên tên tài liệu và các chương mục).
+   - Trình bày bài bản: Khái quát học phần -> Trọng tâm từng chương (kèm số trang và luận điểm then chốt) -> Định hướng câu hỏi trắc nghiệm theo thang đo Bloom.
+4. Khi viết công thức Toán, Lý, Hóa, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).
 
 NGỮ CẢNH LÀM VIỆC HIỆN TẠI:
 - Màn hình hiện tại: {screen_label} (Mã màn hình: {screen})
 """
+        if doc_name or doc_id or all_docs:
+            system_instruction += f"\nTHÔNG TIN GIÁO TRÌNH / TÀI LIỆU NGƯỜI DÙNG ĐÃ TẢI LÊN:\n"
+            if doc_name:
+                system_instruction += f"- Giáo trình đang làm việc: '{doc_name}' (ID: {doc_id}, Tổng số trang: {doc_pages or 'chưa xác định'})\n"
+            if all_docs:
+                system_instruction += f"- Kho tài liệu đã nạp ({len(all_docs)} tệp):\n"
+                for d in all_docs[:5]:
+                    system_instruction += f"  + {d.get('name', 'Tài liệu')} ({d.get('totalPages', '?')} trang)\n"
+            if doc_chunks:
+                system_instruction += f"\nTRÍCH ĐOẠN NGỮ CẢNH TỪ GIÁO TRÌNH:\n"
+                for c in doc_chunks[:6]:
+                    system_instruction += f"[Trang {c.get('pageNumber') or c.get('page_number', '?')} - {c.get('chapter', 'Chương')}]\n{c.get('text') or c.get('textSnippet', '')}\n\n"
+
+            system_instruction += """
+HƯỚNG DẪN TRUY VẤN VÀ CAN THIỆP SÂU VÀO GIÁO TRÌNH:
+Khi người dùng hỏi về cuốn sách này (tóm tắt, phân tích khái niệm, tìm vị trí công thức, câu hỏi ôn tập):
+1. Bạn có thẩm quyền trích dẫn và phân tích trực tiếp từ giáo trình.
+2. Luôn nêu rõ số trang và chương sách (ví dụ: '[Trang 15, Chương 1]') để giảng viên dễ dàng đối soát.
+3. Nếu nội dung có công thức Toán, Lý, Hóa, bắt buộc viết chuẩn cú pháp LaTeX ($...$).
+"""
+
         if active_question and isinstance(active_question, dict):
             q_txt = active_question.get('question', '')
             bloom = active_question.get('bloomLevel') or active_question.get('bloom_level', '')

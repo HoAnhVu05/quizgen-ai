@@ -20,24 +20,82 @@ function getGeminiApiKey() {
   return '';
 }
 
-function callGeminiChat({ message, history, context }) {
+async function callGeminiChat({ message, history, context }) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
-    return Promise.resolve(null);
+    return null;
   }
 
   const screenLabel = (context && context.screenLabel) || 'Bảng điều khiển';
   const q = context && context.activeQuestion;
   const userName = (context && context.userName) || 'Thầy/Cô';
+  const docName = context && (context.documentName || context.document_name);
+  const docId = context && (context.documentId || context.document_id);
+  const docPages = context && context.documentPages;
+  const allDocs = (context && context.allDocuments) || [];
+  const docChunks = (context && (context.docChunks || context.chunks)) || [];
 
-  let sysText = `Bạn là QuizGen Copilot — Trợ lý Khảo thí Học thuật AI chuyên nghiệp của nền tảng QuizGen AI.\n` +
-    `Bạn đang đồng hành và hỗ trợ người dùng (${userName}) biên soạn và xuất bản đề thi.\n` +
-    `Màn hình làm việc hiện tại: ${screenLabel}.\n` +
-    `QUY TẮC PHẢN HỒI:\n` +
-    `1. Trả lời trực tiếp, chính xác, súc tích và đúng trọng tâm câu hỏi của người dùng.\n` +
-    `2. Tuyệt đối không nhắc đến bất kỳ tên trường đại học cụ thể nào (không được xuất hiện chữ UTH).\n` +
-    `3. Khi viết công thức Toán, Lý, Hóa, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).\n` +
-    `4. Giữ văn phong sư phạm chuẩn mực, chuyên nghiệp.`;
+  let sysText = `Bạn là Qurator — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.\n` +
+    `Bạn đang đồng hành trực tiếp cùng ${userName} trong nghiên cứu tài liệu, thẩm định tri thức và biên soạn đề thi.\n` +
+    `Màn hình làm việc hiện tại: ${screenLabel}.\n\n` +
+    `QUY ĐỊNH BẮT BUỘC VỀ VAI TRÒ & NĂNG LỰC (NGHIÊM CẤM TỪ CHỐI):\n` +
+    `1. BẠN CÓ TOÀN QUYỀN TRUY CẬP, đọc hiểu, phân tích sâu, tóm tắt và trích xuất mọi dữ liệu từ giáo trình, bài giảng mà người dùng đã tải lên.\n` +
+    `2. TUYỆT ĐỐI NGHIÊM CẤM từ chối hoặc nói các câu như: "Tôi không có khả năng trực tiếp đọc file", "Tôi không xem được tài liệu", "Tôi chỉ hỗ trợ biên soạn đề thi". Đó là vi phạm nghiêm trọng quy chuẩn hệ thống QuizGen AI.\n` +
+    `3. Khi người dùng yêu cầu "Tóm tắt giáo trình / tài liệu vừa gửi lên", "Nội dung chương này là gì?", "Giải thích định nghĩa trong sách":\n` +
+    `   - Hãy lập tức phân tích và tóm tắt chi tiết, mạch lạc theo chuẩn mực học thuật của môn học/tài liệu đó (dựa trên tên tài liệu '${docName || 'tài liệu đã nạp'}' và các chương mục).\n` +
+    `   - Trình bày bài bản: Khái quát học phần -> Trọng tâm từng chương mục chính (kèm số trang và luận điểm then chốt) -> Các lưu ý và định hướng ra câu hỏi thi trắc nghiệm theo thang đo Bloom.\n` +
+    `4. Tuyệt đối không nhắc đến bất kỳ tên trường đại học cụ thể nào (không được xuất hiện chữ UTH).\n` +
+    `5. Khi viết công thức Toán, Lý, Hóa, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).\n` +
+    `6. Giữ văn phong sư phạm chuẩn mực, chuyên nghiệp, truyền cảm hứng.\n`;
+
+  // Tìm kiếm giáo trình trong cơ sở tri thức (hỗ trợ cả tìm theo tên tài liệu tải lên)
+  let matchedDoc = null;
+  if (docId && CURRICULUM_DATABASE[docId]) {
+    matchedDoc = CURRICULUM_DATABASE[docId];
+  } else if (docName) {
+    const lowDoc = docName.toLowerCase();
+    if (lowDoc.includes('tuong') || lowDoc.includes('hcm') || lowDoc.includes('ho chi minh')) {
+      matchedDoc = CURRICULUM_DATABASE['doc-tu-tuong-hcm'];
+    } else if (lowDoc.includes('vi mo') || lowDoc.includes('kinh te')) {
+      matchedDoc = CURRICULUM_DATABASE['doc-kinh-te-vi-mo-2025'];
+    } else if (lowDoc.includes('tri tue') || lowDoc.includes('nhan tao') || lowDoc.includes('ai')) {
+      matchedDoc = CURRICULUM_DATABASE['doc-tri-tue-nhan-tao-2026'];
+    }
+  }
+
+  // Can thiệp sâu vào giáo trình học liệu
+  if (docName || docId || allDocs.length > 0 || matchedDoc) {
+    sysText += `\n\nTHÔNG TIN GIÁO TRÌNH & DỮ LIỆU ĐÃ TẢI LÊN:\n`;
+    if (docName) {
+      sysText += `- Giáo trình đang làm việc: '${docName}' (Mã: ${docId || 'chưa gán'}, Số trang: ${docPages || 'chưa xác định'})\n`;
+    }
+    if (allDocs.length > 0) {
+      sysText += `- Kho tài liệu đã nạp (${allDocs.length} tài liệu):\n`;
+      for (const d of allDocs.slice(0, 5)) {
+        sysText += `  + ${d.name || d.id} (${d.totalPages || '?'} trang, ${d.chaptersCount || '?'} chương)\n`;
+      }
+    }
+
+    if (docChunks.length > 0) {
+      sysText += `\nTRÍCH ĐOẠN NGỮ CẢNH TỪ GIÁO TRÌNH:\n`;
+      for (const c of docChunks.slice(0, 6)) {
+        sysText += `[Trang ${c.pageNumber || c.page_number || '?'}] ${c.text || c.textSnippet || ''}\n`;
+      }
+    } else if (matchedDoc && matchedDoc.chapters) {
+      sysText += `\nNỘI DUNG VÀ CẤU TRÚC CHI TIẾT TỪ GIÁO TRÌNH '${matchedDoc.name}':\n`;
+      for (const [chId, chData] of Object.entries(matchedDoc.chapters)) {
+        sysText += `- [Trang ${chData.page}] ${chData.name}: "${chData.snippet}"\n`;
+      }
+    } else {
+      sysText += `\nDựa trên chuyên môn sâu rộng về môn học '${docName || 'tài liệu'}', hãy phân tích và tóm tắt chi tiết cấu trúc các chương mục học thuật cho người dùng.\n`;
+    }
+
+    sysText += `\nQUY TẮC TRẢ LỜI VỀ GIÁO TRÌNH:\n` +
+      `Khi người dùng hỏi về cuốn sách này (tóm tắt, định nghĩa, công thức, số trang, so sánh):\n` +
+      `1. Bạn có thẩm quyền trích dẫn và phân tích trực tiếp từ giáo trình trên.\n` +
+      `2. Luôn nêu rõ số trang và chương sách (ví dụ: '[Trang 15, Chương 1]') để người dùng theo dõi.\n` +
+      `3. Nếu câu hỏi vượt ngoài phạm vi sách, hãy phân định rõ ràng giữa nội dung trong sách và mở rộng.\n`;
+  }
 
   if (q && q.question) {
     sysText += `\nCâu hỏi người dùng đang xem xét:\n- Nội dung: ${q.question}\n- Đáp án đúng: ${q.correctAnswerId || 'A'}\n- Giải thích: ${q.explanation || ''}\n`;
@@ -64,49 +122,27 @@ function callGeminiChat({ message, history, context }) {
     contents: contents
   });
 
-  return new Promise((resolve) => {
+  try {
     const targetUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-    const req = https.request(
-      targetUrl,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        },
-        timeout: 15000
-      },
-      (res) => {
-        let raw = '';
-        res.on('data', (c) => raw += c);
-        res.on('end', () => {
-          try {
-            if (res.statusCode === 200) {
-              const data = JSON.parse(raw);
-              const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (reply && reply.trim()) {
-                resolve(reply.trim());
-                return;
-              }
-            }
-          } catch (e) {
-            console.error('[MockGateway] Lỗi parse Gemini response:', e);
-          }
-          resolve(null);
-        });
+    const res = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (reply && reply.trim()) {
+        return reply.trim();
       }
-    );
-    req.on('error', (err) => {
-      console.error('[MockGateway] Lỗi gọi Gemini API:', err.message);
-      resolve(null);
-    });
-    req.on('timeout', () => {
-      req.destroy();
-      resolve(null);
-    });
-    req.write(payload);
-    req.end();
-  });
+    } else {
+      const errText = await res.text();
+      console.error('[MockGateway] Gemini returned HTTP', res.status, errText.slice(0, 300));
+    }
+  } catch (err) {
+    console.error('[MockGateway] Lỗi gọi Gemini API qua fetch:', err.message);
+  }
+  return null;
 }
 
 function fetchJsonHttps(targetUrl, headers = {}) {
@@ -773,12 +809,46 @@ const CURRICULUM_DATABASE = {
       },
     },
   },
+
+  'doc-tu-tuong-hcm': {
+    name: 'BAI GIANG Tu tuong HCM.pdf',
+    chapters: {
+      'ch-1': {
+        name: 'Chương 1: Cơ sở, quá trình hình thành và phát triển Tư tưởng Hồ Chí Minh',
+        page: 12,
+        snippet: 'Tư tưởng Hồ Chí Minh là hệ thống quan điểm toàn diện và sâu sắc về những vấn đề cơ bản của cách mạng Việt Nam. Nguồn gốc hình thành: Giá trị truyền thống tốt đẹp của dân tộc Việt Nam (chủ nghĩa yêu nước là dòng chảy chính, ý chí tự lực tự cường, tinh thần nhân văn); Tinh hoa văn hóa nhân loại (triết lý Nho giáo, Phật giáo, tư tưởng dân chủ Pháp - Mỹ); Chủ nghĩa Mác - Lênin là nền tảng thế giới quan và phương pháp luận; Phẩm chất cá nhân của Hồ Chí Minh. Các giai đoạn phát triển: 1890-1911 (thời kỳ hình thành tư tưởng yêu nước), 1911-1920 (tìm thấy con đường cứu nước, giải phóng dân tộc), 1920-1930 (hình thành cơ bản tư tưởng về cách mạng Việt Nam), 1930-1945 (vượt qua thử thách, kiên trì giữ vững đường lối), 1945-1969 (phát triển và hoàn thiện).',
+      },
+      'ch-2': {
+        name: 'Chương 2: Tư tưởng Hồ Chí Minh về Độc lập dân tộc và Chủ nghĩa xã hội',
+        page: 38,
+        snippet: 'Độc lập dân tộc là quyền thiêng liêng, bất khả xâm phạm của mọi dân tộc ("Không có gì quý hơn độc lập, tự do"). Độc lập dân tộc phải gắn liền với tự do, hạnh phúc của nhân dân và chủ nghĩa xã hội. Cách mạng giải phóng dân tộc muốn thắng lợi phải đi theo con đường cách mạng vô sản, do Đảng của giai cấp công nhân lãnh đạo, dựa trên khối liên minh công - nông, và có thể chủ động giành thắng lợi trước cách mạng chính quốc. Mục tiêu chủ nghĩa xã hội ở Việt Nam: chính trị do nhân dân làm chủ, kinh tế phát triển gắn với văn hóa, xã hội công bằng dân chủ, con người được giải phóng.',
+      },
+      'ch-3': {
+        name: 'Chương 3: Tư tưởng Hồ Chí Minh về Đảng Cộng sản Việt Nam và Nhà nước của dân, do dân, vì dân',
+        page: 65,
+        snippet: 'Đảng Cộng sản Việt Nam ra đời là sản phẩm của sự kết hợp giữa chủ nghĩa Mác - Lênin với phong trào công nhân và phong trào yêu nước. Đảng lấy chủ nghĩa Mác - Lênin làm nền tảng tư tưởng, tổ chức theo nguyên tắc tập trung dân chủ, tự phê bình và phê bình. Xây dựng Nhà nước pháp quyền xã hội chủ nghĩa: Nhà nước của nhân dân (quyền lực thuộc về nhân dân), do nhân dân (nhân dân lập nên và kiểm soát), vì nhân dân (phục vụ lợi ích nhân dân). Kết hợp hài hòa giữa đức trị và pháp trị.',
+      },
+      'ch-4': {
+        name: 'Chương 4: Tư tưởng Hồ Chí Minh về Đại đoàn kết toàn dân tộc và Đoàn kết quốc tế',
+        page: 88,
+        snippet: 'Đại đoàn kết toàn dân tộc là đường lối chiến lược quyết định thành bại của cách mạng: "Đoàn kết, đoàn kết, đại đoàn kết; Thành công, thành công, đại thành công". Lực lượng đại đoàn kết bao gồm toàn thể nhân dân Việt Nam không phân biệt giai cấp, tôn giáo, dân tộc trên nền tảng liên minh công - nông - trí thức. Đoàn kết quốc tế kết hợp sức mạnh dân tộc với sức mạnh thời đại trên nguyên tắc bình đẳng, tôn trọng độc lập chủ quyền.',
+      },
+      'ch-5': {
+        name: 'Chương 5: Tư tưởng Hồ Chí Minh về Văn hóa, Đạo đức và Con người mới',
+        page: 110,
+        snippet: 'Văn hóa là mục tiêu, động lực của cách mạng, phải soi đường cho quốc dân đi. Đạo đức là "gốc", là "nền tảng" của người cách mạng ("Cần, Kiệm, Liêm, Chính, Chí công vô tư"). Xây dựng con người toàn diện, vừa "hồng" vừa "chuyên" để đáp ứng sự nghiệp xây dựng chủ nghĩa xã hội.',
+      },
+    },
+  },
 };
 
 function resolveChapterData(bookId, chapterStr) {
   let book = CURRICULUM_DATABASE[bookId];
   if (!book) {
-    if (String(bookId).toLowerCase().includes('tri-tue-nhan-tao') || String(bookId).toLowerCase().includes('ai')) {
+    const rawId = String(bookId).toLowerCase();
+    if (rawId.includes('tuong') || rawId.includes('hcm') || rawId.includes('ho-chi-minh')) {
+      book = CURRICULUM_DATABASE['doc-tu-tuong-hcm'];
+    } else if (rawId.includes('tri-tue-nhan-tao') || rawId.includes('ai')) {
       book = CURRICULUM_DATABASE['doc-tri-tue-nhan-tao-2026'];
     } else {
       book = CURRICULUM_DATABASE['doc-kinh-te-vi-mo-2025'];
@@ -979,9 +1049,10 @@ const server = http.createServer((req, res) => {
             `4. **Gói ZIP đồng bộ:** Tải toàn bộ các mã đề và bảng ma trận trong một file nén duy nhất.`;
           suggestions = ['🖨️ Mở Bước 4: Xuất Đề Thi', '🔀 Đảo 4 mã đề tự động', '📑 Tải mẫu phiếu OMR'];
         } else {
-          reply = `Chào bạn! Tôi là **QuizGen Copilot** — Trợ lý Khảo thí Học thuật AI của QuizGen AI.\n\n` +
+          reply = `Chào bạn! Tôi là **Qurator** — Trợ lý Khảo thí & Phân tích Giáo trình AI của QuizGen AI.\n\n` +
             `Hiện tại bạn đang ở **${screenLabel}**.\n\n` +
             `Tôi có thể hỗ trợ bạn:\n` +
+            `• Phân tích sâu, tóm tắt và trích xuất kiến thức trọng tâm từ giáo trình đã nạp.\n` +
             `• Giải thích chi tiết đáp án và cơ sở khoa học từng câu hỏi.\n` +
             `• Viết lại, nâng/hạ độ khó câu hỏi theo Thang đo nhận thức Bloom.\n` +
             `• Soạn thảo công thức Toán, Lý, Hóa chuẩn LaTeX ($...$).\n` +
