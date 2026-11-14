@@ -26,6 +26,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
+import MathRenderer from './MathRenderer';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
 import apiClient from '../services/apiClient';
 
@@ -121,6 +122,10 @@ const normalizeGeneratedQuestion = (
     confidenceScore: Number(raw.confidenceScore ?? raw.confidence_score ?? Math.floor(92 + Math.random() * 7)),
     status: 'pending',
     createdAt: 'Hôm nay',
+    hasFormula: Boolean(raw.hasFormula || raw.has_formula || String(raw.question || '').includes('$')),
+    hasImage: Boolean(raw.hasImage || raw.has_image || raw.imageUrl || raw.image_url),
+    imageUrl: raw.imageUrl || raw.image_url || undefined,
+    imageCaption: raw.imageCaption || raw.image_caption || undefined,
   };
 };
 
@@ -1240,14 +1245,28 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
               {previewHistoryRecord.questions.map((q, idx) => (
                 <div key={q.id || idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="text-xs font-bold text-slate-900 leading-relaxed">
+                    <div className="text-xs font-bold text-slate-900 leading-relaxed">
                       <span className="text-[#008689] font-extrabold mr-1">Câu {idx + 1}:</span>
-                      {q.question}
-                    </p>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 text-slate-700 shrink-0">
-                      {q.bloomLevel}
-                    </span>
+                      <MathRenderer content={q.question} inline />
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {(q.hasFormula || q.question.includes('$')) && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          ∑ LaTeX
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 text-slate-700">
+                        {q.bloomLevel}
+                      </span>
+                    </div>
                   </div>
+
+                  {q.hasImage && q.imageUrl && (
+                    <div className="p-2 bg-white rounded-lg border border-slate-200 text-center max-w-sm mx-auto">
+                      <img src={q.imageUrl} alt={q.imageCaption || 'Hình sơ đồ'} className="max-h-40 mx-auto rounded object-contain" />
+                      {q.imageCaption && <p className="text-[10px] text-slate-500 italic mt-1">{q.imageCaption}</p>}
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
                     {q.options.map((opt) => {
@@ -1261,8 +1280,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                               : 'bg-white border border-slate-200 text-slate-600'
                           }`}
                         >
-                          <span className="font-bold">{opt.label}.</span>
-                          <span>{opt.text}</span>
+                          <span className="font-bold shrink-0">{opt.label}.</span>
+                          <span className="flex-1"><MathRenderer content={opt.text} /></span>
                         </div>
                       );
                     })}
@@ -1271,7 +1290,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                   {q.explanation && (
                     <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">
                       <strong className="text-slate-700">Giải thích: </strong>
-                      {q.explanation}
+                      <MathRenderer content={q.explanation} inline />
                     </div>
                   )}
                 </div>

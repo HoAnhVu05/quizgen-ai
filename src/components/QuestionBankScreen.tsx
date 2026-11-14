@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Question, BloomLevel, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
+import MathRenderer from './MathRenderer';
 
 export interface SavedExamItem {
   id: string;
@@ -347,6 +348,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
         explanation: string;
         options: Array<{ id: string; label: string; text: string; isCorrect: boolean }>;
         correctLabel: string;
+        hasImage?: boolean;
+        imageUrl?: string;
+        imageCaption?: string;
+        hasFormula?: boolean;
       }>
     > = {};
 
@@ -371,8 +376,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           explanation: q.explanation,
           options: shuffledOpts,
           correctLabel: correctOpt ? correctOpt.label : 'A',
-          imageUrl: (q as any).imageUrl || (q as any).image_url,
-          imageCaption: (q as any).imageCaption || (q as any).image_caption,
+          hasImage: q.hasImage || !!((q as any).imageUrl || (q as any).image_url),
+          imageUrl: (q as any).imageUrl || (q as any).image_url || q.imageUrl,
+          imageCaption: (q as any).imageCaption || (q as any).image_caption || q.imageCaption,
+          hasFormula: q.hasFormula,
         };
       });
     });
@@ -1024,33 +1031,32 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                   <div className="space-y-5 pt-2">
                     {activeVariantQuestions.map((q, index) => (
                       <div key={`${activeExamCode}-${q.id}`} className="space-y-2 text-sm text-slate-900 exam-question-item">
-                        <p className="font-semibold leading-relaxed">
-                          <span className="font-extrabold">Câu {index + 1}: </span>
-                          {q.question}
-                        </p>
+                        <div className="font-semibold leading-relaxed">
+                          <span className="font-extrabold mr-1">Câu {index + 1}:</span>
+                          <MathRenderer content={q.question} inline />
+                        </div>
 
                         {/* Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi */}
-                        {(q as any).imageUrl && (
+                        {((q as any).imageUrl || q.imageUrl) && (
                           <div className="my-2.5 flex flex-col items-center justify-center">
                             <img
-                              src={(q as any).imageUrl}
-                              alt={(q as any).imageCaption || `Sơ đồ câu ${index + 1}`}
+                              src={(q as any).imageUrl || q.imageUrl}
+                              alt={(q as any).imageCaption || q.imageCaption || `Sơ đồ câu ${index + 1}`}
                               className="max-h-56 max-w-full rounded-md object-contain border border-slate-200 shadow-2xs bg-white p-1"
                               loading="lazy"
                             />
-                            {(q as any).imageCaption && (
+                            {((q as any).imageCaption || q.imageCaption) && (
                               <span className="text-[11px] text-slate-500 italic mt-1 text-center font-medium">
-                                ({(q as any).imageCaption})
+                                ({(q as any).imageCaption || q.imageCaption})
                               </span>
                             )}
                           </div>
                         )}
-
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
                           {q.options.map((opt) => (
-                            <div key={opt.id} className="text-xs sm:text-sm text-slate-800">
-                              <span className="font-bold">{opt.label}. </span>
-                              <span>{opt.text}</span>
+                            <div key={opt.id} className="text-xs sm:text-sm text-slate-800 flex items-start gap-1">
+                              <span className="font-bold shrink-0">{opt.label}.</span>
+                              <span className="flex-1"><MathRenderer content={opt.text} /></span>
                             </div>
                           ))}
                         </div>
@@ -1299,11 +1305,27 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                           <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
                             {q.textbookName} — {q.chapter}
                           </span>
+                          {(q.hasFormula || q.question.includes('$')) && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                              ∑ Toán - Lý (LaTeX)
+                            </span>
+                          )}
+                          {q.hasImage && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                              📷 Sơ đồ
+                            </span>
+                          )}
                         </div>
 
-                        <p className="text-sm font-semibold text-slate-800 leading-relaxed">
-                          {q.question}
-                        </p>
+                        <div className="text-sm font-semibold text-slate-800 leading-relaxed">
+                          <MathRenderer content={q.question} />
+                          {q.hasImage && q.imageUrl && (
+                            <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200 rounded max-w-sm">
+                              <img src={q.imageUrl} alt={q.imageCaption || 'Hình sơ đồ'} className="max-h-48 rounded object-contain mx-auto" />
+                              {q.imageCaption && <p className="text-[10px] text-slate-500 italic mt-1 text-center">{q.imageCaption}</p>}
+                            </div>
+                          )}
+                        </div>
 
                         {isExpanded && (
                           <div className="mt-4 space-y-3 pt-3 border-t border-slate-100">
@@ -1319,8 +1341,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                                         : 'bg-white border-slate-200 text-slate-600'
                                     }`}
                                   >
-                                    <span className="font-bold">{opt.label}.</span>
-                                    <span>{opt.text}</span>
+                                    <span className="font-bold shrink-0">{opt.label}.</span>
+                                    <span className="flex-1"><MathRenderer content={opt.text} /></span>
                                   </div>
                                 );
                               })}
@@ -1329,7 +1351,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                             <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
                               <div>
                                 <strong className="text-slate-700">Giải thích: </strong>
-                                {q.explanation}
+                                <MathRenderer content={q.explanation} inline />
                               </div>
                               <div className="flex items-center gap-2 text-slate-500 pt-1">
                                 <BookOpen className="w-3.5 h-3.5 text-[#008689]" />

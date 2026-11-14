@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { Question, BloomLevel, ScreenId, UserProfile, QuestionStatus } from '../types';
+import MathRenderer from './MathRenderer';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -359,7 +360,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                         {q.bloomLevel}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 line-clamp-2 mt-1">{q.question}</p>
+                    <div className="text-xs text-slate-600 line-clamp-2 mt-1">
+                      <MathRenderer content={q.question} inline />
+                    </div>
                   </div>
                 </button>
               );
@@ -389,6 +392,16 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 >
                   {getStatusBadge(activeQuestion.status).label}
                 </span>
+                {(activeQuestion.hasFormula || activeQuestion.question.includes('$')) && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200">
+                    ∑ Toán - Lý (LaTeX)
+                  </span>
+                )}
+                {activeQuestion.hasImage && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">
+                    📷 Sơ đồ / Hình vẽ
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5">
@@ -450,9 +463,25 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   </div>
                 </div>
               ) : (
-                <p className="text-sm font-semibold text-slate-800 leading-relaxed">
-                  {activeQuestion.question}
-                </p>
+                <div className="text-sm font-semibold text-slate-800 leading-relaxed space-y-3">
+                  <div>
+                    <MathRenderer content={activeQuestion.question} />
+                  </div>
+                  {activeQuestion.hasImage && activeQuestion.imageUrl && (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg max-w-md mx-auto text-center shadow-xs">
+                      <img
+                        src={activeQuestion.imageUrl}
+                        alt={activeQuestion.imageCaption || 'Sơ đồ câu hỏi'}
+                        className="max-h-60 mx-auto rounded object-contain border border-slate-100"
+                      />
+                      {activeQuestion.imageCaption && (
+                        <p className="text-[11px] text-slate-500 italic mt-1.5 font-normal">
+                          {activeQuestion.imageCaption}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -493,7 +522,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                         className="flex-1 bg-white px-2.5 py-1 rounded border border-slate-300 text-sm focus:outline-none focus:border-[#008689]"
                       />
                     ) : (
-                      <span className="flex-1 leading-relaxed">{opt.text}</span>
+                      <div className="flex-1 leading-relaxed">
+                        <MathRenderer content={opt.text} />
+                      </div>
                     )}
                   </div>
                 );
@@ -513,9 +544,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   className="w-full p-2 rounded border border-slate-300 text-xs text-slate-700 bg-white focus:outline-none"
                 />
               ) : (
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {activeQuestion.explanation}
-                </p>
+                <div className="text-xs text-slate-600 leading-relaxed">
+                  <MathRenderer content={activeQuestion.explanation} />
+                </div>
               )}
             </div>
 

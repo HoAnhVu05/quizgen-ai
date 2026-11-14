@@ -70,6 +70,10 @@ export interface Question {
   createdAt: string;
   hodFeedback?: string;
   examCodes?: string[];
+  hasFormula?: boolean;
+  hasImage?: boolean;
+  imageUrl?: string;
+  imageCaption?: string;
 }
 
 export interface TextbookFile {

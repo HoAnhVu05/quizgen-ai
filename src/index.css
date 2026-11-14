@@ -211,4 +211,93 @@
   }
 }
 
+/* ====================================================================
+ * KATEX HIGH-DEFINITION MATH & PHYSICS RENDERING STYLES
+ * ==================================================================== */
+.katex {
+  font-size: 1.05em !important;
+  text-rendering: optimizeLegibility !important;
+  -webkit-font-smoothing: antialiased !important;
+  -moz-osx-font-smoothing: grayscale !important;
+  line-height: 1.25 !important;
+}
+
+/* Inline Math Alignment with Vietnamese typography */
+.inline-math-wrapper {
+  display: inline-block;
+  vertical-align: -0.1em;
+  padding: 0 0.15em;
+}
+
+.inline-math-wrapper .katex {
+  color: inherit;
+}
+
+/* Display / Block Math Equations */
+.katex-display {
+  margin: 0.6em 0 !important;
+  padding: 0.4em 0.8em !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  border-radius: 0.5rem;
+  background-color: rgba(248, 250, 252, 0.7);
+  border: 1px dashed rgba(203, 213, 225, 0.8);
+}
+
+.katex-display > .katex {
+  text-align: center;
+  min-width: fit-content;
+}
+
+/* Clean mini scrollbar for wide equations on mobile and desktop */
+.math-block-scroll::-webkit-scrollbar,
+.katex-display::-webkit-scrollbar {
+  height: 4px;
+}
+
+.math-block-scroll::-webkit-scrollbar-thumb,
+.katex-display::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 9999px;
+}
+
+.math-block-scroll::-webkit-scrollbar-thumb:hover,
+.katex-display::-webkit-scrollbar-thumb:hover {
+  background: #008689;
+}
+
+/* Crisp fraction line & radical sign rendering */
+.katex .frac-line {
+  border-bottom-width: 0.06em !important;
+}
+
+.katex .sqrt > .root {
+  margin-left: 0.25em;
+  margin-right: -0.55em;
+}
+
+/* Vector, overline, and math accent sharpness */
+.katex .accent-vec {
+  transform: scaleX(0.95);
+}
+
+/* High-contrast clarity for Print Mode (A4 Exam Papers) */
+@media print {
+  .katex,
+  .katex * {
+    color: #000000 !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .katex-display {
+    background: transparent !important;
+    border: none !important;
+    margin: 0.3em 0 !important;
+    padding: 0.2em 0 !important;
+  }
+}
+
+
 
