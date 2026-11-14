@@ -1,5 +1,10 @@
 import io
-from typing import List, Dict, Any, Optional
+import os
+import re
+import base64
+import urllib.request
+from typing import List, Dict, Any, Optional, Tuple
+from PIL import Image as PILImage
 from docx import Document
 from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -8,6 +13,158 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
 class WordExamExporter:
+    @classmethod
+    def _resolve_image_stream(cls, img_source: Any) -> Optional[Tuple[io.BytesIO, float, float]]:
+        """
+        Nhận diện và nạp dữ liệu ảnh từ URL, Base64 data URI hoặc file path cục bộ.
+        Trả về (BytesIO stream, original_width_px, original_height_px) hoặc None nếu lỗi.
+        """
+        if not img_source:
+            return None
+
+        raw_bytes: Optional[bytes] = None
+
+        try:
+            # 1. Nếu là bytes hoặc BytesIO
+            if isinstance(img_source, (bytes, bytearray)):
+                raw_bytes = bytes(img_source)
+            elif isinstance(img_source, io.BytesIO):
+                raw_bytes = img_source.getvalue()
+            elif isinstance(img_source, str):
+                img_source = img_source.strip()
+                if not img_source:
+                    return None
+
+                # 2. Base64 Data URI (ví dụ: data:image/png;base64,...)
+                if img_source.startswith("data:image/") and ";base64," in img_source:
+                    b64_part = img_source.split(";base64,")[1]
+                    raw_bytes = base64.b64decode(b64_part)
+                # 3. Chuỗi Base64 dài thuần
+                elif len(img_source) > 200 and not img_source.startswith("http") and not os.path.exists(img_source):
+                    try:
+                        raw_bytes = base64.b64decode(img_source)
+                    except Exception:
+                        pass
+
+                # 4. Web URL (http/https)
+                if not raw_bytes and (img_source.startswith("http://") or img_source.startswith("https://")):
+                    try:
+                        req = urllib.request.Request(
+                            img_source,
+                            headers={"User-Agent": "QuizGenAI-WordExporter/1.0"}
+                        )
+                        with urllib.request.urlopen(req, timeout=6) as resp:
+                            raw_bytes = resp.read()
+                    except Exception:
+                        pass
+
+                # 5. File path cục bộ
+                if not raw_bytes:
+                    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+                    candidates = [
+                        img_source,
+                        os.path.abspath(img_source),
+                        os.path.join(repo_root, img_source.lstrip("/\\")),
+                        os.path.join(repo_root, "services", "document-service", img_source.lstrip("/\\")),
+                        os.path.join(repo_root, "services", "document-service", "data", img_source.lstrip("/\\")),
+                        os.path.join(repo_root, "services", "document-service", "uploads", img_source.lstrip("/\\")),
+                        os.path.join(repo_root, "uploads", img_source.lstrip("/\\")),
+                        os.path.join(os.getcwd(), img_source.lstrip("/\\")),
+                    ]
+                    for p in candidates:
+                        if os.path.isfile(p):
+                            try:
+                                with open(p, "rb") as f:
+                                    raw_bytes = f.read()
+                                break
+                            except Exception:
+                                continue
+
+            if not raw_bytes:
+                return None
+
+            # Kiểm tra và lấy kích thước gốc bằng Pillow
+            pil_img = PILImage.open(io.BytesIO(raw_bytes))
+            w_px, h_px = pil_img.size
+
+            buf = io.BytesIO()
+            if pil_img.format not in ("PNG", "JPEG", "JPG"):
+                if pil_img.mode in ("RGBA", "LA", "P"):
+                    pil_img.save(buf, format="PNG")
+                else:
+                    pil_img.convert("RGB").save(buf, format="JPEG", quality=95)
+                buf.seek(0)
+            else:
+                buf = io.BytesIO(raw_bytes)
+
+            return buf, float(w_px), float(h_px)
+        except Exception:
+            return None
+
+    @classmethod
+    def _insert_question_diagram(cls, doc: Document, q: Dict[str, Any]):
+        """
+        Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi,
+        căn giữa và điều chỉnh kích thước chuẩn lề in A4.
+        """
+        img_ref = (
+            q.get("imageUrl") or
+            q.get("image_url") or
+            q.get("imagePath") or
+            q.get("image_path") or
+            q.get("diagramUrl") or
+            q.get("diagram_url") or
+            q.get("image") or
+            q.get("figureUrl") or
+            q.get("figure_url")
+        )
+        if not img_ref:
+            return
+
+        res = cls._resolve_image_stream(img_ref)
+        if not res:
+            return
+
+        stream, orig_w, orig_h = res
+
+        # Chuẩn kích thước in A4: Max width 4.8 in (12.2 cm), Max height 2.8 in (7.1 cm)
+        MAX_W = 4.8
+        MAX_H = 2.8
+        aspect = orig_h / max(orig_w, 1.0)
+
+        calc_w = min(MAX_W, orig_w / 96.0) if orig_w > 0 else MAX_W
+        if calc_w > MAX_W:
+            calc_w = MAX_W
+        calc_h = calc_w * aspect
+        if calc_h > MAX_H:
+            calc_h = MAX_H
+            calc_w = calc_h / aspect
+
+        p_img = doc.add_paragraph()
+        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p_img.paragraph_format.space_before = Pt(4)
+        p_img.paragraph_format.space_after = Pt(2)
+        r_img = p_img.add_run()
+        r_img.add_picture(stream, width=Inches(calc_w), height=Inches(calc_h))
+
+        caption = (
+            q.get("imageCaption") or
+            q.get("image_caption") or
+            q.get("caption") or
+            q.get("diagramCaption") or
+            q.get("diagram_caption") or
+            ""
+        )
+        if caption:
+            p_cap = doc.add_paragraph()
+            p_cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p_cap.paragraph_format.space_before = Pt(0)
+            p_cap.paragraph_format.space_after = Pt(4)
+            r_cap = p_cap.add_run(f"({caption})")
+            r_cap.italic = True
+            r_cap.font.size = Pt(8.5)
+            r_cap.font.color.rgb = RGBColor(100, 116, 139)
+
     @classmethod
     def _set_cell_background(cls, cell, hex_color: str):
         """Đặt màu nền cho ô bảng trong Word."""
@@ -321,6 +478,9 @@ class WordExamExporter:
             r_num.bold = True
             q_text = q.get("question") or q.get("question_text") or ""
             p_q.add_run(q_text)
+
+            # Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi
+            cls._insert_question_diagram(doc, q)
 
             # Các phương án lựa chọn
             options = q.get("options", [])

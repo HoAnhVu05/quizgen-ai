@@ -371,6 +371,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           explanation: q.explanation,
           options: shuffledOpts,
           correctLabel: correctOpt ? correctOpt.label : 'A',
+          imageUrl: (q as any).imageUrl || (q as any).image_url,
+          imageCaption: (q as any).imageCaption || (q as any).image_caption,
         };
       });
     });
@@ -1026,6 +1028,24 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                           <span className="font-extrabold">Câu {index + 1}: </span>
                           {q.question}
                         </p>
+
+                        {/* Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi */}
+                        {(q as any).imageUrl && (
+                          <div className="my-2.5 flex flex-col items-center justify-center">
+                            <img
+                              src={(q as any).imageUrl}
+                              alt={(q as any).imageCaption || `Sơ đồ câu ${index + 1}`}
+                              className="max-h-56 max-w-full rounded-md object-contain border border-slate-200 shadow-2xs bg-white p-1"
+                              loading="lazy"
+                            />
+                            {(q as any).imageCaption && (
+                              <span className="text-[11px] text-slate-500 italic mt-1 text-center font-medium">
+                                ({(q as any).imageCaption})
+                              </span>
+                            )}
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
                           {q.options.map((opt) => (
                             <div key={opt.id} className="text-xs sm:text-sm text-slate-800">
