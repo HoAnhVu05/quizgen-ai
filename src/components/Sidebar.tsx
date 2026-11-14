@@ -251,6 +251,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   useEffect(() => {
     if (isSystemAdmin && currentScreen !== 'admin_portal') {
       onNavigate('admin_portal');
+    } else if (!isSystemAdmin && currentScreen === 'admin_portal') {
+      onNavigate('dashboard');
     }
   }, [isSystemAdmin, currentScreen, onNavigate]);
 

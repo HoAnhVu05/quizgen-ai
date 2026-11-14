@@ -66,6 +66,8 @@ def get_payment_connection():
         return conn
     return None
 
+ROOT_ADMIN_EMAIL = "quizgen.ai.team@gmail.com"
+
 # ─── Pydantic Schemas ────────────────────────────────────────────────────────
 class LockUserRequest(BaseModel):
     lock_type: str = "temporary"  # 'temporary' | 'permanent'
@@ -74,6 +76,7 @@ class LockUserRequest(BaseModel):
 
 class UpdateUserRoleRequest(BaseModel):
     role: str  # 'admin' | 'head_of_department' | 'lecturer'
+    actor_email: Optional[str] = None
 
 class CreateUserRequest(BaseModel):
     email: str
@@ -83,6 +86,7 @@ class CreateUserRequest(BaseModel):
     department: Optional[str] = "Khoa Công nghệ Thông tin"
     role: Optional[str] = "lecturer"
     password: Optional[str] = "Admin@123456"
+    actor_email: Optional[str] = None
 
 class UpdatePinRequest(BaseModel):
     current_pin: str
@@ -292,6 +296,14 @@ def list_real_users(
 def create_real_user(req: CreateUserRequest, db: Session = Depends(get_db)):
     """Tạo tài khoản người dùng thực tế trực tiếp vào auth.db"""
     clean_email = req.email.strip().lower()
+    clean_actor = (req.actor_email or "").strip().lower()
+
+    if req.role == "admin" and clean_actor != ROOT_ADMIN_EMAIL:
+        raise HTTPException(
+            status_code=403,
+            detail="Chỉ tài khoản Quản trị viên chính gốc (quizgen.ai.team@gmail.com) mới có quyền khởi tạo tài khoản vai trò Admin."
+        )
+
     with get_auth_connection() as conn:
         existing = conn.execute("SELECT id FROM users WHERE email = ?", (clean_email,)).fetchone()
         if existing:
@@ -445,24 +457,42 @@ def unlock_user_endpoint(user_id: str, db: Session = Depends(get_db)):
 @app.put("/users/{user_id}/role")
 def update_user_role_endpoint(user_id: str, req: UpdateUserRoleRequest, db: Session = Depends(get_db)):
     """Nâng / Hạ quyền vai trò (Admin, Trưởng bộ môn, Giảng viên) trực tiếp trong auth.db"""
+    clean_actor = (req.actor_email or "").strip().lower()
+
     with get_auth_connection() as conn:
         user = conn.execute("SELECT id, email, role FROM users WHERE id = ?", (user_id,)).fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
 
-        if user["email"] == "quizgen.ai.team@gmail.com" and req.role != "admin":
+        user_email = user["email"].strip().lower()
+
+        # Không thể hạ quyền Quản trị viên tối cao (quizgen.ai.team@gmail.com)
+        if user_email == ROOT_ADMIN_EMAIL and req.role != "admin":
             raise HTTPException(status_code=400, detail="Không thể hạ quyền Quản trị viên tối cao.")
+
+        # Quy tắc bảo mật: Chỉ Quản trị viên chính gốc mới được cấp vai trò Admin
+        if req.role == "admin" and clean_actor != ROOT_ADMIN_EMAIL:
+            raise HTTPException(
+                status_code=403,
+                detail="Chỉ tài khoản Quản trị viên chính gốc (quizgen.ai.team@gmail.com) mới có quyền cấp vai trò Quản trị viên (Admin)."
+            )
+
+        # Quy tắc bảo mật: Tài khoản được cấp quyền Admin không được phép thay đổi vai trò của Admin khác
+        if user["role"] == "admin" and clean_actor != ROOT_ADMIN_EMAIL and user_email != clean_actor:
+            raise HTTPException(
+                status_code=403,
+                detail="Chỉ Quản trị viên chính gốc mới có quyền thay đổi vai trò của Quản trị viên khác."
+            )
 
         old_role = user["role"]
         now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute("UPDATE users SET role = ?, updated_at = ? WHERE id = ?", (req.role, now_str, user_id))
         conn.commit()
-        user_email = user["email"]
 
     db.add(AdminAuditLogDB(
-        actor_email="quizgen.ai.team@gmail.com",
+        actor_email=clean_actor or ROOT_ADMIN_EMAIL,
         action="ADMIN_UPDATE_USER_ROLE",
-        detail=f"Thay đổi phân quyền tài khoản {user_email} từ '{old_role}' sang '{req.role}'.",
+        detail=f"Thay đổi phân quyền tài khoản {user_email} từ '{old_role}' sang '{req.role}' (Bởi: {clean_actor or ROOT_ADMIN_EMAIL}).",
         severity="warning" if req.role == "admin" else "info"
     ))
     db.commit()

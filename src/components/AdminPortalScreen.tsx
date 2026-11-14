@@ -58,6 +58,7 @@ interface AdminPortalScreenProps {
   ) => void;
   activeTab?: string;
   onTabChange?: (tab: string) => void;
+  onCurrentUserChange?: (user: UserProfile) => void;
 }
 
 interface MicroserviceStatus {
@@ -169,7 +170,11 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   onShowToast,
   activeTab: externalTab,
   onTabChange: externalSetTab,
+  onCurrentUserChange,
 }) => {
+  const ROOT_ADMIN_EMAIL = 'quizgen.ai.team@gmail.com';
+  const isCurrentRootAdmin = (currentUser?.email || '').toLowerCase() === ROOT_ADMIN_EMAIL;
+
   const [internalTab, setInternalTab] = useState<'overview' | 'users' | 'services' | 'security' | 'audit' | 'exams' | 'rbac' | 'payments'>('overview');
   const activeTab = (externalTab as any) || internalTab;
   const setActiveTab = (tab: any) => {
@@ -520,8 +525,29 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
   // ─── Thay đổi vai trò người dùng (RBAC) trực tiếp vào auth.db ──────────────
   const handleChangeRole = async (target: UserProfile, newRole: UserRole) => {
-    if (target.email.toLowerCase() === 'quizgen.ai.team@gmail.com') {
+    const targetEmail = target.email.toLowerCase();
+    if (targetEmail === ROOT_ADMIN_EMAIL) {
       onShowToast('warning', 'Không thể đổi quyền', 'Tài khoản Super Admin không thể bị hạ quyền.');
+      return;
+    }
+
+    // Quy tắc bảo mật: Chỉ Admin chính gốc mới được cấp quyền Admin cho tài khoản khác
+    if (newRole === 'admin' && !isCurrentRootAdmin) {
+      onShowToast(
+        'error',
+        'Hạn chế phân quyền',
+        'Chỉ tài khoản Quản trị viên chính gốc (quizgen.ai.team@gmail.com) mới có quyền cấp vai trò Quản trị viên (Admin).'
+      );
+      return;
+    }
+
+    // Quy tắc bảo mật: Tài khoản được cấp quyền Admin không được phép thay đổi vai trò của Admin khác
+    if (target.role === 'admin' && !isCurrentRootAdmin && targetEmail !== (currentUser?.email || '').toLowerCase()) {
+      onShowToast(
+        'error',
+        'Hạn chế phân quyền',
+        'Chỉ tài khoản Quản trị viên chính gốc mới có quyền thay đổi vai trò của Quản trị viên khác.'
+      );
       return;
     }
 
@@ -529,7 +555,10 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       const res = await apiClient.fetch(`${API_BASE}/admin/users/${target.id}/role`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: newRole }),
+        body: JSON.stringify({
+          role: newRole,
+          actor_email: currentUser?.email || '',
+        }),
       });
 
       if (res.ok) {
@@ -543,6 +572,32 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           'Đã cập nhật phân quyền',
           `Tài khoản ${target.fullName} (${target.email}) đã chuyển sang vai trò: ${roleLabels[newRole]}.`
         );
+
+        // Đồng bộ tức thì nếu đang thay đổi chính tài khoản hiện tại
+        if (target.id === currentUser?.id || targetEmail === (currentUser?.email || '').toLowerCase()) {
+          const updatedUser: UserProfile = {
+            ...currentUser!,
+            role: newRole,
+            roleLabel: roleLabels[newRole],
+          };
+          localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+          if (onCurrentUserChange) {
+            onCurrentUserChange(updatedUser);
+          }
+          if (newRole !== 'admin') {
+            onNavigate('dashboard');
+            return;
+          }
+        } else {
+          // Broadcast đồng bộ sự kiện sang các tab khác (nếu người dùng A đang mở tab khác)
+          localStorage.setItem('quizgen_role_sync', JSON.stringify({
+            userId: target.id,
+            email: target.email,
+            newRole,
+            timestamp: Date.now(),
+          }));
+        }
+
         await loadAllRealData();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -598,6 +653,15 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     }
     const cleanEmail = newEmail.trim().toLowerCase();
 
+    if (newRole === 'admin' && !isCurrentRootAdmin) {
+      onShowToast(
+        'error',
+        'Hạn chế phân quyền',
+        'Chỉ tài khoản Quản trị viên chính gốc (quizgen.ai.team@gmail.com) mới có quyền tạo thêm tài khoản vai trò Admin.'
+      );
+      return;
+    }
+
     try {
       const res = await apiClient.fetch(`${API_BASE}/admin/users`, {
         method: 'POST',
@@ -610,6 +674,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
           role: newRole,
           password: newPass,
+          actor_email: currentUser?.email || '',
         }),
       });
 
@@ -1018,8 +1083,15 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                           <td className="py-3 px-4">
                             {isSuperAdmin ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
-                                Quản trị viên
+                                Super Admin Gốc
                               </span>
+                            ) : u.role === 'admin' && !isCurrentRootAdmin ? (
+                              <div className="flex items-center gap-1.5" title="Chỉ Quản trị viên chính gốc mới có quyền thay đổi vai trò của Admin này">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-50 text-[#da1c2d] border border-rose-200">
+                                  Quản trị viên (Được cấp)
+                                </span>
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                              </div>
                             ) : (
                               <select
                                 value={u.role}
@@ -1034,7 +1106,13 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                               >
                                 <option value="lecturer">Giảng viên (Lecturer)</option>
                                 <option value="head_of_department">Trưởng bộ môn (HOD)</option>
-                                <option value="admin">Quản trị viên (Admin)</option>
+                                {isCurrentRootAdmin ? (
+                                  <option value="admin">Quản trị viên (Admin)</option>
+                                ) : (
+                                  <option value="admin" disabled className="text-slate-400">
+                                    Quản trị viên (Chỉ Admin gốc cấp)
+                                  </option>
+                                )}
                               </select>
                             )}
                           </td>
@@ -2331,8 +2409,15 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                   >
                     <option value="lecturer">Giảng viên (Lecturer)</option>
                     <option value="head_of_department">Trưởng bộ môn (HOD)</option>
-                    <option value="admin">Quản trị viên (Admin)</option>
+                    {isCurrentRootAdmin && (
+                      <option value="admin">Quản trị viên (Admin)</option>
+                    )}
                   </select>
+                  {!isCurrentRootAdmin && (
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      * Chỉ Quản trị viên chính gốc mới có thể tạo tài khoản Admin.
+                    </p>
+                  )}
                 </div>
               </div>
 

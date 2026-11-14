@@ -297,6 +297,35 @@ export const App: React.FC = () => {
             setIsAuthenticated(false);
             setAuthScreen('login');
             setLockedAlert({ isOpen: true, message: lockMsg });
+          } else if (data.role && currentUser && data.role !== currentUser.role) {
+            const newRole = data.role as UserRole;
+            const updatedUser: UserProfile = {
+              ...currentUser,
+              role: newRole,
+              roleLabel:
+                newRole === 'head_of_department'
+                  ? 'Trưởng bộ môn'
+                  : newRole === 'admin'
+                  ? 'Quản trị Hệ thống'
+                  : 'Giảng viên',
+            };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+            if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+              setCurrentScreen('dashboard');
+              handleShowToast(
+                'info',
+                'Thay đổi phân quyền',
+                `Vai trò của bạn đã được chuyển sang: ${updatedUser.roleLabel}.`
+              );
+            } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+              setCurrentScreen('admin_portal');
+              handleShowToast(
+                'info',
+                'Cấp quyền Quản trị viên',
+                'Tài khoản của bạn đã được nâng cấp lên Quản trị viên (Admin).'
+              );
+            }
           }
         }
       } catch {}
@@ -304,7 +333,61 @@ export const App: React.FC = () => {
 
     const intervalId = setInterval(checkLockStatus, 3500);
     return () => clearInterval(intervalId);
-  }, [isAuthenticated, API_BASE]);
+  }, [isAuthenticated, API_BASE, currentUser, currentScreen]);
+
+  // ─── Real-time Multi-Tab Role Synchronization Listener ─────────────────────
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'quizgen_role_sync' && e.newValue) {
+        try {
+          const syncData = JSON.parse(e.newValue);
+          if (
+            currentUser &&
+            (syncData.userId === currentUser.id ||
+             (syncData.email && syncData.email.toLowerCase() === currentUser.email.toLowerCase()))
+          ) {
+            const newRole = syncData.newRole as UserRole;
+            const updatedUser: UserProfile = {
+              ...currentUser,
+              role: newRole,
+              roleLabel:
+                newRole === 'head_of_department'
+                  ? 'Trưởng bộ môn'
+                  : newRole === 'admin'
+                  ? 'Quản trị Hệ thống'
+                  : 'Giảng viên',
+            };
+            setCurrentUser(updatedUser);
+            localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+            if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+              setCurrentScreen('dashboard');
+              handleShowToast(
+                'info',
+                'Thay đổi phân quyền',
+                `Vai trò của bạn đã được cập nhật thành: ${updatedUser.roleLabel}.`
+              );
+            } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+              setCurrentScreen('admin_portal');
+              handleShowToast(
+                'info',
+                'Cấp quyền Quản trị viên',
+                'Tài khoản của bạn đã được nâng lên Quản trị viên (Admin).'
+              );
+            }
+          }
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [currentUser, currentScreen]);
+
+  // ─── Security Guard: Non-admin users cannot stay on admin_portal ───────────
+  useEffect(() => {
+    if (isAuthenticated && currentUser && currentUser.role !== 'admin' && currentScreen === 'admin_portal') {
+      setCurrentScreen('dashboard');
+    }
+  }, [isAuthenticated, currentUser?.role, currentScreen]);
 
   // ─── Lắng nghe sự kiện tài khoản bị khóa từ ApiClient ───────────────────────
   useEffect(() => {
@@ -607,6 +690,11 @@ export const App: React.FC = () => {
     if (newRole !== 'lecturer' && (currentScreen === 'upload' || currentScreen === 'generate')) {
       setCurrentScreen('dashboard');
     }
+    if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+      setCurrentScreen('dashboard');
+    } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+      setCurrentScreen('admin_portal');
+    }
     handleShowToast(
       'info',
       'Đã chuyển đổi vai trò',
@@ -750,6 +838,7 @@ export const App: React.FC = () => {
               onShowToast={handleShowToast}
               activeTab={adminTab}
               onTabChange={setAdminTab}
+              onCurrentUserChange={setCurrentUser}
             />
           )}
 
