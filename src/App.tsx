@@ -17,10 +17,13 @@ import { PaymentQRModal } from './components/PaymentQRModal';
 import { AIChatCopilot } from './components/AIChatCopilot';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
   // ─── Authentication State ────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
@@ -767,6 +770,13 @@ export const App: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#f3f7f8] text-slate-800 font-sans">
+        {/* Seasonal Particle Ambient Effect */}
+        <ThemeParticleOverlay
+          themeId={activeThemeId}
+          particleType={currentTheme.particleType}
+          showParticles={showParticles}
+          onToggleParticles={toggleParticles}
+        />
         <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
         {lockedAlert?.isOpen && (
           <div className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -820,6 +830,14 @@ export const App: React.FC = () => {
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
+      {/* Seasonal Particle Ambient Effect */}
+      <ThemeParticleOverlay
+        themeId={activeThemeId}
+        particleType={currentTheme.particleType}
+        showParticles={showParticles}
+        onToggleParticles={toggleParticles}
+      />
+
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
@@ -1012,6 +1030,14 @@ export const App: React.FC = () => {
         />
       )}
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 };
 

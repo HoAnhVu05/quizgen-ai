@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import {
   ShieldCheck,
   Cpu,
@@ -48,6 +49,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onToggleMobileMenu,
   onOpenProfileModal,
 }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const isAdmin = currentUser?.role === 'admin';
   const isAdminScreen = currentScreen === 'admin_portal';
   const showAdminHeader = isAdmin || isAdminScreen;
@@ -152,10 +154,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <ScreenIcon className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <h2 className={`text-xs sm:text-sm font-bold truncate leading-snug ${showAdminHeader ? 'text-[#142B45]' : 'text-slate-800'}`}>
-            <span className="hidden sm:inline">{screenMeta.label}</span>
-            <span className="sm:hidden">{screenMeta.shortLabel}</span>
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className={`text-xs sm:text-sm font-bold truncate leading-snug ${showAdminHeader ? 'text-[#142B45]' : 'text-slate-800'}`}>
+              <span className="hidden sm:inline">{screenMeta.label}</span>
+              <span className="sm:hidden">{screenMeta.shortLabel}</span>
+            </h2>
+            {activeThemeId !== 'default' && (
+              <span className={`hidden xl:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${currentTheme.colors.badgeBg} ${currentTheme.colors.badgeText} shadow-2xs`}>
+                <span>{currentTheme.seasonLabel}</span>
+              </span>
+            )}
+          </div>
           {showAdminHeader && (
             <p className="text-[11px] text-[#91A2B8] font-medium hidden sm:block leading-none mt-0.5">
               QuizGen AI - Admin Portal

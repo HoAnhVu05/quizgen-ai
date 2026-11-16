@@ -101,6 +101,10 @@ class CreateAuditLogRequest(BaseModel):
     detail: str
     severity: Optional[str] = "info"
 
+class UpdateThemeRequest(BaseModel):
+    theme_id: str
+    actor_email: Optional[str] = None
+
 # ─── Khởi tạo cấu hình mặc định (Seed Config) ───────────────────────────────
 def init_admin_config():
     db = SessionLocal()
@@ -108,6 +112,11 @@ def init_admin_config():
         pin_config = db.execute(select(AdminConfigDB).filter_by(key="admin_2fa_pin")).scalar_one_or_none()
         if not pin_config:
             db.add(AdminConfigDB(key="admin_2fa_pin", value="246810", description="Mã 2FA PIN Quản trị viên"))
+            db.commit()
+
+        theme_cfg = db.execute(select(AdminConfigDB).filter_by(key="system_active_theme")).scalar_one_or_none()
+        if not theme_cfg:
+            db.add(AdminConfigDB(key="system_active_theme", value="default", description="Chủ đề hệ thống toàn trường"))
             db.commit()
 
         has_logs = db.query(AdminAuditLogDB).count() > 0
@@ -1164,4 +1173,132 @@ def get_user_activity_summary(user_id: Optional[str] = None):
         "count": len(summaries),
         "summaries": summaries,
         "source": "auth.v_user_activity_summary"
+    }
+
+# ─── CÁC ENDPOINTS QUẢN LÝ CHỦ ĐỀ GIAO DIỆN HỆ THỐNG [THEME ENGINE] ─────────────
+
+THEME_INFO_MAP = {
+    "default": {
+        "name": "Mặc định (Academic Modern)",
+        "badge": "Chuẩn Sư Phạm UTH",
+        "primary": "#008689",
+        "secondary": "#142B45"
+    },
+    "spring": {
+        "name": "Tết & Mùa Xuân (Spring & Lunar New Year)",
+        "badge": "🌸 Xuân Ất Tỵ",
+        "primary": "#DA1C2D",
+        "secondary": "#991B1B"
+    },
+    "summer": {
+        "name": "Mùa Hè Sôi Động (Summer Vibrant & Mùa Thi)",
+        "badge": "☀️ Mùa Hè Rực Rỡ",
+        "primary": "#0284C7",
+        "secondary": "#0369A1"
+    },
+    "autumn": {
+        "name": "Mùa Thu Khai Trường (Autumn & Back to School)",
+        "badge": "🍂 Mùa Thu Khai Trường",
+        "primary": "#D97706",
+        "secondary": "#92400E"
+    },
+    "winter": {
+        "name": "Mùa Đông & Giáng Sinh (Winter & Christmas)",
+        "badge": "❄️ Giáng Sinh An Lành",
+        "primary": "#0284C7",
+        "secondary": "#075985"
+    },
+    "victory_30_4": {
+        "name": "Kỷ Niệm 30/4 - 1/5 (Chiến Thắng & Hòa Bình)",
+        "badge": "⭐ Kỷ Niệm 30/4 - 1/5",
+        "primary": "#DC2626",
+        "secondary": "#991B1B"
+    },
+    "national_day_2_9": {
+        "name": "Kỷ Niệm Quốc Khánh 2/9 (Độc Lập Tự Hào)",
+        "badge": "🇻🇳 Kỷ Niệm Quốc Khánh 2/9",
+        "primary": "#B91C1C",
+        "secondary": "#7F1D1D"
+    }
+}
+
+@app.get("/theme/current")
+def get_current_theme(db: Session = Depends(get_db)):
+    """Lấy chủ đề giao diện hệ thống đang kích hoạt toàn trường [THEME ENGINE]"""
+    row = db.execute(select(AdminConfigDB).filter_by(key="system_active_theme")).scalar_one_or_none()
+    theme_id = row.value if row else "default"
+
+    actor_row = db.execute(select(AdminConfigDB).filter_by(key="system_theme_actor")).scalar_one_or_none()
+    actor = actor_row.value if actor_row else "quizgen.ai.team@gmail.com"
+
+    time_row = db.execute(select(AdminConfigDB).filter_by(key="system_theme_updated_at")).scalar_one_or_none()
+    updated_at = time_row.value if time_row else datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    info = THEME_INFO_MAP.get(theme_id, THEME_INFO_MAP["default"])
+
+    return {
+        "status": "success",
+        "activeTheme": theme_id,
+        "themeName": info["name"],
+        "badge": info["badge"],
+        "primaryColor": info["primary"],
+        "secondaryColor": info["secondary"],
+        "updatedAt": updated_at,
+        "updatedBy": actor
+    }
+
+@app.put("/theme/current")
+@app.post("/theme/current")
+def set_current_theme(req: UpdateThemeRequest, db: Session = Depends(get_db)):
+    """Quản trị viên kích hoạt chủ đề giao diện toàn trường tức thì [THEME ENGINE]"""
+    if req.theme_id not in THEME_INFO_MAP:
+        raise HTTPException(status_code=400, detail=f"Mã chủ đề '{req.theme_id}' không tồn tại trong hệ thống.")
+
+    clean_actor = (req.actor_email or "quizgen.ai.team@gmail.com").strip().lower()
+    now_iso = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. Cập nhật theme ID
+    row = db.execute(select(AdminConfigDB).filter_by(key="system_active_theme")).scalar_one_or_none()
+    if not row:
+        row = AdminConfigDB(key="system_active_theme", value=req.theme_id, description="Chủ đề hệ thống toàn trường")
+        db.add(row)
+    else:
+        row.value = req.theme_id
+
+    # 2. Cập nhật actor
+    row_actor = db.execute(select(AdminConfigDB).filter_by(key="system_theme_actor")).scalar_one_or_none()
+    if not row_actor:
+        row_actor = AdminConfigDB(key="system_theme_actor", value=clean_actor, description="Người cập nhật chủ đề")
+        db.add(row_actor)
+    else:
+        row_actor.value = clean_actor
+
+    # 3. Cập nhật thời điểm
+    row_time = db.execute(select(AdminConfigDB).filter_by(key="system_theme_updated_at")).scalar_one_or_none()
+    if not row_time:
+        row_time = AdminConfigDB(key="system_theme_updated_at", value=now_iso, description="Thời điểm cập nhật chủ đề")
+        db.add(row_time)
+    else:
+        row_time.value = now_iso
+
+    info = THEME_INFO_MAP[req.theme_id]
+
+    db.add(AdminAuditLogDB(
+        actor_email=clean_actor,
+        action="ADMIN_CHANGE_SYSTEM_THEME",
+        detail=f"Quản trị viên kích hoạt chủ đề toàn trường: '{info['name']}' ({req.theme_id}).",
+        severity="info"
+    ))
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Đã kích hoạt thành công chủ đề '{info['name']}' trên toàn hệ thống!",
+        "activeTheme": req.theme_id,
+        "themeName": info["name"],
+        "badge": info["badge"],
+        "primaryColor": info["primary"],
+        "secondaryColor": info["secondary"],
+        "updatedAt": now_iso,
+        "updatedBy": clean_actor
     }

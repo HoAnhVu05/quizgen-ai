@@ -32,9 +32,12 @@ import {
   Hash,
   Briefcase,
   Sparkle,
+  Palette,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeLogoBadge } from './ThemeStickers';
 
 interface SidebarProps {
   currentScreen: ScreenId;
@@ -138,6 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   onOpenProfileModal,
 }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const activeRole: UserRole = currentUser?.role || 'lecturer';
   const isSystemAdmin = activeRole === 'admin';
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -242,6 +246,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Kiểm soát Đề thi Toàn trường',
           icon: Database,
         },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'themes',
+          label: 'Tùy biến Giao diện Hệ thống',
+          icon: Palette,
+        },
       ];
     }
 
@@ -340,14 +350,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="min-w-0">
           <h1 className="font-extrabold text-[#008F95] text-sm tracking-tight leading-tight flex items-center gap-1.5">
             <span>QuizGen AI</span>
+            <ThemeLogoBadge themeId={activeThemeId} />
             {isSystemAdmin && (
               <span className="text-[9px] px-1.5 py-0.5 rounded font-extrabold bg-rose-50 text-[#da1c2d] border border-rose-200 uppercase tracking-wider">
                 Admin
               </span>
             )}
           </h1>
-          <p className="text-[11px] text-[#91A2B8] truncate">
-            {isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}
+          <p className="text-[11px] text-[#91A2B8] truncate flex items-center gap-1">
+            <span>{isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}</span>
+            {activeThemeId !== 'default' && (
+              <span className={`text-[9px] px-1 py-0.2 rounded font-semibold ${currentTheme.colors.badgeBg} ${currentTheme.colors.badgeText} border`}>
+                {currentTheme.seasonLabel}
+              </span>
+            )}
           </p>
         </div>
         {onCloseMobile && (
