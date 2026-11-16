@@ -28,6 +28,9 @@ Trong ngày 16/11/2026, toàn bộ công việc được tập trung hoàn thi�
   - Xây dựng endpoint `@app.get("/users/activity-summary")` trong `admin-service`.
   - Cung cấp dữ liệu tổng hợp 360 độ về số lượng giáo trình tải lên, số đề thi đóng gói, số câu hỏi đã tạo và thời điểm hoạt động gần nhất của từng người dùng với độ trễ phản hồi dưới 5ms.
 
+![Kiến trúc Admin Portal & Payment Service VietQR](./kien_truc_admin_va_payment_16112026.png)  
+*Hình 1: Kiến trúc Tích hợp Database Views, Phân hệ Admin Portal và Cổng Thanh toán VietQR TPBank.*
+
 ### 3. Tối ưu Giao diện Admin Portal & Tinh gọn Trải nghiệm Người dùng
 - Cập nhật thông tin giám sát Cụm 8 Microservices (cổng 8000–8007) đồng bộ liền mạch trên thẻ KPI và bảng điều hành Admin Portal.
 - Kiểm định cửa sổ chi tiết người dùng **User 360 Master-Detail Inspection Modal**: Bố cục 2 cột với menu dọc bên trái (`w-64`) phân tách rõ 7 phân hệ, khu vực hiển thị Workspace bên phải rộng thoáng, loại bỏ hoàn toàn tình trạng thanh gạch vắt ngang và cuộn lồng.
@@ -53,6 +56,9 @@ Trong ngày 16/11/2026, toàn bộ công việc được tập trung hoàn thi�
   - TEST 4: Quy tắc bảo mật RBAC (Chỉ Root Admin được cấp quyền Admin) → **PASS**.
   - TEST 5: Payment Service sinh VietQR PRO & Tự động quét đơn quá hạn → **PASS**.
 - **Tỷ lệ kiểm thử thành công: 5/5 (100%)**.
+
+![Minh chứng Kiểm thử Tự động E2E SCRUM-96](./minh_chung_kiem_thu_16112026.png)  
+*Hình 2: Kết quả thực thi tập lệnh kiểm thử tự động E2E [SCRUM-96] đạt tỷ lệ tuyệt đối 5/5 PASS (100%).*
 
 ---
 

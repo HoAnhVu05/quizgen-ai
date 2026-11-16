@@ -20,6 +20,9 @@
 - Triển khai endpoint `/analytics/bloom-distribution` khai thác view `exams.v_bloom_distribution_stats`, trả về chính xác số lượng và tỷ lệ % câu hỏi theo thang nhận thức Bloom (Nhận biết, Thông hiểu, Vận dụng, Phân tích) và chuẩn sư phạm 40-30-20-10.
 - Triển khai endpoint `/users/activity-summary` khai thác view `auth.v_user_activity_summary`, cung cấp bức tranh 360 độ hoạt động người dùng (số tài liệu, số đề thi, số câu hỏi, thời gian hoạt động).
 
+![Kiến trúc Admin Portal & Payment Service VietQR](./kien_truc_admin_va_payment_16112026.png)  
+*Hình 1: Kiến trúc Tích hợp Database Views, Phân hệ Admin Portal và Cổng Thanh toán VietQR TPBank.*
+
 ### 📌 1.3. Nâng cấp Giao diện Admin Portal & User 360 Inspection Modal
 - Cập nhật thông số giám sát Cụm 8 Microservices (8/8 Services, Ports 8000–8007) trên bảng điều hành Admin.
 - Tinh chỉnh User 360 Master-Detail Modal bố cục 2 cột với thanh menu dọc bên trái và không gian làm việc rộng rãi bên phải, giải phóng hoàn toàn các thanh tab ngang chật chội.
@@ -36,6 +39,9 @@
 
 ### 📌 1.6. Xây dựng Tập Lệnh Kiểm thử Tự động E2E [SCRUM-96]
 - Viết và thực thi tập lệnh tự động hóa `scripts/[SCRUM-96]_test_admin_views_rbac_payment.py` với 5 bài kiểm thử và đạt kết quả tuyệt đối **5/5 PASS (100%)**.
+
+![Minh chứng Kiểm thử Tự động E2E SCRUM-96](./minh_chung_kiem_thu_16112026.png)  
+*Hình 2: Kết quả thực thi tập lệnh kiểm thử tự động E2E [SCRUM-96] đạt tỷ lệ tuyệt đối 5/5 PASS (100%).*
 
 ---
 
