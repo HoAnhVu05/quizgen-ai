@@ -543,17 +543,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
         </div>
-
-        {/* Weather Status Widget (Theo đúng ảnh mẫu mockup) */}
-        {activeThemeId === 'spring' && (
-          <div className="mt-2 px-3 py-1.5 rounded-xl bg-[#FFF8E9] border border-[#E7B947]/50 flex items-center gap-2 select-none shadow-2xs">
-            <span className="text-sm">🌤️</span>
-            <div className="text-[10px] leading-tight text-slate-700">
-              <span className="font-extrabold text-[#B82025]">33°C</span>
-              <span className="text-slate-500 ml-1.5 font-medium">Nắng nhiều nơi</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Account Profile, Subscription & Payment History Modal */}

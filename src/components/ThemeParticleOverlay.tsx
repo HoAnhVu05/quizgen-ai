@@ -6,7 +6,7 @@ interface ThemeParticleOverlayProps {
   themeId: SystemThemeId;
   particleType: ParticleType;
   showParticles: boolean;
-  onToggleParticles: () => void;
+  onToggleParticles?: () => void;
 }
 
 interface ParticleItem {
@@ -244,27 +244,6 @@ export const ThemeParticleOverlay: React.FC<ThemeParticleOverlayProps> = ({
           ))}
         </div>
       )}
-
-      {/* ── Discreet Ambient Toggle (Đặt cạnh Quanta AI, không che khuất) ── */}
-      <div className="fixed bottom-4 right-20 sm:bottom-6 sm:right-24 z-30 select-none">
-        <button
-          onClick={onToggleParticles}
-          title={showParticles ? "Tắt hiệu ứng bay (để tăng tập trung)" : "Bật hiệu ứng bay theo mùa"}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-slate-700 hover:text-slate-900 shadow-md border border-slate-200/90 text-[11px] font-semibold backdrop-blur-md transition-all hover:scale-105 active:scale-95"
-        >
-          {showParticles ? (
-            <>
-              <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" style={{ animationDuration: '6s' }} />
-              <span>Hiệu ứng: Bật</span>
-            </>
-          ) : (
-            <>
-              <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-400">Hiệu ứng: Tắt</span>
-            </>
-          )}
-        </button>
-      </div>
     </>
   );
 };

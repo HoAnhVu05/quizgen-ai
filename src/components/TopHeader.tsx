@@ -17,6 +17,7 @@ import {
   UserCog,
   LogOut,
   User,
+  EyeOff,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -49,7 +50,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onToggleMobileMenu,
   onOpenProfileModal,
 }) => {
-  const { currentTheme, activeThemeId } = useTheme();
+  const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
   const isAdmin = currentUser?.role === 'admin';
   const isAdminScreen = currentScreen === 'admin_portal';
   const showAdminHeader = isAdmin || isAdminScreen;
@@ -372,6 +373,34 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Nút Bật / Tắt hiệu ứng mùa lễ hội (Bố trí gọn gàng trên Header) */}
+            {activeThemeId !== 'default' && (
+              <button
+                type="button"
+                onClick={toggleParticles}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-2xs ${
+                  showParticles
+                    ? activeThemeId === 'spring'
+                      ? 'bg-[#FFF8E9] border-[#E7B947] text-[#8F171C] hover:bg-amber-100/80'
+                      : 'bg-teal-50 border-teal-200 text-[#008689] hover:bg-teal-100/70'
+                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
+                }`}
+                title={showParticles ? "Nhấn để tắt hiệu ứng hoa rơi" : "Nhấn để bật hiệu ứng hoa rơi"}
+              >
+                {showParticles ? (
+                  <>
+                    <Sparkles className={`w-3.5 h-3.5 ${activeThemeId === 'spring' ? 'text-[#E7B947]' : 'text-[#008689]'}`} />
+                    <span className="hidden lg:inline">Hiệu ứng: Bật</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="hidden lg:inline">Hiệu ứng: Tắt</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Global Logout Button */}
             <button

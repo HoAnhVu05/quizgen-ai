@@ -27,7 +27,7 @@ import {
 import { ScreenId, UserProfile, Question } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
 import { useTheme } from '../context/ThemeContext';
-import { ThemeKpiFlowerCorner, ThemeFestiveSpecFooter } from './ThemeFestiveComponents';
+import { ThemeKpiFlowerCorner } from './ThemeFestiveComponents';
 
 interface DashboardScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -1177,9 +1177,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         </div>
       </div>
-
-      {/* 🌸 Bảng Mục Tiêu & Tiêu Chí Nghiệm Thu Giao Diện Tết (Chuẩn xác 100% theo ảnh mẫu) */}
-      <ThemeFestiveSpecFooter themeId={activeThemeId} />
     </div>
   );
 };
