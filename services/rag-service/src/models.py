@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text
+from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text, BigInteger
 
 from .database import Base, DATABASE_URL
 
@@ -39,8 +39,6 @@ class RetrievalLogDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-from sqlalchemy import BigInteger
-
 class UsageQuotaDB(Base):
     __tablename__ = "usage_quotas"
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
@@ -49,8 +47,8 @@ class UsageQuotaDB(Base):
     user_id = Column(String(50), unique=True, nullable=False, index=True)
     institution_id = Column(String(50), nullable=True)
     max_tokens = Column(BigInteger, nullable=False, default=1000000)
-    used_tokens = Column(BigInteger, nullable=False, default=420000)
-    total_embeddings_count = Column(Integer, nullable=False, default=12450)
+    used_tokens = Column(BigInteger, nullable=False, default=0)
+    total_embeddings_count = Column(Integer, nullable=False, default=0)
     reset_cycle = Column(String(20), default="monthly")
     cycle_start = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)

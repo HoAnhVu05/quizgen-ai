@@ -4,6 +4,16 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+# Fallback to local SQLite if PostgreSQL driver is not installed
+if DATABASE_URL and DATABASE_URL.startswith("postgresql"):
+    try:
+        import psycopg2
+    except ImportError:
+        try:
+            import psycopg
+        except ImportError:
+            DATABASE_URL = None
+
 if not DATABASE_URL:
     data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
     os.makedirs(data_dir, exist_ok=True)

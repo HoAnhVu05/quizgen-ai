@@ -1,4 +1,13 @@
 import os
+import sys
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Depends
@@ -25,7 +34,8 @@ from .auth import get_current_user_id, get_optional_user_id
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
 
-RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8003")
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://127.0.0.1:8003")
+DOCUMENT_SERVICE_URL = os.getenv("DOCUMENT_SERVICE_URL", "http://127.0.0.1:8002")
 
 @app.on_event("startup")
 def startup_db():
@@ -114,10 +124,18 @@ async def generate_questions(
         except Exception:
             pass
     if not textbook_name:
-        textbook_name = "GiaoTrinh_KinhTeViMo_2025.pdf"
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                d_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}")
+                if d_res.status_code == 200:
+                    textbook_name = d_res.json().get("name", "")
+        except Exception:
+            pass
+    if not textbook_name:
+        textbook_name = f"Tài liệu #{document_id}"
 
     query_text = " ".join(req.chapters) if req.chapters else (textbook_name or "kiến thức học thuật")
-    primary_chapter = req.chapters[0] if req.chapters else "Chương 1: Tổng quan"
+    primary_chapter = req.chapters[0] if req.chapters else "Nội dung trích xuất"
     retrieved_chunks = []
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -126,24 +144,37 @@ async def generate_questions(
                 json={
                     "query": query_text,
                     "document_id": document_id,
-                    "top_k": 8
+                    "chapters": req.chapters,
+                    "top_k": 10
                 }
             )
             if res.status_code == 200:
                 retrieved_chunks = res.json().get("chunks", [])
-    except Exception:
-        retrieved_chunks = [
-            {
-                "chunk_id": "chunk-1",
-                "page_number": 42,
-                "text": "Quy luật cầu (Law of Demand) chỉ ra rằng: trong điều kiện các yếu tố khác không đổi (ceteris paribus), khi mức giá của một hàng hóa tăng lên thì lượng cầu về hàng hóa đó sẽ giảm xuống và ngược lại."
-            },
-            {
-                "chunk_id": "chunk-2",
-                "page_number": 68,
-                "text": "Độ co giãn của cầu theo giá đo lường mức độ phản ứng của lượng cầu trước sự thay đổi của giá cả. Khi cầu co giãn mạnh (|PED| > 1), việc giảm giá sẽ làm tăng tổng doanh thu."
-            }
-        ]
+    except Exception as e:
+        print(f"[AI-SERVICE] Cảnh báo kết nối RAG Service: {e}")
+
+    if not retrieved_chunks:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}/chunks?limit=50")
+                if c_res.status_code == 200:
+                    raw_chunks = c_res.json().get("chunks", [])
+                    if req.chapters:
+                        matched = [c for c in raw_chunks if any(ch.lower() in (c.get("chapter") or "").lower() for ch in req.chapters)]
+                        retrieved_chunks = matched if matched else raw_chunks
+                    else:
+                        retrieved_chunks = raw_chunks
+        except Exception as e:
+            print(f"[AI-SERVICE] Cảnh báo kết nối Document Service: {e}")
+
+    if not retrieved_chunks:
+        job.status = "failed"
+        job.error_message = f"Tài liệu '{textbook_name}' chưa có dữ liệu văn bản để sinh câu hỏi."
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Không tìm thấy nội dung văn bản nào từ tài liệu '{textbook_name}' để sinh câu hỏi. Vui lòng kiểm tra lại tài liệu đã tải lên."
+        )
 
     # 3. Kích hoạt sinh câu hỏi bằng LLM Gemini hoặc Fallback ma trận chuẩn
     try:
@@ -152,7 +183,8 @@ async def generate_questions(
             bloom_matrix=bloom_matrix,
             document_id=document_id,
             chapter_name=primary_chapter,
-            textbook_name=textbook_name
+            textbook_name=textbook_name,
+            images=req.get_images()
         )
 
         # Cập nhật kết quả Job vào DB
@@ -200,16 +232,54 @@ async def regenerate_question_endpoint(
     }
     bloom_lvl = current_q.get("bloomLevel") or current_q.get("bloom_level") or "Thông hiểu"
 
+    img_ctx = current_q.get("imageContext") or current_q.get("image_context")
+    if not img_ctx and (current_q.get("hasImage") or current_q.get("has_image")):
+        img_ctx = {
+            "url": current_q.get("imageUrl") or current_q.get("image_url"),
+            "caption": current_q.get("imageCaption") or current_q.get("image_caption")
+        }
+
     new_q = await generator.regenerate_single_question(
         question_id=question_id,
         current_question=current_q,
         chunk_context=chunk_context,
-        bloom_level=bloom_lvl
+        bloom_level=bloom_lvl,
+        image_context=img_ctx
     )
     return {
         "success": True,
         "question": new_q
     }
+
+@app.get("/history")
+@app.get("/jobs")
+def get_generation_history(
+    limit: int = 30,
+    user_id: Optional[str] = Depends(get_optional_user_id),
+    db: Session = Depends(get_db)
+):
+    """Tra cứu danh sách lịch sử các đợt sinh câu hỏi AI"""
+    query = db.query(AIGenerationJobDB)
+    if user_id and user_id not in ["lec-001", "usr-adm-quizgen"]:
+        query = query.filter(AIGenerationJobDB.user_id == user_id)
+    jobs = query.order_by(AIGenerationJobDB.created_at.desc()).limit(limit).all()
+    return [
+        {
+            "id": job.id,
+            "jobId": job.id,
+            "userId": job.user_id,
+            "documentId": job.document_id,
+            "chapters": job.chapters or [],
+            "bloomMatrix": job.bloom_matrix or {},
+            "totalRequested": job.total_requested,
+            "totalGenerated": job.total_generated,
+            "status": job.status,
+            "errorMessage": job.error_message,
+            "createdAt": job.created_at.isoformat() if job.created_at else None,
+            "completedAt": job.completed_at.isoformat() if job.completed_at else None,
+        }
+        for job in jobs
+    ]
 
 @app.get("/jobs/{job_id}")
 def get_job_status(job_id: str, db: Session = Depends(get_db)):
@@ -225,4 +295,50 @@ def get_job_status(job_id: str, db: Session = Depends(get_db)):
         "totalGenerated": job.total_generated,
         "createdAt": job.created_at.isoformat() if job.created_at else None,
         "completedAt": job.completed_at.isoformat() if job.completed_at else None
+    }
+
+@app.post("/chat")
+@app.post("/ai/chat")
+async def chat_copilot_endpoint(
+    req: Dict[str, Any],
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    """API QuizGen Copilot: Trợ lý hội thoại học thuật AI thời gian thực"""
+    message = str(req.get("message") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Nội dung tin nhắn không được để trống.")
+
+    history = req.get("history") or []
+    context = req.get("context") or {}
+    if user_id:
+        context["userId"] = user_id
+
+    # Tự động nạp số liệu thống kê người dùng thực tế từ auth.db để Quanta chống bịa đặt (Anti-Hallucination)
+    try:
+        import sqlite3
+        auth_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../auth-service/data/auth.db"))
+        if os.path.exists(auth_db_path):
+            with sqlite3.connect(auth_db_path) as a_conn:
+                ac = a_conn.cursor()
+                total_users = ac.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+                lecturers = ac.execute("SELECT COUNT(*) FROM users WHERE role='lecturer'").fetchone()[0]
+                admins = ac.execute("SELECT COUNT(*) FROM users WHERE role='admin'").fetchone()[0]
+                context["system_stats"] = {
+                    "total_users": total_users,
+                    "lecturers": lecturers,
+                    "admins": admins,
+                    "verified": True
+                }
+    except Exception as e:
+        print(f"[AI-SERVICE] Warning loading system stats: {e}")
+
+    result = await generator.chat_with_copilot(
+        message=message,
+        history=history,
+        context=context
+    )
+    return {
+        "success": True,
+        "reply": result.get("reply", ""),
+        "suggestedActions": result.get("suggestedActions", [])
     }

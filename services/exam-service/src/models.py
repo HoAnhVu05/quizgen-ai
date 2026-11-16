@@ -69,7 +69,10 @@ class QuestionDB(Base):
     explanation = Column(Text, nullable=True)
     confidence_score = Column(Integer, default=95)
     status = Column(String(20), default="pending", index=True) # pending, approved, rejected
-    created_by = Column(String(50), default="lec-001")
+    image_url = Column(Text, nullable=True) # [SCRUM-90] Đường dẫn ảnh sơ đồ / đồ thị hoặc base64 data URI
+    has_formula = Column(Boolean, default=False, nullable=False) # [SCRUM-90] Cờ câu hỏi có công thức LaTeX
+    image_caption = Column(Text, nullable=True) # [SCRUM-90] Chú thích hình vẽ
+    created_by = Column(String(50), default="lecturer")
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -79,7 +82,7 @@ class ExamDB(Base):
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
 
     id = Column(String(50), primary_key=True, index=True)
-    user_id = Column(String(50), nullable=False, default="lec-001", index=True)
+    user_id = Column(String(50), nullable=False, default="lecturer", index=True)
     title = Column(String(255), nullable=False)
     subject = Column(String(150), nullable=False)
     faculty = Column(String(150), default="Khoa Kinh tế & Quản trị")
@@ -119,7 +122,7 @@ class SystemActivityDB(Base):
     __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
 
     id = Column(String(50), primary_key=True)
-    user_id = Column(String(50), nullable=False, default="lec-001", index=True)
+    user_id = Column(String(50), nullable=False, default="lecturer", index=True)
     action_type = Column(String(100), nullable=False) # export_exam, approve_question, extract_textbook
     title = Column(String(255), nullable=False)
     detail = Column(Text, nullable=False)
@@ -207,7 +210,24 @@ class QuestionCreateSchema(BaseModel):
     confidence_score: Optional[int] = 95
     confidenceScore: Optional[int] = None
     status: Optional[str] = "pending"
-    created_by: Optional[str] = "lec-001"
+    created_by: Optional[str] = None
+    image_url: Optional[str] = None
+    imageUrl: Optional[str] = None
+    has_formula: bool = False
+    hasFormula: Optional[bool] = None
+    image_caption: Optional[str] = None
+    imageCaption: Optional[str] = None
+
+    def get_image_url(self) -> Optional[str]:
+        return self.imageUrl or self.image_url
+
+    def get_has_formula(self) -> bool:
+        if self.hasFormula is not None:
+            return self.hasFormula
+        return self.has_formula
+
+    def get_image_caption(self) -> Optional[str]:
+        return self.imageCaption or self.image_caption
 
     def get_question_text(self) -> str:
         return self.question or self.question_text or ""
@@ -245,6 +265,12 @@ class QuestionUpdateSchema(BaseModel):
     editReason: Optional[str] = None
     edit_reason: Optional[str] = None
     action: Optional[str] = None
+    image_url: Optional[str] = None
+    imageUrl: Optional[str] = None
+    has_formula: Optional[bool] = None
+    hasFormula: Optional[bool] = None
+    image_caption: Optional[str] = None
+    imageCaption: Optional[str] = None
 
     def get_question_text(self) -> Optional[str]:
         return self.questionText or self.question or self.question_text
@@ -295,7 +321,7 @@ class QuestionStatusUpdate(BaseModel):
 class BatchApproveRequest(BaseModel):
     questionIds: Optional[List[str]] = None
     question_ids: Optional[List[str]] = None
-    lecturerId: Optional[str] = "lec-001"
+    lecturerId: Optional[str] = None
 
     def get_ids(self) -> List[str]:
         return self.questionIds or self.question_ids or []
@@ -373,6 +399,8 @@ class ExportDocxRequest(BaseModel):
     include_answer_key: Optional[bool] = None
     includeExplanation: bool = False
     include_explanation: Optional[bool] = None
+    includeOmrSheet: bool = True
+    include_omr_sheet: Optional[bool] = None
 
     def get_title(self) -> str:
         return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
@@ -401,6 +429,11 @@ class ExportDocxRequest(BaseModel):
         if self.include_explanation is not None:
             return self.include_explanation
         return self.includeExplanation
+
+    def get_include_omr_sheet(self) -> bool:
+        if self.include_omr_sheet is not None:
+            return self.include_omr_sheet
+        return self.includeOmrSheet
 
 
 class ExportPdfRequest(BaseModel):
@@ -466,6 +499,7 @@ class ExportPdfRequest(BaseModel):
 
 
 class UnifiedExportRequest(BaseModel):
+    config: Optional[Dict[str, Any]] = None
     selectedQuestionIds: Optional[List[str]] = None
     selected_question_ids: Optional[List[str]] = None
     universityName: Optional[str] = None
@@ -494,7 +528,7 @@ class UnifiedExportRequest(BaseModel):
     include_answer_key: Optional[bool] = None
     includeExplanation: Optional[bool] = False
     include_explanation: Optional[bool] = None
-    includeOmrSheet: Optional[bool] = False
+    includeOmrSheet: Optional[bool] = True
     include_omr_sheet: Optional[bool] = None
     format: Optional[str] = "docx" # docx | pdf | qti | zip | bundle
     baseExamCode: Optional[int] = 101
@@ -502,33 +536,51 @@ class UnifiedExportRequest(BaseModel):
     questions: Optional[List[Dict[str, Any]]] = None
 
     def get_university(self) -> str:
-        return self.universityName or self.university or self.schoolName or self.school or "ĐẠI HỌC QUỐC GIA"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return (
+            self.universityName or self.university or self.schoolName or self.school or
+            cfg.get("universityName") or cfg.get("university") or cfg.get("schoolName") or cfg.get("school") or
+            "TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM"
+        )
 
     def get_faculty(self) -> str:
-        return self.facultyName or self.faculty or self.department or "Khoa Kinh tế & Quản trị"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return (
+            self.facultyName or self.faculty or self.department or
+            cfg.get("facultyName") or cfg.get("faculty") or cfg.get("department") or
+            "KHOA CÔNG NGHỆ THÔNG TIN"
+        )
 
     def get_title(self) -> str:
-        return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.examTitle or self.exam_title or self.title or cfg.get("examTitle") or cfg.get("title") or "ĐỀ THI KẾT THÚC HỌC PHẦN"
 
     def get_subject(self) -> str:
-        return self.subjectName or self.subject or "Kinh tế vi mô"
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.subjectName or self.subject or cfg.get("subjectName") or cfg.get("subject") or "Kinh tế vi mô"
 
     def get_code(self) -> str:
-        return str(self.examCode or self.exam_code or self.code or "101")
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return str(self.examCode or self.exam_code or self.code or cfg.get("examCode") or cfg.get("code") or "101")
 
     def get_base_code(self) -> int:
+        cfg = self.config if isinstance(self.config, dict) else {}
         if self.base_exam_code is not None:
             return self.base_exam_code
         if self.baseExamCode is not None:
             return self.baseExamCode
+        if cfg.get("baseExamCode") is not None:
+            return int(cfg["baseExamCode"])
         code_str = self.get_code()
         return int(code_str) if code_str.isdigit() else 101
 
     def get_exam_code_count(self) -> int:
-        return self.exam_code_count or self.examCodeCount or 4
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.exam_code_count or self.examCodeCount or cfg.get("examCodeCount") or 4
 
     def get_duration(self) -> int:
-        return self.durationMinutes or self.duration_minutes or self.duration or 60
+        cfg = self.config if isinstance(self.config, dict) else {}
+        return self.durationMinutes or self.duration_minutes or self.duration or cfg.get("durationMinutes") or cfg.get("duration") or 60
 
     def get_include_answer_key(self) -> bool:
         if self.include_answer_key is not None:
@@ -543,7 +595,9 @@ class UnifiedExportRequest(BaseModel):
     def get_include_omr_sheet(self) -> bool:
         if self.include_omr_sheet is not None:
             return self.include_omr_sheet
-        return self.includeOmrSheet if self.includeOmrSheet is not None else False
+        if self.includeOmrSheet is not None:
+            return self.includeOmrSheet
+        return True
 
 
 class ExportOmrRequest(BaseModel):
@@ -626,7 +680,7 @@ class ExportQtiRequest(BaseModel):
 
 class CreateExamRecordRequest(BaseModel):
     id: Optional[str] = None
-    user_id: Optional[str] = "lec-001"
+    user_id: Optional[str] = None
     userId: Optional[str] = None
     title: Optional[str] = None
     examTitle: Optional[str] = None
@@ -654,7 +708,7 @@ class CreateExamRecordRequest(BaseModel):
     variants: Optional[List[Dict[str, Any]]] = None
 
     def get_user_id(self) -> str:
-        return self.userId or self.user_id or "lec-001"
+        return self.userId or self.user_id
 
     def get_title(self) -> str:
         return self.examTitle or self.exam_title or self.title or "ĐỀ THI KẾT THÚC HỌC PHẦN"

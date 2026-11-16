@@ -69,9 +69,13 @@ class GenerateRequest(BaseModel):
     chapters: List[str]
     bloom_matrix: Optional[Dict[str, int]] = None
     bloomMatrix: Optional[Dict[str, int]] = None
+    images: Optional[List[Dict[str, Any]]] = None
 
     def get_document_id(self) -> str:
         return self.documentId or self.document_id or "tb-001"
 
     def get_bloom_matrix(self) -> Dict[str, int]:
         return self.bloomMatrix or self.bloom_matrix or {"nhanBiet": 4, "thongHieu": 4, "vanDung": 2, "phanTich": 0}
+
+    def get_images(self) -> List[Dict[str, Any]]:
+        return self.images or []

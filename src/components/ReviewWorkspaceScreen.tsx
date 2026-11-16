@@ -14,6 +14,7 @@ import {
   Check,
 } from 'lucide-react';
 import { Question, BloomLevel, ScreenId, UserProfile, QuestionStatus } from '../types';
+import MathRenderer from './MathRenderer';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -249,62 +250,79 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   return (
     <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 space-y-3.5 sm:space-y-4">
       {/* Top Connected Workflow Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg border border-slate-200 w-full sm:w-auto">
-            {[
-              { id: 'all', label: `Tất cả (${questions.length})` },
-              { id: 'pending', label: `Chờ kiểm tra (${pendingCount})` },
-              { id: 'approved', label: `Đã chốt (${approvedCount})` },
-              { id: 'rejected', label: `Đã loại (${rejectedCount})` },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setFilterStatus(tab.id as typeof filterStatus)}
-                className={`flex-1 sm:flex-initial text-center px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
-                  filterStatus === tab.id
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs">
+              <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
+              Bước 3/4 • Đối Soát Minh Chứng & Biên Tập Đề (Amber)
+            </span>
+            <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md hidden md:inline-block">
+              Đối chiếu song song trích dẫn RAG
+            </span>
           </div>
-
-          <select
-            value={filterBloom}
-            onChange={(e) => setFilterBloom(e.target.value as typeof filterBloom)}
-            className="w-full sm:w-auto px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
-          >
-            <option value="all">Tất cả mức Bloom</option>
-            {BLOOM_ORDER.map((lvl) => (
-              <option key={lvl} value={lvl}>
-                {BLOOM_STYLE[lvl].label} ({BLOOM_STYLE[lvl].en})
-              </option>
-            ))}
-          </select>
+          <span className="text-xs text-slate-500 font-medium">
+            Tổng cộng: <strong className="text-slate-800 font-bold">{questions.length}</strong> câu hỏi
+          </span>
         </div>
 
-        {/* Action Buttons connecting Step 3 -> Step 4 */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
-          {pendingCount > 0 && (
-            <button
-              onClick={onBatchApprove}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs rounded-lg transition-colors w-full sm:w-auto"
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-              Chốt nhanh tất cả ({pendingCount} câu)
-            </button>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+              {[
+                { id: 'all', label: `Tất cả (${questions.length})` },
+                { id: 'pending', label: `Chờ kiểm tra (${pendingCount})` },
+                { id: 'approved', label: `Đã chốt (${approvedCount})` },
+                { id: 'rejected', label: `Đã loại (${rejectedCount})` },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setFilterStatus(tab.id as typeof filterStatus)}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                    filterStatus === tab.id
+                      ? 'bg-white text-slate-800 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
 
-          <button
-            onClick={handleApproveAllAndProceedToExport}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-lg transition-colors shadow-sm w-full sm:w-auto"
-          >
-            <span>Bước 4: Đóng gói Tờ Đề A4 & Xuất File ({questions.length} câu)</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+            <select
+              value={filterBloom}
+              onChange={(e) => setFilterBloom(e.target.value as typeof filterBloom)}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="all">Tất cả mức Bloom</option>
+              {BLOOM_ORDER.map((lvl) => (
+                <option key={lvl} value={lvl}>
+                  {BLOOM_STYLE[lvl].label} ({BLOOM_STYLE[lvl].en})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Action Buttons connecting Step 3 -> Step 4 */}
+          <div className="flex flex-wrap items-center gap-2">
+            {pendingCount > 0 && (
+              <button
+                onClick={onBatchApprove}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-semibold text-xs rounded-lg transition-colors"
+              >
+                <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                Chốt nhanh tất cả ({pendingCount} câu)
+              </button>
+            )}
+
+            <button
+              onClick={handleApproveAllAndProceedToExport}
+              className="flex items-center gap-1.5 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg transition-all shadow-sm shadow-purple-600/20"
+            >
+              <span>Bước 4: Đóng gói Tờ Đề A4 & Xuất File ({questions.length} câu)</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -342,7 +360,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                         {q.bloomLevel}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-600 line-clamp-2 mt-1">{q.question}</p>
+                    <div className="text-xs text-slate-600 line-clamp-2 mt-1">
+                      <MathRenderer content={q.question} inline />
+                    </div>
                   </div>
                 </button>
               );
@@ -372,6 +392,16 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 >
                   {getStatusBadge(activeQuestion.status).label}
                 </span>
+                {(activeQuestion.hasFormula || activeQuestion.question.includes('$')) && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200">
+                    ∑ Toán - Lý (LaTeX)
+                  </span>
+                )}
+                {activeQuestion.hasImage && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">
+                    📷 Sơ đồ / Hình vẽ
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center gap-1.5">
@@ -433,9 +463,25 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   </div>
                 </div>
               ) : (
-                <p className="text-sm font-semibold text-slate-800 leading-relaxed">
-                  {activeQuestion.question}
-                </p>
+                <div className="text-sm font-semibold text-slate-800 leading-relaxed space-y-3">
+                  <div>
+                    <MathRenderer content={activeQuestion.question} />
+                  </div>
+                  {activeQuestion.hasImage && activeQuestion.imageUrl && (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg max-w-md mx-auto text-center shadow-xs">
+                      <img
+                        src={activeQuestion.imageUrl}
+                        alt={activeQuestion.imageCaption || 'Sơ đồ câu hỏi'}
+                        className="max-h-60 mx-auto rounded object-contain border border-slate-100"
+                      />
+                      {activeQuestion.imageCaption && (
+                        <p className="text-[11px] text-slate-500 italic mt-1.5 font-normal">
+                          {activeQuestion.imageCaption}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
 
@@ -476,7 +522,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                         className="flex-1 bg-white px-2.5 py-1 rounded border border-slate-300 text-sm focus:outline-none focus:border-[#008689]"
                       />
                     ) : (
-                      <span className="flex-1 leading-relaxed">{opt.text}</span>
+                      <div className="flex-1 leading-relaxed">
+                        <MathRenderer content={opt.text} />
+                      </div>
                     )}
                   </div>
                 );
@@ -496,9 +544,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   className="w-full p-2 rounded border border-slate-300 text-xs text-slate-700 bg-white focus:outline-none"
                 />
               ) : (
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {activeQuestion.explanation}
-                </p>
+                <div className="text-xs text-slate-600 leading-relaxed">
+                  <MathRenderer content={activeQuestion.explanation} />
+                </div>
               )}
             </div>
 

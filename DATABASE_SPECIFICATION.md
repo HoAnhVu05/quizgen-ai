@@ -794,6 +794,12 @@ Lưu trữ kho câu hỏi trắc nghiệm đã sinh, trạng thái kiểm duyệ
 
 | `status` | `VARCHAR(20)` | **NOT NULL** | `'pending'` | Trạng thái kiểm duyệt: `'pending'` (Chờ duyệt), `'approved'` (Đã duyệt), `'rejected'` (Từ chối). |
 
+| `image_url` | `TEXT` | `NULLABLE` | Không | [SCRUM-90] Đường dẫn tệp hình vẽ, sơ đồ mạch điện, đồ thị hoặc Base64 Data URI minh họa câu hỏi. |
+
+| `has_formula` | `BOOLEAN` | **NOT NULL** | `FALSE` | [SCRUM-90] Cờ đánh dấu câu hỏi có chứa công thức Toán/Lý/Hóa theo chuẩn LaTeX (`$...$` hoặc `$$...$$`). |
+
+| `image_caption` | `TEXT` | `NULLABLE` | Không | [SCRUM-90] Chú thích học thuật đi kèm hình vẽ hiển thị dưới sơ đồ. |
+
 | `created_by` | `VARCHAR(50)` | **NOT NULL** | `'lec-001'` | Giảng viên sở hữu câu hỏi. |
 
 | `created_at` | `TIMESTAMPTZ` | **NOT NULL** | `CURRENT_TIMESTAMP` | Thời điểm AI sinh ra câu hỏi. |
@@ -1385,6 +1391,12 @@ CREATE TABLE IF NOT EXISTS exams.questions (
     confidence_score INT DEFAULT 95,
 
     status VARCHAR(20) DEFAULT 'pending',
+
+    image_url TEXT,
+
+    has_formula BOOLEAN NOT NULL DEFAULT FALSE,
+
+    image_caption TEXT,
 
     created_by VARCHAR(50) DEFAULT 'lec-001',
 

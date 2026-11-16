@@ -164,6 +164,7 @@ services:
       - ./database/migrations/08_[SCRUM-58]_question_audit_logs_and_bloom_stats.sql:/docker-entrypoint-initdb.d/08_scrum_58_audit_bloom.sql
       - ./database/migrations/09_[SCRUM-62]_comprehensive_b_tree_indexes.sql:/docker-entrypoint-initdb.d/09_scrum_62_indexes.sql
       - ./database/migrations/10_[SCRUM-84]_auth_oauth_and_password_resets.sql:/docker-entrypoint-initdb.d/10_scrum_84_auth.sql
+      - ./database/migrations/11_[SCRUM-90]_questions_multimodal_images_and_latex.sql:/docker-entrypoint-initdb.d/10_scrum_90_questions.sql
       - ./database/seeds/01_seed_academic_data.sql:/docker-entrypoint-initdb.d/11_seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quizgen -d quizgen_db"]
