@@ -340,10 +340,19 @@ def update_plan(plan_id: str, payload: PlanUpdateRequest):
 
 @app.get("/admin/overview")
 def get_payment_admin_overview():
-    """Tổng quan doanh thu, thống kê đơn hàng và danh sách gói cước cho Admin Portal."""
+    """Tổng quan doanh thu, thống kê đơn hàng và danh sách gói cước cho Admin Portal kèm tự động quét hết hạn."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    # 0. Tự động cập nhật các đơn PENDING đã quá thời gian 15 phút sang EXPIRED
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        UPDATE orders 
+        SET status = 'EXPIRED' 
+        WHERE status = 'PENDING' AND expires_at IS NOT NULL AND expires_at < ?
+    """, (now_str,))
+    conn.commit()
+
     # 1. Doanh thu
     cursor.execute("SELECT COALESCE(SUM(amount_vnd), 0) FROM orders WHERE status = 'COMPLETED'")
     total_revenue = cursor.fetchone()[0]
@@ -357,6 +366,9 @@ def get_payment_admin_overview():
     
     cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'PENDING'")
     pending_orders = cursor.fetchone()[0]
+
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'EXPIRED'")
+    expired_orders = cursor.fetchone()[0]
     
     # 3. Thuê bao đang hoạt động
     cursor.execute("SELECT COUNT(DISTINCT user_id) FROM subscriptions WHERE status = 'active'")
@@ -390,6 +402,7 @@ def get_payment_admin_overview():
             "totalOrders": total_orders,
             "completedOrders": completed_orders,
             "pendingOrders": pending_orders,
+            "expiredOrders": expired_orders,
             "activeSubscribers": active_subscribers,
         },
         "plans": plans,
@@ -857,14 +870,31 @@ async def payment_webhook(request: Request):
     return {"status": "success", "message": f"Đã duyệt tự động đơn hàng {order_code}."}
 
 @app.get("/orders/history")
-def get_order_history(user_id: Optional[str] = None):
-    """Lịch sử giao dịch thanh toán."""
+def get_order_history(user_id: Optional[str] = None, status: Optional[str] = None):
+    """Lịch sử giao dịch thanh toán kèm tự động quét hết hạn (EXPIRED) và lọc trạng thái."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # Tự động cập nhật các đơn PENDING đã quá 15 phút sang EXPIRED
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        UPDATE orders 
+        SET status = 'EXPIRED' 
+        WHERE status = 'PENDING' AND expires_at IS NOT NULL AND expires_at < ?
+    """, (now_str,))
+    conn.commit()
+
+    query = "SELECT * FROM orders WHERE 1=1"
+    params = []
     if user_id:
-        cursor.execute("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-    else:
-        cursor.execute("SELECT * FROM orders ORDER BY created_at DESC LIMIT 100")
+        query += " AND user_id = ?"
+        params.append(user_id)
+    if status and status.upper() != "ALL":
+        query += " AND status = ?"
+        params.append(status.upper())
+    query += " ORDER BY created_at DESC LIMIT 100"
+
+    cursor.execute(query, params)
     rows = cursor.fetchall()
     conn.close()
     return {"orders": [dict(r) for r in rows]}

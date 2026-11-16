@@ -817,17 +817,17 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
               <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Cụm 7 Microservices</span>
+                <span>Cụm 8 Microservices</span>
                 <Server className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-2xl font-black text-emerald-600 flex items-center gap-2">
-                <span>7 / 7</span>
+                <span>8 / 8</span>
                 <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Hoạt động
                 </span>
               </div>
               <p className="text-[11px] text-slate-500">
-                Ports: 8000 (Gateway) • 8001–8005 • 8006 (Admin)
+                Ports: 8000 (Gateway) • 8001–8005 • 8006 (Admin) • 8007 (Payment)
               </p>
             </div>
 
