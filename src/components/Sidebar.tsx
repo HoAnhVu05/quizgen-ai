@@ -314,30 +314,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 md:static md:z-20 w-64 bg-white text-slate-700 flex flex-col border-r border-slate-200 shrink-0 select-none transition-transform duration-300 ease-in-out ${
+        className={`fixed inset-y-0 left-0 z-50 md:static md:z-20 w-64 bg-white text-slate-700 flex flex-col border-r border-[#E7EEF5] shrink-0 select-none transition-transform duration-300 ease-in-out relative overflow-hidden ${
           isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
         }`}
       >
-      {/* Top UTH Accent Line */}
-      <div className={`h-1 w-full ${isSystemAdmin ? 'bg-gradient-to-r from-[#da1c2d] to-rose-600' : 'bg-[#008689]'}`} />
+      {/* Gentle Ambient Cyan Wave at Lower Sidebar */}
+      <div className="absolute bottom-0 left-0 right-0 h-64 overflow-hidden pointer-events-none select-none z-0">
+        <svg className="w-full h-full opacity-60" viewBox="0 0 260 220" preserveAspectRatio="none">
+          <path d="M0,100 C70,60 140,140 260,70 L260,220 L0,220 Z" fill="#E2F7F9" />
+          <path d="M0,135 C90,90 170,170 260,115 L260,220 L0,220 Z" fill="#D3F2F6" />
+          <path d="M0,165 C100,130 180,185 260,150 L260,220 L0,220 Z" fill="#EAF9FB" />
+        </svg>
+      </div>
+
+      {/* Top Accent Line */}
+      <div className={`h-1 w-full relative z-10 ${isSystemAdmin ? 'bg-[#008F95]' : 'bg-[#008689]'}`} />
 
       {/* Brand Header */}
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center space-x-3">
+      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-10">
         <img
           src="/logo.jpg"
           alt="QuizGen AI Logo"
-          className="w-9 h-9 rounded-xl shadow-sm object-cover border border-[#008689]/20 shrink-0"
+          className="w-9 h-9 rounded-xl shadow-xs object-cover border border-[#008F95]/20 shrink-0"
         />
         <div className="min-w-0">
-          <h1 className="font-extrabold text-[#008689] text-sm tracking-tight leading-tight flex items-center gap-1.5">
+          <h1 className="font-extrabold text-[#008F95] text-sm tracking-tight leading-tight flex items-center gap-1.5">
             <span>QuizGen AI</span>
             {isSystemAdmin && (
-              <span className="text-[9px] px-1.5 py-0.2 rounded font-extrabold bg-rose-50 text-[#da1c2d] border border-rose-200 uppercase">
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-extrabold bg-rose-50 text-[#da1c2d] border border-rose-200 uppercase tracking-wider">
                 Admin
               </span>
             )}
           </h1>
-          <p className="text-[11px] text-slate-400 truncate">
+          <p className="text-[11px] text-[#91A2B8] truncate">
             {isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}
           </p>
         </div>
@@ -354,15 +363,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Role Title Section Header (Admin only) */}
       {isSystemAdmin && (
-        <div className="px-4 pt-3 pb-1">
-          <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+        <div className="px-4 pt-3 pb-1 relative z-10">
+          <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#91A2B8]">
             Phân Hệ Quản Trị
           </span>
         </div>
       )}
 
       {/* Navigation List */}
-      <nav className="flex-1 py-3 px-3 space-y-1.5 overflow-y-auto">
+      <nav className="flex-1 py-3 px-3 space-y-1.5 overflow-y-auto relative z-10">
         {filteredNavItems.map((item) => {
           const Icon = item.icon;
           const isActive = isSystemAdmin
@@ -382,31 +391,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   onNavigate(item.id);
                 }
               }}
-              className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left transition-all duration-150 ${
+              className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left transition-all duration-200 relative ${
                 isActive
                   ? isSystemAdmin
-                    ? 'bg-rose-50 text-[#da1c2d] font-bold border border-rose-200 shadow-2xs'
+                    ? 'bg-[#E4F7F7] text-[#007F85] font-bold shadow-2xs'
                     : 'bg-[#dff5f4] text-[#007d80] font-bold shadow-2xs'
                   : isSystemAdmin
-                  ? 'text-slate-600 hover:text-slate-900 hover:bg-rose-50/50 font-medium'
+                  ? 'text-[#526782] hover:text-[#142B45] hover:bg-[#F0FAFB] font-medium'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
               }`}
             >
+              {isActive && isSystemAdmin && (
+                <div className="absolute -left-3 top-1 bottom-1 w-1 bg-[#008689] rounded-r-md" />
+              )}
               <div className="flex items-center gap-2.5 min-w-0">
                 <Icon
-                  className={`w-4 h-4 shrink-0 ${
+                  className={`w-4 h-4 shrink-0 transition-colors ${
                     isActive
                       ? isSystemAdmin
-                        ? 'text-[#da1c2d]'
+                        ? 'text-[#007F85]'
                         : 'text-[#008689]'
-                      : 'text-slate-400'
+                      : 'text-[#91A2B8] group-hover:text-[#526782]'
                   }`}
                 />
                 <div className="min-w-0">
                   {item.stepTag && (
                     <span
                       className={`block text-[9px] font-bold uppercase tracking-wider ${
-                        isActive ? 'text-[#008689]' : 'text-slate-400'
+                        isActive ? 'text-[#008F95]' : 'text-[#91A2B8]'
                       }`}
                     >
                       {item.stepTag}
@@ -416,9 +428,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     className={`text-xs truncate block leading-snug ${
                       isActive
                         ? isSystemAdmin
-                          ? 'text-[#da1c2d] font-bold'
+                          ? 'text-[#007F85] font-bold'
                           : 'text-[#007d80] font-bold'
-                        : 'text-slate-700 font-medium'
+                        : 'text-[#526782] group-hover:text-[#142B45] font-medium'
                     }`}
                   >
                     {item.label}
@@ -436,9 +448,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {/* Clean Profile Footer */}
-      <div className="p-3.5 border-t border-slate-100 bg-slate-50/50">
-        <div className="flex items-center justify-between gap-2">
+      {/* Floating Profile Card at Bottom */}
+      <div className="p-3 relative z-10">
+        <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
           <div
             onClick={() => openProfileEditor('profile')}
             className="flex items-center space-x-2.5 min-w-0 cursor-pointer group"
@@ -449,23 +461,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 src={currentUser.avatarUrl}
                 alt={displayName}
                 referrerPolicy="no-referrer"
-                className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0 bg-white group-hover:border-[#008689] transition-colors"
+                className="w-9 h-9 rounded-full object-cover border border-[#E5EDF5] shrink-0 bg-white group-hover:border-[#008F95] transition-colors"
               />
             ) : (
               <div
-                className={`w-9 h-9 rounded-lg bg-gradient-to-br ${
-                  isSystemAdmin ? 'from-[#da1c2d] to-rose-700' : 'from-[#008689] to-[#1d999d]'
+                className={`w-9 h-9 rounded-full ${
+                  isSystemAdmin ? 'bg-[#da1c2d]' : 'bg-[#008689]'
                 } flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-xs group-hover:opacity-90 transition-opacity`}
               >
                 {initials}
               </div>
             )}
             <div className="min-w-0">
-              <div className="text-xs font-bold text-slate-800 truncate group-hover:text-[#008689] transition-colors">
+              <div className="text-xs font-bold text-[#142B45] truncate group-hover:text-[#008F95] transition-colors">
                 {displayName}
               </div>
-              <div className="text-[10px] text-slate-500 truncate">
-                {isSystemAdmin ? 'Quản trị Hệ thống' : 'Giảng viên Học thuật'}
+              <div className="text-[10px] text-[#91A2B8] truncate">
+                {isSystemAdmin ? 'Quản trị hệ thống' : 'Giảng viên Học thuật'}
               </div>
             </div>
           </div>

@@ -44,7 +44,12 @@ import {
   Edit3,
   ExternalLink,
   Crown,
-  Copy
+  Copy,
+  Package,
+  Shield,
+  BookOpen,
+  Key,
+  Lightbulb,
 } from 'lucide-react';
 import { UserProfile, SecurityAuditLog, ScreenId, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -756,193 +761,242 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const totalExams = overviewKpis?.totalApprovedExams ?? 0;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f7f9fb] p-6 space-y-6 select-none">
+    <div className="flex-1 overflow-y-auto bg-[#f0f4f8] p-5 sm:p-6 space-y-5 sm:space-y-6 select-none">
       {/* ── TAB 1: EXECUTIVE OVERVIEW & KPIS (REAL DATA) ── */}
       {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Executive Overview Header */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-            <div className="space-y-1.5">
+        <div className="space-y-5 sm:space-y-6">
+          {/* Executive Overview Header Banner */}
+          <div className="bg-gradient-to-r from-[#eef9fa] via-[#e5f6f8] to-[#daf2f7] rounded-[24px] border border-[#cbebf2] p-6 sm:p-7 shadow-[0_4px_20px_rgba(0,134,137,0.06)] relative overflow-hidden flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 hover:shadow-[0_8px_24px_rgba(0,137,143,0.10)] transition-all duration-300">
+            <div className="space-y-2 z-10 max-w-2xl">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-[#E4F7F7] text-[#007F85] border border-[#BCE8E8] shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
                   8/8 Microservices Online (Ports 8000–8007)
                 </span>
               </div>
-              <h1 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                <Activity className="w-5 h-5 text-[#da1c2d]" />
+              <h1 className="text-xl sm:text-2xl font-bold text-[#142B45] tracking-tight flex items-center gap-2.5">
+                <Activity className="w-6 h-6 text-[#da1c2d] shrink-0" />
                 <span>Tổng Quan Hệ Thống &amp; Vận Hành Toàn Trường</span>
               </h1>
-              <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
-                Giám sát số liệu thực tế từ các cơ sở dữ liệu auth.db, payment.db, documents.db và exam.db; đối soát thanh toán và vận hành toàn hệ thống.
+              <p className="text-xs sm:text-sm text-[#526782] leading-relaxed">
+                Giám sát số liệu thực tế từ các cơ sở dữ liệu auth.db, payment.db, documents.db và exam.db, đối soát thanh toán và vận hành toàn hệ thống.
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <div className="flex items-center gap-6 shrink-0 relative z-10">
+              {/* Modern Isometric Server & Analytics Graphic Illustration */}
+              <div className="hidden lg:flex items-center gap-3 select-none pointer-events-none opacity-95">
+                {/* 3D Server Blocks */}
+                <div className="relative">
+                  <div className="w-16 h-20 rounded-xl bg-gradient-to-b from-teal-400/20 via-sky-300/30 to-blue-500/20 border border-teal-200/70 p-1.5 flex flex-col justify-between shadow-xs backdrop-blur-xs">
+                    <div className="h-4 rounded-md bg-white/90 border border-teal-100 flex items-center justify-between px-1.5 shadow-2xs">
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                      </div>
+                      <div className="w-4 h-0.5 rounded-full bg-slate-300" />
+                    </div>
+                    <div className="h-4 rounded-md bg-white/90 border border-teal-100 flex items-center justify-between px-1.5 shadow-2xs">
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+                      </div>
+                      <div className="w-4 h-0.5 rounded-full bg-slate-300" />
+                    </div>
+                    <div className="h-4 rounded-md bg-white/90 border border-teal-100 flex items-center justify-between px-1.5 shadow-2xs">
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                      </div>
+                      <div className="w-4 h-0.5 rounded-full bg-slate-300" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Laptop Analytics Screen Graphic */}
+                <div className="w-24 h-16 rounded-xl bg-white border border-slate-200 shadow-sm p-1.5 flex flex-col justify-between">
+                  <div className="flex-1 bg-gradient-to-br from-[#E4F7F7] to-sky-50 rounded-lg p-1.5 flex items-end justify-between gap-1">
+                    <div className="w-2.5 bg-[#008F95]/40 rounded-t-xs h-3" />
+                    <div className="w-2.5 bg-[#008F95]/60 rounded-t-xs h-5" />
+                    <div className="w-2.5 bg-[#008F95] rounded-t-xs h-8" />
+                    <div className="w-2.5 bg-teal-400 rounded-t-xs h-6" />
+                    <div className="w-2.5 bg-[#10B981] rounded-t-xs h-7" />
+                  </div>
+                  <div className="h-1 bg-slate-200 rounded-full mt-1" />
+                </div>
+              </div>
+
+              {/* Refresh Data Button */}
               <button
                 onClick={loadAllRealData}
                 disabled={isLoading}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl border border-slate-200 transition-colors disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 text-[#142B45] hover:text-[#008F95] font-semibold text-xs rounded-xl border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 cursor-pointer"
+                title="Tải lại toàn bộ số liệu thực tế từ các database"
               >
-                <RefreshCw className={`w-3.5 h-3.5 text-[#008689] ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-[#008F95] ${isLoading ? 'animate-spin' : ''}`} />
                 <span>Làm mới dữ liệu thật</span>
-              </button>
-              <button
-                onClick={handlePingServices}
-                disabled={isCheckingServices}
-                className="flex items-center gap-2 px-4 py-2 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-xl transition-all shadow-xs disabled:opacity-50"
-              >
-                <Zap className={`w-3.5 h-3.5 ${isCheckingServices ? 'animate-spin' : ''}`} />
-                <span>{isCheckingServices ? 'Đang ping 8 services...' : 'Kiểm tra Sức khỏe Cụm 8 Services'}</span>
               </button>
             </div>
           </div>
 
           {/* Executive Stat Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Tài khoản Thực tế (auth.db)</span>
-                <Users className="w-4 h-4 text-[#008689]" />
+            {/* Card 1: Tài khoản Thực tế (auth.db) */}
+            <div className="bg-white border border-[#E5EDF5] rounded-[20px] p-5 space-y-2.5 shadow-[0_4px_18px_rgba(25,70,100,0.04)] hover:shadow-[0_8px_24px_rgba(0,137,143,0.10)] hover:-translate-y-0.5 transition-all duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-600 border border-sky-100 flex items-center justify-center shrink-0">
+                    <Database className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-semibold text-[#142B45]">Tài khoản Thực tế (auth.db)</span>
+                </div>
+                <Users className="w-4 h-4 text-sky-500 shrink-0" />
               </div>
-              <div className="text-2xl font-black text-slate-900">{usersList.length}</div>
-              <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                <span className="text-[#008689] font-semibold">{lecCount} Giảng viên</span>
+              <div className="text-[28px] font-bold text-[#142B45] leading-none">{usersList.length}</div>
+              <div className="flex items-center gap-1.5 text-[11px] text-[#64748B]">
+                <span className="text-[#008F95] font-semibold">{lecCount} Giảng viên</span>
                 <span>•</span>
-                <span className="text-indigo-600 font-semibold">{hodCount} HOD</span>
+                <span className="text-sky-600 font-semibold">{hodCount} HOD</span>
                 <span>•</span>
-                <span className="text-[#da1c2d] font-semibold">{adminCount} Admin</span>
+                <span className="text-[#EF4444] font-semibold">{adminCount} Admin</span>
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Cụm 8 Microservices</span>
-                <Server className="w-4 h-4 text-emerald-600" />
+            {/* Card 2: Cụm 8 Microservices */}
+            <div className="bg-white border border-[#E5EDF5] rounded-[20px] p-5 space-y-2.5 shadow-[0_4px_18px_rgba(25,70,100,0.04)] hover:shadow-[0_8px_24px_rgba(0,137,143,0.10)] hover:-translate-y-0.5 transition-all duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#10B981] border border-emerald-100 flex items-center justify-center shrink-0">
+                    <Package className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-semibold text-[#142B45]">Cụm 8 Microservices</span>
+                </div>
+                <Server className="w-4 h-4 text-[#10B981] shrink-0" />
               </div>
-              <div className="text-2xl font-black text-emerald-600 flex items-center gap-2">
+              <div className="text-[28px] font-bold text-[#10B981] leading-none flex items-center gap-2">
                 <span>8 / 8</span>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Hoạt động
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[10px] xl:text-[11px] text-[#64748B] whitespace-nowrap">
                 Ports: 8000 (Gateway) • 8001–8005 • 8006 (Admin) • 8007 (Payment)
               </p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Tài liệu &amp; Ngân hàng Câu hỏi</span>
-                <Database className="w-4 h-4 text-amber-500" />
+            {/* Card 3: Tài liệu & Ngân hàng Câu hỏi */}
+            <div className="bg-white border border-[#E5EDF5] rounded-[20px] p-5 space-y-2.5 shadow-[0_4px_18px_rgba(25,70,100,0.04)] hover:shadow-[0_8px_24px_rgba(0,137,143,0.10)] hover:-translate-y-0.5 transition-all duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 text-[#F59E0B] border border-amber-100 flex items-center justify-center shrink-0">
+                    <Shield className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-semibold text-[#142B45]">Tài liệu &amp; Ngân hàng Câu hỏi</span>
+                </div>
+                <BookOpen className="w-4 h-4 text-[#F59E0B] shrink-0" />
               </div>
-              <div className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                <span>{totalQuestions} Câu hỏi</span>
+              <div className="text-[28px] font-bold text-[#142B45] leading-none">
+                {totalQuestions} Câu hỏi
               </div>
-              <p className="text-[11px] text-slate-500">
-                Từ {totalDocs} giáo trình &amp; {totalExams} bộ đề khảo thí thực tế
+              <p className="text-[11px] text-[#64748B] truncate">
+                Từ {totalDocs} giáo trình 8 bộ, {totalExams} khóa thi thực tế
               </p>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2 shadow-xs">
-              <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-                <span>Bảo Mật &amp; Kiểm Soát Khóa</span>
-                <KeyRound className="w-4 h-4 text-[#da1c2d]" />
+            {/* Card 4: Bảo Mật & Kiểm Soát Khóa */}
+            <div className="bg-white border border-[#E5EDF5] rounded-[20px] p-5 space-y-2.5 shadow-[0_4px_18px_rgba(25,70,100,0.04)] hover:shadow-[0_8px_24px_rgba(0,137,143,0.10)] hover:-translate-y-0.5 transition-all duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center shrink-0">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-semibold text-purple-700">Bảo Mật &amp; Kiểm Soát Khóa</span>
+                </div>
+                <Key className="w-4 h-4 text-purple-500 shrink-0" />
               </div>
-              <div className="text-2xl font-black text-[#da1c2d] flex items-center gap-2">
-                <span>{lockedCount} Tài khoản bị khóa</span>
+              <div className="text-[28px] font-bold text-purple-700 leading-none">
+                {lockedCount} Tài khoản bị khóa
               </div>
-              <p className="text-[11px] text-slate-500">
+              <p className="text-[11px] text-[#64748B] truncate">
                 {lockedCount > 0 ? 'Có tài khoản đang bị hạn chế quyền truy cập' : 'Hệ thống an toàn, 0 tài khoản bị khóa'}
               </p>
             </div>
           </div>
 
           {/* Quick Microservices Overview Grid */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs">
+          <div className="bg-white border border-[#E5EDF5] rounded-[20px] p-6 sm:p-7 space-y-4 shadow-[0_4px_18px_rgba(25,70,100,0.04)]">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Server className="w-4 h-4 text-[#008689]" />
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-[#E4F7F7] text-[#008F95] flex items-center justify-center shrink-0">
+                  <Server className="w-4 h-4" />
+                </div>
+                <h3 className="text-xs sm:text-sm font-bold text-[#142B45] uppercase tracking-wide">
                   Trạng Thái Cụm 7 Microservices Thực Tế (Ports 8000–8006)
                 </h3>
               </div>
               <button
                 onClick={() => setActiveTab('services')}
-                className="text-xs text-[#008689] hover:underline font-semibold flex items-center gap-1"
+                className="text-xs text-[#008F95] hover:text-[#00777D] hover:underline font-semibold flex items-center gap-1.5 transition-colors cursor-pointer group"
               >
-                Chi tiết kiến trúc <ArrowRight className="w-3.5 h-3.5" />
+                <span>Chi tiết kiến trúc</span>
+                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {servicesStatus.map((s) => (
                 <div
                   key={s.port}
-                  className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-[#008689]/40 transition-all flex items-center justify-between"
+                  className="p-3.5 sm:p-4 rounded-2xl bg-[#F7FAFC] border border-[#E2EAF2] hover:border-[#008F95]/50 hover:bg-white transition-all duration-200 shadow-2xs hover:shadow-xs flex flex-col justify-between hover:-translate-y-0.5"
                 >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-xs font-bold text-slate-800">{s.name}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-white text-slate-600 border border-slate-200">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse shrink-0" />
+                      <span className="text-xs sm:text-sm font-bold text-[#142B45] truncate">{s.name}</span>
+                      <span className="text-xs text-[#91A2B8] font-mono">
                         :{s.port}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 line-clamp-1">{s.role}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-[11px] font-mono text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    <span className="text-[11px] font-mono text-[#047857] font-bold bg-[#ECFDF5] px-2 py-0.5 rounded-md border border-[#A7F3D0] shrink-0">
                       {s.latencyMs}ms
                     </span>
                   </div>
+                  <p className="text-[11px] text-[#526782] line-clamp-1 mt-1.5 leading-relaxed">{s.role}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Recent Audit Events Stream */}
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-[#da1c2d]" />
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                  Nhật Ký An Ninh &amp; Kiểm Toán Gần Nhất (admin.db)
-                </h3>
+          {/* Bottom Recent Audit & Security Banner */}
+          <div className="bg-gradient-to-r from-[#E3F6F9] via-[#E6F8FA] to-[#C7F0F6] border border-[#BCE8F0] rounded-[22px] p-4 sm:p-5 flex items-center justify-between gap-4 shadow-[0_4px_18px_rgba(0,134,137,0.05)] relative overflow-hidden">
+            {/* Ambient Cyan Ripple Glow behind Shield */}
+            <div className="absolute -right-6 top-1/2 -translate-y-1/2 w-48 h-48 rounded-full bg-gradient-to-br from-teal-200/50 to-cyan-300/40 blur-md pointer-events-none" />
+
+            <div className="flex items-center gap-3.5 min-w-0 relative z-10">
+              <div className="w-10 h-10 rounded-full bg-amber-100/90 text-amber-600 flex items-center justify-center shrink-0 shadow-2xs">
+                <Lightbulb className="w-5 h-5" />
               </div>
-              <button
-                onClick={() => setActiveTab('audit')}
-                className="text-xs text-[#da1c2d] hover:underline font-semibold flex items-center gap-1"
-              >
-                Toàn bộ nhật ký ({auditLogs.length}) <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="min-w-0">
+                <h4 className="text-xs sm:text-sm font-bold text-[#142B45] leading-snug truncate">
+                  Nhật ký An ninh &amp; Kiểm Toán Gần Nhất (Admin.db)
+                </h4>
+                <p className="text-xs text-slate-600 truncate mt-0.5">
+                  Hệ thống hoạt động ổn định, không có bất thường trong hôm nay.
+                </p>
+              </div>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {auditLogs.slice(0, 5).map((log) => (
-                <div key={log.id} className="py-2.5 flex items-start justify-between gap-4">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase font-mono ${
-                          log.severity === 'critical'
-                            ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
-                            : log.severity === 'warning'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}
-                      >
-                        {log.action}
-                      </span>
-                      <span className="text-xs font-semibold text-slate-800">{log.actorEmail}</span>
-                    </div>
-                    <p className="text-xs text-slate-600">{log.detail}</p>
-                  </div>
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0">
-                    {log.timestamp}
-                  </span>
-                </div>
-              ))}
+            <div className="flex items-center gap-3 shrink-0 relative z-10">
+              <button
+                onClick={() => setActiveTab('audit')}
+                className="px-4 py-2 bg-white/95 hover:bg-white text-[#008689] font-semibold text-xs rounded-full border border-[#008689] shadow-2xs transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <span>Toàn bộ nhật ký ({auditLogs.length})</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <div className="w-10 h-10 rounded-2xl bg-teal-500/20 text-[#008689] border border-[#008689]/40 flex items-center justify-center shrink-0 shadow-xs">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
             </div>
           </div>
         </div>
