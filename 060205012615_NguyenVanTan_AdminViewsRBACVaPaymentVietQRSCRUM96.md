@@ -86,11 +86,19 @@ Trong ngày 16/11/2026, toàn bộ công việc được tập trung hoàn thi�
 
 ## IV. MINH CHỨNG (EVIDENCE - LINK COMMIT GIT)
 
+*(Tuân thủ quy định: Dẫn link trực tiếp tới nhánh làm việc, danh sách commit trên GitHub và nhiệm vụ Jira tương ứng).*
+
 - **Đường dẫn nhánh làm việc Git (Branch URL):**  
   [https://github.com/HoAnhVu05/quizgen-ai/tree/feature/upload-from-nguyentann-20261030](https://github.com/HoAnhVu05/quizgen-ai/tree/feature/upload-from-nguyentann-20261030)
 
 - **Đường dẫn nhiệm vụ Atlassian Jira:**  
   [https://ut-team-quizgen-ai.atlassian.net/browse/SCRUM-96](https://ut-team-quizgen-ai.atlassian.net/browse/SCRUM-96)
+
+- **Danh sách link các Commit thực hiện trong ngày (GitHub Commits):**
+  1. **Commit `5954e24`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/5954e24](https://github.com/HoAnhVu05/quizgen-ai/commit/5954e24)  
+     *Nội dung:* `[SCRUM-96] feat: tich hop database views, siet chat RBAC admin va tu dong quet het han don VietQR`
+  2. **Commit `9f3f139`:** [https://github.com/HoAnhVu05/quizgen-ai/commit/9f3f139](https://github.com/HoAnhVu05/quizgen-ai/commit/9f3f139)  
+     *Nội dung:* `[SCRUM-86] chore: update package-lock after merging KaTeX dependencies from develop`
 
 - **Tệp kiểm thử tự động:**  
   [scripts/[SCRUM-96]_test_admin_views_rbac_payment.py](./scripts/[SCRUM-96]_test_admin_views_rbac_payment.py)
