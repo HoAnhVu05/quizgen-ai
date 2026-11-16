@@ -19,7 +19,7 @@ import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, 
 import apiClient, { API_BASE } from './services/apiClient';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
-import { ThemeTopRightCorner, ThemeLuckyMoneyModal } from './components/ThemeFestiveComponents';
+import { ThemeLuckyMoneyModal } from './components/ThemeFestiveComponents';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
@@ -838,9 +838,6 @@ const AppContent: React.FC = () => {
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
-      {/* Top-Right Corner Apricot Blossom & Lantern (Tương tự ảnh mẫu) */}
-      <ThemeTopRightCorner themeId={activeThemeId} />
-
       {/* Seasonal Particle Ambient Effect */}
       <ThemeParticleOverlay
         themeId={activeThemeId}
