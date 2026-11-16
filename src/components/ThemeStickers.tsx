@@ -456,3 +456,292 @@ export const ThemeLogoBadge: React.FC<ThemeLogoBadgeProps> = ({ themeId, classNa
     </span>
   );
 };
+
+interface ThemeAccountStickerClusterProps {
+  themeId: SystemThemeId;
+  className?: string;
+}
+
+/**
+ * CỤM STICKER TRANG TRÍ SINH ĐỘNG TẠI KHU VỰC TÀI KHOẢN (GÓC TRÁI DƯỚI MÀN HÌNH)
+ * Tự động chuyển đổi theo chủ đề được chọn (Tết, 30/4, 2/9, Noel,...)
+ * Hiệu ứng chuyển động mượt mà, rực rỡ, tinh tế và 100% không che khuất thao tác.
+ */
+export const ThemeAccountStickerCluster: React.FC<ThemeAccountStickerClusterProps> = ({
+  themeId,
+  className = ''
+}) => {
+  if (themeId === 'default') return null;
+
+  return (
+    <div
+      className={`absolute -top-7 right-2 pointer-events-none select-none z-20 flex items-center transition-all duration-300 animate-in fade-in zoom-in-90 ${className}`}
+      aria-hidden="true"
+    >
+      {/* 🌸 TẾT & MÙA XUÂN: Cụm Mai Vàng, Đào Phai, Bao Lì Xì & Thỏi Vàng Kim Bảo */}
+      {themeId === 'spring' && (
+        <svg width="125" height="48" viewBox="0 0 125 48" fill="none" className="drop-shadow-md overflow-visible">
+          <defs>
+            <linearGradient id="accGoldGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#FEF08A" />
+              <stop offset="50%" stopColor="#F59E0B" />
+              <stop offset="100%" stopColor="#D97706" />
+            </linearGradient>
+            <linearGradient id="accRedGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#EF4444" />
+              <stop offset="100%" stopColor="#B91C1C" />
+            </linearGradient>
+          </defs>
+
+          {/* Cành lộc uốn nhẹ */}
+          <path d="M10 38 C35 30 65 32 105 20" stroke="#78350F" strokeWidth="2.5" strokeLinecap="round" />
+          <circle cx="35" cy="32" r="2" fill="#22C55E" />
+          <circle cx="68" cy="30" r="2" fill="#22C55E" />
+
+          {/* Thỏi Vàng Kim Bảo (Mang lại tài lộc học thuật) */}
+          <g transform="translate(18, 28) scale(0.9)">
+            <ellipse cx="0" cy="0" rx="11" ry="5.5" fill="url(#accGoldGrad)" stroke="#B45309" strokeWidth="0.8" />
+            <path d="M-8 0 C-6 -7 6 -7 8 0 Z" fill="#FDE047" stroke="#B45309" strokeWidth="0.8" />
+            <circle cx="0" cy="-3" r="2.5" fill="#FEF08A" />
+          </g>
+
+          {/* Bao lì xì đỏ may mắn chữ Lộc */}
+          <g transform="translate(48, 20) rotate(-12) scale(0.95)">
+            <rect x="-8" y="-12" width="16" height="24" rx="2.5" fill="url(#accRedGrad)" stroke="#FDE047" strokeWidth="1" />
+            <path d="M-8 -12 L0 -3 L8 -12" stroke="#FDE047" strokeWidth="1" fill="none" />
+            <circle cx="0" cy="3" r="3.5" fill="#FDE047" />
+            <text x="0" y="5.5" textAnchor="middle" fontSize="4.5" fontWeight="900" fill="#B91C1C">LỘC</text>
+          </g>
+
+          {/* Hoa Mai Vàng Nở Rộ */}
+          <g transform="translate(78, 16) scale(1.1)">
+            <circle cx="0" cy="-8" r="5" fill="#FDE047" />
+            <circle cx="7" cy="-2.5" r="5" fill="#FDE047" />
+            <circle cx="4.5" cy="6.5" r="5" fill="#FDE047" />
+            <circle cx="-4.5" cy="6.5" r="5" fill="#FDE047" />
+            <circle cx="-7" cy="-2.5" r="5" fill="#FDE047" />
+            <circle cx="0" cy="0" r="3" fill="#DC2626" />
+            <circle cx="0" cy="0" r="1.5" fill="#FEF08A" />
+          </g>
+
+          {/* Hoa Đào Hồng Thắm e ấp */}
+          <g transform="translate(104, 18) scale(0.95)">
+            <circle cx="0" cy="-7" r="4.5" fill="#FDA4AF" />
+            <circle cx="6" cy="-2" r="4.5" fill="#FB7185" />
+            <circle cx="4" cy="5.5" r="4.5" fill="#FDA4AF" />
+            <circle cx="-4" cy="5.5" r="4.5" fill="#FB7185" />
+            <circle cx="-6" cy="-2" r="4.5" fill="#FDA4AF" />
+            <circle cx="0" cy="0" r="2.5" fill="#E11D48" />
+          </g>
+
+          {/* Lồng đèn mini lúc lắc */}
+          <g transform="translate(90, 36) scale(0.7)">
+            <ellipse cx="0" cy="0" rx="6" ry="8" fill="url(#accRedGrad)" stroke="#F59E0B" strokeWidth="0.8" />
+            <rect x="-4" y="-8.5" width="8" height="1.5" fill="#FDE047" />
+            <rect x="-4" y="7" width="8" height="1.5" fill="#FDE047" />
+            <line x1="0" y1="8.5" x2="0" y2="15" stroke="#F59E0B" strokeWidth="1" />
+          </g>
+        </svg>
+      )}
+
+      {/* ⭐ 30/4 & 1/5: Cờ Đỏ Sao Vàng, Chim Bồ Câu Trắng & Dải Ruy Băng Vinh Quang */}
+      {themeId === 'victory_30_4' && (
+        <svg width="125" height="48" viewBox="0 0 125 48" fill="none" className="drop-shadow-md overflow-visible">
+          <defs>
+            <linearGradient id="accVRed" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#EF4444" />
+              <stop offset="100%" stopColor="#991B1B" />
+            </linearGradient>
+            <linearGradient id="accGoldStar" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#FFFF00" />
+              <stop offset="100%" stopColor="#F59E0B" />
+            </linearGradient>
+          </defs>
+
+          {/* Dải ruy băng đỏ vinh quang */}
+          <path d="M8 32 C35 24 65 26 112 18" stroke="#DC2626" strokeWidth="3" strokeLinecap="round" />
+          <path d="M8 35 C35 27 65 29 112 21" stroke="#FDE047" strokeWidth="1" strokeLinecap="round" />
+
+          {/* Chim Bồ Câu Trắng Hòa Bình ngậm cành ô-liu */}
+          <g transform="translate(18, 22) scale(0.75)">
+            <path
+              d="M0 0 C6 -10 18 -12 24 -8 C20 -1 14 6 7 10 C16 12 24 10 28 17 C18 17 9 14 4 11 C1 14 -3 18 -8 16 C-12 11 -5 5 0 0 Z"
+              fill="#FFFFFF"
+              stroke="#CBD5E1"
+              strokeWidth="1.2"
+            />
+            <circle cx="2" cy="-4" r="1.5" fill="#0F172A" />
+            <path d="M12 -8 C18 -14 25 -13 28 -8" stroke="#16A34A" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+            <circle cx="18" cy="-12" r="1.8" fill="#22C55E" />
+          </g>
+
+          {/* Lá Cờ Đỏ Sao Vàng Kiêu Hãnh */}
+          <g transform="translate(56, 12) scale(0.85)">
+            <line x1="-2" y1="-5" x2="28" y2="35" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="-2" cy="-5" r="2.5" fill="#FDE047" />
+            <path
+              d="M-1 -4 C12 -8 24 -2 36 -5 C38 8 36 20 33 28 C22 31 10 26 -1 29 Z"
+              fill="url(#accVRed)"
+              stroke="#B91C1C"
+              strokeWidth="1"
+            />
+            {/* Sao Vàng giữa cờ */}
+            <g transform="translate(16, 11) scale(0.6)">
+              <polygon
+                points="0,-12 3,-3 12,-3 5,2 7,10 0,5 -7,10 -5,2 -12,-3 -3,-3"
+                fill="url(#accGoldStar)"
+              />
+            </g>
+          </g>
+
+          {/* Đóa Hoa Sen / Hoa Chiến Thắng Đỏ Vàng */}
+          <g transform="translate(96, 20) scale(0.9)">
+            <circle cx="0" cy="-6" r="4.5" fill="#DC2626" />
+            <circle cx="6" cy="-2" r="4.5" fill="#EF4444" />
+            <circle cx="4" cy="5" r="4.5" fill="#DC2626" />
+            <circle cx="-4" cy="5" r="4.5" fill="#EF4444" />
+            <circle cx="-6" cy="-2" r="4.5" fill="#DC2626" />
+            <circle cx="0" cy="0" r="3" fill="#FDE047" stroke="#F59E0B" strokeWidth="0.8" />
+          </g>
+
+          {/* Huy hiệu mini 30/4 */}
+          <g transform="translate(112, 14)">
+            <rect x="-8" y="-5" width="16" height="10" rx="2" fill="#FEF08A" stroke="#B91C1C" strokeWidth="0.8" />
+            <text x="0" y="2.5" textAnchor="middle" fontSize="6" fontWeight="900" fill="#B91C1C">30/4</text>
+          </g>
+        </svg>
+      )}
+
+      {/* 🇻🇳 QUỐC KHÁNH 2/9: Cờ Đỏ Sao Vàng & Hoa Sen Ba Đình */}
+      {themeId === 'national_day_2_9' && (
+        <svg width="125" height="48" viewBox="0 0 125 48" fill="none" className="drop-shadow-md overflow-visible">
+          <defs>
+            <linearGradient id="accNRed" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#EF4444" />
+              <stop offset="100%" stopColor="#991B1B" />
+            </linearGradient>
+            <linearGradient id="accLotus" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#FEF08A" />
+              <stop offset="100%" stopColor="#F59E0B" />
+            </linearGradient>
+          </defs>
+
+          {/* Dải băng đỏ viền vàng */}
+          <path d="M10 32 C40 24 70 26 115 18" stroke="#B91C1C" strokeWidth="3" strokeLinecap="round" />
+          <path d="M10 35 C40 27 70 29 115 21" stroke="#FDE047" strokeWidth="1" strokeLinecap="round" />
+
+          {/* Cờ Đỏ Sao Vàng trang nghiêm */}
+          <g transform="translate(35, 12) scale(0.85)">
+            <line x1="-2" y1="-5" x2="28" y2="35" stroke="#F59E0B" strokeWidth="2.5" strokeLinecap="round" />
+            <circle cx="-2" cy="-5" r="2.5" fill="#FDE047" />
+            <path
+              d="M-1 -4 C12 -8 24 -2 36 -5 C38 8 36 20 33 28 C22 31 10 26 -1 29 Z"
+              fill="url(#accNRed)"
+              stroke="#B91C1C"
+              strokeWidth="1"
+            />
+            <g transform="translate(16, 11) scale(0.6)">
+              <polygon
+                points="0,-12 3,-3 12,-3 5,2 7,10 0,5 -7,10 -5,2 -12,-3 -3,-3"
+                fill="#FFFF00"
+              />
+            </g>
+          </g>
+
+          {/* Đóa Sen Vàng Ba Đình vươn cao */}
+          <g transform="translate(75, 24) scale(0.85)">
+            <path d="M0 0 C-6 -10 -10 -18 0 -26 C10 -18 6 -10 0 0 Z" fill="url(#accLotus)" stroke="#D97706" strokeWidth="0.8" />
+            <path d="M-3 -3 C-12 -9 -18 -15 -12 -23 C-6 -18 0 -12 -3 -3 Z" fill="#FDE047" stroke="#D97706" strokeWidth="0.6" />
+            <path d="M3 -3 C12 -9 18 -15 12 -23 C6 -18 0 -12 3 -3 Z" fill="#FDE047" stroke="#D97706" strokeWidth="0.6" />
+          </g>
+
+          {/* Tag 2/9 */}
+          <g transform="translate(105, 16)">
+            <rect x="-9" y="-6" width="18" height="12" rx="2" fill="#FEF08A" stroke="#B91C1C" strokeWidth="1" />
+            <text x="0" y="3" textAnchor="middle" fontSize="7" fontWeight="900" fill="#B91C1C">2/9</text>
+          </g>
+        </svg>
+      )}
+
+      {/* ❄️ MÙA ĐÔNG: Mũ Noel, Nhành Thông Tuyết & Chuông Vàng */}
+      {themeId === 'winter' && (
+        <svg width="125" height="48" viewBox="0 0 125 48" fill="none" className="drop-shadow-md overflow-visible">
+          {/* Cành thông xanh tuyết phủ */}
+          <path d="M12 32 C40 24 75 25 110 18" stroke="#065F46" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="35" cy="27" r="2.5" fill="#F0F9FF" />
+          <circle cx="65" cy="24" r="3" fill="#F0F9FF" />
+          <circle cx="95" cy="20" r="2.5" fill="#F0F9FF" />
+
+          {/* Mũ Noel đỏ nhung đáng yêu */}
+          <g transform="translate(30, 14) rotate(-15) scale(0.9)">
+            <path d="M-10 10 C-4 -6 10 -12 18 -10 L16 10 Z" fill="#DC2626" />
+            <circle cx="18" cy="-10" r="3.5" fill="#FFFFFF" />
+            <rect x="-12" y="8" width="30" height="6" rx="3" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="0.5" />
+          </g>
+
+          {/* Chuông vàng Giáng Sinh đôi */}
+          <g transform="translate(68, 20) scale(0.85)">
+            <path d="M-6 6 C-8 15 -12 21 -16 24 L2 24 C-2 21 -6 15 -6 6 Z" fill="#F59E0B" stroke="#D97706" strokeWidth="1" />
+            <circle cx="-6" cy="25" r="2.5" fill="#B45309" />
+            <rect x="-9" y="0" width="18" height="6" rx="2" fill="#E11D48" />
+          </g>
+
+          {/* Hộp quà Noel thắt nơ đỏ */}
+          <g transform="translate(102, 18) scale(0.85)">
+            <rect x="-8" y="-5" width="16" height="15" rx="1.5" fill="#0284C7" stroke="#0369A1" strokeWidth="0.8" />
+            <line x1="0" y1="-5" x2="0" y2="10" stroke="#FDE047" strokeWidth="2.5" />
+            <line x1="-8" y1="2.5" x2="8" y2="2.5" stroke="#FDE047" strokeWidth="2.5" />
+            <circle cx="0" cy="-6" r="2.5" fill="#E11D48" />
+          </g>
+        </svg>
+      )}
+
+      {/* ☀️ MÙA HÈ: Hoa Phượng Vĩ Đỏ Thắm & Nắng Vàng */}
+      {themeId === 'summer' && (
+        <svg width="125" height="48" viewBox="0 0 125 48" fill="none" className="drop-shadow-md overflow-visible">
+          <path d="M12 32 C45 25 75 26 112 18" stroke="#78350F" strokeWidth="2.5" strokeLinecap="round" />
+          {/* Cụm hoa phượng đỏ */}
+          <g transform="translate(42, 18) scale(0.9)">
+            <ellipse cx="0" cy="-8" rx="7" ry="5.5" fill="#EF4444" />
+            <ellipse cx="8" cy="-2" rx="7" ry="5.5" fill="#DC2626" />
+            <ellipse cx="5" cy="7" rx="7" ry="5.5" fill="#F97316" />
+            <ellipse cx="-5" cy="7" rx="7" ry="5.5" fill="#DC2626" />
+            <ellipse cx="-8" cy="-2" rx="7" ry="5.5" fill="#EF4444" />
+            <circle cx="0" cy="0" r="3" fill="#FEF08A" />
+          </g>
+          {/* Cánh buồm mùa thi */}
+          <g transform="translate(80, 20) scale(0.85)">
+            <path d="M-8 8 L4 -12 L4 8 Z" fill="#0284C7" stroke="#0369A1" strokeWidth="0.8" />
+            <path d="M6 8 L14 -4 L6 8 Z" fill="#38BDF8" stroke="#0369A1" strokeWidth="0.8" />
+            <path d="M-10 9 C0 14 12 14 18 9 Z" fill="#EA580C" />
+          </g>
+          {/* Ánh dương lấp lánh */}
+          <g transform="translate(108, 14)">
+            <circle cx="0" cy="0" r="6" fill="#F59E0B" />
+            <circle cx="0" cy="0" r="3" fill="#FEF08A" />
+          </g>
+        </svg>
+      )}
+
+      {/* 🍂 MÙA THU: Lá Phong Vàng Cam & Bút Mực */}
+      {themeId === 'autumn' && (
+        <svg width="125" height="48" viewBox="0 0 125 48" fill="none" className="drop-shadow-md overflow-visible">
+          <path d="M12 32 C45 25 75 26 112 18" stroke="#92400E" strokeWidth="2.5" strokeLinecap="round" />
+          {/* Lá phong vàng cam */}
+          <g transform="translate(45, 18) scale(0.9)">
+            <path d="M0 -14 L3 -6 L10 -8 L6 -1 L13 4 L6 5 L5 12 L0 8 L-5 12 L-6 5 L-13 4 L-6 -1 L-10 -8 L-3 -6 Z" fill="#D97706" stroke="#78350F" strokeWidth="0.8" />
+          </g>
+          <g transform="translate(75, 16) scale(0.75)">
+            <path d="M0 -14 L3 -6 L10 -8 L6 -1 L13 4 L6 5 L5 12 L0 8 L-5 12 L-6 5 L-13 4 L-6 -1 L-10 -8 L-3 -6 Z" fill="#EA580C" stroke="#78350F" strokeWidth="0.8" />
+          </g>
+          {/* Cuốn sách mở & chiếc bút tri thức */}
+          <g transform="translate(102, 20) scale(0.85)">
+            <path d="M-8 6 C-4 2 0 4 0 4 C0 4 4 2 8 6 L8 -4 C4 -8 0 -6 0 -6 C0 -6 -4 -8 -8 -4 Z" fill="#FDE047" stroke="#B45309" strokeWidth="0.8" />
+            <line x1="-3" y1="-8" x2="6" y2="4" stroke="#DC2626" strokeWidth="1.5" strokeLinecap="round" />
+          </g>
+        </svg>
+      )}
+    </div>
+  );
+};
+

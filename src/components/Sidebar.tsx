@@ -37,7 +37,7 @@ import {
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
 import { useTheme } from '../context/ThemeContext';
-import { ThemeLogoBadge } from './ThemeStickers';
+import { ThemeLogoBadge, ThemeAccountStickerCluster } from './ThemeStickers';
 
 interface SidebarProps {
   currentScreen: ScreenId;
@@ -466,6 +466,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Floating Profile Card at Bottom */}
       <div className="p-3 relative z-10">
+        {/* Festive Account Corner Sticker Cluster */}
+        <ThemeAccountStickerCluster themeId={activeThemeId} />
         <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
           <div
             onClick={() => openProfileEditor('profile')}
