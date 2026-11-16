@@ -2,7 +2,7 @@
 
 **Hệ thống:** QuizGen AI – Nền tảng Khảo thí & Khởi tạo Đề thi Tự động ứng dụng AI  
 
-**Phiên bản:** v2.6 Database Specification (Cập nhật [SCRUM-84]: Google OAuth 2.0, Persistent OTP Password Resets, Data Cleaning & Automated Restore Engine)  
+**Phiên bản:** v2.7 Database Specification (Cập nhật [SCRUM-94]: Admin Portal 360 Views, Bloom Distribution Analytics, Automated Cascade Cleanup Triggers & Deadlock Prevention)  
 
 **Tài liệu:** Bản đặc tả chi tiết toàn bộ các Schema, Bảng, Khóa, Vector Store, Cache & Quy trình Dữ liệu
 
@@ -982,6 +982,30 @@ Hệ thống QuizGen AI chuẩn hóa thang đo nhận thức Bloom theo 4 cấp 
 
 ---
 
+
+
+
+
+---
+
+### 3.8. [SCRUM-94] Hệ thống Database Views & Trigger Dọn dẹp Rác Tự động (Views & Cascade Cleanup)
+
+Nhằm tối ưu hóa hiệu năng hiển thị cho phân hệ Admin Portal và ngăn ngừa phình dữ liệu mồ côi (orphaned data), hệ thống triển khai 2 Views tối ưu hóa và 2 Trigger tự động:
+
+#### 1. View Tổng quan Hoạt động Người dùng (`auth.v_user_activity_summary`)
+Tích hợp sẵn thông tin 360 độ của Giảng viên và Quản trị viên phục vụ giao diện Master-Detail:
+- Tổng số giáo trình tải lên (`total_documents`)
+- Tổng số đề thi đã đóng gói (`total_exams`)
+- Tổng số câu hỏi đã tạo (`total_questions_created`)
+- Thời điểm hoạt động gần nhất (`last_active_at`)
+
+#### 2. View Phân bổ Thang đo Nhận thức Bloom (`exams.v_bloom_distribution_stats`)
+Cung cấp số liệu chính xác cho biểu đồ Donut Chart và Thẻ thông minh (Smart Cards):
+- Tỷ lệ % phân bổ 4 mức nhận thức: Nhận biết (`remember_pct`), Thông hiểu (`understand_pct`), Vận dụng (`apply_pct`), Phân tích (`analyze_pct`).
+- Kiểm soát tuân thủ tiêu chuẩn sư phạm 40-30-20-10.
+
+#### 3. Trigger Tự động Dọn dẹp Vector Rác (`trg_cleanup_document_cascade`)
+- Gắn trên bảng `documents.documents`: Khi giáo trình bị xóa, hàm `documents.fn_cleanup_document_cascade()` tự động xóa sạch các bản ghi liên quan trong `rag.vector_indexes`, `rag.retrieval_logs` và `ai.generation_jobs`.
 
 
 ## 4. ĐẶC TẢ CƠ SỞ DỮ LIỆU VECTOR (CHROMADB SPECIFICATION)
