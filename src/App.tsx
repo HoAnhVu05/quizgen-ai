@@ -955,6 +955,12 @@ export const App: React.FC = () => {
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
               currentUser={currentUser}
+              onLoadQuestions={(loadedQs) => {
+                setQuestions(loadedQs);
+                try {
+                  localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                } catch {}
+              }}
             />
           )}
 

@@ -12,6 +12,17 @@ import {
   Sparkles,
   ArrowRight,
   Check,
+  Zap,
+  GraduationCap,
+  Layers,
+  ShieldCheck,
+  BookMarked,
+  HelpCircle,
+  RotateCcw,
+  UploadCloud,
+  ChevronRight,
+  Lightbulb,
+  FileCheck,
 } from 'lucide-react';
 import { Question, BloomLevel, ScreenId, UserProfile, QuestionStatus } from '../types';
 import MathRenderer from './MathRenderer';
@@ -27,7 +38,111 @@ interface ReviewWorkspaceScreenProps {
     message: string
   ) => void;
   currentUser?: UserProfile | null;
+  onLoadQuestions?: (questions: Question[]) => void;
 }
+
+const SAMPLE_REVIEW_QUESTIONS: Question[] = [
+  {
+    id: 'sample-q1',
+    sourceChunkId: 'chunk-nlp-215',
+    textbookName: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    chapter: 'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer',
+    bloomLevel: 'Nhận biết',
+    question: 'Thành phần cốt lõi tạo nên khả năng xử lý ngữ cảnh song song vượt trội của mô hình Transformer trong NLP là gì?',
+    options: [
+      { id: 'opt-a', label: 'A', text: 'Cơ chế tự chú ý đa đầu (Multi-Head Self-Attention Mechanism)' },
+      { id: 'opt-b', label: 'B', text: 'Mạng nơ-ron hồi quy LSTM xử lý tuần tự từng bước thời gian' },
+      { id: 'opt-c', label: 'C', text: 'Tầng tích chập 1 chiều (1D-CNN) với kích thước cửa sổ cố định' },
+      { id: 'opt-d', label: 'D', text: 'Mô hình phân loại Naive Bayes kết hợp Bag-of-Words' },
+    ],
+    correctAnswerId: 'opt-a',
+    explanation: 'Self-Attention tính toán mối tương quan giữa tất cả các từ trong câu đồng thời, loại bỏ điểm nghẽn tuần tự của RNN/LSTM.',
+    confidenceScore: 0.98,
+    status: 'pending',
+    createdAt: '2026-11-16T10:00:00Z',
+    hasFormula: false,
+  },
+  {
+    id: 'sample-q2',
+    sourceChunkId: 'chunk-micro-42',
+    textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    chapter: 'Chương 2: Lý thuyết Chi phí sản xuất & Cân bằng thị trường',
+    bloomLevel: 'Vận dụng',
+    question: 'Trong kinh tế vi mô, khi hàm tổng chi phí là $TC = 2Q^2 + 10Q + 50$, chi phí biên ($MC$) tại mức sản lượng $Q = 5$ bằng bao nhiêu?',
+    options: [
+      { id: 'opt-a', label: 'A', text: '$MC = 30$' },
+      { id: 'opt-b', label: 'B', text: '$MC = 20$' },
+      { id: 'opt-c', label: 'C', text: '$MC = 50$' },
+      { id: 'opt-d', label: 'D', text: '$MC = 15$' },
+    ],
+    correctAnswerId: 'opt-a',
+    explanation: 'Chi phí biên là đạo hàm bậc nhất của tổng chi phí: $MC = \\frac{d(TC)}{dQ} = 4Q + 10$. Với $Q = 5$, ta có $MC = 4(5) + 10 = 30$.',
+    confidenceScore: 0.96,
+    status: 'pending',
+    createdAt: '2026-11-16T10:05:00Z',
+    hasFormula: true,
+  },
+  {
+    id: 'sample-q3',
+    sourceChunkId: 'chunk-rag-218',
+    textbookName: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    chapter: 'Chương 4: Xử lý ngôn ngữ tự nhiên (NLP) & Kiến trúc Transformer/RAG',
+    bloomLevel: 'Thông hiểu',
+    question: 'Kiến trúc RAG (Retrieval-Augmented Generation) giải quyết trực tiếp thách thức cốt tử nào của các mô hình ngôn ngữ lớn (LLM) trong giáo dục?',
+    options: [
+      { id: 'opt-a', label: 'A', text: 'Triệt tiêu hiện tượng ảo giác (Hallucination) và cung cấp minh chứng đối soát trích dẫn số trang chính xác từ giáo trình' },
+      { id: 'opt-b', label: 'B', text: 'Cho phép mô hình chạy mà không cần bộ nhớ GPU' },
+      { id: 'opt-c', label: 'C', text: 'Thay thế hoàn toàn quá trình tiền huấn luyện (Pre-training)' },
+      { id: 'opt-d', label: 'D', text: 'Tự động dịch đề thi sang 50 ngôn ngữ khác nhau' },
+    ],
+    correctAnswerId: 'opt-a',
+    explanation: 'RAG truy xuất các đoạn văn bản thực tế từ giáo trình làm căn cứ ngữ cảnh (Grounding), đảm bảo mỗi câu hỏi sinh ra đều có bằng chứng trang sách rõ ràng.',
+    confidenceScore: 0.99,
+    status: 'pending',
+    createdAt: '2026-11-16T10:10:00Z',
+    hasFormula: false,
+  },
+  {
+    id: 'sample-q4',
+    sourceChunkId: 'chunk-cobb-78',
+    textbookName: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+    chapter: 'Chương 3: Lý thuyết Hành vi Doanh nghiệp & Sản xuất',
+    bloomLevel: 'Phân tích',
+    question: 'Khi phân tích hàm sản xuất Cobb-Douglas $Y = A \\cdot K^\\alpha \\cdot L^\\beta$, điều kiện nào sau đây thể hiện hiệu quả kinh tế tăng theo quy mô (Increasing Returns to Scale)?',
+    options: [
+      { id: 'opt-a', label: 'A', text: '$\\alpha + \\beta > 1$' },
+      { id: 'opt-b', label: 'B', text: '$\\alpha + \\beta = 1$' },
+      { id: 'opt-c', label: 'C', text: '$\\alpha + \\beta < 1$' },
+      { id: 'opt-d', label: 'D', text: '$\\alpha = \\beta = 0$' },
+    ],
+    correctAnswerId: 'opt-a',
+    explanation: 'Nếu $\\alpha + \\beta > 1$, khi tăng tất cả các yếu tố đầu vào lên $t$ lần ($t > 1$), sản lượng đầu ra sẽ tăng hơn $t$ lần, biểu thị hiệu quả tăng theo quy mô.',
+    confidenceScore: 0.95,
+    status: 'pending',
+    createdAt: '2026-11-16T10:15:00Z',
+    hasFormula: true,
+  },
+  {
+    id: 'sample-q5',
+    sourceChunkId: 'chunk-opt-94',
+    textbookName: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+    chapter: 'Chương 2: Học có giám sát & Thuật toán Tối ưu hóa',
+    bloomLevel: 'Thông hiểu',
+    question: 'Trong thuật toán Gradient Descent tối ưu hóa hàm mất mát, công thức cập nhật trọng số nào sau đây là chuẩn xác nhất?',
+    options: [
+      { id: 'opt-a', label: 'A', text: '$\\theta_{t+1} = \\theta_t - \\eta \\nabla J(\\theta_t)$ với $\\eta$ là tốc độ học (learning rate)' },
+      { id: 'opt-b', label: 'B', text: '$\\theta_{t+1} = \\theta_t + \\eta \\nabla J(\\theta_t)$' },
+      { id: 'opt-c', label: 'C', text: '$\\theta_{t+1} = \\frac{\\theta_t}{\\nabla J(\\theta_t)}$' },
+      { id: 'opt-d', label: 'D', text: '$\\theta_{t+1} = \\theta_t \\cdot \\eta$' },
+    ],
+    correctAnswerId: 'opt-a',
+    explanation: 'Gradient Descent di chuyển ngược hướng với vector đạo hàm riêng (gradient) để tìm điểm cực tiểu của hàm mất mát: $\\theta_{t+1} = \\theta_t - \\eta \\nabla J(\\theta_t)$.',
+    confidenceScore: 0.97,
+    status: 'pending',
+    createdAt: '2026-11-16T10:20:00Z',
+    hasFormula: true,
+  },
+];
 
 const BLOOM_ORDER: BloomLevel[] = ['Nhận biết', 'Thông hiểu', 'Vận dụng', 'Phân tích'];
 
@@ -71,6 +186,8 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   onBatchApprove,
   onNavigate,
   onShowToast,
+  currentUser,
+  onLoadQuestions,
 }) => {
   const [selectedId, setSelectedId] = useState<string>(questions[0]?.id || '');
   const [filterStatus, setFilterStatus] = useState<'all' | QuestionStatus>('all');
@@ -227,21 +344,69 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
 
   if (questions.length === 0) {
     return (
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center shadow-sm">
-          <Sparkles className="w-10 h-10 text-[#008689] mx-auto mb-3" />
-          <h3 className="text-lg font-bold text-slate-800">
-            Chưa có câu hỏi nào trong phiên làm việc
-          </h3>
-          <p className="text-sm text-slate-500 mt-1 mb-5">
-            Hãy chạy trình sinh câu hỏi AI ở Bước 2 trước khi đối soát và biên tập đề.
-          </p>
-          <button
-            onClick={() => onNavigate('generate')}
-            className="px-5 py-2.5 bg-[#008689] text-white font-semibold text-sm rounded-lg hover:bg-[#006f72] transition-colors"
-          >
-            Quay lại Bước 2: Sinh Câu Hỏi AI
-          </button>
+      <div className="flex-1 overflow-y-auto p-6 flex items-center justify-center">
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 sm:p-10 text-center shadow-xs max-w-lg w-full space-y-5">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center mx-auto shadow-2xs">
+            <CheckSquare className="w-7 h-7 text-amber-600" />
+          </div>
+
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+              Bước 3/4 • Đối soát &amp; Biên tập Đề
+            </div>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              Chưa có câu hỏi nào trong phiên làm việc
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto leading-relaxed">
+              Hãy sinh câu hỏi từ giáo trình ở Bước 2, hoặc nạp nhanh bộ câu hỏi mẫu để trải nghiệm giao diện đối soát 2 cột song song.
+            </p>
+          </div>
+
+          {/* 2 Clean Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1">
+            <button
+              onClick={() => onNavigate('generate')}
+              className="w-full sm:w-auto px-5 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Sinh câu hỏi ở Bước 2</span>
+            </button>
+
+            <button
+              onClick={() => {
+                if (onLoadQuestions) {
+                  onLoadQuestions(SAMPLE_REVIEW_QUESTIONS);
+                  onShowToast(
+                    'success',
+                    'Đã nạp 5 câu hỏi mẫu',
+                    'Bộ câu hỏi đối soát kèm trích dẫn RAG và công thức KaTeX đã sẵn sàng.'
+                  );
+                }
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold text-xs rounded-xl border border-amber-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-600 fill-amber-600" />
+              <span>Nạp 5 câu hỏi mẫu</span>
+            </button>
+          </div>
+
+          {/* Minimal Capabilities Summary */}
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-3 text-[11px] text-slate-400 flex-wrap">
+            <span className="flex items-center gap-1">
+              <BookOpen className="w-3 h-3 text-slate-400" />
+              Trích dẫn sách RAG
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <Layers className="w-3 h-3 text-slate-400" />
+              Chuẩn 4 mức Bloom
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1">
+              <FileCheck className="w-3 h-3 text-slate-400" />
+              Công thức KaTeX
+            </span>
+          </div>
         </div>
       </div>
     );
