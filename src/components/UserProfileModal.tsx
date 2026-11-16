@@ -13,6 +13,11 @@ import {
   RotateCw,
   Save,
   Check,
+  Phone,
+  Briefcase,
+  Hash,
+  MapPin,
+  FileText,
 } from 'lucide-react';
 import { UserProfile } from '../types';
 
@@ -20,13 +25,7 @@ interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserProfile | null;
-  onUpdateProfile: (updates: {
-    fullName: string;
-    academicTitle: string;
-    department?: string;
-    faculty?: string;
-    university?: string;
-  }) => void;
+  onUpdateProfile: (updates: Partial<UserProfile>) => void;
   onShowToast: (
     type: 'success' | 'info' | 'warning' | 'error',
     title: string,
@@ -54,19 +53,32 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [activeTab, setActiveTab] = useState<'profile' | 'academic' | 'security'>('profile');
   const [draftTitle, setDraftTitle] = useState('');
   const [draftName, setDraftName] = useState('');
+  const [draftStaffId, setDraftStaffId] = useState('');
+  const [draftPosition, setDraftPosition] = useState('');
   const [draftFaculty, setDraftFaculty] = useState('');
   const [draftDept, setDraftDept] = useState('');
   const [draftUniversity, setDraftUniversity] = useState('');
-  const [primarySubject, setPrimarySubject] = useState('Trí tuệ nhân tạo');
+  const [draftPhone, setDraftPhone] = useState('');
+  const [draftOffice, setDraftOffice] = useState('');
+  const [draftSubjects, setDraftSubjects] = useState('');
+  const [draftResearch, setDraftResearch] = useState('');
+  const [draftBio, setDraftBio] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
       setDraftTitle(currentUser.academicTitle || '');
       setDraftName(currentUser.fullName || '');
+      setDraftStaffId(currentUser.staffId || '');
+      setDraftPosition(currentUser.academicPosition || '');
       setDraftFaculty(currentUser.faculty || currentUser.department || '');
       setDraftDept(currentUser.department || '');
       setDraftUniversity(currentUser.university || '');
+      setDraftPhone(currentUser.phoneNumber || '');
+      setDraftOffice(currentUser.officeRoom || '');
+      setDraftSubjects(currentUser.primarySubjects || '');
+      setDraftResearch(currentUser.researchInterests || '');
+      setDraftBio(currentUser.bio || '');
     }
   }, [currentUser, isOpen]);
 
@@ -92,9 +104,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       onUpdateProfile({
         fullName: draftName.trim(),
         academicTitle: draftTitle.trim(),
+        staffId: draftStaffId.trim(),
+        academicPosition: draftPosition.trim(),
         department: draftDept.trim(),
         faculty: draftFaculty.trim(),
         university: draftUniversity.trim(),
+        phoneNumber: draftPhone.trim(),
+        officeRoom: draftOffice.trim(),
+        primarySubjects: draftSubjects.trim(),
+        researchInterests: draftResearch.trim(),
+        bio: draftBio.trim(),
       });
       onShowToast(
         'success',
@@ -230,40 +249,89 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </div>
               </div>
 
-              {/* Full Name with Name-Reverse Helper */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    2. Họ và tên đầy đủ
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleReverseName}
-                    className="text-xs font-semibold text-[#008689] hover:underline flex items-center gap-1"
-                    title="Hoán đổi Tên - Họ (chuẩn Google OAuth)"
-                  >
-                    <RotateCw className="w-3 h-3" />
-                    <span>Đảo Họ ↔ Tên</span>
-                  </button>
-                </div>
-                <div className="relative">
+              {/* Full Name & Staff ID Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      2. Họ và tên đầy đủ (*)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleReverseName}
+                      className="text-xs font-semibold text-[#008689] hover:underline flex items-center gap-1"
+                      title="Hoán đổi Tên - Họ (chuẩn Google OAuth)"
+                    >
+                      <RotateCw className="w-3 h-3" />
+                      <span>Đảo Họ ↔ Tên</span>
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={draftName}
                     onChange={(e) => setDraftName(e.target.value)}
                     placeholder="Ví dụ: Nguyễn Văn An"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs font-semibold text-slate-800 outline-none transition-all"
+                    required
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Tên này sẽ hiển thị trên góc Header, trang duyệt đề thi và trang bìa đề thi xuất bản.
-                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Mã số Giảng viên / Cán bộ
+                  </label>
+                  <div className="relative">
+                    <Hash className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={draftStaffId}
+                      onChange={(e) => setDraftStaffId(e.target.value)}
+                      placeholder="Ví dụ: GV2024-001"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-mono font-semibold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Position & Phone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Chức vụ / Vị trí học thuật
+                  </label>
+                  <div className="relative">
+                    <Briefcase className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                    <input
+                      type="text"
+                      value={draftPosition}
+                      onChange={(e) => setDraftPosition(e.target.value)}
+                      placeholder="Ví dụ: Giảng viên chính, Trưởng Bộ môn..."
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Số điện thoại liên hệ
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                    <input
+                      type="tel"
+                      value={draftPhone}
+                      onChange={(e) => setDraftPhone(e.target.value)}
+                      placeholder="Ví dụ: 0912 345 678"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-mono font-semibold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Email (Readonly with Verified Badge) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  3. Email định danh tài khoản
+                  Email định danh tài khoản
                 </label>
                 <div className="relative flex items-center">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5" />
@@ -279,53 +347,87 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Bio */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Tiểu sử & Giới thiệu học thuật
+                </label>
+                <textarea
+                  rows={2}
+                  value={draftBio}
+                  onChange={(e) => setDraftBio(e.target.value)}
+                  placeholder="Ví dụ: Giảng viên có kinh nghiệm nghiên cứu và giảng dạy chuyên sâu..."
+                  className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs text-slate-800 outline-none resize-none"
+                />
+              </div>
             </div>
           )}
 
           {activeTab === 'academic' && (
             <div className="space-y-4">
-              {/* University */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  1. Trường Đại học / Học viện
-                </label>
-                <div className="relative flex items-center">
-                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5" />
-                  <input
-                    type="text"
-                    value={draftUniversity}
-                    onChange={(e) => setDraftUniversity(e.target.value)}
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
-                  />
+              {/* University & Office */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    1. Trường Đại học / Học viện
+                  </label>
+                  <div className="relative flex items-center">
+                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5" />
+                    <input
+                      type="text"
+                      value={draftUniversity}
+                      onChange={(e) => setDraftUniversity(e.target.value)}
+                      placeholder="Ví dụ: ĐH Giao thông Vận tải TP.HCM"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Phòng làm việc / Lab
+                  </label>
+                  <div className="relative flex items-center">
+                    <MapPin className="w-4 h-4 text-slate-400 absolute left-3.5" />
+                    <input
+                      type="text"
+                      value={draftOffice}
+                      onChange={(e) => setDraftOffice(e.target.value)}
+                      placeholder="Ví dụ: P. A2-304, Lab AI"
+                      className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Faculty */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  2. Khoa / Viện đào tạo
-                </label>
-                <input
-                  type="text"
-                  value={draftFaculty}
-                  onChange={(e) => setDraftFaculty(e.target.value)}
-                  placeholder="Ví dụ: Khoa Công nghệ thông tin"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
-                />
-              </div>
+              {/* Faculty & Department */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    2. Khoa / Viện đào tạo
+                  </label>
+                  <input
+                    type="text"
+                    value={draftFaculty}
+                    onChange={(e) => setDraftFaculty(e.target.value)}
+                    placeholder="Ví dụ: Khoa Công nghệ thông tin"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
+                  />
+                </div>
 
-              {/* Department */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  3. Bộ môn trực thuộc
-                </label>
-                <input
-                  type="text"
-                  value={draftDept}
-                  onChange={(e) => setDraftDept(e.target.value)}
-                  placeholder="Ví dụ: Bộ môn Khoa học máy tính"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
-                />
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    3. Bộ môn trực thuộc
+                  </label>
+                  <input
+                    type="text"
+                    value={draftDept}
+                    onChange={(e) => setDraftDept(e.target.value)}
+                    placeholder="Ví dụ: Bộ môn Kỹ thuật Phần mềm"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
+                  />
+                </div>
               </div>
 
               {/* Primary Subject */}
@@ -333,17 +435,27 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                   4. Học phần giảng dạy phụ trách chính
                 </label>
-                <select
-                  value={primarySubject}
-                  onChange={(e) => setPrimarySubject(e.target.value)}
+                <input
+                  type="text"
+                  value={draftSubjects}
+                  onChange={(e) => setDraftSubjects(e.target.value)}
+                  placeholder="Ví dụ: Trí tuệ Nhân tạo, Học máy, Cấu trúc Dữ liệu..."
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
-                >
-                  <option value="Trí tuệ nhân tạo">Trí tuệ nhân tạo & Học máy</option>
-                  <option value="Vật lý đại cương">Vật lý đại cương & Kỹ thuật</option>
-                  <option value="Giải tích & Toán cao cấp">Giải tích & Toán cao cấp</option>
-                  <option value="Kinh tế vi mô">Kinh tế vi mô & Phân tích kinh doanh</option>
-                  <option value="Cơ sở dữ liệu">Hệ quản trị cơ sở dữ liệu</option>
-                </select>
+                />
+              </div>
+
+              {/* Research Interests */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  5. Hướng nghiên cứu chuyên sâu
+                </label>
+                <input
+                  type="text"
+                  value={draftResearch}
+                  onChange={(e) => setDraftResearch(e.target.value)}
+                  placeholder="Ví dụ: Large Language Models, Natural Language Processing, AI trong giáo dục..."
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-800 outline-none"
+                />
               </div>
             </div>
           )}
