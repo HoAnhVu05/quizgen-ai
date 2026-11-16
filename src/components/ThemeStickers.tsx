@@ -305,110 +305,189 @@ export const ThemeCornerSticker: React.FC<ThemeCornerStickerProps> = ({
         )
       )}
 
-      {/* ⭐ 30/4: DẢI BĂNG VINH QUANG ĐỎ VÀNG, NGÔI SAO & CHIM BỒ CÂU HÒA BÌNH (KHÔNG CÓ CÂU ĐỐI TẾT) */}
+      {/* ⭐ 30/4: KHÓM TRE XANH VIỆT NAM, ĐÔI CHIM BỒ CÂU HÒA BÌNH & ĐÓA SEN HỒNG (HOÀN TOÀN KHÔNG CÓ RUY BĂNG) */}
       {themeId === 'victory_30_4' && (
         isRight ? (
-          /* Góc phải: Dải băng đỏ - vàng vinh quang & Chim bồ câu hòa bình */
-          <svg width="240" height="170" viewBox="0 0 240 170" fill="none" className="drop-shadow-sm opacity-95">
+          /* Góc phải: Vòm khóm tre xanh kiên cường, đôi chim bồ câu trắng ngậm nhành ô liu hòa bình & ánh bình minh độc lập */
+          <svg width="240" height="180" viewBox="0 0 240 180" fill="none" className="drop-shadow-sm opacity-95">
             <defs>
-              <linearGradient id="vRibbon" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#EF4444" />
-                <stop offset="60%" stopColor="#DC2626" />
-                <stop offset="100%" stopColor="#991B1B" />
+              <linearGradient id="sunDawn304" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#FEF08A" stopOpacity="0.8" />
+                <stop offset="60%" stopColor="#FFD166" stopOpacity="0.4" />
+                <stop offset="100%" stopColor="#DC2626" stopOpacity="0" />
               </linearGradient>
             </defs>
 
-            {/* Dải ruy băng vinh quang đỏ - vàng góc chéo */}
-            <path d="M240 0 L240 38 L38 240 L0 240 Z" fill="url(#vRibbon)" opacity="0.9" />
-            <path d="M240 6 L240 14 L14 240 L6 240 Z" fill="#FDE047" />
-            <path d="M240 24 L240 32 L32 240 L24 240 Z" fill="#FDE047" />
+            {/* Ánh bình minh hòa bình tỏa rạng từ góc */}
+            <circle cx="210" cy="20" r="60" fill="url(#sunDawn304)" />
 
-            {/* Ngôi sao vàng năm cánh vinh quang */}
-            <g transform="translate(180, 45)">
-              <circle cx="0" cy="0" r="20" fill="#DC2626" stroke="#FEF08A" strokeWidth="1.5" />
-              <polygon
-                points="0,-14 4,-4 14,-4 6,2 9,12 0,6 -9,12 -6,2 -14,-4 -4,-4"
-                fill="#FFFF00"
-                stroke="#F59E0B"
-                strokeWidth="0.8"
-              />
+            {/* Khóm tre làng ngà Việt Nam xanh tươi uốn cong duyên dáng */}
+            <g transform="translate(195, 0)">
+              {/* Thân tre chính uốn lượn */}
+              <path d="M35 -5 C-10 18 -55 45 -115 80" stroke="#15803D" strokeWidth="3" strokeLinecap="round" fill="none" />
+              {/* Các đốt tre thanh mảnh */}
+              <circle cx="-10" cy="18" r="2" fill="#166534" />
+              <circle cx="-50" cy="42" r="2" fill="#166534" />
+              <circle cx="-85" cy="63" r="2" fill="#166534" />
+
+              {/* Chùm lá tre xanh biếc thanh thoát xếp lớp */}
+              <path d="M-10 18 C-30 12 -45 22 -35 30 Z" fill="#16A34A" />
+              <path d="M-15 17 C-25 5 -45 10 -35 22 Z" fill="#22C55E" />
+              <path d="M-50 42 C-70 38 -85 50 -70 56 Z" fill="#16A34A" />
+              <path d="M-52 40 C-68 28 -88 35 -75 48 Z" fill="#22C55E" />
+              <path d="M-85 63 C-110 60 -125 78 -105 84 Z" fill="#16A34A" />
+              <path d="M-88 61 C-108 50 -128 58 -115 72 Z" fill="#22C55E" />
             </g>
 
-            {/* Chim bồ câu trắng hòa bình tung cánh ngậm nhành ô liu */}
-            <g transform="translate(75, 85)">
+            {/* Đôi chim bồ câu trắng tinh khôi sải cánh bay lượn */}
+            {/* Chú bồ câu dẫn đầu ngậm nhành ô liu */}
+            <g transform="translate(100, 50) scale(0.9)">
               <path
-                d="M0 0 C6 -10 20 -14 30 -10 C26 -2 18 5 10 11 C18 13 30 11 35 20 C24 20 12 17 6 13 C3 16 -2 21 -8 19 C-13 13 -6 5 0 0 Z"
+                d="M0 0 C8 -14 24 -16 32 -10 C26 -2 18 6 10 12 C20 14 32 12 38 22 C26 22 14 18 8 14 C4 18 -2 24 -9 21 C-15 14 -7 6 0 0 Z"
                 fill="#FFFFFF"
-                stroke="#CBD5E1"
+                stroke="#E2E8F0"
                 strokeWidth="1.2"
               />
-              <circle cx="2" cy="-4" r="1.5" fill="#0F172A" />
-              <path d="M12 -8 C18 -14 25 -13 28 -8" stroke="#16A34A" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-              <circle cx="18" cy="-12" r="1.8" fill="#22C55E" />
+              <circle cx="3" cy="-5" r="1.5" fill="#0F172A" />
+              {/* Nhành ô liu hòa bình ngậm trong mỏ */}
+              <path d="M-7 4 Q-14 2 -16 8" stroke="#16A34A" strokeWidth="1.2" fill="none" />
+              <circle cx="-16" cy="8" r="1.8" fill="#22C55E" />
+              <circle cx="-12" cy="3" r="1.5" fill="#22C55E" />
+            </g>
+
+            {/* Chú bồ câu thứ hai bay kèm */}
+            <g transform="translate(50, 90) scale(0.68)">
+              <path
+                d="M0 0 C8 -14 24 -16 32 -10 C26 -2 18 6 10 12 C20 14 32 12 38 22 C26 22 14 18 8 14 C4 18 -2 24 -9 21 C-15 14 -7 6 0 0 Z"
+                fill="#FFFFFF"
+                stroke="#E2E8F0"
+                strokeWidth="1.2"
+              />
+              <circle cx="3" cy="-5" r="1.5" fill="#0F172A" />
+            </g>
+
+            {/* Đóa sen hồng Đồng Tháp e ấp bên dưới */}
+            <g transform="translate(185, 115) scale(0.85)">
+              <path d="M0 0 C-8 -12 -14 -24 0 -36 C14 -24 8 -12 0 0 Z" fill="#FDA4AF" stroke="#E11D48" strokeWidth="1.2" />
+              <path d="M-4 -4 C-16 -12 -25 -20 -16 -32 C-8 -25 0 -16 -4 -4 Z" fill="#FB7185" />
+              <path d="M4 -4 C16 -12 25 -20 16 -32 C8 -25 0 -16 4 -4 Z" fill="#FB7185" />
+              <circle cx="0" cy="-6" r="3" fill="#FDE047" />
             </g>
           </svg>
         ) : (
-          /* Góc trái: Đóa sen hồng hòa bình vươn cánh thanh khiết */
-          <svg width="180" height="140" viewBox="0 0 180 140" fill="none" className="drop-shadow-xs opacity-95">
-            <g transform="translate(45, 65) scale(0.95)">
+          /* Góc trái: Nhánh tre thanh mảnh, đóa sen hồng vươn cánh & bồ câu bay về phương Nam */
+          <svg width="200" height="140" viewBox="0 0 200 140" fill="none" className="drop-shadow-xs opacity-95">
+            {/* Nhánh tre thanh mảnh góc trái */}
+            <path d="M-10 -5 C25 15 65 35 110 50" stroke="#15803D" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+            <path d="M40 22 C60 16 75 25 65 32 Z" fill="#16A34A" />
+            <path d="M75 36 C95 32 110 42 100 48 Z" fill="#22C55E" />
+
+            {/* Đóa sen hồng hòa bình vươn cánh */}
+            <g transform="translate(45, 68) scale(0.9)">
               <path d="M0 0 C-8 -12 -14 -24 0 -36 C14 -24 8 -12 0 0 Z" fill="#FDA4AF" stroke="#E11D48" strokeWidth="1.2" />
               <path d="M-4 -4 C-16 -12 -24 -20 -16 -30 C-8 -22 0 -14 -4 -4 Z" fill="#FB7185" />
               <path d="M4 -4 C16 -12 24 -20 16 -30 C8 -22 0 -14 4 -4 Z" fill="#FB7185" />
               <circle cx="0" cy="-6" r="3" fill="#FDE047" />
             </g>
-            <circle cx="85" cy="85" r="3.5" fill="#16A34A" />
-            <circle cx="25" cy="80" r="3.5" fill="#16A34A" />
+
+            {/* Chim bồ câu trắng chao cánh từ xa */}
+            <g transform="translate(130, 45) scale(0.65)">
+              <path
+                d="M0 0 C8 -14 24 -16 32 -10 C26 -2 18 6 10 12 C20 14 32 12 38 22 C26 22 14 18 8 14 C4 18 -2 24 -9 21 C-15 14 -7 6 0 0 Z"
+                fill="#FFFFFF"
+                stroke="#E2E8F0"
+                strokeWidth="1.2"
+              />
+              <circle cx="3" cy="-5" r="1.5" fill="#0F172A" />
+            </g>
           </svg>
         )
       )}
 
-      {/* 🇻🇳 2/9: CHÙM PHÁO HOA RỰC SÁNG QUỐC KHÁNH & SEN VÀNG BA ĐÌNH (KHÔNG CÓ CÂU ĐỐI TẾT) */}
+      {/* 🇻🇳 2/9: PHÙ ĐIÊU TRỐNG ĐỒNG ĐÔNG SƠN HOÀNG KIM & PHÁO HOA TẾT ĐỘC LẬP (HOÀN TOÀN KHÔNG CÓ RUY BĂNG) */}
       {themeId === 'national_day_2_9' && (
         isRight ? (
-          /* Góc phải: Pháo hoa Quốc khánh & Cờ Tổ quốc tung bay */
-          <svg width="240" height="170" viewBox="0 0 240 170" fill="none" className="drop-shadow-sm opacity-95">
+          /* Góc phải: Vòm Trống Đồng Đông Sơn dát vàng kim, pháo hoa rực sáng & cờ đỏ sao vàng mềm mại */
+          <svg width="240" height="180" viewBox="0 0 240 180" fill="none" className="drop-shadow-sm opacity-95">
             <defs>
-              <linearGradient id="natRibbon" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stopColor="#DC2626" />
-                <stop offset="100%" stopColor="#991B1B" />
+              <linearGradient id="dongSonGold" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#FEF08A" />
+                <stop offset="50%" stopColor="#F59E0B" />
+                <stop offset="100%" stopColor="#D97706" />
               </linearGradient>
             </defs>
 
-            {/* Dải ruy băng cờ đỏ */}
-            <path d="M240 0 L240 38 L38 240 L0 240 Z" fill="url(#natRibbon)" opacity="0.9" />
-            <path d="M240 8 L240 18 L18 240 L8 240 Z" fill="#FDE047" />
+            {/* Vòm phù điêu Trống Đồng Đông Sơn góc trên bên phải */}
+            <g transform="translate(240, 0)">
+              {/* Vòng cung đồng tâm lớn */}
+              <circle cx="0" cy="0" r="110" stroke="url(#dongSonGold)" strokeWidth="2" strokeDasharray="4,2" fill="none" opacity="0.85" />
+              <circle cx="0" cy="0" r="90" stroke="url(#dongSonGold)" strokeWidth="1.5" fill="none" opacity="0.7" />
+              <circle cx="0" cy="0" r="70" stroke="url(#dongSonGold)" strokeWidth="2.5" fill="none" opacity="0.9" />
+              <circle cx="0" cy="0" r="45" fill="#B91C1C" stroke="url(#dongSonGold)" strokeWidth="2" />
 
-            {/* Pháo hoa hoa văn sao vàng tỏa sáng */}
-            <g transform="translate(160, 50)">
-              <circle cx="0" cy="0" r="5" fill="#FFFF00" />
-              <line x1="0" y1="-25" x2="0" y2="-12" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
-              <line x1="0" y1="12" x2="0" y2="25" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
-              <line x1="-25" y1="0" x2="-12" y2="0" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
-              <line x1="12" y1="0" x2="25" y2="0" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
-              <line x1="-18" y1="-18" x2="-9" y2="-9" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="9" y1="9" x2="18" y2="18" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="18" y1="-18" x2="9" y2="-9" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" />
-              <line x1="-9" y1="9" x2="-18" y2="18" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" />
+              {/* Ngôi sao mặt trời Đông Sơn 14 cánh ở tâm */}
+              <polygon
+                points="0,-25 3,-8 18,-18 8,-3 25,0 8,3 18,18 3,8 0,25 -3,8 -18,18 -8,3 -25,0 -8,-3 -18,-18 -3,-8"
+                fill="#FFFF00"
+              />
+
+              {/* Chim Lạc Đông Sơn sải cánh bay lượn quanh vòng tròn */}
+              <g transform="translate(-58, 48) rotate(-40) scale(0.8)">
+                <path d="M0 0 C12 -8 24 -4 32 0 C22 2 12 10 4 14 C14 16 26 14 34 22 C22 22 10 18 0 12 Z" fill="url(#dongSonGold)" />
+              </g>
+              <g transform="translate(-75, 15) rotate(-15) scale(0.8)">
+                <path d="M0 0 C12 -8 24 -4 32 0 C22 2 12 10 4 14 C14 16 26 14 34 22 C22 22 10 18 0 12 Z" fill="url(#dongSonGold)" />
+              </g>
             </g>
 
-            {/* Cờ Đỏ Sao Vàng Quốc Kỳ Việt Nam */}
-            <g transform="translate(70, 75)">
-              <path d="M0 0 C15 -4 28 4 42 0 L42 28 C28 32 15 24 0 28 Z" fill="#DC2626" stroke="#B91C1C" strokeWidth="1" />
-              <polygon points="21,9 23,13 28,13 24,16 26,21 21,18 16,21 18,16 14,13 19,13" fill="#FFFF00" />
+            {/* Chùm pháo hoa rực sáng Quốc khánh tỏa ra từ góc trời */}
+            <g transform="translate(130, 85)">
+              <circle cx="0" cy="0" r="3.5" fill="#FFFF00" />
+              {/* Tia pháo hoa vàng kim & đỏ thắm */}
+              <line x1="0" y1="-28" x2="0" y2="-12" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
+              <line x1="0" y1="12" x2="0" y2="28" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
+              <line x1="-28" y1="0" x2="-12" y2="0" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
+              <line x1="12" y1="0" x2="28" y2="0" stroke="#FFD166" strokeWidth="2" strokeLinecap="round" />
+              <line x1="-20" y1="-20" x2="-9" y2="-9" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="9" y1="9" x2="20" y2="20" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="20" y1="-20" x2="9" y2="-9" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round" />
+              <line x1="-9" y1="9" x2="-20" y2="20" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round" />
+              {/* Đốm sáng pháo hoa lung linh */}
+              <circle cx="-24" cy="-14" r="1.5" fill="#FEF08A" />
+              <circle cx="24" cy="-14" r="1.5" fill="#FEF08A" />
+              <circle cx="16" cy="24" r="1.5" fill="#FEF08A" />
+            </g>
+
+            {/* Lá cờ Tổ quốc Đỏ Sao Vàng uy nghi mềm mại */}
+            <g transform="translate(45, 95)">
+              <path d="M0 0 C16 -6 32 4 48 0 L48 30 C32 34 16 24 0 30 Z" fill="#DC2626" stroke="#B91C1C" strokeWidth="1" />
+              <polygon points="24,9 26,14 31,14 27,17 29,22 24,19 19,22 21,17 17,14 22,14" fill="#FFFF00" />
             </g>
           </svg>
         ) : (
-          /* Góc trái: Đóa sen vàng Ba Đình thanh cao & Chim Lạc Trống đồng */
-          <svg width="180" height="140" viewBox="0 0 180 140" fill="none" className="drop-shadow-xs opacity-95">
-            <g transform="translate(45, 65) scale(0.95)">
+          /* Góc trái: Cụm Sen Vàng Ba Đình thanh cao & Đàn Chim Lạc dát vàng bay về cội nguồn */
+          <svg width="200" height="140" viewBox="0 0 200 140" fill="none" className="drop-shadow-xs opacity-95">
+            <defs>
+              <linearGradient id="lacGold" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#FEF08A" />
+                <stop offset="100%" stopColor="#F59E0B" />
+              </linearGradient>
+            </defs>
+
+            {/* Đóa sen vàng Ba Đình quý phái */}
+            <g transform="translate(45, 75) scale(0.95)">
               <path d="M0 0 C-8 -12 -14 -24 0 -36 C14 -24 8 -12 0 0 Z" fill="#FDE047" stroke="#D97706" strokeWidth="1.2" />
               <path d="M-4 -4 C-16 -12 -25 -20 -16 -30 C-8 -22 0 -14 -4 -4 Z" fill="#FEF08A" stroke="#D97706" strokeWidth="0.8" />
               <path d="M4 -4 C16 -12 25 -20 16 -30 C8 -22 0 -14 4 -4 Z" fill="#FEF08A" stroke="#D97706" strokeWidth="0.8" />
-              <circle cx="0" cy="-6" r="3" fill="#DC2626" />
+              <circle cx="0" cy="-6" r="3.5" fill="#DC2626" />
             </g>
-            {/* Chim Lạc bay vút lên */}
-            <g transform="translate(95, 45) scale(0.7)">
-              <path d="M0 0 C10 -15 25 -10 35 -5 C25 -2 15 8 5 12 Z" fill="#D97706" />
+
+            {/* Đàn Chim Lạc Trống đồng tung cánh vút cao */}
+            <g transform="translate(100, 35) scale(0.75)">
+              <path d="M0 0 C12 -8 24 -4 32 0 C22 2 12 10 4 14 C14 16 26 14 34 22 C22 22 10 18 0 12 Z" fill="url(#lacGold)" />
+            </g>
+            <g transform="translate(145, 60) scale(0.55)">
+              <path d="M0 0 C12 -8 24 -4 32 0 C22 2 12 10 4 14 C14 16 26 14 34 22 C22 22 10 18 0 12 Z" fill="url(#lacGold)" />
             </g>
           </svg>
         )
