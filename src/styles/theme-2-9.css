@@ -1,0 +1,49 @@
+/* ==========================================================================
+   QUIZGEN AI - MODERN VIETNAMESE NATIONAL DAY (QUỐC KHÁNH 2/9)
+   Bảng màu quy chuẩn:
+   - Đỏ quốc kỳ: #DA251D
+   - Đỏ đậm:     #B91C1C
+   - Vàng sao:   #FFCD00
+   - Vàng kim:   #E7B947
+   - Kem sáng:   #FFF7E6
+   - Trắng:      #FFFFFF
+   ========================================================================== */
+
+:root {
+  --nd29-flag-red: #DA251D;
+  --nd29-dark-red: #B91C1C;
+  --nd29-star-yellow: #FFCD00;
+  --nd29-gold: #E7B947;
+  --nd29-warm-cream: #FFF7E6;
+  --nd29-white: #FFFFFF;
+}
+
+[data-theme="national_day_2_9"] {
+  --theme-primary: #DA251D;
+  --theme-accent: #FFCD00;
+  --theme-secondary: #B91C1C;
+  --theme-glow: rgba(218, 37, 29, 0.16);
+}
+
+/* Ánh quang Ba Đình rực rỡ */
+@keyframes badinhSunray {
+  0%, 100% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 8px rgba(255, 205, 0, 0.45));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 16px rgba(255, 205, 0, 0.8));
+  }
+}
+
+.badinh-sunray-glow {
+  animation: badinhSunray 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badinh-sunray-glow {
+    animation: none !important;
+    transform: none !important;
+  }
+}

@@ -270,6 +270,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               className={`flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-xl border transition-all text-left shadow-2xs group ${
                 activeThemeId === 'spring'
                   ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/60'
+                  : activeThemeId === 'summer'
+                  ? 'border-[#26B9D5]/70 hover:border-[#087EAD] bg-[#EAFBFF]/60'
+                  : activeThemeId === 'autumn'
+                  ? 'border-[#E9B85D]/70 hover:border-[#B85C38] bg-[#FFF3DF]/60'
+                  : activeThemeId === 'winter'
+                  ? 'border-[#78BDE8]/70 hover:border-[#2563A6] bg-[#F3FAFF]/60'
+                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                  ? 'border-[#E7B947]/70 hover:border-[#DA251D] bg-[#FFF3D1]/60'
                   : 'border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50'
               }`}
               title="Nhấp để xem & cập nhật hồ sơ tài khoản"
@@ -278,6 +286,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
                   activeThemeId === 'spring'
                     ? 'bg-gradient-to-tr from-[#B82025] to-[#E7B947] text-white'
+                    : activeThemeId === 'summer'
+                    ? 'bg-gradient-to-tr from-[#087EAD] to-[#26B9D5] text-white'
+                    : activeThemeId === 'autumn'
+                    ? 'bg-gradient-to-tr from-[#B85C38] to-[#E9B85D] text-white'
+                    : activeThemeId === 'winter'
+                    ? 'bg-gradient-to-tr from-[#2563A6] to-[#78BDE8] text-white'
+                    : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                    ? 'bg-gradient-to-tr from-[#DA251D] to-[#FFCD00] text-white'
                     : 'bg-gradient-to-tr from-[#008689] to-teal-400 text-white'
                 }`}
               >
@@ -288,6 +304,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   className={`text-xs font-bold truncate leading-tight transition-colors ${
                     activeThemeId === 'spring'
                       ? 'text-[#8F171C] group-hover:text-[#B82025]'
+                      : activeThemeId === 'summer'
+                      ? 'text-[#087EAD] group-hover:text-[#26B9D5]'
+                      : activeThemeId === 'autumn'
+                      ? 'text-[#70452F] group-hover:text-[#B85C38]'
+                      : activeThemeId === 'winter'
+                      ? 'text-[#243B64] group-hover:text-[#2563A6]'
+                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                      ? 'text-[#8F171C] group-hover:text-[#DA251D]'
                       : 'text-slate-800 group-hover:text-[#008689]'
                   }`}
                 >
@@ -297,7 +321,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   {currentUser?.department || 'Khoa Công nghệ thông tin'}
                 </div>
               </div>
-              <UserCog className={`w-4 h-4 shrink-0 ml-0.5 transition-colors ${activeThemeId === 'spring' ? 'text-[#E7B947] group-hover:text-[#B82025]' : 'text-slate-400 group-hover:text-[#008689]'}`} />
+              <UserCog className={`w-4 h-4 shrink-0 ml-0.5 transition-colors ${
+                activeThemeId === 'spring'
+                  ? 'text-[#E7B947] group-hover:text-[#B82025]'
+                  : activeThemeId === 'summer'
+                  ? 'text-[#26B9D5] group-hover:text-[#087EAD]'
+                  : activeThemeId === 'autumn'
+                  ? 'text-[#E9B85D] group-hover:text-[#B85C38]'
+                  : activeThemeId === 'winter'
+                  ? 'text-[#78BDE8] group-hover:text-[#2563A6]'
+                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                  ? 'text-[#FFCD00] group-hover:text-[#DA251D]'
+                  : 'text-slate-400 group-hover:text-[#008689]'
+              }`} />
             </button>
 
             {/* Subscription Plan Badge & Upgrade Action */}
@@ -309,6 +345,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold shadow-2xs cursor-pointer transition-colors ${
                       activeThemeId === 'spring'
                         ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947] hover:bg-amber-100/90'
+                        : activeThemeId === 'summer'
+                        ? 'bg-[#EAFBFF] text-[#087EAD] border border-[#26B9D5] hover:bg-cyan-100/90'
+                        : activeThemeId === 'autumn'
+                        ? 'bg-[#FFF3DF] text-[#70452F] border border-[#E9B85D] hover:bg-amber-100/90'
+                        : activeThemeId === 'winter'
+                        ? 'bg-[#F3FAFF] text-[#243B64] border border-[#78BDE8] hover:bg-sky-100/90'
+                        : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                        ? 'bg-[#FFF3D1] text-[#8F171C] border border-[#E7B947] hover:bg-amber-100/90'
                         : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100/80'
                     }`}
                     onClick={onOpenPricingModal}
@@ -322,6 +366,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
                         activeThemeId === 'spring'
                           ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
+                          : activeThemeId === 'summer'
+                          ? 'bg-gradient-to-r from-[#087EAD] to-[#26B9D5] text-[#FFD166] border border-[#FFD166]'
+                          : activeThemeId === 'autumn'
+                          ? 'bg-gradient-to-r from-[#B85C38] to-[#70452F] text-[#FFF3DF] border border-[#E9B85D]'
+                          : activeThemeId === 'winter'
+                          ? 'bg-gradient-to-r from-[#243B64] to-[#2563A6] text-[#F3FAFF] border border-[#78BDE8]'
+                          : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                          ? 'bg-gradient-to-r from-[#DA251D] to-[#8F171C] text-[#FFF3D1] border border-[#FFCD00]'
                           : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
                       }`}
                       title="Nâng cấp lên gói 1 Năm để tiết kiệm 80%"
@@ -337,6 +389,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-white text-[11px] font-black shadow-xs cursor-pointer transition-colors ${
                     activeThemeId === 'spring'
                       ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] border border-[#E7B947] hover:brightness-110'
+                      : activeThemeId === 'summer'
+                      ? 'bg-gradient-to-r from-[#087EAD] to-[#26B9D5] text-white border border-[#FFD166] hover:brightness-110'
+                      : activeThemeId === 'autumn'
+                      ? 'bg-gradient-to-r from-[#B85C38] to-[#70452F] text-[#FFF3DF] border border-[#E9B85D] hover:brightness-110'
+                      : activeThemeId === 'winter'
+                      ? 'bg-gradient-to-r from-[#243B64] to-[#2563A6] text-white border border-[#78BDE8] hover:brightness-110'
+                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                      ? 'bg-gradient-to-r from-[#DA251D] to-[#8F171C] text-[#FFCD00] border border-[#FFCD00] hover:brightness-110'
                       : 'bg-amber-500 border border-amber-400 hover:bg-amber-600'
                   }`}
                   onClick={onOpenPricingModal}
@@ -363,6 +423,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                       className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
                         activeThemeId === 'spring'
                           ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
+                          : activeThemeId === 'summer'
+                          ? 'bg-gradient-to-r from-[#087EAD] to-[#26B9D5] text-[#FFD166] border border-[#FFD166]'
+                          : activeThemeId === 'autumn'
+                          ? 'bg-gradient-to-r from-[#B85C38] to-[#70452F] text-[#FFF3DF] border border-[#E9B85D]'
+                          : activeThemeId === 'winter'
+                          ? 'bg-gradient-to-r from-[#243B64] to-[#2563A6] text-[#F3FAFF] border border-[#78BDE8]'
+                          : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                          ? 'bg-gradient-to-r from-[#DA251D] to-[#8F171C] text-[#FFF3D1] border border-[#FFCD00]'
                           : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
                       }`}
                     >
@@ -383,14 +451,34 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   showParticles
                     ? activeThemeId === 'spring'
                       ? 'bg-[#FFF8E9] border-[#E7B947] text-[#8F171C] hover:bg-amber-100/80'
+                      : activeThemeId === 'summer'
+                      ? 'bg-[#EAFBFF] border-[#26B9D5] text-[#087EAD] hover:bg-cyan-100/80'
+                      : activeThemeId === 'autumn'
+                      ? 'bg-[#FFF3DF] border-[#E9B85D] text-[#B85C38] hover:bg-amber-100/80'
+                      : activeThemeId === 'winter'
+                      ? 'bg-[#F3FAFF] border-[#78BDE8] text-[#2563A6] hover:bg-sky-100/80'
+                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                      ? 'bg-[#FFF3D1] border-[#E7B947] text-[#DA251D] hover:bg-amber-100/80'
                       : 'bg-teal-50 border-teal-200 text-[#008689] hover:bg-teal-100/70'
                     : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
                 }`}
-                title={showParticles ? "Nhấn để tắt hiệu ứng hoa rơi" : "Nhấn để bật hiệu ứng hoa rơi"}
+                title={showParticles ? "Nhấn để tắt hiệu ứng hạt" : "Nhấn để bật hiệu ứng hạt"}
               >
                 {showParticles ? (
                   <>
-                    <Sparkles className={`w-3.5 h-3.5 ${activeThemeId === 'spring' ? 'text-[#E7B947]' : 'text-[#008689]'}`} />
+                    <Sparkles className={`w-3.5 h-3.5 ${
+                      activeThemeId === 'spring'
+                        ? 'text-[#E7B947]'
+                        : activeThemeId === 'summer'
+                        ? 'text-[#FFD166]'
+                        : activeThemeId === 'autumn'
+                        ? 'text-[#E9B85D]'
+                        : activeThemeId === 'winter'
+                        ? 'text-[#78BDE8]'
+                        : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                        ? 'text-[#FFCD00]'
+                        : 'text-[#008689]'
+                    }`} />
                     <span className="hidden lg:inline">Hiệu ứng: Bật</span>
                   </>
                 ) : (

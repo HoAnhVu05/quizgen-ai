@@ -382,101 +382,71 @@ export const ThemeChibiMascot: React.FC<ThemeComponentProps> = ({ themeId, class
 
 /**
  * 2. CÀNH HOA MAI & LỒNG ĐÈN GÓC PHẢI HEADER SIDEBAR
- * Bố trí tinh tế, gọn gàng ở góc trên bên phải, hoàn toàn không che khuất chữ hay logo.
+ * Bố trí tinh tế, rủ sát mép phải ngoài cùng, chỉ để mỗi lồng đèn/vật phẩm treo tối giản,
+ * hoàn toàn không có nhành cây hay hoa lá che lấp logo hoặc chữ QuizGen AI.
  */
 export const ThemeSidebarHeaderCorner: React.FC<ThemeComponentProps> = ({ themeId, className = '' }) => {
   if (themeId === 'default') return null;
 
   return (
-    <div className={`absolute -top-1 -right-1 pointer-events-none select-none z-20 overflow-visible ${className}`} aria-hidden="true">
+    <div className={`absolute top-0 right-2 pointer-events-none select-none z-20 overflow-visible ${className}`} aria-hidden="true">
+      {/* 🌸 TẾT: Chỉ để duy nhất một lồng đèn đỏ may mắn rủ xuống tinh tế theo yêu cầu người dùng */}
       {themeId === 'spring' && (
-        <svg width="85" height="55" viewBox="0 0 85 55" fill="none" className="overflow-visible drop-shadow-xs">
-          {/* Cành mai uốn gọn gàng sát mép góc trên, không che xuống dòng chữ */}
-          <path
-            d="M86 -2 C68 6 52 14 36 22 C26 26 18 28 8 28"
-            stroke="#78350F"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-          />
-          <path
-            d="M62 10 C70 18 76 26 80 34"
-            stroke="#78350F"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
-
-          {/* Lộc non xanh biếc */}
-          <ellipse cx="20" cy="26" rx="3.5" ry="1.8" transform="rotate(-20 20 26)" fill="#22C55E" />
-          <ellipse cx="48" cy="16" rx="3.5" ry="1.8" transform="rotate(25 48 16)" fill="#22C55E" />
-
-          {/* Cụm hoa mai vàng nở rộ trên cành */}
-          <g transform="translate(74, 8)">
-            <circle cx="0" cy="-5" r="4" fill="#FDE047" />
-            <circle cx="5" cy="-1.5" r="4" fill="#FDE047" />
-            <circle cx="3" cy="4" r="4" fill="#FDE047" />
-            <circle cx="-3" cy="4" r="4" fill="#FDE047" />
-            <circle cx="-5" cy="-1.5" r="4" fill="#FDE047" />
-            <circle cx="0" cy="0" r="2" fill="#B82025" />
-          </g>
-
-          <g transform="translate(48, 17) scale(0.85)">
-            <circle cx="0" cy="-5" r="4" fill="#FDE047" />
-            <circle cx="5" cy="-1.5" r="4" fill="#FDE047" />
-            <circle cx="3" cy="4" r="4" fill="#FDE047" />
-            <circle cx="-3" cy="4" r="4" fill="#FDE047" />
-            <circle cx="-5" cy="-1.5" r="4" fill="#FDE047" />
-            <circle cx="0" cy="0" r="2" fill="#B82025" />
-          </g>
-
-          <g transform="translate(24, 25) scale(0.65)">
-            <circle cx="0" cy="-5" r="4" fill="#FBBF24" />
-            <circle cx="5" cy="-1.5" r="4" fill="#FBBF24" />
-            <circle cx="3" cy="4" r="4" fill="#FBBF24" />
-            <circle cx="-3" cy="4" r="4" fill="#FBBF24" />
-            <circle cx="-5" cy="-1.5" r="4" fill="#FBBF24" />
-            <circle cx="0" cy="0" r="2" fill="#B82025" />
-          </g>
-
-          {/* Nụ hoa e ấp */}
-          <circle cx="10" cy="28" r="2.5" fill="#FDA4AF" stroke="#E11D48" strokeWidth="0.8" />
-
-          {/* Lồng đèn đỏ mini rủ xuống sát mép phải ngoài cùng */}
-          <g transform="translate(76, 26)" className="tet-lantern-swing">
-            <line x1="0" y1="-8" x2="0" y2="0" stroke="#D97706" strokeWidth="1" />
-            <ellipse cx="0" cy="9" rx="6.5" ry="9" fill="#B82025" stroke="#E7B947" strokeWidth="0.8" />
-            <ellipse cx="0" cy="9" rx="2.8" ry="8" fill="#8F171C" />
-            <rect x="-4" y="0" width="8" height="1.5" rx="0.5" fill="#E7B947" />
-            <rect x="-4" y="17" width="8" height="1.5" rx="0.5" fill="#E7B947" />
-            <line x1="0" y1="18.5" x2="0" y2="28" stroke="#E7B947" strokeWidth="1" />
+        <svg width="22" height="42" viewBox="0 0 22 42" fill="none" className="overflow-visible drop-shadow-xs">
+          <g transform="translate(11, 0)" className="tet-lantern-swing">
+            <line x1="0" y1="0" x2="0" y2="8" stroke="#D97706" strokeWidth="1.2" />
+            <ellipse cx="0" cy="18" rx="8" ry="10" fill="#B82025" stroke="#E7B947" strokeWidth="1" />
+            <ellipse cx="0" cy="18" rx="3.5" ry="9" fill="#8F171C" />
+            <rect x="-5" y="8" width="10" height="2" rx="0.5" fill="#E7B947" />
+            <rect x="-5" y="26" width="10" height="2" rx="0.5" fill="#E7B947" />
+            <line x1="0" y1="28" x2="0" y2="40" stroke="#E7B947" strokeWidth="1.2" />
           </g>
         </svg>
       )}
 
-      {/* Hỗ trợ các theme khác */}
-      {themeId === 'victory_30_4' && (
-        <svg width="85" height="55" viewBox="0 0 85 55" fill="none" className="overflow-visible drop-shadow-xs">
-          <path d="M86 -2 C68 6 52 14 36 22" stroke="#DC2626" strokeWidth="2.2" strokeLinecap="round" />
-          <g transform="translate(74, 20)">
-            <circle cx="0" cy="0" r="7" fill="#DC2626" stroke="#FEF08A" strokeWidth="1" />
-            <polygon points="0,-4 1.2,-1.2 4,-1.2 1.8,0.5 2.5,3.2 0,1.8 -2.5,3.2 -1.8,0.5 -4,-1.2 -1.2,-1.2" fill="#FFFF00" />
+      {/* ☀️ MÙA HÈ: Chuông gió biển hoặc mặt trời nhỏ rủ nhẹ */}
+      {themeId === 'summer' && (
+        <svg width="22" height="42" viewBox="0 0 22 42" fill="none" className="overflow-visible drop-shadow-xs">
+          <g transform="translate(11, 0)" className="tet-lantern-swing">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#087EAD" strokeWidth="1.2" />
+            <circle cx="0" cy="18" r="7" fill="#FFD166" stroke="#26B9D5" strokeWidth="1" />
+            <line x1="0" y1="25" x2="0" y2="38" stroke="#26B9D5" strokeWidth="1.2" strokeDasharray="1 2" />
           </g>
         </svg>
       )}
-      {themeId === 'national_day_2_9' && (
-        <svg width="85" height="55" viewBox="0 0 85 55" fill="none" className="overflow-visible drop-shadow-xs">
-          <path d="M86 -2 C68 6 52 14 36 22" stroke="#DC2626" strokeWidth="2.2" strokeLinecap="round" />
-          <g transform="translate(74, 20)">
-            <circle cx="0" cy="0" r="7" fill="#B91C1C" stroke="#FEF08A" strokeWidth="1" />
-            <polygon points="0,-4 1.2,-1.2 4,-1.2 1.8,0.5 2.5,3.2 0,1.8 -2.5,3.2 -1.8,0.5 -4,-1.2 -1.2,-1.2" fill="#FFFF00" />
+
+      {/* 🍂 MÙA THU: Lá phong vàng nghệ thuật đung đưa nhẹ */}
+      {themeId === 'autumn' && (
+        <svg width="22" height="42" viewBox="0 0 22 42" fill="none" className="overflow-visible drop-shadow-xs">
+          <g transform="translate(11, 0)" className="tet-lantern-swing">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#B85C38" strokeWidth="1.2" />
+            <path d="M0 10 C-6 16 -4 23 0 26 C4 23 6 16 0 10 Z" fill="#E9B85D" stroke="#D98E36" strokeWidth="0.8" />
+            <line x1="0" y1="12" x2="0" y2="24" stroke="#70452F" strokeWidth="0.6" />
+            <line x1="0" y1="26" x2="0" y2="38" stroke="#E9B85D" strokeWidth="1.2" />
           </g>
         </svg>
       )}
+
+      {/* ❄️ MÙA ĐÔNG: Bông tuyết pha lê đung đưa */}
       {themeId === 'winter' && (
-        <svg width="85" height="55" viewBox="0 0 85 55" fill="none" className="overflow-visible drop-shadow-xs">
-          <path d="M86 -2 C68 6 52 14 36 22" stroke="#0284C7" strokeWidth="2.2" strokeLinecap="round" />
-          <g transform="translate(74, 20)">
-            <circle cx="0" cy="0" r="7" fill="#0284C7" stroke="#BAE6FD" strokeWidth="1" />
-            <text x="0" y="3" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#FFFFFF">❄</text>
+        <svg width="22" height="42" viewBox="0 0 22 42" fill="none" className="overflow-visible drop-shadow-xs">
+          <g transform="translate(11, 0)" className="tet-lantern-swing">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#78BDE8" strokeWidth="1.2" />
+            <circle cx="0" cy="18" r="7" fill="#F3FAFF" stroke="#2563A6" strokeWidth="1" />
+            <text x="0" y="21" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#2563A6">❄</text>
+            <line x1="0" y1="25" x2="0" y2="38" stroke="#78BDE8" strokeWidth="1.2" />
+          </g>
+        </svg>
+      )}
+
+      {/* ⭐ 30/4 & 2/9: Dải ruy băng sao vàng treo tinh tế */}
+      {(themeId === 'victory_30_4' || themeId === 'national_day_2_9') && (
+        <svg width="22" height="42" viewBox="0 0 22 42" fill="none" className="overflow-visible drop-shadow-xs">
+          <g transform="translate(11, 0)" className="tet-lantern-swing">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#DA251D" strokeWidth="1.2" />
+            <circle cx="0" cy="18" r="7" fill="#DA251D" stroke="#FFCD00" strokeWidth="1" />
+            <polygon points="0,13 1.5,16.5 5,16.5 2.2,18.5 3.3,22 0,19.8 -3.3,22 -2.2,18.5 -5,16.5 -1.5,16.5" fill="#FFCD00" />
+            <line x1="0" y1="25" x2="0" y2="38" stroke="#FFCD00" strokeWidth="1.2" />
           </g>
         </svg>
       )}
@@ -530,34 +500,101 @@ export const ThemeTopRightCorner: React.FC<ThemeComponentProps> = ({ themeId, cl
 };
 
 /**
- * 4. CỤM HOA MAI VÀNG Ở GÓC DƯỚI PHẢI 4 THẺ KPI (Chuẩn xác theo ảnh mẫu)
+ * 4. CỤM TRANG TRÍ Ở GÓC DƯỚI PHẢI 4 THẺ KPI (Chuẩn xác theo từng chủ đề)
  */
 export const ThemeKpiFlowerCorner: React.FC<ThemeComponentProps> = ({ themeId, className = '' }) => {
   if (themeId === 'default') return null;
 
   return (
     <div className={`absolute bottom-0 right-0 pointer-events-none select-none overflow-hidden ${className}`} aria-hidden="true">
-      <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
-        {/* Nhành cuống */}
-        <path d="M45 40 C35 30 25 32 15 35" stroke="#78350F" strokeWidth="1.5" strokeLinecap="round" />
-        {/* Hoa mai vàng */}
-        <g transform="translate(30, 24) scale(0.65)">
-          <circle cx="0" cy="-6" r="4.5" fill="#FDE047" />
-          <circle cx="6" cy="-2" r="4.5" fill="#FDE047" />
-          <circle cx="4" cy="5" r="4.5" fill="#FDE047" />
-          <circle cx="-4" cy="5" r="4.5" fill="#FDE047" />
-          <circle cx="-6" cy="-2" r="4.5" fill="#FDE047" />
-          <circle cx="0" cy="0" r="2.5" fill="#DC2626" />
-        </g>
-        <g transform="translate(16, 28) scale(0.45)">
-          <circle cx="0" cy="-6" r="4" fill="#FBBF24" />
-          <circle cx="6" cy="-2" r="4" fill="#FBBF24" />
-          <circle cx="4" cy="5" r="4" fill="#FBBF24" />
-          <circle cx="-4" cy="5" r="4" fill="#FBBF24" />
-          <circle cx="-6" cy="-2" r="4" fill="#FBBF24" />
-          <circle cx="0" cy="0" r="2" fill="#B91C1C" />
-        </g>
-      </svg>
+      {/* 🌸 TẾT: Hoa mai vàng rực rỡ */}
+      {themeId === 'spring' && (
+        <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
+          <path d="M45 40 C35 30 25 32 15 35" stroke="#78350F" strokeWidth="1.5" strokeLinecap="round" />
+          <g transform="translate(30, 24) scale(0.65)">
+            <circle cx="0" cy="-6" r="4.5" fill="#FDE047" />
+            <circle cx="6" cy="-2" r="4.5" fill="#FDE047" />
+            <circle cx="4" cy="5" r="4.5" fill="#FDE047" />
+            <circle cx="-4" cy="5" r="4.5" fill="#FDE047" />
+            <circle cx="-6" cy="-2" r="4.5" fill="#FDE047" />
+            <circle cx="0" cy="0" r="2.5" fill="#DC2626" />
+          </g>
+          <g transform="translate(16, 28) scale(0.45)">
+            <circle cx="0" cy="-6" r="4" fill="#FBBF24" />
+            <circle cx="6" cy="-2" r="4" fill="#FBBF24" />
+            <circle cx="4" cy="5" r="4.5" fill="#FBBF24" />
+            <circle cx="-4" cy="5" r="4" fill="#FBBF24" />
+            <circle cx="-6" cy="-2" r="4" fill="#FBBF24" />
+            <circle cx="0" cy="0" r="2" fill="#B91C1C" />
+          </g>
+        </svg>
+      )}
+
+      {/* ☀️ MÙA HÈ: Sóng biển nhiệt đới & Mặt trời vàng rực rỡ */}
+      {themeId === 'summer' && (
+        <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
+          <path d="M45 35 C35 27 25 38 12 36" stroke="#26B9D5" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M45 39 C38 33 28 41 18 40" stroke="#087EAD" strokeWidth="1.2" strokeLinecap="round" opacity="0.6" />
+          <g transform="translate(32, 22)">
+            <circle cx="0" cy="0" r="5" fill="#FFD166" stroke="#087EAD" strokeWidth="0.8" />
+            <line x1="0" y1="-8" x2="0" y2="-6" stroke="#FFD166" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="6" y1="-6" x2="4.5" y2="-4.5" stroke="#FFD166" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="8" y1="0" x2="6" y2="0" stroke="#FFD166" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="-8" y1="0" x2="-6" y2="0" stroke="#FFD166" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="-6" y1="-6" x2="-4.5" y2="-4.5" stroke="#FFD166" strokeWidth="1.2" strokeLinecap="round" />
+          </g>
+        </svg>
+      )}
+
+      {/* 🍂 MÙA THU: Chiếc lá phong vàng nghệ thuật */}
+      {themeId === 'autumn' && (
+        <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
+          <path d="M45 40 C36 32 28 35 18 36" stroke="#70452F" strokeWidth="1.5" strokeLinecap="round" />
+          <g transform="translate(28, 22) rotate(-15) scale(0.85)">
+            <path
+              d="M0 -8 L3 -4 L7 -5 L5 -1 L8 2 L3 3 L4 7 L0 4 L-4 7 L-3 3 L-8 2 L-5 -1 L-7 -5 L-3 -4 Z"
+              fill="#E9B85D"
+              stroke="#B85C38"
+              strokeWidth="0.8"
+            />
+            <line x1="0" y1="4" x2="0" y2="9" stroke="#70452F" strokeWidth="1" />
+          </g>
+        </svg>
+      )}
+
+      {/* ❄️ MÙA ĐÔNG: Bông tuyết pha lê lung linh */}
+      {themeId === 'winter' && (
+        <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
+          <path d="M45 40 C38 32 28 38 18 38" stroke="#78BDE8" strokeWidth="1.5" strokeLinecap="round" />
+          <g transform="translate(28, 22) scale(0.85)">
+            <line x1="0" y1="-7" x2="0" y2="7" stroke="#2563A6" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="-7" y1="0" x2="7" y2="0" stroke="#2563A6" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="-5" y1="-5" x2="5" y2="5" stroke="#2563A6" strokeWidth="1.2" strokeLinecap="round" />
+            <line x1="-5" y1="5" x2="5" y2="-5" stroke="#2563A6" strokeWidth="1.2" strokeLinecap="round" />
+            <circle cx="0" cy="0" r="2" fill="#78BDE8" />
+          </g>
+        </svg>
+      )}
+
+      {/* ⭐ 30/4: Ngôi sao vàng & đóa sen hòa bình */}
+      {themeId === 'victory_30_4' && (
+        <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
+          <path d="M45 40 C35 32 26 36 15 37" stroke="#DA251D" strokeWidth="1.5" strokeLinecap="round" />
+          <g transform="translate(28, 22) scale(0.8)">
+            <polygon points="0,-7 2,-2 7,-2 3,1 5,6 0,3 -5,6 -3,1 -7,-2 -2,-2" fill="#FFCD00" stroke="#E7B947" strokeWidth="0.8" />
+          </g>
+        </svg>
+      )}
+
+      {/* 🇻🇳 2/9: Ba Đình ngôi sao vàng & hoa sen */}
+      {themeId === 'national_day_2_9' && (
+        <svg width="45" height="40" viewBox="0 0 45 40" fill="none">
+          <path d="M45 40 C35 32 26 36 15 37" stroke="#B91C1C" strokeWidth="1.5" strokeLinecap="round" />
+          <g transform="translate(28, 22) scale(0.8)">
+            <polygon points="0,-7 2,-2 7,-2 3,1 5,6 0,3 -5,6 -3,1 -7,-2 -2,-2" fill="#FFCD00" stroke="#E7B947" strokeWidth="0.8" />
+          </g>
+        </svg>
+      )}
     </div>
   );
 };
