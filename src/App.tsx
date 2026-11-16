@@ -646,21 +646,16 @@ export const App: React.FC = () => {
     handleShowToast('info', 'Đã đăng xuất', 'Bạn đã đăng xuất an toàn khỏi hệ thống QuizGen AI.');
   };
 
-  const handleUpdateUserProfile = async (updates: {
-    fullName: string;
-    academicTitle: string;
-    department?: string;
-    faculty?: string;
-    university?: string;
-  }) => {
+  const handleUpdateUserProfile = async (updates: Partial<UserProfile>) => {
     if (!currentUser) return;
-    const nextDept = updates.department?.trim() || currentUser.department || 'Bộ môn Khoa học máy tính';
-    const nextFaculty = updates.faculty?.trim() || currentUser.faculty || 'Khoa Công nghệ thông tin';
-    const nextUniv = updates.university?.trim() || currentUser.university || 'Trường Đại học Giao thông vận tải TP.HCM (UTH)';
+    const nextDept = (updates.department || currentUser.department || '').trim();
+    const nextFaculty = (updates.faculty || currentUser.faculty || '').trim();
+    const nextUniv = (updates.university || currentUser.university || '').trim();
     const updatedUser: UserProfile = {
       ...currentUser,
-      fullName: updates.fullName.trim() || currentUser.fullName,
-      academicTitle: updates.academicTitle.trim(),
+      ...updates,
+      fullName: (updates.fullName || currentUser.fullName || '').trim(),
+      academicTitle: (updates.academicTitle !== undefined ? updates.academicTitle : currentUser.academicTitle || '').trim(),
       department: nextDept,
       faculty: nextFaculty,
       university: nextUniv,
@@ -960,6 +955,12 @@ export const App: React.FC = () => {
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
               currentUser={currentUser}
+              onLoadQuestions={(loadedQs) => {
+                setQuestions(loadedQs);
+                try {
+                  localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                } catch {}
+              }}
             />
           )}
 
