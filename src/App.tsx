@@ -19,6 +19,7 @@ import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, 
 import apiClient, { API_BASE } from './services/apiClient';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
+import { ThemeTopRightCorner, ThemeLuckyMoneyModal } from './components/ThemeFestiveComponents';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
@@ -78,6 +79,13 @@ const AppContent: React.FC = () => {
   const [adminTab, setAdminTab] = useState<string>('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isLuckyMoneyOpen, setIsLuckyMoneyOpen] = useState(() => {
+    try {
+      return localStorage.getItem('quizgen_lucky_money_seen_2027') !== 'true';
+    } catch {
+      return false;
+    }
+  });
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
@@ -830,6 +838,9 @@ const AppContent: React.FC = () => {
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
+      {/* Top-Right Corner Apricot Blossom & Lantern (Tương tự ảnh mẫu) */}
+      <ThemeTopRightCorner themeId={activeThemeId} />
+
       {/* Seasonal Particle Ambient Effect */}
       <ThemeParticleOverlay
         themeId={activeThemeId}
@@ -1018,6 +1029,22 @@ const AppContent: React.FC = () => {
           }}
           onShowToast={handleShowToast}
         />
+
+        {/* Lì Xì Khai Xuân Như Ý Popup (Xuân Đinh Mùi 2027) */}
+        {activeThemeId === 'spring' && (
+          <ThemeLuckyMoneyModal
+            isOpen={isLuckyMoneyOpen}
+            onClose={() => {
+              setIsLuckyMoneyOpen(false);
+              try {
+                localStorage.setItem('quizgen_lucky_money_seen_2027', 'true');
+              } catch {}
+            }}
+            onClaim={() => {
+              handleShowToast('success', 'Khai Xuân Đinh Mùi 2027', '🌸 Quý Thầy/Cô đã nhận Lộc Đầu Xuân! Kính chúc Vạn Sự Như Ý, Giảng Đường Hân Hoan!');
+            }}
+          />
+        )}
       </main>
 
       {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}

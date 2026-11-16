@@ -37,7 +37,8 @@ import {
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
 import { useTheme } from '../context/ThemeContext';
-import { ThemeLogoBadge, ThemeAccountStickerCluster } from './ThemeStickers';
+import { ThemeLogoBadge } from './ThemeStickers';
+import { ThemeChibiMascot, ThemeSidebarHeaderCorner } from './ThemeFestiveComponents';
 
 interface SidebarProps {
   currentScreen: ScreenId;
@@ -341,7 +342,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={`h-1 w-full relative z-10 ${isSystemAdmin ? 'bg-[#008F95]' : 'bg-[#008689]'}`} />
 
       {/* Brand Header */}
-      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-10">
+      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-10 overflow-hidden">
+        {/* Festive Sidebar Header Apricot Branch & Lantern */}
+        <ThemeSidebarHeaderCorner themeId={activeThemeId} />
+
         <img
           src="/logo.jpg"
           alt="QuizGen AI Logo"
@@ -466,8 +470,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Floating Profile Card at Bottom */}
       <div className="p-3 relative z-10">
-        {/* Festive Account Corner Sticker Cluster */}
-        <ThemeAccountStickerCluster themeId={activeThemeId} />
+        {/* Chibi Festive Mascot Sticker (Tương tự ảnh mẫu người dùng) */}
+        <ThemeChibiMascot themeId={activeThemeId} />
         <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
           <div
             onClick={() => openProfileEditor('profile')}
@@ -539,6 +543,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Weather Status Widget (Theo đúng ảnh mẫu mockup) */}
+        {activeThemeId === 'spring' && (
+          <div className="mt-2 px-3 py-1.5 rounded-xl bg-[#FFF8E9] border border-[#E7B947]/50 flex items-center gap-2 select-none shadow-2xs">
+            <span className="text-sm">🌤️</span>
+            <div className="text-[10px] leading-tight text-slate-700">
+              <span className="font-extrabold text-[#B82025]">33°C</span>
+              <span className="text-slate-500 ml-1.5 font-medium">Nắng nhiều nơi</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Account Profile, Subscription & Payment History Modal */}

@@ -245,12 +245,12 @@ export const ThemeParticleOverlay: React.FC<ThemeParticleOverlayProps> = ({
         </div>
       )}
 
-      {/* ── Discreet Ambient Toggle (Bottom Right Corner) ── */}
-      <div className="fixed bottom-4 right-4 z-40 select-none">
+      {/* ── Discreet Ambient Toggle (Đặt cạnh Quanta AI, không che khuất) ── */}
+      <div className="fixed bottom-4 right-20 sm:bottom-6 sm:right-24 z-30 select-none">
         <button
           onClick={onToggleParticles}
           title={showParticles ? "Tắt hiệu ứng bay (để tăng tập trung)" : "Bật hiệu ứng bay theo mùa"}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 hover:bg-white text-slate-600 hover:text-slate-900 shadow-sm border border-slate-200/90 text-[11px] font-semibold backdrop-blur-md transition-all hover:scale-105 active:scale-95"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-slate-700 hover:text-slate-900 shadow-md border border-slate-200/90 text-[11px] font-semibold backdrop-blur-md transition-all hover:scale-105 active:scale-95"
         >
           {showParticles ? (
             <>

@@ -266,21 +266,37 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <button
               type="button"
               onClick={onOpenProfileModal}
-              className="flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50 transition-all text-left shadow-2xs group"
+              className={`flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-xl border transition-all text-left shadow-2xs group ${
+                activeThemeId === 'spring'
+                  ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/60'
+                  : 'border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50'
+              }`}
               title="Nhấp để xem & cập nhật hồ sơ tài khoản"
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#008689] to-teal-400 text-white font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
+              <div
+                className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
+                  activeThemeId === 'spring'
+                    ? 'bg-gradient-to-tr from-[#B82025] to-[#E7B947] text-white'
+                    : 'bg-gradient-to-tr from-[#008689] to-teal-400 text-white'
+                }`}
+              >
                 {userInitial}
               </div>
               <div className="hidden sm:block min-w-0 max-w-[150px] lg:max-w-[200px]">
-                <div className="text-xs font-bold text-slate-800 truncate leading-tight group-hover:text-[#008689]">
+                <div
+                  className={`text-xs font-bold truncate leading-tight transition-colors ${
+                    activeThemeId === 'spring'
+                      ? 'text-[#8F171C] group-hover:text-[#B82025]'
+                      : 'text-slate-800 group-hover:text-[#008689]'
+                  }`}
+                >
                   {userDisplayName}
                 </div>
                 <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
                   {currentUser?.department || 'Khoa Công nghệ thông tin'}
                 </div>
               </div>
-              <UserCog className="w-4 h-4 text-slate-400 group-hover:text-[#008689] shrink-0 ml-0.5" />
+              <UserCog className={`w-4 h-4 shrink-0 ml-0.5 transition-colors ${activeThemeId === 'spring' ? 'text-[#E7B947] group-hover:text-[#B82025]' : 'text-slate-400 group-hover:text-[#008689]'}`} />
             </button>
 
             {/* Subscription Plan Badge & Upgrade Action */}
@@ -289,7 +305,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 <div className="flex items-center gap-2">
                   <div 
                     title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-amber-100/80 transition-colors"
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold shadow-2xs cursor-pointer transition-colors ${
+                      activeThemeId === 'spring'
+                        ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947] hover:bg-amber-100/90'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100/80'
+                    }`}
                     onClick={onOpenPricingModal}
                   >
                     <Crown className="w-3.5 h-3.5 text-amber-600" />
@@ -298,10 +318,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   {onOpenPricingModal && (
                     <button
                       onClick={onOpenPricingModal}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer"
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                        activeThemeId === 'spring'
+                          ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
+                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
+                      }`}
                       title="Nâng cấp lên gói 1 Năm để tiết kiệm 80%"
                     >
-                      <Sparkles className="w-3 h-3 text-amber-200" />
+                      <Sparkles className="w-3 h-3 text-[#E7B947]" />
                       <span>Lên gói 1 Năm</span>
                     </button>
                   )}
@@ -309,7 +333,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               ) : subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
                 <div 
                   title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên VIP (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên 1 Năm'}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500 text-white border border-amber-400 text-[11px] font-black shadow-xs cursor-pointer hover:bg-amber-600 transition-colors"
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-white text-[11px] font-black shadow-xs cursor-pointer transition-colors ${
+                    activeThemeId === 'spring'
+                      ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] border border-[#E7B947] hover:brightness-110'
+                      : 'bg-amber-500 border border-amber-400 hover:bg-amber-600'
+                  }`}
                   onClick={onOpenPricingModal}
                 >
                   <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
@@ -331,9 +359,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   {onOpenPricingModal && (
                     <button
                       onClick={onOpenPricingModal}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02]"
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                        activeThemeId === 'spring'
+                          ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
+                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
+                      }`}
                     >
-                      <Sparkles className="w-3 h-3 text-amber-200" />
+                      <Sparkles className="w-3 h-3 text-[#E7B947]" />
                       <span>Nâng cấp</span>
                     </button>
                   )}

@@ -78,27 +78,27 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
   spring: {
     id: 'spring',
     name: 'Tết & Mùa Xuân (Spring & Tet)',
-    seasonLabel: '🌸 Xuân Ất Tỵ 2026',
-    tagline: 'Mai vàng nở rộ, đào thắm khoe sắc, vạn sự như ý - đắc thắng thi cử',
-    greetingTitle: 'Mừng Xuân Giảng Đường - Chúc Mừng Năm Mới',
-    greetingSubtitle: 'Kính chúc Quý Thầy Cô năm mới An Khang Thịnh Vượng & Thành Công Rực Rỡ',
+    seasonLabel: '🌸 Xuân Đinh Mùi 2027',
+    tagline: 'Mai vàng nở rộ, đào thắm khoe sắc, mừng xuân Đinh Mùi 2027',
+    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingSubtitle: 'Chào mừng Xuân Đinh Mùi 2027. 🧧 Kính chúc quý thầy cô sức khỏe, thành công và nhiều may mắn!',
     colors: {
-      primary: '#DA1C2D',
-      primaryHover: '#B91C1C',
-      secondary: '#991B1B',
-      accent: '#F59E0B',
-      bgGradient: 'from-amber-50/30 via-rose-50/20 to-orange-50/30',
-      cardBorder: 'border-rose-200/80',
-      badgeBg: 'bg-rose-50',
-      badgeText: 'text-[#DA1C2D]',
-      glowColor: 'rgba(218,28,45,0.2)'
+      primary: '#B82025',
+      primaryHover: '#8F171C',
+      secondary: '#8F171C',
+      accent: '#E7B947',
+      bgGradient: 'from-[#FFF8E9] via-[#FFF1F2] to-[#FFF8E9]',
+      cardBorder: 'border-[#E7B947]/40',
+      badgeBg: 'bg-[#FFF8E9]',
+      badgeText: 'text-[#B82025]',
+      glowColor: 'rgba(184,32,37,0.18)'
     },
     particleType: 'flower_petals',
-    particleCount: 12,
+    particleCount: 14,
     hasStickerCorner: true,
     hasLogoAccessory: true,
-    stickerDescription: 'Nhành mai vàng & đào phai e ấp, bao lì xì may mắn & lồng đèn đỏ lụa',
-    previewGradient: 'from-[#DA1C2D] via-[#EA580C] to-[#F59E0B]'
+    stickerDescription: 'Bé Chibi Lân Sư Rồng cầm liễn Tết, nhành mai vàng, lồng đèn đỏ lụa',
+    previewGradient: 'from-[#B82025] via-[#8F171C] to-[#E7B947]'
   },
 
   summer: {

@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeKpiFlowerCorner, ThemeFestiveSpecFooter } from './ThemeFestiveComponents';
 
 interface DashboardScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -42,6 +44,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   currentUser,
   questions: propsQuestions,
 }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const role = currentUser?.role || 'lecturer';
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
@@ -531,9 +534,40 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
-      {/* Clean Welcome Banner */}
-      <div className="bg-gradient-to-r from-[#d0f2f0] via-[#ebfaf9] to-white rounded-2xl border border-[#b2e5e7]/80 p-4 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
+      {/* Clean Welcome Banner / Festive Seasonal Hero Banner (Theo đúng ảnh mẫu) */}
+      <div
+        className={`rounded-2xl border p-4 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 relative overflow-hidden transition-all duration-300 ${
+          activeThemeId === 'spring'
+            ? 'bg-gradient-to-r from-[#FFF8E9] via-[#FFF1F2] to-[#FFF8E9] border-[#E7B947]/60'
+            : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+            ? 'bg-gradient-to-r from-[#FEF2F2] via-[#FFF1F2] to-[#FEF3C7] border-red-200'
+            : activeThemeId === 'winter'
+            ? 'bg-gradient-to-r from-[#F0F9FF] via-[#E0F2FE] to-[#F8FAFC] border-sky-200'
+            : activeThemeId === 'summer' || activeThemeId === 'autumn'
+            ? 'bg-gradient-to-r from-[#FFFBEB] via-[#FEF3C7] to-[#FFF7ED] border-amber-200'
+            : 'bg-gradient-to-r from-[#d0f2f0] via-[#ebfaf9] to-white border-[#b2e5e7]/80'
+        }`}
+      >
+        {/* Festive Temple / Pagoda / Lanterns SVG Watermark Backdrop for Theme */}
+        {activeThemeId !== 'default' && (
+          <div className="absolute right-0 top-0 bottom-0 w-80 pointer-events-none opacity-25 select-none hidden lg:block overflow-hidden" aria-hidden="true">
+            <svg viewBox="0 0 300 140" fill="none" className="w-full h-full">
+              {/* Mái chùa cong / đình làng cổ kính */}
+              <path d="M120 40 C140 20 180 20 200 40 L220 55 L100 55 Z" fill="#B82025" />
+              <path d="M90 70 C130 45 190 45 230 70 L250 85 L70 85 Z" fill="#8F171C" />
+              {/* Cột đình */}
+              <rect x="110" y="85" width="10" height="45" fill="#78350F" />
+              <rect x="150" y="85" width="10" height="45" fill="#78350F" />
+              <rect x="190" y="85" width="10" height="45" fill="#78350F" />
+              {/* Pháo hoa bung nở */}
+              <circle cx="60" cy="30" r="3" fill="#E7B947" />
+              <line x1="60" y1="20" x2="60" y2="40" stroke="#E7B947" strokeWidth="1" strokeDasharray="2,2" />
+              <line x1="50" y1="30" x2="70" y2="30" stroke="#E7B947" strokeWidth="1" strokeDasharray="2,2" />
+            </svg>
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 relative z-10">
           {/* Document Sheet Graphic with Checkmark Circle */}
           <div className="hidden sm:flex relative w-12 h-14 bg-white/95 rounded-xl shadow-xs border border-teal-100 flex-col justify-center px-2.5 space-y-1.5 shrink-0">
             <div className="w-4 h-1 bg-slate-200 rounded-full" />
@@ -545,29 +579,77 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
 
           <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 text-xs font-bold text-[#007d80] bg-[#cbf0ee] px-3 py-0.5 rounded-full">
+            <div
+              className={`inline-flex items-center gap-2 text-xs font-bold px-3 py-0.5 rounded-full ${
+                activeThemeId === 'spring'
+                  ? 'text-[#B82025] bg-[#FFF8E9] border border-[#E7B947]/60'
+                  : activeThemeId !== 'default'
+                  ? 'text-red-700 bg-red-100/80 border border-red-200'
+                  : 'text-[#007d80] bg-[#cbf0ee]'
+              }`}
+            >
               <span>{roleHeaderConfig.badge}</span>
             </div>
             <h2 className="text-lg sm:text-xl font-extrabold text-slate-800 pt-0.5">{roleHeaderConfig.title}</h2>
-            <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">{roleHeaderConfig.subtitle}</p>
+            <p className="text-xs sm:text-sm max-w-2xl font-medium">
+              {activeThemeId === 'spring' ? (
+                <span className="text-[#8F171C]">
+                  Chào mừng Xuân Đinh Mùi 2027. 🧧 Kính chúc quý thầy cô sức khỏe, thành công và nhiều may mắn!
+                </span>
+              ) : activeThemeId === 'victory_30_4' ? (
+                <span className="text-red-800">
+                  Kỷ niệm Ngày Giải phóng Miền Nam 30/4 &amp; Quốc tế Lao động 1/5! ⭐ Hòa bình thống nhất, non sông trọn niềm vui!
+                </span>
+              ) : activeThemeId === 'national_day_2_9' ? (
+                <span className="text-red-800">
+                  Nhiệt liệt chào mừng Ngày Quốc Khánh Nước CHXHCN Việt Nam (2/9/1945)! 🇻🇳 Độc lập - Tự do - Hạnh phúc!
+                </span>
+              ) : activeThemeId === 'winter' ? (
+                <span className="text-sky-800">
+                  Chúc mừng Giáng Sinh &amp; Năm Mới An Lành! ❄️ Mùa lễ hội ấm áp, hạnh phúc và vạn sự như ý!
+                </span>
+              ) : activeThemeId === 'summer' ? (
+                <span className="text-amber-800">
+                  Nắng hè rực rỡ - Tiếp sức mùa thi! ☀️ Chúc quý thầy cô và sinh viên hoàn thành kỳ thi xuất sắc!
+                </span>
+              ) : activeThemeId === 'autumn' ? (
+                <span className="text-amber-800">
+                  Hân hoan chào đón năm học mới! 🍂 Chúc quý thầy cô và tân sinh viên hành trình tri thức rực rỡ!
+                </span>
+              ) : (
+                <span className="text-slate-500">{roleHeaderConfig.subtitle}</span>
+              )}
+            </p>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0 relative z-10">
           {role === 'lecturer' && (
             <>
               <button
                 onClick={() => onNavigate('upload')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto"
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto ${
+                  activeThemeId === 'spring'
+                    ? 'bg-[#B82025] hover:bg-[#8F171C]'
+                    : activeThemeId !== 'default'
+                    ? 'bg-[#B91C1C] hover:bg-[#991B1C]'
+                    : 'bg-[#008689] hover:bg-[#006f72]'
+                }`}
               >
                 <BookOpen className="w-4 h-4" />
                 Nạp Giáo trình Mới
               </button>
               <button
                 onClick={() => onNavigate('generate')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/95 hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto"
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-white/95 hover:bg-slate-50 border text-slate-700 font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto ${
+                  activeThemeId === 'spring'
+                    ? 'border-[#E7B947] text-[#B82025]'
+                    : activeThemeId !== 'default'
+                    ? 'border-red-200 text-red-700'
+                    : 'border-slate-200'
+                }`}
               >
-                <Sparkles className="w-4 h-4 text-[#008689]" />
+                <Sparkles className={`w-4 h-4 ${activeThemeId === 'spring' ? 'text-[#E7B947]' : activeThemeId !== 'default' ? 'text-red-600' : 'text-[#008689]'}`} />
                 Sinh Đề Thi AI
               </button>
             </>
@@ -618,10 +700,18 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           return (
             <div
               key={idx}
-              className={`${stat.cardBg || 'bg-white'} rounded-2xl p-4 sm:p-5 border ${
-                stat.cardBorder || 'border-slate-200'
-              } shadow-xs flex flex-col justify-between`}
+              className={`${
+                activeThemeId === 'spring'
+                  ? 'bg-[#FFF8E9]'
+                  : stat.cardBg || 'bg-white'
+              } rounded-2xl p-4 sm:p-5 border ${
+                activeThemeId === 'spring'
+                  ? 'border-[#E7B947]/60'
+                  : stat.cardBorder || 'border-slate-200'
+              } shadow-xs flex flex-col justify-between relative overflow-hidden`}
             >
+              {/* Cụm hoa mai vàng nở rộ góc dưới thẻ KPI */}
+              <ThemeKpiFlowerCorner themeId={activeThemeId} />
               <div className="flex items-center gap-2.5">
                 <div
                   className={`w-9 h-9 rounded-xl ${stat.bg} flex items-center justify-center shrink-0`}
@@ -1087,6 +1177,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 🌸 Bảng Mục Tiêu & Tiêu Chí Nghiệm Thu Giao Diện Tết (Chuẩn xác 100% theo ảnh mẫu) */}
+      <ThemeFestiveSpecFooter themeId={activeThemeId} />
     </div>
   );
 };
