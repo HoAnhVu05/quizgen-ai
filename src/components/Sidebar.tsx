@@ -341,9 +341,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Top Accent Line */}
       <div className={`h-1 w-full relative z-10 ${isSystemAdmin ? 'bg-[#008F95]' : 'bg-[#008689]'}`} />
 
-      {/* Brand Header */}
-      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-10 overflow-hidden">
-        {/* Festive Sidebar Header Apricot Branch & Lantern */}
+      {/* Brand Header (Tràn viền nghệ thuật cho nhành mai & liễn chữ Xuân) */}
+      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-20 overflow-visible">
+        {/* Festive Sidebar Header Apricot Branch, Lantern & Calligraphy "Xuân" */}
         <ThemeSidebarHeaderCorner themeId={activeThemeId} />
 
         <img
@@ -351,23 +351,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
           alt="QuizGen AI Logo"
           className="w-9 h-9 rounded-xl shadow-xs object-cover border border-[#008F95]/20 shrink-0"
         />
-        <div className="min-w-0">
+        <div className="min-w-0 pr-8">
           <h1 className="font-extrabold text-[#008F95] text-sm tracking-tight leading-tight flex items-center gap-1.5">
             <span>QuizGen AI</span>
-            <ThemeLogoBadge themeId={activeThemeId} />
+            {activeThemeId === 'spring' && (
+              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-[#FFF8E9] text-[#B82025] border border-[#E7B947] shadow-2xs whitespace-nowrap">
+                Xuân 2027
+              </span>
+            )}
             {isSystemAdmin && (
               <span className="text-[9px] px-1.5 py-0.5 rounded font-extrabold bg-rose-50 text-[#da1c2d] border border-rose-200 uppercase tracking-wider">
                 Admin
               </span>
             )}
           </h1>
-          <p className="text-[11px] text-[#91A2B8] truncate flex items-center gap-1">
-            <span>{isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}</span>
-            {activeThemeId !== 'default' && (
-              <span className={`text-[9px] px-1 py-0.2 rounded font-semibold ${currentTheme.colors.badgeBg} ${currentTheme.colors.badgeText} border`}>
-                {currentTheme.seasonLabel}
-              </span>
-            )}
+          <p className="text-[11px] text-[#91A2B8] truncate mt-0.5">
+            {isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}
           </p>
         </div>
         {onCloseMobile && (
