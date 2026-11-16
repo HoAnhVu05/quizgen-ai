@@ -47,11 +47,11 @@ Trong ngày 16/11/2026, toàn bộ công việc được tập trung hoàn thi�
 
 ### 6. Xây dựng Tập lệnh Kiểm thử Tự động E2E [SCRUM-96]
 - Thiết lập tệp kiểm thử tự động `scripts/[SCRUM-96]_test_admin_views_rbac_payment.py` kiểm định 5/5 kịch bản cốt lõi:
-  - TEST 1: Gateway & Cụm 8 Microservices Health Check $\rightarrow$ **PASS**.
-  - TEST 2: Database View Bloom Distribution (`exams.v_bloom_distribution_stats`) $\rightarrow$ **PASS**.
-  - TEST 3: Database View User Activity Summary 360° (`auth.v_user_activity_summary`) $\rightarrow$ **PASS**.
-  - TEST 4: Quy tắc bảo mật RBAC (Chỉ Root Admin được cấp quyền Admin) $\rightarrow$ **PASS**.
-  - TEST 5: Payment Service sinh VietQR PRO & Tự động quét đơn quá hạn $\rightarrow$ **PASS**.
+  - TEST 1: Gateway & Cụm 8 Microservices Health Check → **PASS**.
+  - TEST 2: Database View Bloom Distribution (`exams.v_bloom_distribution_stats`) → **PASS**.
+  - TEST 3: Database View User Activity Summary 360° (`auth.v_user_activity_summary`) → **PASS**.
+  - TEST 4: Quy tắc bảo mật RBAC (Chỉ Root Admin được cấp quyền Admin) → **PASS**.
+  - TEST 5: Payment Service sinh VietQR PRO & Tự động quét đơn quá hạn → **PASS**.
 - **Tỷ lệ kiểm thử thành công: 5/5 (100%)**.
 
 ---
