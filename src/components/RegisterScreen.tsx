@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
-import { ThemeCornerSticker, ThemeLogoBadge } from './ThemeStickers';
+import { ThemeCornerSticker, ThemeLogoBadge, ThemeHangingScrolls } from './ThemeStickers';
 
 interface RegisterScreenProps {
   onRegister: (user: UserProfile) => void;
@@ -351,6 +351,9 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
       {/* Festive Corner Stickers */}
       <ThemeCornerSticker themeId={activeThemeId} position="top-right" />
       <ThemeCornerSticker themeId={activeThemeId} position="top-left" />
+
+      {/* Đôi câu đối / Dải liễn đỏ 2 bên hông theo ảnh mẫu tham khảo */}
+      <ThemeHangingScrolls themeId={activeThemeId} />
 
       {/* Dynamic Seasonal Top Accent Bar */}
       <div

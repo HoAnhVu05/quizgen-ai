@@ -160,7 +160,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <span className="sm:hidden">{screenMeta.shortLabel}</span>
             </h2>
             {activeThemeId !== 'default' && (
-              <span className={`hidden xl:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${currentTheme.colors.badgeBg} ${currentTheme.colors.badgeText} shadow-2xs`}>
+              <span
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs animate-in fade-in duration-300"
+                style={{
+                  backgroundColor: `${currentTheme.colors.primary}15`,
+                  borderColor: `${currentTheme.colors.primary}40`,
+                  color: currentTheme.colors.primary,
+                }}
+              >
                 <span>{currentTheme.seasonLabel}</span>
               </span>
             )}

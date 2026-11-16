@@ -27,7 +27,7 @@ import {
 import { UserProfile, UserRole } from '../types';
 import apiClient from '../services/apiClient';
 import { useTheme } from '../context/ThemeContext';
-import { ThemeCornerSticker, ThemeLogoBadge } from './ThemeStickers';
+import { ThemeCornerSticker, ThemeLogoBadge, ThemeHangingScrolls } from './ThemeStickers';
 
 declare global {
   interface Window {
@@ -1225,6 +1225,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       {/* Festive Corner Stickers (Top-Left & Top-Right) */}
       <ThemeCornerSticker themeId={activeThemeId} position="top-right" />
       <ThemeCornerSticker themeId={activeThemeId} position="top-left" />
+
+      {/* Đôi câu đối / Dải liễn đỏ 2 bên hông theo ảnh mẫu tham khảo */}
+      <ThemeHangingScrolls themeId={activeThemeId} />
 
       {/* Dynamic Seasonal Top Accent Bar */}
       <div
