@@ -114,6 +114,9 @@ export interface QGroup {
   pendingRequests: QGroupPendingRequest[];
   messages: QGroupMessage[];
   pinnedMessageId?: string;
+  isDirect?: boolean;
+  directPartnerEmail?: string;
+  directPartnerName?: string;
 }
 
 export interface QGroupInvitation {
@@ -382,7 +385,9 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     ];
   });
 
-  const [sidebarGroupFilter, setSidebarGroupFilter] = useState<'all' | 'invitations'>('all');
+  const [sidebarGroupFilter, setSidebarGroupFilter] = useState<'groups' | 'direct' | 'invitations'>('groups');
+  const [isNewDirectModalOpen, setIsNewDirectModalOpen] = useState(false);
+  const [directPartnerInput, setDirectPartnerInput] = useState('');
 
   const syncQGroupsToBackend = useCallback(async (groups: QGroup[]) => {
     try {
@@ -402,6 +407,69 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       localStorage.setItem('quizgen_qgroups', JSON.stringify(groups));
     } catch {}
     void syncQGroupsToBackend(groups);
+  };
+
+  const handleStartDirectMessage = (targetEmail: string, targetName?: string) => {
+    let cleanEmail = targetEmail.trim().toLowerCase();
+    if (cleanEmail.endsWith('@gmai.com')) {
+      cleanEmail = cleanEmail.replace('@gmai.com', '@gmail.com');
+    }
+    const myEmail = (currentUser?.email || 'my-account@quizgen.ai').toLowerCase().replace('@gmai.com', '@gmail.com');
+    const myName = currentUser?.fullName || 'Giảng viên';
+
+    // Tìm xem đã có cuộc trò chuyện 1-1 với đồng nghiệp này chưa
+    const existing = qgroups.find(
+      (g) =>
+        g.isDirect &&
+        g.members.some((m) => m.toLowerCase().replace('@gmai.com', '@gmail.com') === cleanEmail) &&
+        g.members.some((m) => m.toLowerCase().replace('@gmai.com', '@gmail.com') === myEmail)
+    );
+
+    if (existing) {
+      setSelectedGroupId(existing.id);
+      setSidebarGroupFilter('direct');
+      setIsNewDirectModalOpen(false);
+      setIsOwnerSettingsModalOpen(false);
+      onShowToast('info', 'Mở Hội Thoại 1-1', `Đang kết nối trao đổi riêng với ${targetName || cleanEmail}`);
+      return;
+    }
+
+    // Nếu chưa có, tạo phòng chat 1-1 mới
+    const newDm: QGroup = {
+      id: `dm-${Date.now()}`,
+      code: `DM-${Math.random().toString(36).substring(2, 7).toUpperCase()}`,
+      name: targetName || cleanEmail,
+      department: 'Tin Nhắn Riêng 1-1',
+      description: `Cuộc trò chuyện riêng tư giữa ${myName} và ${targetName || cleanEmail}`,
+      ownerEmail: myEmail,
+      ownerName: myName,
+      joinPolicy: 'open',
+      memberCount: 2,
+      members: [myEmail, cleanEmail],
+      pendingRequests: [],
+      messages: [
+        {
+          id: `msg-${Date.now()}`,
+          senderEmail: 'system',
+          senderName: 'Hệ Thống QuizGen',
+          isSystem: true,
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          text: `Đã mở phòng chat riêng 1-1 giữa ${myName} và ${targetName || cleanEmail}. Quý Thầy/Cô có thể gửi tin nhắn, chia sẻ giáo trình và bộ đề thi riêng tư tại đây!`
+        }
+      ],
+      isDirect: true,
+      directPartnerEmail: cleanEmail,
+      directPartnerName: targetName || cleanEmail
+    };
+
+    const updated = [newDm, ...qgroups];
+    saveQgroups(updated);
+    setSelectedGroupId(newDm.id);
+    setSidebarGroupFilter('direct');
+    setIsNewDirectModalOpen(false);
+    setIsOwnerSettingsModalOpen(false);
+    setDirectPartnerInput('');
+    onShowToast('success', 'Đã Tạo Phòng Chat 1-1', `Bắt đầu trò chuyện với ${targetName || cleanEmail}`);
   };
 
   const syncInvitationsToBackend = useCallback(async (invs: QGroupInvitation[]) => {
@@ -524,7 +592,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     window.addEventListener('focus', handleFocus);
     const interval = setInterval(() => {
       void fetchQGroupsAndInvitations();
-    }, 10000);
+    }, 3000);
     return () => {
       window.removeEventListener('focus', handleFocus);
       clearInterval(interval);
@@ -1057,7 +1125,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     if (e) e.preventDefault();
     if (!chatInputText.trim() || !activeGroup) return;
 
-    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myEmail = (currentUser?.email || 'my-account@quizgen.ai').toLowerCase().replace('@gmai.com', '@gmail.com');
     const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
     const myTitle = currentUser?.academicTitle || 'GV';
 
@@ -1083,6 +1151,15 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
     saveQgroups(updated);
     setChatInputText('');
+
+    // Đẩy tin nhắn đồng bộ tức thì lên máy chủ backend
+    const targetGroupId = activeGroup.code || activeGroup.id;
+    apiClient.fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(targetGroupId)}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMsg)
+    }).catch(() => {});
+
     setTimeout(() => {
       chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
@@ -1091,7 +1168,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   const handleShareTextbookToChat = (book: TextbookFile) => {
     if (!activeGroup) return;
 
-    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myEmail = (currentUser?.email || 'my-account@quizgen.ai').toLowerCase().replace('@gmai.com', '@gmail.com');
     const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
     const myTitle = currentUser?.academicTitle || 'GV';
 
@@ -1125,13 +1202,21 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
     saveQgroups(updated);
     setIsAttachTextbookModalOpen(false);
-    onShowToast('success', 'Đã Chia Sẻ Giáo Trình', `Đã chia sẻ "${book.name}" vào phòng chat nhóm!`);
+
+    const targetGroupId = activeGroup.code || activeGroup.id;
+    apiClient.fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(targetGroupId)}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMsg)
+    }).catch(() => {});
+
+    onShowToast('success', 'Đã Chia Sẻ Giáo Trình', `Đã chia sẻ "${book.name}" vào phòng chat!`);
   };
 
   const handleShareExamToChat = (exam: any) => {
     if (!activeGroup) return;
 
-    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myEmail = (currentUser?.email || 'my-account@quizgen.ai').toLowerCase().replace('@gmai.com', '@gmail.com');
     const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
     const myTitle = currentUser?.academicTitle || 'GV';
 
@@ -1166,7 +1251,15 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
     saveQgroups(updated);
     setIsAttachExamModalOpen(false);
-    onShowToast('success', 'Đã Chia Sẻ Đề Thi', `Đã chia sẻ "${exam.title || 'Đề thi'}" vào phòng chat nhóm!`);
+
+    const targetGroupId = activeGroup.code || activeGroup.id;
+    apiClient.fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(targetGroupId)}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMsg)
+    }).catch(() => {});
+
+    onShowToast('success', 'Đã Chia Sẻ Đề Thi', `Đã chia sẻ "${exam.title || 'Đề thi'}" vào phòng chat!`);
   };
 
   const handleAddDirectMember = (e: React.FormEvent) => {
@@ -2056,36 +2149,53 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       ========================================================================= */}
       {activeTab === 'qgroup' && (
         <div className="space-y-4 animate-in fade-in duration-150">
-          {/* Top Banner Strip */}
-          <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 rounded-3xl p-5 sm:p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1.5 max-w-2xl">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-white/20 text-purple-200 border border-white/30 shadow-xs">
-                <Users className="w-3.5 h-3.5 text-purple-300" />
-                Hội Nhóm Chuyên Môn Q-Group
-              </span>
-              <h2 className="text-lg sm:text-xl font-black text-white">
-                Không Gian Trao Đổi &amp; Dùng Chung Học Liệu Theo Nhóm
-              </h2>
-              <p className="text-xs text-white/80 leading-relaxed">
-                Tổ chức thảo luận học thuật dạng Box Chat cho từng Bộ môn. Thầy/Cô chỉ cần gửi 1 lần giáo trình hoặc bộ đề thi vào nhóm, tất cả thành viên đều có thể bấm <strong className="text-amber-300">"Dùng Sinh Đề Ngay"</strong> hoặc <strong className="text-purple-300">"Nạp Vào Biên Tập"</strong> tức thì!
-              </p>
+          {/* Minimalist Top Header */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-700 border border-purple-200 flex items-center justify-center shrink-0 shadow-2xs">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900">
+                    Hội Nhóm &amp; Tin Nhắn Học Thuật
+                  </h2>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 uppercase tracking-wider">
+                    Q-Group
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Trao đổi chuyên môn theo bộ môn hoặc nhắn riêng 1-1, dùng chung giáo trình và đề thi tức thì.
+                </p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+            <div className="flex items-center gap-2 shrink-0 flex-wrap">
               <button
+                type="button"
+                onClick={() => setIsNewDirectModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold border border-indigo-200 transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                <span>+ Nhắn Riêng 1-1</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsJoinGroupModalOpen(true)}
-                className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <KeyRound className="w-3.5 h-3.5" />
                 <span>Nhập Mã Nhóm</span>
               </button>
 
               <button
+                type="button"
                 onClick={() => setIsCreateGroupModalOpen(true)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
               >
-                <PlusCircle className="w-4 h-4" />
-                <span>Tạo Q-Group Mới</span>
+                <PlusCircle className="w-3.5 h-3.5" />
+                <span>+ Tạo Q-Group</span>
               </button>
             </div>
           </div>
@@ -2190,7 +2300,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                 </button>
               </div>
 
-              {/* Sub-tabs for Left Sidebar: My Groups vs Invitations */}
+              {/* Sub-tabs for Left Sidebar: Groups vs Direct Messages vs Invitations */}
               {(() => {
                 const myEmailNorm = (currentUser?.email || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
                 const countPending = groupInvitations.filter((i) => {
@@ -2205,29 +2315,47 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                   );
                 }).length;
 
+                const standardGroups = qgroups.filter(g => !g.isDirect);
+                const directChats = qgroups.filter(g => g.isDirect);
+
                 return (
-                  <div className="p-2 border-b border-slate-100 bg-slate-50/70 flex gap-1.5 text-xs font-bold">
+                  <div className="p-2 border-b border-slate-100 bg-slate-50/70 flex gap-1 text-[11px] font-bold">
                     <button
                       type="button"
-                      onClick={() => setSidebarGroupFilter('all')}
-                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${
-                        sidebarGroupFilter === 'all'
+                      onClick={() => setSidebarGroupFilter('groups')}
+                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                        sidebarGroupFilter === 'groups'
                           ? 'bg-purple-600 text-white shadow-2xs'
                           : 'text-slate-600 hover:bg-slate-200/60'
                       }`}
                     >
-                      Danh sách nhóm
+                      <FolderGit2 className="w-3 h-3" />
+                      <span>Nhóm ({standardGroups.length})</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSidebarGroupFilter('direct')}
+                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                        sidebarGroupFilter === 'direct'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>Nhắn riêng ({directChats.length})</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => setSidebarGroupFilter('invitations')}
-                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 relative ${
                         sidebarGroupFilter === 'invitations'
                           ? 'bg-purple-600 text-white shadow-2xs'
                           : 'text-slate-600 hover:bg-slate-200/60'
                       }`}
                     >
-                      <Bell className="w-3.5 h-3.5" />
+                      <Bell className="w-3 h-3" />
                       <span>Lời mời</span>
                       {countPending > 0 && (
                         <span className="px-1.5 py-0.2 bg-rose-600 text-white text-[9px] font-black rounded-full">
@@ -2240,7 +2368,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               })()}
 
               {/* Group Search Input */}
-              {sidebarGroupFilter === 'all' && (
+              {sidebarGroupFilter !== 'invitations' && (
                 <div className="p-2.5 border-b border-slate-100 bg-slate-50/50">
                   <div className="relative">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -2248,7 +2376,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                       type="text"
                       value={groupSearchQuery}
                       onChange={(e) => setGroupSearchQuery(e.target.value)}
-                      placeholder="Tìm theo tên nhóm, mã phòng, bộ môn..."
+                      placeholder={sidebarGroupFilter === 'groups' ? "Tìm theo tên nhóm, mã phòng..." : "Tìm theo tên hoặc email đồng nghiệp..."}
                       className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-800 placeholder-slate-400"
                     />
                     {groupSearchQuery && (
@@ -2323,9 +2451,84 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                       </div>
                     ));
                   })()
+                ) : sidebarGroupFilter === 'direct' ? (
+                  (() => {
+                    const directList = qgroups.filter((g) => {
+                      if (!g.isDirect) return false;
+                      if (!groupSearchQuery.trim()) return true;
+                      const q = groupSearchQuery.toLowerCase();
+                      return (
+                        g.name.toLowerCase().includes(q) ||
+                        (g.directPartnerEmail && g.directPartnerEmail.toLowerCase().includes(q))
+                      );
+                    });
+
+                    if (directList.length === 0) {
+                      return (
+                        <div className="p-6 text-center text-slate-400 space-y-3">
+                          <MessageSquare className="w-8 h-8 mx-auto text-indigo-300" />
+                          <div>
+                            <p className="font-bold text-xs text-slate-700">Chưa có cuộc trò chuyện 1-1</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">Nhắn tin trực tiếp với đồng nghiệp để chia sẻ học liệu và trao đổi riêng tư.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsNewDirectModalOpen(true)}
+                            className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                          >
+                            + Bắt Đầu Nhắn Riêng
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return directList.map((group) => {
+                      const isSelected = group.id === selectedGroupId;
+                      const lastMsg = group.messages && group.messages.length > 0 ? group.messages[group.messages.length - 1] : null;
+
+                      return (
+                        <div
+                          key={group.id}
+                          onClick={() => setSelectedGroupId(group.id)}
+                          className={`w-full text-left p-3 rounded-2xl transition-all cursor-pointer border flex items-center gap-3 ${
+                            isSelected
+                              ? 'bg-indigo-50/90 border-indigo-400 shadow-xs border-l-4 border-l-indigo-600'
+                              : 'bg-white hover:bg-slate-50 border-slate-200/80 shadow-2xs'
+                          }`}
+                        >
+                          <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
+                            {group.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="font-bold text-xs text-slate-900 truncate">
+                                {group.name}
+                              </h4>
+                              {lastMsg && (
+                                <span className="text-[10px] text-slate-400 shrink-0 font-medium">
+                                  {lastMsg.timestamp}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                              {lastMsg ? (
+                                <span>
+                                  <strong>{lastMsg.senderName.split(' ').pop()}: </strong>
+                                  {lastMsg.text || '[Tài liệu đính kèm]'}
+                                </span>
+                              ) : (
+                                'Nhấn để bắt đầu trò chuyện...'
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()
                 ) : (
                   qgroups
                     .filter((group) => {
+                      if (group.isDirect) return false;
                       if (!groupSearchQuery.trim()) return true;
                       const q = groupSearchQuery.toLowerCase();
                       return (
@@ -2337,68 +2540,46 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                     .map((group) => {
                       const isSelected = group.id === selectedGroupId;
                       const hasPending = (group.pendingRequests || []).length > 0;
+                      const lastMsg = group.messages && group.messages.length > 0 ? group.messages[group.messages.length - 1] : null;
+
                       return (
                         <div
                           key={group.id}
                           onClick={() => setSelectedGroupId(group.id)}
-                          className={`group relative w-full text-left p-3.5 rounded-2xl transition-all cursor-pointer border ${
+                          className={`w-full text-left p-3 rounded-2xl transition-all cursor-pointer border flex items-center gap-3 ${
                             isSelected
                               ? 'bg-purple-50/90 border-purple-400 shadow-xs border-l-4 border-l-purple-600'
                               : 'bg-white hover:bg-slate-50 border-slate-200/80 shadow-2xs'
                           }`}
                         >
-                          <div className="flex items-start justify-between gap-2 mb-1.5">
-                            <div className="font-bold text-xs text-slate-900 truncate flex-1">
-                              {group.name}
-                            </div>
-
-                            {/* Quick 1-click Copy Code Button directly on the badge */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(group.code);
-                                onShowToast('info', 'Đã sao chép mã nhóm', group.code);
-                              }}
-                              className="inline-flex items-center gap-1 font-mono text-[10px] font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 shrink-0 transition-colors cursor-pointer"
-                              title="Nhấn để sao chép mã nhóm"
-                            >
-                              <span>{group.code}</span>
-                              <Copy className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
-                            </button>
+                          <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-xs shrink-0">
+                            {group.name.substring(0, 2).toUpperCase()}
                           </div>
-
-                          <div className="text-[11px] text-purple-800 font-semibold truncate mb-2">
-                            {group.department}
-                          </div>
-
-                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
-                            <span className="flex items-center gap-1 font-medium">
-                              <Users className="w-3 h-3 text-purple-600" />
-                              <span>{group.memberCount} thành viên</span>
-                            </span>
-
-                            <div className="flex items-center gap-1">
-                              {hasPending && (
-                                <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[9px] font-black rounded-full animate-pulse">
-                                  {group.pendingRequests.length} chờ duyệt
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <h4 className="font-bold text-xs text-slate-900 truncate">
+                                {group.name}
+                              </h4>
+                              {lastMsg && (
+                                <span className="text-[10px] text-slate-400 shrink-0 font-medium">
+                                  {lastMsg.timestamp}
                                 </span>
                               )}
-                              <span
-                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
-                                  group.joinPolicy === 'open'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : group.joinPolicy === 'approval_required'
-                                    ? 'bg-amber-50 text-amber-700'
-                                    : 'bg-slate-100 text-slate-700'
-                                }`}
-                              >
-                                {group.joinPolicy === 'open'
-                                  ? 'Tự do'
-                                  : group.joinPolicy === 'approval_required'
-                                  ? 'Cần duyệt'
-                                  : 'Riêng tư'}
-                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-1 mt-0.5">
+                              <p className="text-[11px] text-slate-500 truncate flex-1">
+                                {lastMsg ? (
+                                  <span>
+                                    <strong>{lastMsg.senderName.split(' ').pop()}: </strong>
+                                    {lastMsg.text || '[Tài liệu đính kèm]'}
+                                  </span>
+                                ) : (
+                                  group.department
+                                )}
+                              </p>
+                              {hasPending && (
+                                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" title="Có yêu cầu chờ duyệt" />
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3101,6 +3282,17 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                           </div>
 
                           <div className="flex items-center gap-1.5 shrink-0">
+                            {email !== (currentUser?.email || '').toLowerCase() && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartDirectMessage(email)}
+                                className="px-2 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                                title="Nhắn tin riêng 1-1 với đồng nghiệp này"
+                              >
+                                <MessageSquare className="w-2.5 h-2.5" />
+                                <span>Nhắn riêng</span>
+                              </button>
+                            )}
                             {isMemberOwner ? (
                               <span className="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
                                 Trưởng nhóm
@@ -3487,6 +3679,100 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
           MODALS: CREATE QGROUP, JOIN GROUP, DIRECT EMAIL SHARE
       ========================================================================= */}
       
+      {/* Modal: New 1-1 Direct Message */}
+      {isNewDirectModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col p-6 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-extrabold text-slate-900 text-sm">Nhắn Tin Riêng 1-1 Với Đồng Nghiệp</h3>
+              </div>
+              <button onClick={() => setIsNewDirectModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!directPartnerInput.trim()) return;
+                  handleStartDirectMessage(directPartnerInput.trim());
+                }}
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Nhập email đồng nghiệp cần nhắn tin:
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={directPartnerInput}
+                    onChange={(e) => setDirectPartnerInput(e.target.value)}
+                    placeholder="Ví dụ: vuha3608@ut.edu.vn hoặc đồng nghiệp..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-600 text-slate-900"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Bắt Đầu Trò Chuyện 1-1</span>
+                </button>
+              </form>
+
+              {/* Danh sách đồng nghiệp gợi ý từ các nhóm hiện tại */}
+              {(() => {
+                const myEmailNorm = (currentUser?.email || '').toLowerCase().replace('@gmai.com', '@gmail.com');
+                const suggestedEmails = Array.from(
+                  new Set(
+                    qgroups
+                      .flatMap((g) => g.members || [])
+                      .map((m) => m.toLowerCase().replace('@gmai.com', '@gmail.com'))
+                      .filter((m) => m && m !== myEmailNorm && !m.includes('lecturer@quizgen.ai'))
+                  )
+                );
+
+                if (suggestedEmails.length === 0) return null;
+
+                return (
+                  <div className="space-y-2 pt-2 border-t border-slate-100">
+                    <span className="font-bold text-slate-500 text-[10px] uppercase tracking-wider block">
+                      Hoặc chọn nhanh đồng nghiệp cùng bộ môn:
+                    </span>
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                      {suggestedEmails.map((email) => (
+                        <div
+                          key={email}
+                          onClick={() => handleStartDirectMessage(email)}
+                          className="p-2.5 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl flex items-center justify-between cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 font-bold text-[10px] flex items-center justify-center shrink-0">
+                              {email.slice(0, 2).toUpperCase()}
+                            </div>
+                            <span className="font-mono text-slate-800 font-semibold truncate text-[11px]">
+                              {email}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-indigo-600 font-bold hover:underline shrink-0">
+                            Nhắn tin &rarr;
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal 1: Create Q-Group */}
       {isCreateGroupModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">

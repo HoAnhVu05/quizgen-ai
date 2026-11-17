@@ -60,6 +60,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     totalGenerated: 0
   });
 
+  const [serverSharedBooks, setServerSharedBooks] = useState<any[]>([]);
+
   // Hover state for interactive donut chart & cards
   const [hoveredLevel, setHoveredLevel] = useState<string | null>(null);
 
@@ -300,18 +302,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   }, [hoveredLevel, computedBloomData]);
 
   useEffect(() => {
+    let isMounted = true;
+    const userStorageKey = currentUser?.id ? `quizgen_uploaded_documents_${currentUser.id}` : 'quizgen_uploaded_documents';
+
+    // 1. Thống kê theo đúng tài khoản người dùng hiện tại
     try {
-      const savedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
-      const validDocs = savedDocs.filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+      const savedDocs = JSON.parse(localStorage.getItem(userStorageKey) || '[]');
+      const validDocs = savedDocs.filter((d: any) => d && d.id && !d.is_shared);
       const savedExams = JSON.parse(localStorage.getItem('quizgen_saved_exams') || '[]');
       const totalExamQuestions = savedExams.reduce((sum: number, e: any) => sum + (e.questionCount || e.questions?.length || 0), 0);
       const totalGen = Math.max(approvedCount + pendingReviewCount, computedBloomData.total, totalExamQuestions);
 
-      setStatsSummary(prev => ({
-        ...prev,
-        textbooksIndexed: Math.max(validDocs.length, prev.textbooksIndexed),
+      setStatsSummary({
+        textbooksIndexed: validDocs.length,
         totalGenerated: totalGen
-      }));
+      });
 
       // Tự động sinh danh sách hoạt động gần đây từ Kho Đề & Giáo trình thực tế
       const activities: any[] = [];
@@ -335,14 +340,15 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
       });
       if (activities.length > 0) {
         setRecentActivity(activities.slice(0, 5));
+      } else {
+        setRecentActivity([]);
       }
     } catch {}
-  }, [approvedCount, pendingReviewCount, computedBloomData.total]);
 
-  useEffect(() => {
-    let isMounted = true;
+    // 2. Đồng bộ số liệu chính xác từ Server Microservice
+    const queryParam = currentUser?.id ? `?user_id=${currentUser.id}` : '';
     apiClient
-      .fetch(`${API_BASE}/dashboard/summary`)
+      .fetch(`${API_BASE}/dashboard/summary${queryParam}`)
       .then(async (res) => {
         if (!res.ok) return null;
         return res.json();
@@ -351,75 +357,53 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         if (!isMounted || !res?.data) return;
         const d = res.data;
         if (d.stats) {
-          setStatsSummary({
-            textbooksIndexed: d.stats.textbooksIndexed ?? 0,
-            totalGenerated: d.stats.totalGenerated ?? 0
-          });
+          setStatsSummary(prev => ({
+            textbooksIndexed: d.stats.textbooksIndexed ?? prev.textbooksIndexed,
+            totalGenerated: prev.totalGenerated
+          }));
         }
-        if (Array.isArray(d.bloomDistribution) && d.bloomDistribution.length > 0) {
-          setBloomDistribution(d.bloomDistribution);
-        }
-        if (Array.isArray(d.recentActivity) && d.recentActivity.length > 0) {
-          setRecentActivity(d.recentActivity);
+        if (Array.isArray(d.sharedDocuments)) {
+          setServerSharedBooks(d.sharedDocuments);
         }
       })
-      .catch(() => {
-        // Fallback to local state when offline
-      });
+      .catch(() => {});
+
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentUser?.id, approvedCount, pendingReviewCount, computedBloomData.total]);
 
   const libraryShortcutBooks = useMemo(() => {
-    let customDocs: any[] = [];
-    try {
-      customDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
-    } catch {}
-
-    const defaultCurriculum = [
-      {
-        id: 'tb-002',
-        name: '2018-Operating System Concepts-10th.pdf',
-        subject: 'Hệ Điều Hành & Mạng Máy Tính',
-        totalPages: 1278,
-        author: 'TS. Hồ Anh Vũ',
-        tag: 'Chuẩn Bộ Môn'
-      },
+    if (serverSharedBooks.length > 0) {
+      return serverSharedBooks.map((b) => ({
+        id: b.id,
+        name: b.name,
+        subject: b.subject || 'Khoa Chuyên Ngành',
+        totalPages: b.totalPages || 100,
+        author: b.authorName || 'Ngân hàng Dùng chung',
+        tag: 'Dùng Chung'
+      }));
+    }
+    // Chuẩn 2 giáo trình dùng chung thực tế từ hệ thống
+    return [
       {
         id: 'tb-001',
         name: 'BAI GIANG Tu tuong HCM - LLCT.pdf',
         subject: 'Lý Luận Chính Trị & Triết Học',
         totalPages: 102,
         author: 'ThS. Hân Bích',
-        tag: 'Giáo Trình Mẫu'
-      },
-      {
-        id: 'doc-kinh-te-vi-mo-2025',
-        name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-        subject: 'Kinh Tế Vi Mô & Kinh Tế Học',
-        totalPages: 412,
-        author: 'Khoa Kinh Tế',
         tag: 'Dùng Chung'
       },
       {
-        id: 'doc-tri-tue-nhan-tao-2026',
-        name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
-        subject: 'Trí Tuệ Nhân Tạo & Học Máy',
-        totalPages: 350,
-        author: 'Khoa Công Nghệ Thông Tin',
-        tag: 'Mới Nhất'
+        id: 'tb-002',
+        name: '2018-Operating System Concepts-10th.pdf',
+        subject: 'Hệ Điều Hành & Mạng Máy Tính',
+        totalPages: 1278,
+        author: 'TS. Hồ Anh Vũ',
+        tag: 'Dùng Chung'
       }
     ];
-
-    const validCustom = customDocs.filter((d: any) => d && d.name && d.id);
-    const combined = [...validCustom, ...defaultCurriculum];
-    const map = new Map<string, any>();
-    combined.forEach((b) => {
-      if (!map.has(b.id)) map.set(b.id, b);
-    });
-    return Array.from(map.values()).slice(0, 4);
-  }, []);
+  }, [serverSharedBooks]);
 
   const handleQuickUseBook = (bookId: string, bookName: string) => {
     try {

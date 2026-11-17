@@ -199,6 +199,12 @@ async def payment_proxy(request: Request, path: str = ""):
     target = f"/{path}" if path else "/plans"
     return await proxy_request(settings.PAYMENT_SERVICE_URL, target, request)
 
+@app.api_route("/api/v1/dashboard", methods=METHODS)
+@app.api_route("/api/v1/dashboard/{path:path}", methods=METHODS)
+async def dashboard_proxy(request: Request, path: str = ""):
+    target = f"/dashboard/{path}".rstrip("/") if not path else f"/dashboard/{path}"
+    return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/dashboard/summary", request)
+
 @app.api_route("/api/v1/theme", methods=METHODS)
 @app.api_route("/api/v1/theme/{path:path}", methods=METHODS)
 async def theme_proxy(request: Request, path: str = ""):

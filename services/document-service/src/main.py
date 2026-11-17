@@ -711,15 +711,67 @@ async def save_qgroups_endpoint(request: Request):
         save_server_qgroups(payload)
         return {"status": "success", "count": len(payload), "data": payload}
     elif isinstance(payload, dict):
-        current = load_server_qgroups()
-        idx = next((i for i, g in enumerate(current) if g.get("id") == payload.get("id")), -1)
-        if idx >= 0:
-            current[idx] = payload
+        if "groups" in payload and isinstance(payload["groups"], list):
+            save_server_qgroups(payload["groups"])
+            return {"status": "success", "count": len(payload["groups"]), "data": payload["groups"]}
         else:
-            current.insert(0, payload)
-        save_server_qgroups(current)
-        return {"status": "success", "data": current}
+            current = load_server_qgroups()
+            idx = next((i for i, g in enumerate(current) if g.get("id") == payload.get("id") or g.get("code") == payload.get("code")), -1)
+            if idx >= 0:
+                current[idx] = payload
+            else:
+                current.insert(0, payload)
+            save_server_qgroups(current)
+            return {"status": "success", "data": current}
     return {"status": "error", "message": "Invalid payload format"}
+
+@app.post("/qgroups/{group_id}/messages")
+@app.post("/documents/qgroups/{group_id}/messages")
+async def add_qgroup_message(group_id: str, request: Request):
+    msg = await request.json()
+    groups = load_server_qgroups()
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            if "messages" not in g or not isinstance(g["messages"], list):
+                g["messages"] = []
+            g["messages"].append(msg)
+            save_server_qgroups(groups)
+            return {"status": "success", "message": msg}
+    # Nếu chưa tìm thấy nhóm cụ thể, tạo hoặc lưu vào nhóm đầu tiên phù hợp
+    return {"status": "error", "message": "Không tìm thấy nhóm tương ứng"}
+
+@app.get("/dashboard/summary")
+@app.get("/documents/dashboard/summary")
+def get_dashboard_summary(
+    user_id: Optional[str] = Query(None),
+    current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
+    db: Session = Depends(get_db)
+):
+    target_uid = user_id or (current_user_info.get("sub") if current_user_info else None)
+    my_docs_count = 0
+    if target_uid:
+        my_docs_count = db.query(DocumentDB).filter(DocumentDB.user_id == target_uid).count()
+    shared_docs = db.query(DocumentDB).filter(DocumentDB.is_shared == 1).all()
+
+    return {
+        "status": "success",
+        "data": {
+            "stats": {
+                "textbooksIndexed": my_docs_count,
+                "totalShared": len(shared_docs)
+            },
+            "sharedDocuments": [
+                {
+                    "id": d.id,
+                    "name": d.name,
+                    "totalPages": d.total_pages or 100,
+                    "uploadedAt": d.created_at.strftime("%d/%m/%Y") if d.created_at else "Hôm nay",
+                    "subject": "Khoa Chuyên Ngành"
+                }
+                for d in shared_docs
+            ]
+        }
+    }
 
 @app.get("/qgroups/invitations")
 @app.get("/documents/qgroups/invitations")
