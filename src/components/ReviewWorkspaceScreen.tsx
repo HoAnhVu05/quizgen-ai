@@ -425,7 +425,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   onShowToast(
                     'success',
                     'Đã nạp 5 câu hỏi mẫu',
-                    'Bộ câu hỏi đối soát kèm trích dẫn RAG và công thức KaTeX đã sẵn sàng.'
+                    'Bộ câu hỏi đối soát kèm trích dẫn giáo trình và công thức KaTeX đã sẵn sàng.'
                   );
                 }
               }}
@@ -440,7 +440,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
           <div className="pt-4 border-t border-slate-100 flex items-center justify-center gap-3 text-[11px] text-slate-400 flex-wrap">
             <span className="flex items-center gap-1">
               <BookOpen className="w-3 h-3 text-slate-400" />
-              Trích dẫn sách RAG
+              Trích dẫn giáo trình
             </span>
             <span>•</span>
             <span className="flex items-center gap-1">
@@ -469,7 +469,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               Bước 3/4 • Đối Soát Minh Chứng & Biên Tập Đề (Amber)
             </span>
             <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-0.5 rounded-md hidden md:inline-block">
-              Đối chiếu song song trích dẫn RAG
+              Đối chiếu song song giáo trình gốc
             </span>
           </div>
           <span className="text-xs text-slate-500 font-medium">
@@ -893,7 +893,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
               <div className="flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-[#008689]" />
                 <h3 className="text-sm font-bold text-slate-800">
-                  Đối chiếu Giáo trình Gốc (RAG)
+                  Đối chiếu Giáo trình Gốc
                 </h3>
               </div>
               <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">

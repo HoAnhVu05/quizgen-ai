@@ -1748,7 +1748,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                 <span>Quản Lý Gói Cước, Đơn Giá &amp; Cổng Thanh Toán TPBank VietQR</span>
               </h3>
               <p className="text-xs text-slate-500 max-w-3xl leading-relaxed">
-                Theo dõi dòng tiền chuyển khoản thực tế về tài khoản ngân hàng TPBank (78757618888), điều chỉnh đơn giá niêm yết các gói PRO Giảng Viên, phê duyệt giao dịch và tự động đồng bộ quyền hạn Vector Store.
+                Theo dõi dòng tiền chuyển khoản thực tế về tài khoản ngân hàng TPBank (78757618888), điều chỉnh đơn giá niêm yết các gói PRO Giảng Viên, phê duyệt giao dịch và tự động đồng bộ quyền hạn kho giáo trình môn học.
               </p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1815,7 +1815,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                 {paymentData?.kpis?.activeSubscribers || 0} <span className="text-xs font-bold text-slate-500">tài khoản</span>
               </div>
               <p className="text-[11px] text-slate-400">
-                Đã mở khóa không giới hạn tài liệu Vector Store
+                Đã mở khóa không giới hạn dung lượng giáo trình môn học
               </p>
             </div>
 

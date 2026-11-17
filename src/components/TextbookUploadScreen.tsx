@@ -150,7 +150,15 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   currentUser,
   onOpenPricingModal,
 }) => {
-  const [activeTab, setActiveTab] = useState<'my' | 'library' | 'qgroup'>('my');
+  const [activeTab, setActiveTab] = useState<'my' | 'library' | 'qgroup'>(() => {
+    try {
+      const saved = localStorage.getItem('quizgen_textbook_tab');
+      if (saved === 'library' || saved === 'qgroup' || saved === 'my') {
+        return saved;
+      }
+    } catch {}
+    return 'my';
+  });
   const [textbooks, setTextbooks] = useState<TextbookFile[]>([]);
   const [libraryTextbooks, setLibraryTextbooks] = useState<TextbookFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -478,7 +486,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       } catch {}
 
       await fetchDocuments(true);
-      onShowToast('success', 'Nạp Giáo Trình Thành Công', `Giáo trình ${file.name} đã được đưa vào tiến trình trích xuất RAG.`);
+      onShowToast('success', 'Nạp Giáo Trình Thành Công', `Giáo trình ${file.name} đã được nạp thành công và sẵn sàng để sinh đề.`);
     } catch (err: any) {
       onShowToast('error', 'Nạp Giáo Trình Thất Bại', err.message || 'Lỗi không xác định.');
     } finally {
@@ -1015,6 +1023,13 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     setSelectedBookForEmail(null);
   };
 
+  const handleTabChange = (tab: 'my' | 'library' | 'qgroup') => {
+    setActiveTab(tab);
+    try {
+      localStorage.setItem('quizgen_textbook_tab', tab);
+    } catch {}
+  };
+
   const filteredMyBooks = textbooks.filter((b) =>
     b.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -1033,7 +1048,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
           <div className="flex items-center gap-2 mb-1.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold uppercase tracking-wider bg-teal-50 text-[#008689] border border-teal-200 shadow-2xs">
               <UploadCloud className="w-3.5 h-3.5 text-[#008689]" />
-              Bước 1/4 • Nạp &amp; Quản Lý Giáo Trình RAG
+              Bước 1/4 • Nạp &amp; Quản Lý Giáo Trình Môn Học
             </span>
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
@@ -1075,7 +1090,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       {/* 2. Interactive Feature Tabs Switcher (3 Tabs: Giáo Trình Của Tôi | Thư Viện Giáo Trình | Q-Group) */}
       <div className="flex items-center gap-2 p-1 bg-slate-200/60 rounded-2xl w-full sm:w-fit border border-slate-200/80">
         <button
-          onClick={() => setActiveTab('my')}
+          onClick={() => handleTabChange('my')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'my'
               ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
@@ -1090,7 +1105,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveTab('library')}
+          onClick={() => handleTabChange('library')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'library'
               ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
@@ -1105,7 +1120,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveTab('qgroup')}
+          onClick={() => handleTabChange('qgroup')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
             activeTab === 'qgroup'
               ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
@@ -1242,7 +1257,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                     <th className="py-3 px-5">Tài liệu</th>
                     <th className="py-3 px-4">Quy mô</th>
                     <th className="py-3 px-4">Quyền riêng tư</th>
-                    <th className="py-3 px-5">Trạng thái RAG</th>
+                    <th className="py-3 px-5">Trạng thái</th>
                     <th className="py-3 px-5 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -1308,7 +1323,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                         {book.status === 'ready' && (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            Đã băm Vector RAG
+                            Sẵn sàng sinh đề
                           </span>
                         )}
                         {book.status === 'embedding' && (
@@ -1316,7 +1331,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                             <div className="flex items-center justify-between text-[10px]">
                               <span className="text-[#008689] font-bold flex items-center gap-1">
                                 <Cpu className="w-3 h-3 animate-spin" />
-                                Đang nhúng Vector RAG...
+                                Đang xử lý nội dung...
                               </span>
                               <span className="font-mono text-[#008689]">{book.progress}%</span>
                             </div>
@@ -1356,7 +1371,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                         <button
                           onClick={() => void handleInspectChunks(book)}
                           className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer inline-flex items-center"
-                          title="Soi lát cắt ngữ nghĩa RAG"
+                          title="Xem mục lục & trích đoạn giáo trình"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
@@ -1401,7 +1416,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                 Thư Viện Giáo Trình
               </h2>
               <p className="text-xs text-white/80 leading-relaxed">
-                Kho lưu trữ các giáo trình chuẩn đã được bóc tách và lập chỉ mục RAG Vector sẵn. Quý Thầy/Cô chỉ cần bấm <strong className="text-amber-300">"Dùng Sinh Đề Ngay"</strong> để tạo câu hỏi thi Bloom tức thì mà không cần tự tải lên lại.
+                Kho lưu trữ các giáo trình chuẩn đã được bóc tách nội dung và cấu trúc mục lục sẵn. Quý Thầy/Cô chỉ cần bấm <strong className="text-amber-300">"Dùng Sinh Đề Ngay"</strong> để tạo câu hỏi thi Bloom tức thì mà không cần tự tải lên lại.
               </p>
             </div>
           </div>
@@ -1470,7 +1485,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                     <button
                       onClick={() => void handleInspectChunks(book)}
                       className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-                      title="Xem lát cắt RAG"
+                      title="Xem mục lục & trích đoạn"
                     >
                       <Eye className="w-3.5 h-3.5" />
                       <span>Xem mục lục</span>
@@ -2557,19 +2572,19 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
             <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-white">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Lát cắt RAG Vector (Mẫu 20 đoạn ngữ nghĩa)
+                  Mục lục &amp; Trích đoạn giáo trình (20 đoạn tiêu biểu)
                 </span>
                 {isFetchingChunks && (
                   <span className="text-[11px] text-[#008689] flex items-center space-x-1 font-mono">
                     <RefreshCw className="w-3 h-3 animate-spin" />
-                    <span>Đang truy xuất...</span>
+                    <span>Đang trích xuất nội dung...</span>
                   </span>
                 )}
               </div>
 
               {!isFetchingChunks && inspectingChunks.length === 0 && (
                 <div className="text-center py-8 text-slate-400 text-xs">
-                  Chưa có lát cắt nào được lập chỉ mục hoặc đang trong tiến trình xử lý.
+                  Nội dung giáo trình đang trong tiến trình xử lý mục lục.
                 </div>
               )}
 

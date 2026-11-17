@@ -475,7 +475,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setIsGenerating(true);
     setGenerationError(null);
     setGenerationProgress(12);
-    setGenerationStep('Đang kết nối API Gateway và truy xuất ngữ cảnh RAG từ tài liệu...');
+    setGenerationStep('Đang đọc hiểu và trích xuất nội dung từ giáo trình môn học...');
 
     const selectedDoc = documents.find((d) => d.id === selectedBook);
     const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
@@ -503,7 +503,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     }, 2500);
 
     const stepTimer3 = setTimeout(() => {
-      setGenerationStep('Kiểm tra minh chứng trích dẫn, phương án nhiễu và độ tin cậy RAG...');
+      setGenerationStep('Kiểm tra minh chứng trích dẫn và đối soát phương án trả lời...');
     }, 8000);
 
     try {
@@ -625,7 +625,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       if (err.name === 'AbortError') {
         msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 5 phút). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
       } else if (isNetworkErr) {
-        msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng AI RAG Engine" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
+        msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng Bộ sinh AI Dự phòng" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
       } else {
         msg = err.message || 'Lỗi không xác định khi gọi AI Service.';
       }
@@ -740,7 +740,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 {/* 3-step sequential status tracker */}
                 <div className="space-y-2.5">
                   {[
-                    { step: 1, label: 'Truy xuất ngữ cảnh RAG từ tài liệu...' },
+                    { step: 1, label: 'Đọc hiểu nội dung giáo trình môn học...' },
                     { step: 2, label: 'Gemini AI tổng hợp và sinh câu hỏi theo chuẩn Bloom...' },
                     { step: 3, label: 'Kiểm tra minh chứng trích dẫn & chuẩn hóa câu hỏi...' },
                   ].map(({ step, label }) => {

@@ -371,12 +371,77 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     };
   }, []);
 
+  const libraryShortcutBooks = useMemo(() => {
+    let customDocs: any[] = [];
+    try {
+      customDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+    } catch {}
+
+    const defaultCurriculum = [
+      {
+        id: 'tb-002',
+        name: '2018-Operating System Concepts-10th.pdf',
+        subject: 'Hệ Điều Hành & Mạng Máy Tính',
+        totalPages: 1278,
+        author: 'TS. Hồ Anh Vũ',
+        tag: 'Chuẩn Bộ Môn'
+      },
+      {
+        id: 'tb-001',
+        name: 'BAI GIANG Tu tuong HCM - LLCT.pdf',
+        subject: 'Lý Luận Chính Trị & Triết Học',
+        totalPages: 102,
+        author: 'ThS. Hân Bích',
+        tag: 'Giáo Trình Mẫu'
+      },
+      {
+        id: 'doc-kinh-te-vi-mo-2025',
+        name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
+        subject: 'Kinh Tế Vi Mô & Kinh Tế Học',
+        totalPages: 412,
+        author: 'Khoa Kinh Tế',
+        tag: 'Dùng Chung'
+      },
+      {
+        id: 'doc-tri-tue-nhan-tao-2026',
+        name: 'GiaoTrinh_TriTueNhanTao_2026.pdf',
+        subject: 'Trí Tuệ Nhân Tạo & Học Máy',
+        totalPages: 350,
+        author: 'Khoa Công Nghệ Thông Tin',
+        tag: 'Mới Nhất'
+      }
+    ];
+
+    const validCustom = customDocs.filter((d: any) => d && d.name && d.id);
+    const combined = [...validCustom, ...defaultCurriculum];
+    const map = new Map<string, any>();
+    combined.forEach((b) => {
+      if (!map.has(b.id)) map.set(b.id, b);
+    });
+    return Array.from(map.values()).slice(0, 4);
+  }, []);
+
+  const handleQuickUseBook = (bookId: string, bookName: string) => {
+    try {
+      localStorage.setItem('quizgen_selected_book_id', bookId);
+      localStorage.setItem('quizgen_selected_book_name', bookName);
+    } catch {}
+    onNavigate('generate');
+  };
+
+  const handleOpenLibrary = () => {
+    try {
+      localStorage.setItem('quizgen_textbook_tab', 'library');
+    } catch {}
+    onNavigate('upload');
+  };
+
   const roleHeaderConfig = {
     lecturer: {
       badge: 'Không gian Biên soạn Giảng viên',
       title: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
       subtitle:
-        'Tải lên giáo trình môn học, cấu hình ma trận Bloom và đối soát trích dẫn RAG trước khi gửi đề thi lên Bộ môn.'
+        'Tải lên giáo trình môn học, cấu hình ma trận Bloom và đối soát trích dẫn trước khi gửi đề thi lên Bộ môn.'
     },
     head_of_department: {
       badge: 'Bảng điều khiển Trưởng Bộ môn (HOD)',
@@ -398,7 +463,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           {
             label: 'Giáo trình đã nạp',
             value: String(statsSummary.textbooksIndexed),
-            sub: 'Tài liệu cá nhân đã băm Vector',
+            sub: 'Tài liệu cá nhân sẵn sàng sinh đề',
             icon: BookOpen,
             color: 'text-[#008689]',
             bg: 'bg-[#cbf0ee]',
@@ -410,7 +475,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           {
             label: 'Tổng câu hỏi đã tạo',
             value: String(statsSummary.totalGenerated),
-            sub: 'Sinh tự động qua RAG Pipeline',
+            sub: 'Sinh tự động từ nội dung giáo trình',
             icon: Sparkles,
             color: 'text-blue-600',
             bg: 'bg-blue-100',
@@ -821,6 +886,84 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         })}
       </div>
 
+      {/* Lối tắt Thư Viện Giáo Trình - 1-Chạm Sinh Đề Tức Thì */}
+      {role === 'lecturer' && (
+        <div className="bg-white rounded-3xl border border-slate-200/90 p-4 sm:p-5 shadow-xs space-y-3.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-teal-50 text-[#008689] border border-teal-200 flex items-center justify-center shrink-0 shadow-2xs">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-800 truncate">
+                    Lối Tắt Thư Viện Giáo Trình
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-100 text-teal-800 uppercase tracking-wider">
+                    Sinh Đề 1-Chạm
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 truncate">
+                  Chọn nhanh giáo trình chuẩn dưới đây để lập tức sinh câu hỏi trắc nghiệm mà không cần nạp lại tài liệu.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={handleOpenLibrary}
+              className="px-3.5 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-[#008689] font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
+            >
+              <span>Mở Thư Viện Toàn Bộ</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Shortcut Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {libraryShortcutBooks.map((book: any, idx: number) => (
+              <div
+                key={book.id || idx}
+                className="p-3.5 rounded-2xl border border-slate-200/90 hover:border-[#008689] bg-gradient-to-b from-white to-slate-50/40 hover:shadow-xs transition-all flex flex-col justify-between space-y-3 group"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-teal-50 text-[#008689] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200 font-mono">
+                      {book.tag || 'Sẵn sàng'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <h4
+                      className="font-extrabold text-xs text-slate-900 group-hover:text-[#008689] transition-colors line-clamp-2 leading-snug"
+                      title={book.name}
+                    >
+                      {book.name}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 font-medium mt-1 truncate">
+                      {book.subject || book.author || 'Môn học chuyên ngành'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      {book.totalPages || 120} trang
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleQuickUseBook(book.id, book.name)}
+                  className="w-full py-2 rounded-xl bg-[#008689] hover:bg-[#007073] text-white font-bold text-xs shadow-xs hover:shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                  <span>Dùng Sinh Đề Ngay</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Main Content Split: Quick Workflow Steps & Bloom Distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Workflow Quick Navigation */}
@@ -842,7 +985,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                   {role === 'lecturer'
                     ? 'Chọn nhanh tác vụ biên soạn và đối soát học thuật'
                     : role === 'head_of_department'
-                    ? 'Kiểm tra trích dẫn RAG, phê duyệt câu hỏi hoặc yêu cầu giảng viên hiệu chỉnh'
+                    ? 'Kiểm tra trích dẫn giáo trình, phê duyệt câu hỏi hoặc yêu cầu giảng viên hiệu chỉnh'
                     : 'Chế độ chỉ đọc bảo toàn nội dung học thuật và kết xuất gói in ấn OMR / QTI 2.1'}
                 </p>
               </div>
@@ -855,7 +998,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
                     stepNum: '1',
                     step: 'Bước 1',
                     title: 'Nạp Giáo trình PDF/DOCX',
-                    desc: 'Trích xuất văn bản & lập chỉ mục Vector',
+                    desc: 'Đọc hiểu và trích xuất nội dung giáo trình',
                     screen: 'upload' as ScreenId,
                     circleStyle: 'bg-[#d7f3f2] text-[#008689]',
                     arrowStyle: 'bg-[#d7f3f2] text-[#008689]',

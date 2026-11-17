@@ -359,7 +359,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                     </select>
                   </div>
                   <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
-                    RAG Connected
+                    Đã nạp giáo trình
                   </span>
                 </div>
               )}
