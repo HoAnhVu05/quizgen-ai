@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import {
   ShieldCheck,
@@ -20,6 +20,11 @@ import {
   EyeOff,
   MessageSquare,
   Users,
+  BookOpen,
+  ArrowRight,
+  CornerDownLeft,
+  X,
+  CreditCard,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -41,6 +46,31 @@ interface TopHeaderProps {
   onOpenProfileModal?: () => void;
 }
 
+interface NavCommand {
+  id: string;
+  title: string;
+  category: 'workflow' | 'workspace' | 'account';
+  categoryLabel: string;
+  stepTag?: string;
+  description: string;
+  keywords: string[];
+  screenId?: ScreenId;
+  action?: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  iconBg: string;
+  iconColor: string;
+}
+
+const removeVietnameseTones = (str: string): string => {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+};
+
 export const TopHeader: React.FC<TopHeaderProps> = ({
   currentScreen,
   currentUser,
@@ -51,12 +81,183 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onAdminTabChange,
   onToggleMobileMenu,
   onOpenProfileModal,
+  onShowToast,
 }) => {
   const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
   const isAdmin = currentUser?.role === 'admin';
   const isAdminScreen = currentScreen === 'admin_portal';
   const showAdminHeader = isAdmin || isAdminScreen;
   const [searchValue, setSearchValue] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Danh mục toàn bộ chức năng hệ thống để tìm kiếm nhanh
+  const systemCommands = useMemo<NavCommand[]>(() => [
+    {
+      id: 'nav-upload',
+      title: 'Kho Giáo trình & Thư viện Môn học',
+      category: 'workflow',
+      categoryLabel: 'Quy trình Biên soạn',
+      stepTag: 'Bước 1',
+      description: 'Nạp giáo trình PDF/Word, xem thư viện dùng chung, trích xuất mục lục sách',
+      keywords: ['thư viện', 'thu vien', 'giáo trình', 'giao trinh', 'tài liệu', 'tai lieu', 'sách', 'sach', 'kho sách', 'pdf', 'word', 'upload', 'nạp sách', 'kho'],
+      screenId: 'upload',
+      icon: UploadCloud,
+      iconBg: 'bg-teal-50',
+      iconColor: 'text-[#008689]',
+    },
+    {
+      id: 'nav-generate',
+      title: 'Sinh Câu hỏi AI theo Ma trận Bloom',
+      category: 'workflow',
+      categoryLabel: 'Quy trình Biên soạn',
+      stepTag: 'Bước 2',
+      description: 'Cấu hình ma trận nhận thức Bloom (Nhận biết, Thông hiểu, Vận dụng), sinh đề thi tự động',
+      keywords: ['sinh đề', 'sinh de', 'tạo câu hỏi', 'tao cau hoi', 'bloom', 'ma trận', 'ma tran', 'sinh câu hỏi', 'giữa kỳ', 'cuối kỳ', '15p', 'ai', 'tạo đề'],
+      screenId: 'generate',
+      icon: Sparkles,
+      iconBg: 'bg-blue-50',
+      iconColor: 'text-blue-600',
+    },
+    {
+      id: 'nav-review',
+      title: 'Đối soát Trích dẫn & Biên tập Đề',
+      category: 'workflow',
+      categoryLabel: 'Quy trình Biên soạn',
+      stepTag: 'Bước 3',
+      description: 'Đối soát từng câu hỏi với trích dẫn trang sách gốc, biên tập đáp án và gửi duyệt',
+      keywords: ['đối soát', 'doi soat', 'biên tập', 'bien tap', 'sửa đề', 'trích dẫn', 'trich dan', 'sách', 'duyệt', 'nghiệm thu', 'review', 'sửa câu hỏi'],
+      screenId: 'review',
+      icon: CheckSquare,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+    },
+    {
+      id: 'nav-bank',
+      title: 'Đóng gói & Xuất Bản Đề Thi',
+      category: 'workflow',
+      categoryLabel: 'Quy trình Biên soạn',
+      stepTag: 'Bước 4',
+      description: 'Trộn mã đề (101, 102...), xuất bản tệp Word, PDF kèm đáp án hoặc chuẩn QTI nạp Canvas/LMS',
+      keywords: ['xuất đề', 'xuat de', 'đóng gói', 'dong goi', 'trộn đề', 'tron de', 'ngân hàng đề', 'word', 'pdf', 'qti', 'canvas', 'lms', 'in đề', 'xuất bản'],
+      screenId: 'bank',
+      icon: Database,
+      iconBg: 'bg-purple-50',
+      iconColor: 'text-purple-600',
+    },
+    {
+      id: 'nav-dashboard',
+      title: 'Tổng quan Học thuật (Dashboard)',
+      category: 'workspace',
+      categoryLabel: 'Không gian Làm việc',
+      description: 'Trang chủ trung tâm, thống kê giáo trình, số câu hỏi đã sinh, lối tắt thư viện',
+      keywords: ['tổng quan', 'tong quan', 'bảng điều khiển', 'trang chủ', 'dashboard', 'home', 'thống kê', 'học thuật'],
+      screenId: 'dashboard',
+      icon: LayoutDashboard,
+      iconBg: 'bg-slate-100',
+      iconColor: 'text-slate-700',
+    },
+    {
+      id: 'nav-qgroup',
+      title: 'Hội nhóm Chuyên môn Q-Group',
+      category: 'workspace',
+      categoryLabel: 'Không gian Làm việc',
+      description: 'Trao đổi bộ môn, chat trực tiếp 1-1, gọi Huddle âm thanh, chia sẻ giáo trình chung',
+      keywords: ['hội nhóm', 'hoi nhom', 'nhóm', 'nhom', 'qgroup', 'q-group', 'chat', 'nhắn tin', 'tin nhắn', 'kết bạn', 'huddle', 'trao đổi'],
+      screenId: 'qgroup',
+      icon: Users,
+      iconBg: 'bg-purple-50',
+      iconColor: 'text-purple-600',
+    },
+    {
+      id: 'nav-forum',
+      title: 'Diễn đàn Học thuật & Trao đổi',
+      category: 'workspace',
+      categoryLabel: 'Không gian Làm việc',
+      description: 'Diễn đàn chia sẻ kinh nghiệm giảng dạy, đề cương môn học và ma trận đề thi',
+      keywords: ['diễn đàn', 'dien dan', 'forum', 'bài viết', 'bình luận', 'thảo luận', 'chia sẻ'],
+      screenId: 'forum',
+      icon: MessageSquare,
+      iconBg: 'bg-indigo-50',
+      iconColor: 'text-indigo-600',
+    },
+    {
+      id: 'nav-pricing',
+      title: 'Nâng cấp Gói PRO / Đổi gói cước',
+      category: 'account',
+      categoryLabel: 'Tài khoản & Dịch vụ',
+      description: 'Nâng cấp gói PRO 1 Tháng / 1 Năm, không giới hạn tải giáo trình và lượt sinh đề AI',
+      keywords: ['gói', 'goi', 'pro', 'vip', 'nâng cấp', 'nang cap', 'bảng giá', 'mua gói', 'thanh toán', 'hạn mức', 'quota', 'pricing'],
+      action: onOpenPricingModal,
+      icon: Crown,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+    },
+    {
+      id: 'nav-profile',
+      title: 'Hồ sơ Cá nhân & Khoa Bộ Môn',
+      category: 'account',
+      categoryLabel: 'Tài khoản & Dịch vụ',
+      description: 'Xem thông tin giảng viên, cập nhật học hàm học vị, khoa, số điện thoại và lịch sử đơn hàng',
+      keywords: ['hồ sơ', 'ho so', 'cá nhân', 'ca nhan', 'tài khoản', 'tai khoan', 'profile', 'thông tin', 'học hàm', 'giảng viên', 'khoa', 'bộ môn'],
+      action: onOpenProfileModal,
+      icon: User,
+      iconBg: 'bg-slate-100',
+      iconColor: 'text-slate-700',
+    },
+  ], [onOpenPricingModal, onOpenProfileModal]);
+
+  // Bộ lọc tìm kiếm thông minh
+  const filteredCommands = useMemo(() => {
+    if (!searchValue.trim()) return systemCommands;
+    const q = removeVietnameseTones(searchValue);
+    return systemCommands.filter((cmd) => {
+      const matchTitle = removeVietnameseTones(cmd.title).includes(q);
+      const matchDesc = removeVietnameseTones(cmd.description).includes(q);
+      const matchTag = cmd.stepTag && removeVietnameseTones(cmd.stepTag).includes(q);
+      const matchKeywords = cmd.keywords.some((k) => removeVietnameseTones(k).includes(q));
+      return matchTitle || matchDesc || matchTag || matchKeywords;
+    });
+  }, [searchValue, systemCommands]);
+
+  // Phím tắt toàn cục Ctrl + K hoặc Cmd + K
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      } else if (e.key === 'Escape') {
+        setIsSearchOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Click ngoài để đóng dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelectCommand = (cmd: NavCommand) => {
+    if (cmd.screenId && onNavigate) {
+      onNavigate(cmd.screenId);
+    } else if (cmd.action) {
+      cmd.action();
+    }
+    setIsSearchOpen(false);
+    setSearchValue('');
+    onShowToast('info', 'Chuyển trang chức năng', cmd.title);
+  };
 
   const getScreenMeta = (screen: ScreenId) => {
     switch (screen) {
@@ -197,19 +398,39 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      {/* Middle: Spotlight Search Bar */}
+      {/* Middle: Spotlight Command Palette Search Bar */}
       {!showAdminHeader && (
-        <form
-          onSubmit={handleSearchSubmit}
-          className="hidden md:flex items-center flex-1 max-w-md mx-2 lg:mx-6"
+        <div
+          ref={searchContainerRef}
+          className="hidden md:flex items-center flex-1 max-w-lg mx-2 lg:mx-6 relative"
         >
           <div className="relative w-full">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
+              ref={searchInputRef}
               type="text"
               value={searchValue}
-              onChange={(e) => setSearchValue(e.target.value)}
-              placeholder="Tìm nhanh giáo trình môn học, ngân hàng câu hỏi, mã đề... (Ctrl + K)"
+              onFocus={() => setIsSearchOpen(true)}
+              onChange={(e) => {
+                setSearchValue(e.target.value);
+                setIsSearchOpen(true);
+                setSelectedIndex(0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setSelectedIndex((prev) => (prev + 1) % Math.max(1, filteredCommands.length));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % Math.max(1, filteredCommands.length));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  if (filteredCommands[selectedIndex]) {
+                    handleSelectCommand(filteredCommands[selectedIndex]);
+                  }
+                }
+              }}
+              placeholder="Tìm nhanh chức năng: thư viện, sinh đề, đối soát, nhóm... (Ctrl + K)"
               className="w-full pl-9 pr-14 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all shadow-2xs"
             />
             <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
@@ -218,7 +439,84 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </kbd>
             </div>
           </div>
-        </form>
+
+          {/* Spotlight Search Dropdown Panel */}
+          {isSearchOpen && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden z-50 animate-fade-in text-xs max-h-[460px] flex flex-col">
+              <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>
+                  {searchValue.trim()
+                    ? `Tìm thấy ${filteredCommands.length} chức năng phù hợp`
+                    : 'Gõ từ khóa hoặc chọn chức năng để chuyển trang nhanh'}
+                </span>
+                <span className="flex items-center gap-1 text-[10px]">
+                  <kbd className="px-1 py-0.5 bg-white border rounded">↑↓</kbd> chuyển
+                  <kbd className="px-1 py-0.5 bg-white border rounded ml-1">Enter</kbd> chọn
+                  <kbd className="px-1 py-0.5 bg-white border rounded ml-1">Esc</kbd> đóng
+                </span>
+              </div>
+
+              <div className="overflow-y-auto p-2 divide-y divide-slate-100">
+                {filteredCommands.length === 0 ? (
+                  <div className="p-8 text-center text-slate-400 space-y-1.5">
+                    <p className="font-bold text-slate-600">Không tìm thấy chức năng phù hợp</p>
+                    <p className="text-[11px]">Thử gõ: &quot;thư viện&quot;, &quot;sinh đề&quot;, &quot;đối soát&quot;, &quot;nhóm&quot;, &quot;xuất đề&quot;...</p>
+                  </div>
+                ) : (
+                  filteredCommands.map((cmd, idx) => {
+                    const Icon = cmd.icon;
+                    const isSelected = idx === selectedIndex;
+                    const isCurrent = cmd.screenId === currentScreen;
+
+                    return (
+                      <div
+                        key={cmd.id}
+                        onClick={() => handleSelectCommand(cmd)}
+                        onMouseEnter={() => setSelectedIndex(idx)}
+                        className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center gap-3 ${
+                          isSelected
+                            ? 'bg-teal-50/80 text-teal-950 ring-1 ring-teal-200'
+                            : 'hover:bg-slate-50 text-slate-700'
+                        }`}
+                      >
+                        <div
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${cmd.iconBg} ${cmd.iconColor}`}
+                        >
+                          <Icon className="w-4 h-4" />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            {cmd.stepTag && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-100 text-slate-600 shrink-0">
+                                {cmd.stepTag}
+                              </span>
+                            )}
+                            <h4 className="font-extrabold text-slate-800 truncate">
+                              {cmd.title}
+                            </h4>
+                            {isCurrent && (
+                              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 shrink-0">
+                                Đang mở
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {cmd.description}
+                          </p>
+                        </div>
+
+                        <div className="shrink-0 flex items-center text-slate-300 group-hover:text-teal-600">
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Right: Actions */}
