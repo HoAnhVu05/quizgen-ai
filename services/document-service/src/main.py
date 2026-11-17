@@ -768,6 +768,7 @@ async def add_qgroup_message(group_id: str, request: Request):
     msg = await request.json()
     msg_id = str(msg.get("id") or "").strip()
     groups = load_server_qgroups()
+    now_ms = int(time.time() * 1000)
     for g in groups:
         if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
             if "messages" not in g or not isinstance(g["messages"], list):
@@ -776,11 +777,35 @@ async def add_qgroup_message(group_id: str, request: Request):
             if msg_id and any(str(m.get("id")) == msg_id for m in g["messages"]):
                 return {"status": "success", "message": msg, "duplicate": True}
             g["messages"].append(msg)
-            g["updatedAt"] = int(time.time() * 1000)
+            g["updatedAt"] = now_ms
             save_server_qgroups(groups)
             return {"status": "success", "message": msg}
     # Nếu chưa tìm thấy nhóm cụ thể, tạo hoặc lưu vào nhóm đầu tiên phù hợp
     return {"status": "error", "message": "Không tìm thấy nhóm tương ứng"}
+
+@app.post("/qgroups/{group_id}/read")
+@app.post("/documents/qgroups/{group_id}/read")
+async def mark_qgroup_read(group_id: str, request: Request):
+    payload = await request.json()
+    user_email = str(payload.get("userEmail") or "").strip().lower()
+    if not user_email:
+        return {"status": "error", "message": "userEmail is required"}
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                read_by = m.get("readBy", [])
+                if not isinstance(read_by, list):
+                    read_by = []
+                if user_email not in [r.lower() for r in read_by]:
+                    read_by.append(user_email)
+                    m["readBy"] = read_by
+                    changed = True
+            break
+    if changed:
+        save_server_qgroups(groups)
+    return {"status": "success", "changed": changed}
 
 @app.delete("/qgroups/{group_id}")
 @app.delete("/documents/qgroups/{group_id}")

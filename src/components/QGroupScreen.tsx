@@ -76,6 +76,30 @@ const formatTime = (ts: number): string => {
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 };
 
+/**
+ * Tính thời gian hoạt động gần nhất chuẩn xác của cuộc trò chuyện (Mess/Zalo style)
+ * Ưu tiên thời gian của tin nhắn cuối cùng gửi/nhận
+ */
+const getGroupSortTime = (g: QGroup): number => {
+  let best = 0;
+  const nowCap = Date.now() + 60000;
+  const msgs = g.messages || [];
+  if (msgs.length > 0) {
+    const last = msgs[msgs.length - 1];
+    if (last?.id && last.id.startsWith('msg-')) {
+      const parsed = parseInt(last.id.replace('msg-', ''), 10);
+      if (!isNaN(parsed) && parsed > 0 && parsed <= nowCap) {
+        best = Math.max(best, parsed);
+      }
+    }
+  }
+  const up = Number(g.updatedAt) || 0;
+  if (up > 0 && up <= nowCap) {
+    best = Math.max(best, up);
+  }
+  return best;
+};
+
 // ─── Blacklist helpers (per-user) ───────────────────────────────────────────
 const getBlacklistKey = (email: string) =>
   `quizgen_deleted_qgroups_${(email || 'global').toLowerCase()}`;
@@ -243,8 +267,48 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   }, [myEmail]);
 
   /**
+   * Đánh dấu cuộc trò chuyện đã đọc cả ở Local state, LocalStorage và Backend
+   */
+  const markGroupAsRead = useCallback(
+    (groupId: string) => {
+      if (!groupId || !myEmail) return;
+      setQgroups((prev) => {
+        let changed = false;
+        const next = prev.map((g) => {
+          if (g.id !== groupId && g.code !== groupId) return g;
+          const msgs = (g.messages || []).map((m) => {
+            const readBy = m.readBy || [];
+            if (!readBy.some((r) => r.toLowerCase() === myEmail)) {
+              changed = true;
+              return { ...m, readBy: [...readBy, myEmail] };
+            }
+            return m;
+          });
+          return changed ? { ...g, messages: msgs } : g;
+        });
+        if (changed) {
+          try {
+            localStorage.setItem('quizgen_qgroups', JSON.stringify(next));
+          } catch {}
+        }
+        return changed ? next : prev;
+      });
+
+      // Báo lên backend để không bao giờ bị polling ghi đè lại trạng thái chưa đọc
+      apiClient
+        .fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(groupId)}/read`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userEmail: myEmail }),
+        })
+        .catch(() => {});
+    },
+    [myEmail]
+  );
+
+  /**
    * Fetch groups from backend.
-   * KEY FIX: preserve local updatedAt if newer than remote.
+   * KEY FIX: preserve local updatedAt if newer than remote, preserve readBy status.
    */
   const fetchQGroups = useCallback(async () => {
     try {
@@ -274,7 +338,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
       } catch {}
 
-      // Deduplicate, clean messages, preserve local updatedAt if newer
+      // Deduplicate, clean messages, preserve local readBy & sorting time
       const seen = new Set<string>();
       const deduped: QGroup[] = [];
       for (const g of merged) {
@@ -285,15 +349,39 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
         const cleanMsgs = dedupMessages(g.messages || []);
 
-        // Preserve local updatedAt if it's newer (prevents sorting regression)
+        // Giữ lại trạng thái readBy nếu ở local đã đọc (chống bị đè)
         const localGroup = qgroups.find(
           (lg) => lg.id === g.id || lg.code === g.code
         );
-        const localTs = localGroup?.updatedAt ?? 0;
-        const remoteTs = g.updatedAt ?? 0;
-        const bestTs = Math.max(Number(localTs), Number(remoteTs));
+        if (localGroup) {
+          const localReadMsgIds = new Set<string>();
+          (localGroup.messages || []).forEach((lm) => {
+            if ((lm.readBy || []).some((r) => r.toLowerCase() === myEmail)) {
+              if (lm.id) localReadMsgIds.add(lm.id);
+            }
+          });
+          cleanMsgs.forEach((cm) => {
+            if (cm.id && localReadMsgIds.has(cm.id)) {
+              const currentReadBy = cm.readBy || [];
+              if (!currentReadBy.some((r) => r.toLowerCase() === myEmail)) {
+                cm.readBy = [...currentReadBy, myEmail];
+              }
+            }
+          });
+        }
 
-        deduped.push({ ...g, messages: cleanMsgs, updatedAt: bestTs || Date.now() });
+        // Tự động đánh dấu đã đọc nếu đang xem group này
+        if (g.id === selectedGroupId || g.code === selectedGroupId) {
+          cleanMsgs.forEach((cm) => {
+            const currentReadBy = cm.readBy || [];
+            if (!currentReadBy.some((r) => r.toLowerCase() === myEmail)) {
+              cm.readBy = [...currentReadBy, myEmail];
+            }
+          });
+        }
+
+        const calculatedTime = getGroupSortTime({ ...g, messages: cleanMsgs });
+        deduped.push({ ...g, messages: cleanMsgs, updatedAt: calculatedTime });
       }
 
       // Notify incoming messages
@@ -317,7 +405,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       applyGroups(deduped);
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myEmail, applyGroups, playBeep, onShowToast]);
+  }, [myEmail, selectedGroupId, applyGroups, playBeep, onShowToast]);
 
   // Initial load + polling 2s
   useEffect(() => {
@@ -351,28 +439,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     return () => document.removeEventListener('click', handler);
   }, []);
 
-  // Mark messages as read when group opens
+  // Mark messages as read when group is active or selected
   useEffect(() => {
-    if (!selectedGroupId || !myEmail) return;
-    setQgroups((prev) =>
-      prev.map((g) => {
-        if (g.id !== selectedGroupId) return g;
-        let changed = false;
-        const msgs = (g.messages || []).map((m) => {
-          if (
-            m.senderEmail?.toLowerCase() !== myEmail &&
-            !(m.readBy || []).includes(myEmail)
-          ) {
-            changed = true;
-            return { ...m, readBy: [...(m.readBy || []), myEmail] };
-          }
-          return m;
-        });
-        return changed ? { ...g, messages: msgs } : g;
-      })
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedGroupId, myEmail]);
+    if (selectedGroupId) {
+      markGroupAsRead(selectedGroupId);
+    }
+  }, [selectedGroupId, markGroupAsRead]);
 
   // ── Sorted & filtered list ────────────────────────────────────────────────
   const sortedGroups = useMemo(() => {
@@ -394,12 +466,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           const last = msgs[msgs.length - 1];
           return (
             last.senderEmail?.toLowerCase() !== myEmail &&
-            !(last.readBy || []).includes(myEmail)
+            !(last.readBy || []).some((r) => String(r).toLowerCase() === myEmail)
           );
         }
         return true;
       })
-      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+      .sort((a, b) => getGroupSortTime(b) - getGroupSortTime(a));
   }, [qgroups, searchQuery, filterTab, myEmail]);
 
   const activeGroup = useMemo(
@@ -861,6 +933,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   isMenuOpen={menuGroupId === group.id}
                   onSelect={() => {
                     setSelectedGroupId(group.id);
+                    markGroupAsRead(group.id);
                     setMenuGroupId(null);
                   }}
                   onMenuToggle={(e) => {
@@ -1295,10 +1368,13 @@ const ConversationItem: React.FC<{
   const msgs = group.messages || [];
   const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
   const isUnread =
-    lastMsg &&
-    !lastMsg.isSystem &&
-    lastMsg.senderEmail?.toLowerCase() !== myEmail &&
-    !(lastMsg.readBy || []).includes(myEmail);
+    !isSelected &&
+    Boolean(
+      lastMsg &&
+      !lastMsg.isSystem &&
+      lastMsg.senderEmail?.toLowerCase() !== myEmail &&
+      !(lastMsg.readBy || []).some((r) => String(r).toLowerCase() === myEmail)
+    );
 
   const isGroup = !group.isDirect;
 
