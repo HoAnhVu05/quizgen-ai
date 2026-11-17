@@ -1002,7 +1002,7 @@ export const App: React.FC = () => {
       </main>
 
       {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}
-      {isAuthenticated && (
+      {isAuthenticated && currentScreen !== 'admin_portal' && (
         <AIChatCopilot
           currentScreen={currentScreen}
           currentUser={currentUser}
