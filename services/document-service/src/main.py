@@ -764,11 +764,15 @@ async def save_qgroups_endpoint(request: Request):
 @app.post("/documents/qgroups/{group_id}/messages")
 async def add_qgroup_message(group_id: str, request: Request):
     msg = await request.json()
+    msg_id = str(msg.get("id") or "").strip()
     groups = load_server_qgroups()
     for g in groups:
         if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
             if "messages" not in g or not isinstance(g["messages"], list):
                 g["messages"] = []
+            # Chống trùng lặp tin nhắn nếu msg_id đã tồn tại
+            if msg_id and any(str(m.get("id")) == msg_id for m in g["messages"]):
+                return {"status": "success", "message": msg, "duplicate": True}
             g["messages"].append(msg)
             save_server_qgroups(groups)
             return {"status": "success", "message": msg}

@@ -548,14 +548,29 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
             }
           } catch {}
 
-          // Deduplicate by code/id so identical groups never repeat
+          // Deduplicate by code/id and deduplicate messages inside each group
           const seen = new Set<string>();
           const deduped: QGroup[] = [];
           for (const g of merged) {
             const k = (g.code || g.id || '').trim();
             if (k && !seen.has(k)) {
               seen.add(k);
-              deduped.push(g);
+              // Deduplicate messages in this group by msg.id
+              const seenMsgIds = new Set<string>();
+              const dedupedMsgs: QGroupMessage[] = [];
+              for (const m of (g.messages || [])) {
+                const mid = String(m?.id || '').trim();
+                if (mid && !seenMsgIds.has(mid)) {
+                  seenMsgIds.add(mid);
+                  dedupedMsgs.push(m);
+                } else if (!mid) {
+                  dedupedMsgs.push(m);
+                }
+              }
+              deduped.push({
+                ...g,
+                messages: dedupedMsgs
+              });
             }
           }
 
@@ -1194,7 +1209,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     setChatInputText('');
 
     // Đẩy tin nhắn đồng bộ tức thì lên máy chủ backend
-    const targetGroupId = activeGroup.code || activeGroup.id;
+    const targetGroupId = activeGroup.id || activeGroup.code;
     apiClient.fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(targetGroupId)}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
