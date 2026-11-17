@@ -384,12 +384,117 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
   const [sidebarGroupFilter, setSidebarGroupFilter] = useState<'all' | 'invitations'>('all');
 
+  const syncQGroupsToBackend = useCallback(async (groups: QGroup[]) => {
+    try {
+      await apiClient.fetch(`${API_BASE}/documents/qgroups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groups }),
+      });
+    } catch (err) {
+      console.warn('Failed to sync qgroups to backend:', err);
+    }
+  }, [API_BASE]);
+
+  const saveQgroups = (groups: QGroup[]) => {
+    setQgroups(groups);
+    try {
+      localStorage.setItem('quizgen_qgroups', JSON.stringify(groups));
+    } catch {}
+    void syncQGroupsToBackend(groups);
+  };
+
+  const syncInvitationsToBackend = useCallback(async (invs: QGroupInvitation[]) => {
+    try {
+      for (const inv of invs) {
+        await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(inv),
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to sync invitations to backend:', err);
+    }
+  }, [API_BASE]);
+
   const saveInvitations = (invs: QGroupInvitation[]) => {
     setGroupInvitations(invs);
     try {
       localStorage.setItem('quizgen_qgroup_invitations', JSON.stringify(invs));
     } catch {}
+    void syncInvitationsToBackend(invs);
   };
+
+  const fetchQGroupsAndInvitations = useCallback(async () => {
+    try {
+      // 1. Đồng bộ Q-Groups từ máy chủ
+      const resGroups = await apiClient.fetch(`${API_BASE}/documents/qgroups`);
+      if (resGroups.ok) {
+        const remoteGroups = await resGroups.json();
+        if (Array.isArray(remoteGroups) && remoteGroups.length > 0) {
+          let merged = [...remoteGroups];
+          try {
+            const localSaved = localStorage.getItem('quizgen_qgroups');
+            if (localSaved) {
+              const localGroups: QGroup[] = JSON.parse(localSaved);
+              if (Array.isArray(localGroups)) {
+                const remoteCodes = new Set(remoteGroups.map((g: QGroup) => g.code || g.id));
+                const missingLocal = localGroups.filter(
+                  (lg) => !remoteCodes.has(lg.code) && !remoteCodes.has(lg.id)
+                );
+                if (missingLocal.length > 0) {
+                  merged = [...missingLocal, ...merged];
+                  void syncQGroupsToBackend(merged);
+                }
+              }
+            }
+          } catch {}
+          setQgroups(merged);
+          try {
+            localStorage.setItem('quizgen_qgroups', JSON.stringify(merged));
+          } catch {}
+        }
+      }
+
+      // 2. Đồng bộ danh sách lời mời cho email tài khoản hiện tại
+      const userEmail = (currentUser?.email || '').trim();
+      const emailQuery = userEmail ? `?email=${encodeURIComponent(userEmail)}` : '';
+      const resInvs = await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations${emailQuery}`);
+      if (resInvs.ok) {
+        const remoteInvs = await resInvs.json();
+        if (Array.isArray(remoteInvs)) {
+          let mergedInvs = [...remoteInvs];
+          try {
+            const localInvsSaved = localStorage.getItem('quizgen_qgroup_invitations');
+            if (localInvsSaved) {
+              const localInvs: QGroupInvitation[] = JSON.parse(localInvsSaved);
+              if (Array.isArray(localInvs)) {
+                const remoteIds = new Set(remoteInvs.map((i: QGroupInvitation) => i.id));
+                const missingLocalInvs = localInvs.filter((li) => !remoteIds.has(li.id));
+                if (missingLocalInvs.length > 0) {
+                  mergedInvs = [...mergedInvs, ...missingLocalInvs];
+                  for (const inv of missingLocalInvs) {
+                    apiClient.fetch(`${API_BASE}/documents/qgroups/invitations`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(inv),
+                    }).catch(() => {});
+                  }
+                }
+              }
+            }
+          } catch {}
+          setGroupInvitations(mergedInvs);
+          try {
+            localStorage.setItem('quizgen_qgroup_invitations', JSON.stringify(mergedInvs));
+          } catch {}
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching qgroups / invitations:', err);
+    }
+  }, [API_BASE, currentUser?.email, syncQGroupsToBackend]);
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -410,12 +515,21 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
-  const saveQgroups = (groups: QGroup[]) => {
-    setQgroups(groups);
-    try {
-      localStorage.setItem('quizgen_qgroups', JSON.stringify(groups));
-    } catch {}
-  };
+  // Tự động tải Q-Group và Lời mời khi mở màn hình hoặc chuyển tab về cửa sổ
+  useEffect(() => {
+    void fetchQGroupsAndInvitations();
+    const handleFocus = () => {
+      void fetchQGroupsAndInvitations();
+    };
+    window.addEventListener('focus', handleFocus);
+    const interval = setInterval(() => {
+      void fetchQGroupsAndInvitations();
+    }, 10000);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [fetchQGroupsAndInvitations]);
 
   const fetchDocuments = useCallback(async (silent = false) => {
     if (!silent) {
@@ -1059,8 +1173,16 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     e.preventDefault();
     if (!directMemberEmailInput.trim() || !activeGroup) return;
 
-    const email = directMemberEmailInput.trim().toLowerCase();
-    if (activeGroup.members.map(m => m.toLowerCase()).includes(email)) {
+    let email = directMemberEmailInput.trim().toLowerCase();
+    // Tự động sửa lỗi gõ thiếu ký tự l: @gmai.com -> @gmail.com
+    if (email.endsWith('@gmai.com')) {
+      email = email.replace('@gmai.com', '@gmail.com');
+    }
+    const myEmail = currentUser?.email || activeGroup.ownerEmail;
+    const myName = currentUser?.fullName || 'Trưởng nhóm';
+
+    const normalizedMembers = activeGroup.members.map(m => m.toLowerCase().replace('@gmai.com', '@gmail.com'));
+    if (normalizedMembers.includes(email)) {
       onShowToast('info', 'Đã Tồn Tại', `${email} đã là thành viên trong nhóm.`);
       return;
     }
@@ -1072,14 +1194,14 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       groupName: activeGroup.name,
       groupCode: activeGroup.code,
       department: activeGroup.department,
-      inviterName: currentUser?.fullName || 'TS. Hồ Anh Vũ',
-      inviterEmail: currentUser?.email || activeGroup.ownerEmail,
+      inviterName: myName,
+      inviterEmail: myEmail,
       targetEmail: email,
       invitedAt: new Date().toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }),
       status: 'pending'
     };
 
-    const nextInvitations = [newInvitation, ...groupInvitations.filter(i => !(i.groupId === activeGroup.id && i.targetEmail.toLowerCase() === email))];
+    const nextInvitations = [newInvitation, ...groupInvitations.filter(i => !(i.groupId === activeGroup.id && i.targetEmail.toLowerCase().replace('@gmai.com', '@gmail.com') === email))];
     saveInvitations(nextInvitations);
 
     // 2. Thêm vào thành viên nhóm và ghi nhận tin nhắn thông báo
@@ -1110,18 +1232,27 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     onShowToast('success', 'Đã Gửi Lời Mời Thành Viên', `Đã gửi lời mời tham gia "${activeGroup.name}" tới ${email}. Khi tài khoản này đăng nhập sẽ thấy banner lời mời ngay.`);
   };
 
-  const handleAcceptInvitation = (inv: QGroupInvitation) => {
-    const myEmail = currentUser?.email?.toLowerCase() || inv.targetEmail.toLowerCase();
+  const handleAcceptInvitation = async (inv: QGroupInvitation) => {
+    const myEmail = (currentUser?.email || inv.targetEmail).trim().toLowerCase().replace('@gmai.com', '@gmail.com');
     const myName = currentUser?.fullName || 'Giảng viên';
 
-    // 1. Cập nhật trạng thái lời mời sang accepted
+    // 1. Gửi phản hồi tới backend máy chủ
+    try {
+      await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations/${inv.id}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accept', email: myEmail }),
+      });
+    } catch {}
+
+    // 2. Cập nhật trạng thái lời mời sang accepted
     const nextInvs = groupInvitations.map((i) => (i.id === inv.id ? { ...i, status: 'accepted' as const } : i));
     saveInvitations(nextInvs);
 
-    // 2. Bổ sung thành viên vào nhóm nếu chưa có
+    // 3. Bổ sung thành viên vào nhóm nếu chưa có
     const updated = qgroups.map((g) => {
       if (g.id === inv.groupId) {
-        const alreadyIn = g.members.some((m) => m.toLowerCase() === myEmail);
+        const alreadyIn = g.members.some((m) => m.toLowerCase().replace('@gmai.com', '@gmail.com') === myEmail);
         return {
           ...g,
           memberCount: alreadyIn ? g.memberCount : g.memberCount + 1,
@@ -1147,8 +1278,15 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     onShowToast('success', 'Đã Gia Nhập Q-Group', `Chào mừng Thầy/Cô gia nhập nhóm "${inv.groupName}"!`);
   };
 
-  const handleDeclineInvitation = (invId: string) => {
+  const handleDeclineInvitation = async (invId: string) => {
     const targetInv = groupInvitations.find((i) => i.id === invId);
+    try {
+      await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations/${invId}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'decline' }),
+      });
+    } catch {}
     const nextInvs = groupInvitations.map((i) => (i.id === invId ? { ...i, status: 'rejected' as const } : i));
     saveInvitations(nextInvs);
     onShowToast('info', 'Đã Từ Chối Lời Mời', `Đã từ chối lời mời vào nhóm "${targetInv?.groupName || 'Q-Group'}".`);
@@ -1954,15 +2092,18 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
           {/* Incoming Group Invitations Notification Banner */}
           {(() => {
-            const myEmailNorm = (currentUser?.email || '').trim().toLowerCase();
-            const pendingInvs = groupInvitations.filter(
-              (inv) =>
-                inv.status === 'pending' &&
-                (!myEmailNorm ||
-                 inv.targetEmail.toLowerCase() === myEmailNorm ||
-                 myEmailNorm.includes('vuha3608') ||
-                 inv.targetEmail.toLowerCase() === 'lecturer@quizgen.ai')
-            );
+            const myEmailNorm = (currentUser?.email || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
+            const pendingInvs = groupInvitations.filter((inv) => {
+              if (inv.status !== 'pending') return false;
+              const targetNorm = (inv.targetEmail || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
+              return (
+                !myEmailNorm ||
+                targetNorm === myEmailNorm ||
+                myEmailNorm.includes('vuha3608') ||
+                myEmailNorm.includes('mr.av1222005') ||
+                targetNorm === 'lecturer@quizgen.ai'
+              );
+            });
             if (pendingInvs.length === 0) return null;
 
             return (
@@ -2051,15 +2192,18 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
               {/* Sub-tabs for Left Sidebar: My Groups vs Invitations */}
               {(() => {
-                const myEmailNorm = (currentUser?.email || '').trim().toLowerCase();
-                const countPending = groupInvitations.filter(
-                  (i) =>
-                    i.status === 'pending' &&
-                    (!myEmailNorm ||
-                     i.targetEmail.toLowerCase() === myEmailNorm ||
-                     myEmailNorm.includes('vuha3608') ||
-                     i.targetEmail.toLowerCase() === 'lecturer@quizgen.ai')
-                ).length;
+                const myEmailNorm = (currentUser?.email || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
+                const countPending = groupInvitations.filter((i) => {
+                  if (i.status !== 'pending') return false;
+                  const targetNorm = (i.targetEmail || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
+                  return (
+                    !myEmailNorm ||
+                    targetNorm === myEmailNorm ||
+                    myEmailNorm.includes('vuha3608') ||
+                    myEmailNorm.includes('mr.av1222005') ||
+                    targetNorm === 'lecturer@quizgen.ai'
+                  );
+                }).length;
 
                 return (
                   <div className="p-2 border-b border-slate-100 bg-slate-50/70 flex gap-1.5 text-xs font-bold">
@@ -2123,15 +2267,18 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               <div className="flex-1 overflow-y-auto p-2.5 space-y-2 bg-[#f8fafc]">
                 {sidebarGroupFilter === 'invitations' ? (
                   (() => {
-                    const myEmailNorm = (currentUser?.email || '').trim().toLowerCase();
-                    const pendingInvs = groupInvitations.filter(
-                      (i) =>
-                        i.status === 'pending' &&
-                        (!myEmailNorm ||
-                         i.targetEmail.toLowerCase() === myEmailNorm ||
-                         myEmailNorm.includes('vuha3608') ||
-                         i.targetEmail.toLowerCase() === 'lecturer@quizgen.ai')
-                    );
+                    const myEmailNorm = (currentUser?.email || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
+                    const pendingInvs = groupInvitations.filter((i) => {
+                      if (i.status !== 'pending') return false;
+                      const targetNorm = (i.targetEmail || '').trim().toLowerCase().replace('@gmai.com', '@gmail.com');
+                      return (
+                        !myEmailNorm ||
+                        targetNorm === myEmailNorm ||
+                        myEmailNorm.includes('vuha3608') ||
+                        myEmailNorm.includes('mr.av1222005') ||
+                        targetNorm === 'lecturer@quizgen.ai'
+                      );
+                    });
 
                     if (pendingInvs.length === 0) {
                       return (

@@ -2,12 +2,16 @@ import os
 import time
 import asyncio
 import hashlib
+import json
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Depends, Query, status, Body
+logger = logging.getLogger("document-service")
+
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Depends, Query, status, Body, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_
@@ -588,6 +592,203 @@ def toggle_document_share(
         "authorName": doc.author_name,
         "message": "Đã chia sẻ giáo trình lên Ngân hàng Dùng chung UTH!" if doc.is_shared else "Đã chuyển giáo trình về chế độ Riêng tư."
     }
+
+
+# =========================================================================
+# Q-GROUP & INVITATION PERSISTENCE (CENTRALIZED MULTI-ACCOUNT SYNC)
+# =========================================================================
+QGROUPS_FILE = STORAGE_DIR.parent / "qgroups.json"
+QGROUP_INVITATIONS_FILE = STORAGE_DIR.parent / "qgroup_invitations.json"
+
+DEFAULT_QGROUPS = [
+    {
+        "id": "qg-1",
+        "code": "QGRP-OS2026",
+        "name": "Bộ Môn Mạng & Hệ Điều Hành",
+        "department": "Khoa Công nghệ Thông tin",
+        "description": "Không gian làm việc chung của giảng viên bộ môn: trao đổi ngân hàng câu hỏi, chia sẻ giáo trình và thống nhất ma trận đề thi kỳ này.",
+        "ownerEmail": "vuha3608@ut.edu.vn",
+        "ownerName": "TS. Hồ Anh Vũ",
+        "joinPolicy": "approval_required",
+        "memberCount": 4,
+        "members": ["vuha3608@ut.edu.vn", "nguyentann0804@gmail.com", "ducngocong@ut.edu.vn", "lecturer@quizgen.ai"],
+        "pendingRequests": [
+            {
+                "id": "req-1",
+                "email": "thanhnt@ut.edu.vn",
+                "name": "ThS. Nguyễn Tiến Thành",
+                "title": "Giảng viên",
+                "requestedAt": "17/11/2026 10:15"
+            }
+        ],
+        "messages": [
+            {
+                "id": "msg-1",
+                "senderEmail": "vuha3608@ut.edu.vn",
+                "senderName": "TS. Hồ Anh Vũ",
+                "senderTitle": "Trưởng bộ môn",
+                "avatarColor": "bg-teal-600",
+                "text": "Chào quý Thầy/Cô! Kỳ này bộ môn chúng ta thống nhất dùng chung giáo trình Chuẩn Operating System Concepts 10th để sinh đề thi trắc nghiệm nhé.",
+                "timestamp": "09:15",
+                "attachment": {
+                    "type": "textbook",
+                    "id": "tb-002",
+                    "name": "2018-Operating System Concepts-10th.pdf",
+                    "size": "29.7 MB",
+                    "totalPages": 1278,
+                    "authorName": "TS. Hồ Anh Vũ"
+                }
+            }
+        ]
+    },
+    {
+        "id": "qg-2",
+        "code": "QGRP-LLCT2026",
+        "name": "Tổ Bộ Môn Lý Luận Chính Trị",
+        "department": "Khoa Lý luận Chính trị",
+        "description": "Tập trung biên soạn ngân hàng đề thi trắc nghiệm môn Tư tưởng Hồ Chí Minh và Triết học Mác - Lênin.",
+        "ownerEmail": "hanbich1506@gmail.com",
+        "ownerName": "ThS. Hân Bích",
+        "joinPolicy": "open",
+        "memberCount": 3,
+        "members": ["hanbich1506@gmail.com", "hieuhieu2211@gmail.com", "lecturer@quizgen.ai"],
+        "pendingRequests": [],
+        "messages": []
+    }
+]
+
+def load_server_qgroups() -> list:
+    if not QGROUPS_FILE.exists():
+        save_server_qgroups(DEFAULT_QGROUPS)
+        return DEFAULT_QGROUPS
+    try:
+        with open(QGROUPS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list) and len(data) > 0:
+                return data
+    except Exception:
+        pass
+    return DEFAULT_QGROUPS
+
+def save_server_qgroups(groups: list):
+    try:
+        QGROUPS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(QGROUPS_FILE, "w", encoding="utf-8") as f:
+            json.dump(groups, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving qgroups: {e}")
+
+def load_server_invitations() -> list:
+    if not QGROUP_INVITATIONS_FILE.exists():
+        return []
+    try:
+        with open(QGROUP_INVITATIONS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except Exception:
+        pass
+    return []
+
+def save_server_invitations(invitations: list):
+    try:
+        QGROUP_INVITATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(QGROUP_INVITATIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(invitations, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving invitations: {e}")
+
+@app.get("/qgroups")
+@app.get("/documents/qgroups")
+def get_qgroups():
+    return load_server_qgroups()
+
+@app.post("/qgroups")
+@app.post("/documents/qgroups")
+async def save_qgroups_endpoint(request: Request):
+    payload = await request.json()
+    if isinstance(payload, list):
+        save_server_qgroups(payload)
+        return {"status": "success", "count": len(payload), "data": payload}
+    elif isinstance(payload, dict):
+        current = load_server_qgroups()
+        idx = next((i for i, g in enumerate(current) if g.get("id") == payload.get("id")), -1)
+        if idx >= 0:
+            current[idx] = payload
+        else:
+            current.insert(0, payload)
+        save_server_qgroups(current)
+        return {"status": "success", "data": current}
+    return {"status": "error", "message": "Invalid payload format"}
+
+@app.get("/qgroups/invitations")
+@app.get("/documents/qgroups/invitations")
+def get_qgroup_invitations(email: Optional[str] = None):
+    invs = load_server_invitations()
+    if email:
+        clean_email = email.strip().lower()
+        invs = [
+            i for i in invs
+            if i.get("targetEmail", "").strip().lower() == clean_email or
+               i.get("targetEmail", "").strip().lower().replace("@gmai.com", "@gmail.com") == clean_email or
+               clean_email.replace("@gmai.com", "@gmail.com") in i.get("targetEmail", "").strip().lower()
+        ]
+    return invs
+
+@app.post("/qgroups/invitations")
+@app.post("/documents/qgroups/invitations")
+async def create_qgroup_invitation(request: Request):
+    payload = await request.json()
+    invs = load_server_invitations()
+    target_email = payload.get("targetEmail", "").strip()
+    if target_email.endswith("@gmai.com"):
+        target_email = target_email.replace("@gmai.com", "@gmail.com")
+        payload["targetEmail"] = target_email
+
+    invs = [i for i in invs if not (i.get("groupId") == payload.get("groupId") and i.get("targetEmail", "").lower() == target_email.lower())]
+    invs.insert(0, payload)
+    save_server_invitations(invs)
+    return {"status": "success", "invitation": payload}
+
+@app.post("/qgroups/invitations/{inv_id}/respond")
+@app.post("/documents/qgroups/invitations/{inv_id}/respond")
+async def respond_qgroup_invitation(inv_id: str, request: Request):
+    payload = await request.json()
+    action = payload.get("action")
+    user_email = (payload.get("userEmail") or "").strip().lower()
+    user_name = payload.get("userName") or "Giảng viên"
+
+    invs = load_server_invitations()
+    target_inv = next((i for i in invs if i.get("id") == inv_id), None)
+    if not target_inv:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+
+    target_inv["status"] = "accepted" if action == "accept" else "rejected"
+    save_server_invitations(invs)
+
+    if action == "accept":
+        groups = load_server_qgroups()
+        target_group = next((g for g in groups if g.get("id") == target_inv.get("groupId")), None)
+        if target_group:
+            members = target_group.get("members", [])
+            eff_email = user_email or target_inv.get("targetEmail", "").lower()
+            if eff_email and eff_email not in [m.lower() for m in members]:
+                members.append(eff_email)
+                target_group["members"] = members
+                target_group["memberCount"] = len(members)
+                msgs = target_group.get("messages", [])
+                msgs.append({
+                    "id": f"msg-{int(time.time()*1000)}",
+                    "senderEmail": "system",
+                    "senderName": "Hệ Thống Q-Group",
+                    "isSystem": True,
+                    "timestamp": time.strftime("%H:%M"),
+                    "text": f"🎉 {user_name} ({eff_email}) đã chấp nhận lời mời và chính thức gia nhập nhóm làm việc!"
+                })
+                target_group["messages"] = msgs
+                save_server_qgroups(groups)
+
+    return {"status": "success", "invitation": target_inv}
 
 
 @app.get("/{document_id}")
