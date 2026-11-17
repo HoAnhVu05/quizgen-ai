@@ -25,11 +25,13 @@ import {
   MessageCircle,
   Eye,
   Sparkles,
+  Inbox,
 } from 'lucide-react';
 import {
   QGroup,
   QGroupMessage,
   FriendRequest,
+  QGroupInvitation,
   ScreenId,
   UserProfile,
   UserSubscriptionInfo,
@@ -54,7 +56,29 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [chatInputText, setChatInputText] = useState('');
-  const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'unread' | 'groups' | 'friends'>('all');
+  const [activeFilterTab, setActiveFilterTab] = useState<'all' | 'unread' | 'groups' | 'friends' | 'invitations'>('all');
+  const [groupInvitations, setGroupInvitations] = useState<QGroupInvitation[]>([]);
+
+  // Persistent Deleted Group IDs (Local Blacklist to prevent resurrection)
+  const getDeletedGroupIds = useCallback((): string[] => {
+    const myEmail = (currentUser?.email || 'global').toLowerCase();
+    try {
+      const saved = localStorage.getItem(`quizgen_deleted_qgroups_${myEmail}`);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  }, [currentUser?.email]);
+
+  const addDeletedGroupId = useCallback((idOrCode: string) => {
+    const myEmail = (currentUser?.email || 'global').toLowerCase();
+    try {
+      const current = getDeletedGroupIds();
+      if (!current.includes(idOrCode)) {
+        const next = [...current, idOrCode];
+        localStorage.setItem(`quizgen_deleted_qgroups_${myEmail}`, JSON.stringify(next));
+      }
+    } catch {}
+  }, [currentUser?.email, getDeletedGroupIds]);
 
   // Friend Request System
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>(() => {
@@ -113,6 +137,32 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     } catch {}
   }, []);
 
+  // ─── Last Active Time Computation for Messenger Sorting ──────────────────
+  const getGroupLastActiveTime = useCallback((g: QGroup): number => {
+    let maxTime = Number(g.updatedAt) || 0;
+    const msgs = g.messages || [];
+    if (msgs.length > 0) {
+      const last = msgs[msgs.length - 1];
+      if (last) {
+        if (last.id && last.id.startsWith('msg-')) {
+          const parsed = parseInt(last.id.replace('msg-', ''), 10);
+          if (!isNaN(parsed) && parsed > 1700000000000) {
+            maxTime = Math.max(maxTime, parsed);
+          }
+        }
+        if (last.timestamp) {
+          const match = last.timestamp.match(/(\d{1,2}):(\d{2})/);
+          if (match) {
+            const d = new Date();
+            d.setHours(parseInt(match[1], 10), parseInt(match[2], 10), 0, 0);
+            maxTime = Math.max(maxTime, d.getTime());
+          }
+        }
+      }
+    }
+    return maxTime;
+  }, []);
+
   // ─── Centralized Sync from Backend & LocalStorage ─────────────────────────
   const syncQGroupsToBackend = useCallback(async (groups: QGroup[]) => {
     try {
@@ -127,12 +177,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   }, []);
 
   const saveQgroups = useCallback((groups: QGroup[]) => {
-    setQgroups(groups);
+    const deletedSet = new Set(getDeletedGroupIds());
+    const validGroups = groups.filter((g) => !deletedSet.has(g.id) && !deletedSet.has(g.code));
+    setQgroups(validGroups);
     try {
-      localStorage.setItem('quizgen_qgroups', JSON.stringify(groups));
+      localStorage.setItem('quizgen_qgroups', JSON.stringify(validGroups));
     } catch {}
-    void syncQGroupsToBackend(groups);
-  }, [syncQGroupsToBackend]);
+    void syncQGroupsToBackend(validGroups);
+  }, [syncQGroupsToBackend, getDeletedGroupIds]);
 
   const saveFriendRequests = useCallback((requests: FriendRequest[]) => {
     setFriendRequests(requests);
@@ -141,12 +193,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     } catch {}
   }, []);
 
+  const fetchGroupInvitations = useCallback(async () => {
+    const myEmail = (currentUser?.email || '').trim().toLowerCase();
+    if (!myEmail) return;
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations?email=${encodeURIComponent(myEmail)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setGroupInvitations(data.filter((i: any) => i && i.status === 'pending'));
+        }
+      }
+    } catch {}
+  }, [currentUser?.email]);
+
   const fetchQGroups = useCallback(async () => {
     try {
       const res = await apiClient.fetch(`${API_BASE}/documents/qgroups`);
       if (res.ok) {
         const remote = await res.json();
         if (Array.isArray(remote)) {
+          const deletedSet = new Set(getDeletedGroupIds());
           // Flatten & clean
           const flatten = (arr: any[]): QGroup[] => {
             const out: QGroup[] = [];
@@ -159,13 +226,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             return out;
           };
 
-          const cleanRemote = flatten(remote);
+          const cleanRemote = flatten(remote).filter((g) => !deletedSet.has(g.id) && !deletedSet.has(g.code));
           let merged = [...cleanRemote];
 
           try {
             const localSaved = localStorage.getItem('quizgen_qgroups');
             if (localSaved) {
-              const localGroups = flatten(JSON.parse(localSaved));
+              const localGroups = flatten(JSON.parse(localSaved)).filter((g) => !deletedSet.has(g.id) && !deletedSet.has(g.code));
               const remoteKeys = new Set(cleanRemote.map((g) => (g.code || g.id || '').trim()));
               const missingLocal = localGroups.filter((lg) => {
                 const k = (lg.code || lg.id || '').trim();
@@ -178,12 +245,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             }
           } catch {}
 
-          // Deduplicate
+          // Deduplicate & attach calculated timestamps
           const seen = new Set<string>();
           const deduped: QGroup[] = [];
           for (const g of merged) {
             const k = (g.code || g.id || '').trim();
-            if (k && !seen.has(k)) {
+            if (k && !seen.has(k) && !deletedSet.has(k)) {
               seen.add(k);
               // Clean messages
               const seenMsgs = new Set<string>();
@@ -197,7 +264,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   cleanMsgs.push(m);
                 }
               }
-              deduped.push({ ...g, messages: cleanMsgs });
+              const calculatedTime = getGroupLastActiveTime({ ...g, messages: cleanMsgs });
+              deduped.push({ ...g, updatedAt: calculatedTime, messages: cleanMsgs });
             }
           }
 
@@ -223,16 +291,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
       }
     } catch {}
-  }, [currentUser?.email, onShowToast, playNotificationSound, syncQGroupsToBackend]);
+  }, [currentUser?.email, getDeletedGroupIds, getGroupLastActiveTime, onShowToast, playNotificationSound, syncQGroupsToBackend]);
 
-  // Initial load + Polling 1s
+  // Initial load + Polling 1.5s
   useEffect(() => {
     void fetchQGroups();
+    void fetchGroupInvitations();
     const interval = setInterval(() => {
       void fetchQGroups();
-    }, 1000);
+      void fetchGroupInvitations();
+    }, 1500);
     return () => clearInterval(interval);
-  }, [fetchQGroups]);
+  }, [fetchQGroups, fetchGroupInvitations]);
 
   // Default active group
   useEffect(() => {
@@ -275,16 +345,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         return true;
       })
       .sort((a, b) => {
-        // Sort by timestamp of latest message desc
-        const getLatestTime = (g: QGroup) => {
-          if (!g.messages || g.messages.length === 0) return 0;
-          const last = g.messages[g.messages.length - 1];
-          // Try parse timestamp or fallback to array index
-          return g.updatedAt || Date.now();
-        };
-        return getLatestTime(b) - getLatestTime(a);
+        return getGroupLastActiveTime(b) - getGroupLastActiveTime(a);
       });
-  }, [qgroups, searchQuery, activeFilterTab, currentUser?.email]);
+  }, [qgroups, searchQuery, activeFilterTab, currentUser?.email, getGroupLastActiveTime]);
 
   const activeGroup = useMemo(() => {
     return qgroups.find((g) => g.id === selectedGroupId) || null;
@@ -436,11 +499,55 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     onShowToast('success', 'Đã kết bạn thành công', `Bắt đầu trò chuyện với ${req.senderName}`);
   };
 
+  const handleRejectFriendRequest = (req: FriendRequest) => {
+    const updatedReqs = friendRequests.map((r) =>
+      r.id === req.id ? { ...r, status: 'declined' as const } : r
+    );
+    saveFriendRequests(updatedReqs);
+    onShowToast('info', 'Đã từ chối lời mời', `Đã từ chối lời mời kết bạn từ ${req.senderName || req.senderEmail}`);
+  };
+
+  const handleAcceptGroupInvitation = async (inv: QGroupInvitation) => {
+    const myEmail = (currentUser?.email || '').toLowerCase();
+    const myName = currentUser?.fullName || 'Giảng viên';
+    try {
+      await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations/${inv.id}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accept', userEmail: myEmail, userName: myName }),
+      });
+      setGroupInvitations((prev) => prev.filter((i) => i.id !== inv.id));
+      await fetchQGroups();
+      setSelectedGroupId(inv.groupId);
+      setActiveFilterTab('groups');
+      onShowToast('success', 'Đã tham gia nhóm', `Bạn đã gia nhập ${inv.groupName}`);
+    } catch {
+      onShowToast('error', 'Lỗi', 'Không thể phản hồi lời mời tham gia nhóm.');
+    }
+  };
+
+  const handleRejectGroupInvitation = async (inv: QGroupInvitation) => {
+    const myEmail = (currentUser?.email || '').toLowerCase();
+    try {
+      await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations/${inv.id}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', userEmail: myEmail }),
+      });
+      setGroupInvitations((prev) => prev.filter((i) => i.id !== inv.id));
+      onShowToast('info', 'Đã từ chối', `Đã từ chối tham gia nhóm ${inv.groupName}`);
+    } catch {}
+  };
+
   // Pending friend requests for current user
   const myPendingRequests = useMemo(() => {
     const myEmail = (currentUser?.email || '').toLowerCase();
     return friendRequests.filter((r) => r.targetEmail.toLowerCase() === myEmail && r.status === 'pending');
   }, [friendRequests, currentUser?.email]);
+
+  const totalInvitationsCount = useMemo(() => {
+    return myPendingRequests.length + groupInvitations.length;
+  }, [myPendingRequests.length, groupInvitations.length]);
 
   return (
     <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden bg-[#f7f9fb] select-none">
@@ -491,7 +598,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             />
           </div>
 
-          {/* Filter Pills Tabs (Tất cả, Chưa đọc, Nhóm, Bạn bè) */}
+          {/* Filter Pills Tabs (Tất cả, Chưa đọc, Nhóm, Bạn bè, Lời mời) */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
             {[
               { id: 'all' as const, label: 'Tất cả' },
@@ -513,49 +620,160 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               </button>
             ))}
 
-            {myPendingRequests.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setActiveFilterTab('friends')}
-                className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-rose-50 text-rose-600 border border-rose-200 shrink-0 flex items-center gap-1 animate-pulse"
-              >
-                <span>{myPendingRequests.length} lời mời</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setActiveFilterTab('invitations')}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                activeFilterTab === 'invitations'
+                  ? 'bg-purple-100 text-purple-700 shadow-2xs ring-1 ring-purple-300'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/60'
+              }`}
+            >
+              <span>Lời mời</span>
+              {totalInvitationsCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                  {totalInvitationsCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Friend Requests Notification Banner (if any) */}
-        {myPendingRequests.length > 0 && (
-          <div className="p-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-b border-purple-100 space-y-2">
-            <span className="text-[11px] font-extrabold text-purple-900 uppercase tracking-wider flex items-center gap-1">
-              <UserPlus className="w-3.5 h-3.5 text-purple-600" />
-              Lời mời kết bạn ({myPendingRequests.length})
-            </span>
-            {myPendingRequests.map((req) => (
-              <div
-                key={req.id}
-                className="p-2.5 bg-white rounded-2xl border border-purple-200/80 shadow-2xs flex items-center justify-between gap-2"
+        {/* Dedicated Invitations View OR Conversation List */}
+        {activeFilterTab === 'invitations' ? (
+          <div className="flex-1 overflow-y-auto p-3.5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Inbox className="w-4 h-4 text-purple-600" />
+                Lời Mời Chờ Xử Lý ({totalInvitationsCount})
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveFilterTab('all')}
+                className="text-xs text-purple-600 font-bold hover:underline cursor-pointer"
               >
-                <div className="min-w-0">
-                  <h4 className="text-xs font-bold text-slate-900 truncate">{req.senderName}</h4>
-                  <p className="text-[10px] text-slate-400 font-mono truncate">{req.senderEmail}</p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => handleAcceptFriendRequest(req)}
-                    className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] transition-colors"
-                  >
-                    Đồng ý
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                Về đoạn chat
+              </button>
+            </div>
 
-        {/* Conversation List */}
+            {/* A. Lời mời kết bạn cá nhân */}
+            {myPendingRequests.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                  <UserPlus className="w-3.5 h-3.5 text-indigo-600" />
+                  Lời mời kết bạn ({myPendingRequests.length})
+                </span>
+                {myPendingRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="p-3 bg-white rounded-2xl border border-purple-200/90 shadow-2xs space-y-2.5"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                        {String(req.senderName || 'GV').slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-xs font-bold text-slate-900 truncate">{req.senderName}</h4>
+                          {req.senderTitle && (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
+                              {req.senderTitle}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-mono truncate">{req.senderEmail}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptFriendRequest(req)}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Đồng ý
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRejectFriendRequest(req)}
+                        className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs transition-colors flex items-center justify-center gap-1 border border-slate-200/60 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Từ chối
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* B. Lời mời tham gia Q-Group */}
+            {groupInvitations.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-purple-600" />
+                  Lời mời tham gia nhóm ({groupInvitations.length})
+                </span>
+                {groupInvitations.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="p-3 bg-white rounded-2xl border border-purple-200/90 shadow-2xs space-y-2.5"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                        {String(inv.groupName || 'QG').slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-bold text-slate-900 truncate">{inv.groupName}</h4>
+                        <p className="text-[10px] text-purple-600 font-mono">Mã: {inv.groupCode}</p>
+                        <p className="text-[10px] text-slate-400 truncate">Mời bởi: {inv.inviterName || inv.inviterEmail}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptGroupInvitation(inv)}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        Tham gia
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRejectGroupInvitation(inv)}
+                        className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs transition-colors flex items-center justify-center gap-1 border border-slate-200/60 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Từ chối
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* C. Trạng thái rỗng */}
+            {totalInvitationsCount === 0 && (
+              <div className="p-8 text-center text-slate-400 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center mx-auto">
+                  <Check className="w-6 h-6" />
+                </div>
+                <h4 className="text-xs font-bold text-slate-700">Không có lời mời nào đang chờ</h4>
+                <p className="text-[11px] text-slate-400">
+                  Bạn đã xử lý hết tất cả lời mời kết bạn và tham gia nhóm.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveFilterTab('all')}
+                  className="px-4 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Quay lại Tất cả đoạn chat
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+        /* Conversation List */
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {sortedAndFilteredGroups.length === 0 ? (
             <div className="p-8 text-center text-slate-400 space-y-2">
@@ -720,16 +938,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         type="button"
                         onClick={() => {
                           if (confirm(`Bạn có chắc chắn muốn rời hoặc xóa đoạn chat "${group.name}"?`)) {
-                            const next = qgroups.filter((g) => g.id !== group.id);
+                            const gid = group.id;
+                            const gcode = group.code;
+                            addDeletedGroupId(gid);
+                            if (gcode) addDeletedGroupId(gcode);
+
+                            const next = qgroups.filter((g) => g.id !== gid && g.code !== gcode);
                             saveQgroups(next);
-                            if (selectedGroupId === group.id) {
+                            if (selectedGroupId === gid) {
                               setSelectedGroupId(next[0]?.id || '');
                             }
+                            // Call backend DELETE endpoint
+                            apiClient.fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(gid)}`, {
+                              method: 'DELETE',
+                            }).catch(() => {});
+
                             onShowToast('info', 'Đã xóa đoạn chat', group.name);
                           }
                           setActiveContextMenuGroupId(null);
                         }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-semibold"
+                        className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-semibold cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Xóa đoạn chat</span>
@@ -741,6 +969,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             })
           )}
         </div>
+      )}
       </div>
 
       {/* =========================================================================

@@ -774,10 +774,20 @@ async def add_qgroup_message(group_id: str, request: Request):
             if msg_id and any(str(m.get("id")) == msg_id for m in g["messages"]):
                 return {"status": "success", "message": msg, "duplicate": True}
             g["messages"].append(msg)
+            g["updatedAt"] = int(time.time() * 1000)
             save_server_qgroups(groups)
             return {"status": "success", "message": msg}
     # Nếu chưa tìm thấy nhóm cụ thể, tạo hoặc lưu vào nhóm đầu tiên phù hợp
     return {"status": "error", "message": "Không tìm thấy nhóm tương ứng"}
+
+@app.delete("/qgroups/{group_id}")
+@app.delete("/documents/qgroups/{group_id}")
+def delete_qgroup_endpoint(group_id: str):
+    """Xóa bỏ hoàn toàn một nhóm chat hoặc cuộc trò chuyện trực tiếp 1-1"""
+    groups = load_server_qgroups()
+    cleaned = [g for g in groups if str(g.get("id")) != str(group_id) and str(g.get("code")) != str(group_id)]
+    save_server_qgroups(cleaned)
+    return {"status": "success", "message": f"Đã xóa nhóm {group_id}", "remaining": len(cleaned)}
 
 @app.get("/dashboard/summary")
 @app.get("/documents/dashboard/summary")
