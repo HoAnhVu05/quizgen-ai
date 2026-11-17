@@ -36,7 +36,17 @@ import {
   PlusCircle,
   KeyRound,
   Shield,
-  FolderGit2
+  FolderGit2,
+  Paperclip,
+  Settings,
+  Sliders,
+  UserCheck,
+  UserX,
+  ChevronRight,
+  ChevronDown,
+  Download,
+  Check,
+  CheckSquare,
 } from 'lucide-react';
 import { TextbookFile, ScreenId, UserSubscriptionInfo, UserProfile } from '../types';
 import apiClient from '../services/apiClient';
@@ -49,23 +59,49 @@ interface TextbookUploadScreenProps {
   onOpenPricingModal?: () => void;
 }
 
-interface QGroup {
+export interface QGroupMessage {
+  id: string;
+  senderEmail: string;
+  senderName: string;
+  senderTitle?: string;
+  avatarColor?: string;
+  text?: string;
+  timestamp: string;
+  isSystem?: boolean;
+  attachment?: {
+    type: 'textbook' | 'exam';
+    id: string;
+    name: string;
+    subject?: string;
+    size?: string;
+    totalPages?: number;
+    questionCount?: number;
+    durationMinutes?: number;
+    authorName?: string;
+  };
+}
+
+export interface QGroupPendingRequest {
+  id: string;
+  email: string;
+  name: string;
+  title?: string;
+  requestedAt: string;
+}
+
+export interface QGroup {
   id: string;
   code: string;
   name: string;
   department: string;
   description: string;
+  ownerEmail: string;
+  ownerName: string;
+  joinPolicy: 'open' | 'approval_required' | 'email_only';
   memberCount: number;
   members: string[];
-  documentsCount: number;
-  sharedBooks: Array<{
-    id: string;
-    name: string;
-    sharedBy: string;
-    totalPages: number;
-    size: string;
-    sharedAt: string;
-  }>;
+  pendingRequests: QGroupPendingRequest[];
+  messages: QGroupMessage[];
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -136,7 +172,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   const [qgroups, setQgroups] = useState<QGroup[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_qgroups');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].messages) {
+          return parsed;
+        }
+      }
     } catch {}
     return [
       {
@@ -144,18 +185,64 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         code: 'QGRP-OS2026',
         name: 'Bộ Môn Mạng & Hệ Điều Hành',
         department: 'Khoa Công nghệ Thông tin',
-        description: 'Nhóm chuyên môn biên soạn giáo trình và ngân hàng câu hỏi môn Hệ Điều Hành & Mạng Máy Tính.',
-        memberCount: 5,
-        members: ['vuha3608@ut.edu.vn', 'nguyentann0804@gmail.com', 'ducngocong@ut.edu.vn'],
-        documentsCount: 2,
-        sharedBooks: [
+        description: 'Không gian làm việc chung của giảng viên bộ môn: trao đổi ngân hàng câu hỏi, chia sẻ giáo trình và thống nhất ma trận đề thi kỳ này.',
+        ownerEmail: 'vuha3608@ut.edu.vn',
+        ownerName: 'TS. Hồ Anh Vũ',
+        joinPolicy: 'approval_required',
+        memberCount: 4,
+        members: ['vuha3608@ut.edu.vn', 'nguyentann0804@gmail.com', 'ducngocong@ut.edu.vn', 'lecturer@quizgen.ai'],
+        pendingRequests: [
           {
-            id: 'tb-002',
-            name: '2018-Operating System Concepts-10th.pdf',
-            sharedBy: 'TS. Hồ Anh Vũ',
-            totalPages: 1278,
-            size: '29.7 MB',
-            sharedAt: '17/11/2026'
+            id: 'req-1',
+            email: 'thanhnt@ut.edu.vn',
+            name: 'ThS. Nguyễn Tiến Thành',
+            title: 'Giảng viên',
+            requestedAt: '17/11/2026 10:15'
+          }
+        ],
+        messages: [
+          {
+            id: 'msg-1',
+            senderEmail: 'vuha3608@ut.edu.vn',
+            senderName: 'TS. Hồ Anh Vũ',
+            senderTitle: 'Trưởng bộ môn',
+            avatarColor: 'bg-teal-600',
+            text: 'Chào quý Thầy/Cô! Kỳ này bộ môn chúng ta thống nhất dùng chung giáo trình Chuẩn Operating System Concepts 10th để sinh đề thi trắc nghiệm nhé.',
+            timestamp: '09:15',
+            attachment: {
+              type: 'textbook',
+              id: 'tb-002',
+              name: '2018-Operating System Concepts-10th.pdf',
+              size: '29.7 MB',
+              totalPages: 1278,
+              authorName: 'TS. Hồ Anh Vũ'
+            }
+          },
+          {
+            id: 'msg-2',
+            senderEmail: 'nguyentann0804@gmail.com',
+            senderName: 'ThS. Nguyễn Tấn',
+            senderTitle: 'Giảng viên',
+            avatarColor: 'bg-blue-600',
+            text: 'Em đã dùng AI sinh xong bộ 40 câu hỏi trắc nghiệm chương 3 & 4 (Deadlock & Memory Management) đạt chuẩn Bloom C3-C4, em gửi lên nhóm cho thầy cô thẩm định và dùng chung ạ!',
+            timestamp: '09:40',
+            attachment: {
+              type: 'exam',
+              id: 'exam-os-midterm-40q',
+              name: 'Đề Thi Giữa Kỳ Môn Hệ Điều Hành - 40 Câu Chuẩn',
+              subject: 'Hệ Điều Hành & Mạng',
+              questionCount: 40,
+              durationMinutes: 60,
+              authorName: 'ThS. Nguyễn Tấn'
+            }
+          },
+          {
+            id: 'msg-3',
+            senderEmail: 'system',
+            senderName: 'Hệ Thống Q-Group',
+            isSystem: true,
+            timestamp: '10:15',
+            text: 'ThS. Nguyễn Tiến Thành (thanhnt@ut.edu.vn) đã gửi yêu cầu gia nhập nhóm (Chờ Trưởng nhóm duyệt).'
           }
         ]
       },
@@ -164,23 +251,46 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         code: 'QGRP-LLCT2026',
         name: 'Tổ Bộ Môn Lý Luận Chính Trị',
         department: 'Khoa Lý luận Chính trị',
-        description: 'Hội nhóm sinh đề thi và đối soát trích dẫn môn Tư tưởng Hồ Chí Minh & Triết học Mác - Lênin.',
-        memberCount: 4,
-        members: ['hanbich1506@gmail.com', 'hieuhieu2211@gmail.com'],
-        documentsCount: 1,
-        sharedBooks: [
+        description: 'Tập trung biên soạn ngân hàng đề thi trắc nghiệm môn Tư tưởng Hồ Chí Minh và Triết học Mác - Lênin.',
+        ownerEmail: 'hanbich1506@gmail.com',
+        ownerName: 'ThS. Hân Bích',
+        joinPolicy: 'open',
+        memberCount: 3,
+        members: ['hanbich1506@gmail.com', 'hieuhieu2211@gmail.com', 'lecturer@quizgen.ai'],
+        pendingRequests: [],
+        messages: [
           {
-            id: 'tb-001',
-            name: 'BAI GIANG Tu tuong HCM - LLCT.pdf',
-            sharedBy: 'ThS. Hân Bích',
-            totalPages: 102,
-            size: '3.5 MB',
-            sharedAt: '17/11/2026'
+            id: 'msg-201',
+            senderEmail: 'hanbich1506@gmail.com',
+            senderName: 'ThS. Hân Bích',
+            senderTitle: 'Tổ trưởng Bộ môn',
+            avatarColor: 'bg-purple-600',
+            timestamp: '08:30',
+            text: 'Gửi các Thầy/Cô file bài giảng chuẩn có đối soát số liệu mới nhất để mọi người đưa vào AI sinh đề trắc nghiệm:',
+            attachment: {
+              type: 'textbook',
+              id: 'tb-001',
+              name: 'BAI GIANG Tu tuong HCM - LLCT.pdf',
+              size: '3.5 MB',
+              totalPages: 102,
+              authorName: 'ThS. Hân Bích'
+            }
           }
         ]
       }
     ];
   });
+
+  const [selectedGroupId, setSelectedGroupId] = useState<string>('qg-1');
+  const [chatInputText, setChatInputText] = useState('');
+  const [isAttachMenuOpen, setIsAttachMenuOpen] = useState(false);
+  const [isAttachTextbookModalOpen, setIsAttachTextbookModalOpen] = useState(false);
+  const [isAttachExamModalOpen, setIsAttachExamModalOpen] = useState(false);
+  const [isOwnerSettingsModalOpen, setIsOwnerSettingsModalOpen] = useState(false);
+  const [ownerSettingsTab, setOwnerSettingsTab] = useState<'policy' | 'requests' | 'members'>('requests');
+  const [newGroupPolicy, setNewGroupPolicy] = useState<'open' | 'approval_required' | 'email_only'>('approval_required');
+  const [directMemberEmailInput, setDirectMemberEmailInput] = useState('');
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
   // Modal State for Q-Group & Email Share
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -481,26 +591,77 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     }
   };
 
-  // Q-Group Handlers
+  // Q-Group Handlers & Helpers
+  const activeGroup = qgroups.find((g) => g.id === selectedGroupId) || qgroups[0];
+  const isOwner = Boolean(
+    activeGroup &&
+    (currentUser?.email === activeGroup.ownerEmail ||
+     currentUser?.fullName?.includes('Hồ Anh Vũ') ||
+     activeGroup.ownerEmail === 'vuha3608@ut.edu.vn' ||
+     activeGroup.ownerEmail === (currentUser?.email || 'my-account@quizgen.ai'))
+  );
+
+  const getSavedExams = (): any[] => {
+    try {
+      const stored = localStorage.getItem('quizgen_saved_exams');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [
+      {
+        id: 'exam-os-midterm-40q',
+        title: 'Đề Thi Giữa Kỳ Môn Hệ Điều Hành - Mã 101',
+        subject: 'Hệ Điều Hành & Mạng',
+        questionCount: 40,
+        durationMinutes: 60,
+      },
+      {
+        id: 'exam-ktvm-final-50q',
+        title: 'Đề Thi Cuối Kỳ Kinh Tế Vi Mô - 50 Câu Chuẩn Bộ GD',
+        subject: 'Kinh Tế Vi Mô',
+        questionCount: 50,
+        durationMinutes: 75,
+      }
+    ];
+  };
+
   const handleCreateQGroup = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGroupName.trim()) return;
 
     const generatedCode = `QGRP-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
+
     const newGroup: QGroup = {
       id: `qg-${Date.now()}`,
       code: generatedCode,
       name: newGroupName.trim(),
       department: newGroupDept.trim() || 'Khoa Chuyên Ngành',
-      description: newGroupDesc.trim() || 'Nhóm chuyên môn biên soạn và chia sẻ học liệu.',
+      description: newGroupDesc.trim() || 'Nhóm chuyên môn trao đổi học thuật và biên soạn đề thi.',
+      ownerEmail: myEmail,
+      ownerName: myName,
+      joinPolicy: newGroupPolicy,
       memberCount: 1,
-      members: [currentUser?.email || 'my-account@quizgen.ai'],
-      documentsCount: 0,
-      sharedBooks: []
+      members: [myEmail],
+      pendingRequests: [],
+      messages: [
+        {
+          id: `msg-${Date.now()}`,
+          senderEmail: 'system',
+          senderName: 'Hệ Thống Q-Group',
+          isSystem: true,
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          text: `Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName}. Mã nhóm: ${generatedCode}`
+        }
+      ]
     };
 
     const updated = [newGroup, ...qgroups];
     saveQgroups(updated);
+    setSelectedGroupId(newGroup.id);
     setNewGroupName('');
     setNewGroupDept('');
     setNewGroupDesc('');
@@ -520,27 +681,322 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     }
 
     const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myName = currentUser?.fullName || 'Giảng viên';
+
     if (targetGroup.members.includes(myEmail)) {
       onShowToast('info', 'Đã tham gia', 'Thầy/Cô đã là thành viên của Q-Group này.');
+      setSelectedGroupId(targetGroup.id);
       setIsJoinGroupModalOpen(false);
       return;
     }
 
+    if (targetGroup.joinPolicy === 'email_only') {
+      onShowToast(
+        'warning',
+        'Nhóm Riêng Tư (Chỉ Mời Qua Email)',
+        'Nhóm này không chấp nhận gia nhập qua mã tự do. Vui lòng liên hệ Trưởng nhóm để được mời trực tiếp qua Email.'
+      );
+      return;
+    }
+
+    if (targetGroup.joinPolicy === 'approval_required') {
+      if (targetGroup.pendingRequests?.some((r) => r.email === myEmail)) {
+        onShowToast('info', 'Đang Chờ Duyệt', 'Yêu cầu gia nhập của Thầy/Cô đang chờ Trưởng nhóm phê duyệt.');
+        setIsJoinGroupModalOpen(false);
+        return;
+      }
+
+      const newRequest: QGroupPendingRequest = {
+        id: `req-${Date.now()}`,
+        email: myEmail,
+        name: myName,
+        title: currentUser?.academicTitle || 'GV',
+        requestedAt: new Date().toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+      };
+
+      const updated = qgroups.map((g) => {
+        if (g.id === targetGroup.id) {
+          return {
+            ...g,
+            pendingRequests: [...(g.pendingRequests || []), newRequest],
+            messages: [
+              ...(g.messages || []),
+              {
+                id: `msg-${Date.now()}`,
+                senderEmail: 'system',
+                senderName: 'Hệ Thống Q-Group',
+                isSystem: true,
+                timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                text: `${myName} (${myEmail}) đã gửi yêu cầu gia nhập nhóm (Chờ Trưởng nhóm duyệt).`
+              }
+            ]
+          };
+        }
+        return g;
+      });
+
+      saveQgroups(updated);
+      setSelectedGroupId(targetGroup.id);
+      setJoinGroupCodeInput('');
+      setIsJoinGroupModalOpen(false);
+      onShowToast('success', 'Đã Gửi Yêu Cầu', `Đã gửi yêu cầu vào nhóm "${targetGroup.name}". Vui lòng chờ Trưởng nhóm phê duyệt.`);
+      return;
+    }
+
+    // Join policy is 'open'
     const updated = qgroups.map((g) => {
-      if (g.code === code) {
+      if (g.id === targetGroup.id) {
         return {
           ...g,
           memberCount: g.memberCount + 1,
-          members: [...g.members, myEmail]
+          members: [...g.members, myEmail],
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `${myName} đã gia nhập nhóm qua mã phòng.`
+            }
+          ]
         };
       }
       return g;
     });
 
     saveQgroups(updated);
+    setSelectedGroupId(targetGroup.id);
     setJoinGroupCodeInput('');
     setIsJoinGroupModalOpen(false);
     onShowToast('success', 'Tham gia Q-Group thành công!', `Chào mừng Thầy/Cô gia nhập "${targetGroup.name}".`);
+  };
+
+  const handleApproveRequest = (groupId: string, reqId: string) => {
+    const updated = qgroups.map((g) => {
+      if (g.id === groupId) {
+        const targetReq = g.pendingRequests?.find((r) => r.id === reqId);
+        if (!targetReq) return g;
+
+        return {
+          ...g,
+          memberCount: g.memberCount + 1,
+          members: [...g.members, targetReq.email],
+          pendingRequests: g.pendingRequests.filter((r) => r.id !== reqId),
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `Trưởng nhóm đã phê duyệt ${targetReq.name} (${targetReq.email}) vào nhóm làm việc.`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('success', 'Đã Phê Duyệt', 'Thành viên mới đã được thêm vào nhóm.');
+  };
+
+  const handleRejectRequest = (groupId: string, reqId: string) => {
+    const updated = qgroups.map((g) => {
+      if (g.id === groupId) {
+        return {
+          ...g,
+          pendingRequests: g.pendingRequests.filter((r) => r.id !== reqId)
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('info', 'Đã Từ Chối', 'Đã từ chối yêu cầu gia nhập.');
+  };
+
+  const handleUpdatePolicy = (groupId: string, newPolicy: 'open' | 'approval_required' | 'email_only') => {
+    const updated = qgroups.map((g) => {
+      if (g.id === groupId) {
+        const policyLabel = newPolicy === 'open' ? 'Tự do qua mã' : newPolicy === 'approval_required' ? 'Cần Trưởng nhóm duyệt' : 'Chỉ mời qua Email';
+        return {
+          ...g,
+          joinPolicy: newPolicy,
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `Trưởng nhóm đã cập nhật chính sách vào phòng: "${policyLabel}".`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('success', 'Đã Cập Nhật Chính Sách', 'Quyền gia nhập nhóm đã được lưu thay đổi.');
+  };
+
+  const handleSendMessage = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!chatInputText.trim() || !activeGroup) return;
+
+    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
+    const myTitle = currentUser?.academicTitle || 'GV';
+
+    const newMsg: QGroupMessage = {
+      id: `msg-${Date.now()}`,
+      senderEmail: myEmail,
+      senderName: myName,
+      senderTitle: myTitle,
+      avatarColor: 'bg-indigo-600',
+      text: chatInputText.trim(),
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+    };
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          messages: [...(g.messages || []), newMsg]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    setChatInputText('');
+    setTimeout(() => {
+      chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
+  const handleShareTextbookToChat = (book: TextbookFile) => {
+    if (!activeGroup) return;
+
+    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
+    const myTitle = currentUser?.academicTitle || 'GV';
+
+    const newMsg: QGroupMessage = {
+      id: `msg-${Date.now()}`,
+      senderEmail: myEmail,
+      senderName: myName,
+      senderTitle: myTitle,
+      avatarColor: 'bg-teal-600',
+      text: `Đã chia sẻ giáo trình: "${book.name}". Quý Thầy/Cô có thể bấm "Dùng Sinh Đề Ngay" để trích xuất câu hỏi AI!`,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      attachment: {
+        type: 'textbook',
+        id: book.id,
+        name: book.name,
+        size: book.size,
+        totalPages: book.totalPages,
+        authorName: book.authorName || myName
+      }
+    };
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          messages: [...(g.messages || []), newMsg]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    setIsAttachTextbookModalOpen(false);
+    onShowToast('success', 'Đã Chia Sẻ Giáo Trình', `Đã chia sẻ "${book.name}" vào phòng chat nhóm!`);
+  };
+
+  const handleShareExamToChat = (exam: any) => {
+    if (!activeGroup) return;
+
+    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
+    const myTitle = currentUser?.academicTitle || 'GV';
+
+    const newMsg: QGroupMessage = {
+      id: `msg-${Date.now()}`,
+      senderEmail: myEmail,
+      senderName: myName,
+      senderTitle: myTitle,
+      avatarColor: 'bg-purple-600',
+      text: `Đã chia sẻ bộ đề thi: "${exam.title || exam.subject}". Đã đóng gói gồm ${exam.questionCount || 40} câu hỏi trắc nghiệm chuẩn Bloom!`,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      attachment: {
+        type: 'exam',
+        id: exam.id,
+        name: exam.title || 'Bộ đề thi trắc nghiệm',
+        subject: exam.subject || 'Học phần',
+        questionCount: exam.questionCount || 40,
+        durationMinutes: exam.durationMinutes || 60,
+        authorName: myName
+      }
+    };
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          messages: [...(g.messages || []), newMsg]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    setIsAttachExamModalOpen(false);
+    onShowToast('success', 'Đã Chia Sẻ Đề Thi', `Đã chia sẻ "${exam.title || 'Đề thi'}" vào phòng chat nhóm!`);
+  };
+
+  const handleAddDirectMember = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directMemberEmailInput.trim() || !activeGroup) return;
+
+    const email = directMemberEmailInput.trim();
+    if (activeGroup.members.includes(email)) {
+      onShowToast('info', 'Đã Tồn Tại', `${email} đã là thành viên trong nhóm.`);
+      return;
+    }
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          memberCount: g.memberCount + 1,
+          members: [...g.members, email],
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `Trưởng nhóm đã mời ${email} tham gia nhóm làm việc.`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    setDirectMemberEmailInput('');
+    onShowToast('success', 'Đã Thêm Thành Viên', `Đã thêm ${email} vào nhóm.`);
   };
 
   const handleSendDirectEmailShare = (e: React.FormEvent) => {
@@ -1037,22 +1493,22 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       )}
 
       {/* =========================================================================
-          TAB 3: Q-GROUP (Hội Nhóm & Chia Sẻ Chuyên Môn)
+          TAB 3: Q-GROUP (Box Chat Nhóm & Học Liệu Dùng Chung)
       ========================================================================= */}
       {activeTab === 'qgroup' && (
-        <div className="space-y-5 animate-in fade-in duration-150">
-          {/* Header Action Strip */}
-          <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 rounded-3xl p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Top Banner Strip */}
+          <div className="bg-gradient-to-r from-purple-900 via-slate-900 to-indigo-950 rounded-3xl p-5 sm:p-6 text-white shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1.5 max-w-2xl">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-white/20 text-purple-200 border border-white/30 shadow-xs">
                 <Users className="w-3.5 h-3.5 text-purple-300" />
                 Hội Nhóm Chuyên Môn Q-Group
               </span>
               <h2 className="text-lg sm:text-xl font-black text-white">
-                Không Gian Làm Việc &amp; Chia Sẻ Giáo Trình Theo Nhóm
+                Không Gian Trao Đổi &amp; Dùng Chung Học Liệu Theo Nhóm
               </h2>
               <p className="text-xs text-white/80 leading-relaxed">
-                Tự tạo hội nhóm chuyên môn cùng đồng nghiệp bộ môn, thêm thành viên qua email hoặc mã nhóm, và chia sẻ giáo trình/đề thi an toàn trong nội bộ nhóm.
+                Tổ chức thảo luận học thuật dạng Box Chat cho từng Bộ môn. Thầy/Cô chỉ cần gửi 1 lần giáo trình hoặc bộ đề thi vào nhóm, tất cả thành viên đều có thể bấm <strong className="text-amber-300">"Dùng Sinh Đề Ngay"</strong> hoặc <strong className="text-purple-300">"Nạp Vào Biên Tập"</strong> tức thì!
               </p>
             </div>
 
@@ -1075,123 +1531,774 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
             </div>
           </div>
 
-          {/* Q-Group Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {qgroups.map((group) => (
-              <div
-                key={group.id}
-                className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-2xs hover:border-purple-300 transition-all space-y-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-purple-50 border border-purple-200 text-purple-700 flex items-center justify-center shrink-0">
-                      <FolderGit2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm sm:text-base">{group.name}</h4>
-                      <p className="text-[11px] text-purple-700 font-semibold">{group.department}</p>
-                    </div>
-                  </div>
+          {/* 2-Column Split Workspace: Left Groups List + Right Box Chat */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[720px] min-h-[620px]">
+            {/* Left Column: Groups List */}
+            <div className="lg:col-span-4 xl:col-span-3.5 bg-white rounded-3xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+                <div className="flex items-center gap-2">
+                  <FolderGit2 className="w-4 h-4 text-purple-700" />
+                  <span className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
+                    Nhóm Của Tôi ({qgroups.length})
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsCreateGroupModalOpen(true)}
+                  className="p-1 rounded-lg text-purple-700 hover:bg-purple-100 transition-colors"
+                  title="Tạo nhóm mới"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                </button>
+              </div>
 
-                  <div className="flex items-center gap-1.5 bg-slate-100 px-3 py-1 rounded-full text-xs font-mono font-bold text-slate-700 border border-slate-200">
-                    <span>{group.code}</span>
+              {/* Group List Scrollable */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
+                {qgroups.map((group) => {
+                  const isSelected = group.id === selectedGroupId;
+                  const hasPending = (group.pendingRequests || []).length > 0;
+                  return (
                     <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(group.code);
-                        onShowToast('info', 'Đã sao chép mã nhóm', group.code);
-                      }}
-                      className="text-slate-400 hover:text-slate-800 p-0.5"
-                      title="Sao chép mã nhóm"
+                      key={group.id}
+                      onClick={() => setSelectedGroupId(group.id)}
+                      className={`w-full text-left p-3.5 rounded-2xl transition-all cursor-pointer border ${
+                        isSelected
+                          ? 'bg-purple-50/90 border-purple-300 shadow-2xs'
+                          : 'bg-white hover:bg-slate-50 border-slate-200/80'
+                      }`}
                     >
-                      <Copy className="w-3 h-3" />
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="font-bold text-xs text-slate-900 truncate flex-1">
+                          {group.name}
+                        </div>
+                        <span className="font-mono text-[10px] bg-slate-100 px-2 py-0.5 rounded-md text-slate-600 border border-slate-200 shrink-0">
+                          {group.code}
+                        </span>
+                      </div>
+
+                      <div className="text-[11px] text-purple-800 font-semibold truncate mb-2">
+                        {group.department}
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
+                        <span className="flex items-center gap-1 font-medium">
+                          <Users className="w-3 h-3 text-purple-600" />
+                          <span>{group.memberCount} thành viên</span>
+                        </span>
+
+                        <div className="flex items-center gap-1">
+                          {hasPending && (
+                            <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[9px] font-black rounded-full animate-pulse">
+                              {group.pendingRequests.length} chờ duyệt
+                            </span>
+                          )}
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                              group.joinPolicy === 'open'
+                                ? 'bg-emerald-50 text-emerald-700'
+                                : group.joinPolicy === 'approval_required'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-slate-100 text-slate-700'
+                            }`}
+                          >
+                            {group.joinPolicy === 'open'
+                              ? 'Tự do'
+                              : group.joinPolicy === 'approval_required'
+                              ? 'Cần duyệt'
+                              : 'Riêng tư'}
+                          </span>
+                        </div>
+                      </div>
                     </button>
-                  </div>
-                </div>
+                  );
+                })}
+              </div>
+            </div>
 
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {group.description}
-                </p>
-
-                {/* Group Stats */}
-                <div className="flex items-center gap-4 text-xs text-slate-500 pt-1 border-t border-slate-100">
-                  <span className="flex items-center gap-1 font-semibold text-slate-700">
-                    <Users className="w-3.5 h-3.5 text-purple-600" />
-                    <span>{group.memberCount} Thành viên</span>
-                  </span>
-                  <span className="flex items-center gap-1 font-semibold text-slate-700">
-                    <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>{group.documentsCount} Giáo trình chia sẻ</span>
-                  </span>
-                </div>
-
-                {/* Shared Documents in Group */}
-                {group.sharedBooks.length > 0 && (
-                  <div className="space-y-2 pt-1">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Tài liệu nội bộ nhóm:
-                    </span>
-                    {group.sharedBooks.map((sb) => (
-                      <div
-                        key={sb.id}
-                        className="p-3 bg-purple-50/50 rounded-2xl border border-purple-100 flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div className="flex items-center gap-2.5 overflow-hidden">
-                          <FileText className="w-4 h-4 text-purple-600 shrink-0" />
-                          <div className="truncate">
-                            <div className="font-bold text-slate-900 truncate">{sb.name}</div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              {sb.totalPages} trang • Chia sẻ bởi {sb.sharedBy}
-                            </div>
+            {/* Right Column: Active Group Box Chat Room */}
+            <div className="lg:col-span-8 xl:col-span-8.5 bg-white rounded-3xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
+              {activeGroup ? (
+                <>
+                  {/* Chat Top Bar */}
+                  <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
+                        {activeGroup.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-extrabold text-slate-900 text-sm truncate">
+                            {activeGroup.name}
+                          </h3>
+                          <div className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold text-slate-700 border border-slate-200">
+                            <span>{activeGroup.code}</span>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(activeGroup.code);
+                                onShowToast('info', 'Đã sao chép mã nhóm', activeGroup.code);
+                              }}
+                              className="text-slate-400 hover:text-slate-800 p-0.5"
+                              title="Sao chép mã nhóm"
+                            >
+                              <Copy className="w-2.5 h-2.5" />
+                            </button>
                           </div>
                         </div>
 
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                          <span>{activeGroup.department}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-1 text-slate-700 font-semibold">
+                            <Users className="w-3 h-3 text-purple-600" />
+                            {activeGroup.memberCount} Thành viên
+                          </span>
+                          <span>•</span>
+                          <span
+                            className={`px-2 py-0.2 rounded-full font-bold text-[10px] ${
+                              activeGroup.joinPolicy === 'open'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : activeGroup.joinPolicy === 'approval_required'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {activeGroup.joinPolicy === 'open'
+                              ? '🟢 Tự do bằng mã'
+                              : activeGroup.joinPolicy === 'approval_required'
+                              ? '🟡 Cần Trưởng nhóm duyệt'
+                              : '🔒 Chỉ mời qua Email'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Owner Action Buttons */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => {
+                          setOwnerSettingsTab(
+                            (activeGroup.pendingRequests || []).length > 0 ? 'requests' : 'policy'
+                          );
+                          setIsOwnerSettingsModalOpen(true);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          (activeGroup.pendingRequests || []).length > 0
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 animate-pulse'
+                            : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                        }`}
+                        title="Cài đặt chính sách vào phòng & duyệt yêu cầu"
+                      >
+                        <Settings className="w-3.5 h-3.5" />
+                        <span>Cài Đặt &amp; Duyệt Thành Viên</span>
+                        {(activeGroup.pendingRequests || []).length > 0 && (
+                          <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center font-bold">
+                            {activeGroup.pendingRequests.length}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chat Messages Stream */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40">
+                    {/* Welcome Banner */}
+                    <div className="p-3.5 bg-purple-50/60 rounded-2xl border border-purple-100 text-center text-xs text-slate-600 space-y-1">
+                      <p className="font-bold text-purple-900">
+                        🎉 Chào mừng Quý Thầy/Cô đến với Phòng làm việc "{activeGroup.name}"
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        {activeGroup.description}
+                      </p>
+                    </div>
+
+                    {/* Message items */}
+                    {(activeGroup.messages || []).map((msg) => {
+                      if (msg.isSystem) {
+                        return (
+                          <div key={msg.id} className="flex justify-center my-2">
+                            <span className="px-3 py-1 rounded-full bg-slate-200/80 text-slate-600 text-[11px] font-semibold flex items-center gap-1.5 border border-slate-300/60">
+                              <Shield className="w-3 h-3 text-purple-700" />
+                              <span>{msg.text}</span>
+                              <span className="text-[9px] text-slate-400 font-mono ml-1">
+                                {msg.timestamp}
+                              </span>
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      const isMe =
+                        msg.senderEmail === currentUser?.email ||
+                        msg.senderName === currentUser?.fullName;
+
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex gap-3 max-w-[85%] ${
+                            isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                          }`}
+                        >
+                          {/* Avatar */}
+                          <div
+                            className={`w-8 h-8 rounded-full ${
+                              msg.avatarColor || 'bg-indigo-600'
+                            } text-white text-xs font-bold flex items-center justify-center shrink-0 shadow-xs`}
+                          >
+                            {msg.senderName.slice(0, 2).toUpperCase()}
+                          </div>
+
+                          <div className={`space-y-1 ${isMe ? 'items-end text-right' : ''}`}>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                              <span className="font-bold text-slate-800">
+                                {msg.senderName}
+                              </span>
+                              {msg.senderTitle && (
+                                <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[9px] font-semibold border border-slate-200">
+                                  {msg.senderTitle}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-mono text-slate-400">
+                                {msg.timestamp}
+                              </span>
+                            </div>
+
+                            {/* Text Message Bubble */}
+                            {msg.text && (
+                              <div
+                                className={`p-3 rounded-2xl text-xs leading-relaxed text-left ${
+                                  isMe
+                                    ? 'bg-purple-600 text-white rounded-tr-none shadow-xs'
+                                    : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none shadow-2xs'
+                                }`}
+                              >
+                                {msg.text}
+                              </div>
+                            )}
+
+                            {/* Textbook Attachment Card */}
+                            {msg.attachment?.type === 'textbook' && (
+                              <div className="p-3.5 bg-teal-50/90 rounded-2xl border border-teal-200 shadow-2xs space-y-2 text-left mt-1.5 max-w-sm">
+                                <div className="flex items-start gap-2.5">
+                                  <div className="w-8 h-8 rounded-xl bg-[#008689] text-white flex items-center justify-center shrink-0">
+                                    <BookOpen className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-[#008689] block">
+                                      Giáo trình đính kèm
+                                    </span>
+                                    <div className="font-bold text-xs text-slate-900 truncate" title={msg.attachment.name}>
+                                      {msg.attachment.name}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                      {msg.attachment.totalPages} trang • {msg.attachment.size}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-teal-200/80 flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      localStorage.setItem('quizgen_selected_book_id', msg.attachment?.id || '');
+                                      localStorage.setItem('quizgen_selected_book_name', msg.attachment?.name || '');
+                                      onShowToast('success', 'Đã Chọn Giáo Trình Nhóm', `Đang chuyển sang sinh đề với "${msg.attachment?.name}"...`);
+                                      onNavigate('generate');
+                                    }}
+                                    className="flex-1 px-3 py-1.5 bg-[#008689] hover:bg-[#007073] text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
+                                    <span>Dùng Sinh Đề Ngay</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Exam Attachment Card */}
+                            {msg.attachment?.type === 'exam' && (
+                              <div className="p-3.5 bg-indigo-50/90 rounded-2xl border border-indigo-200 shadow-2xs space-y-2 text-left mt-1.5 max-w-sm">
+                                <div className="flex items-start gap-2.5">
+                                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                                    <FileCheck2 className="w-4 h-4" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 block">
+                                      Bộ đề thi trắc nghiệm AI
+                                    </span>
+                                    <div className="font-bold text-xs text-slate-900 truncate" title={msg.attachment.name}>
+                                      {msg.attachment.name}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                      Môn: {msg.attachment.subject} • {msg.attachment.questionCount} câu • {msg.attachment.durationMinutes} phút
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="pt-2 border-t border-indigo-200/80 flex items-center gap-2">
+                                  <button
+                                    onClick={() => {
+                                      onShowToast('success', 'Đã Nạp Đề Thi Nhóm', `Đang mở bộ đề "${msg.attachment?.name}" trong Bước 4 Đóng gói & Xuất đề...`);
+                                      onNavigate('bank');
+                                    }}
+                                    className="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                  >
+                                    <CheckSquare className="w-3.5 h-3.5" />
+                                    <span>Nạp Vào Biên Tập &amp; Xuất Đề</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div ref={chatMessagesEndRef} />
+                  </div>
+
+                  {/* Chat Input Bar */}
+                  <div className="p-3.5 border-t border-slate-200 bg-white relative">
+                    {/* Attachment Quick Menu Popup */}
+                    {isAttachMenuOpen && (
+                      <div className="absolute bottom-16 left-4 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 space-y-1 z-30 animate-in fade-in duration-100">
                         <button
                           onClick={() => {
-                            localStorage.setItem('quizgen_selected_book_id', sb.id);
-                            localStorage.setItem('quizgen_selected_book_name', sb.name);
-                            onShowToast('success', 'Đã chọn tài liệu nhóm', `Đang chuyển sang sinh đề với "${sb.name}"...`);
-                            onNavigate('generate');
+                            setIsAttachMenuOpen(false);
+                            setIsAttachTextbookModalOpen(true);
                           }}
-                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-xs shrink-0 cursor-pointer shadow-xs flex items-center gap-1"
+                          className="w-full text-left px-3.5 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-[#008689] text-xs font-bold flex items-center gap-2 transition-colors"
                         >
-                          <Zap className="w-3 h-3 text-amber-200 fill-amber-200" />
-                          <span>Sinh Đề</span>
+                          <BookOpen className="w-4 h-4 text-[#008689]" />
+                          <span>Đính kèm Giáo trình từ Kho của tôi</span>
                         </button>
+                        <button
+                          onClick={() => {
+                            setIsAttachMenuOpen(false);
+                            setIsAttachExamModalOpen(true);
+                          }}
+                          className="w-full text-left px-3.5 py-2 rounded-xl hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold flex items-center gap-2 transition-colors"
+                        >
+                          <FileCheck2 className="w-4 h-4 text-indigo-600" />
+                          <span>Đính kèm Bộ Đề Thi đã soạn</span>
+                        </button>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsAttachMenuOpen((prev) => !prev)}
+                        className={`p-2.5 rounded-xl border transition-colors cursor-pointer ${
+                          isAttachMenuOpen
+                            ? 'bg-purple-100 border-purple-300 text-purple-700'
+                            : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
+                        }`}
+                        title="Đính kèm Giáo trình hoặc Đề thi"
+                      >
+                        <Paperclip className="w-4 h-4" />
+                      </button>
+
+                      <input
+                        type="text"
+                        value={chatInputText}
+                        onChange={(e) => setChatInputText(e.target.value)}
+                        placeholder="Nhập trao đổi học thuật, đóng góp ma trận câu hỏi với các thầy cô..."
+                        className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-purple-600 text-slate-800 placeholder-slate-400"
+                      />
+
+                      <button
+                        type="submit"
+                        disabled={!chatInputText.trim()}
+                        className="px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Gửi</span>
+                      </button>
+                    </form>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 space-y-2">
+                  <FolderGit2 className="w-12 h-12 text-slate-300" />
+                  <p className="font-bold text-sm text-slate-600">Chưa chọn nhóm Q-Group</p>
+                  <p className="text-xs">Vui lòng chọn hoặc tạo nhóm ở thanh bên trái để bắt đầu trao đổi.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          MODALS: OWNER SETTINGS & APPROVALS, ATTACH TEXTBOOK, ATTACH EXAM
+      ========================================================================= */}
+
+      {/* Modal A: Owner Settings & Member Approvals */}
+      {isOwnerSettingsModalOpen && activeGroup && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-purple-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center">
+                  <Settings className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm">
+                    Quản Lý Q-Group: {activeGroup.name}
+                  </h3>
+                  <p className="text-[11px] text-purple-700 font-mono">
+                    Mã phòng: {activeGroup.code} • Trưởng nhóm: {activeGroup.ownerName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsOwnerSettingsModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Sub-tabs inside Owner Settings */}
+            <div className="flex border-b border-slate-200 bg-slate-50/50 px-4 pt-2 gap-2 text-xs font-bold">
+              <button
+                onClick={() => setOwnerSettingsTab('requests')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  ownerSettingsTab === 'requests'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>Yêu Cầu Chờ Duyệt</span>
+                {(activeGroup.pendingRequests || []).length > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center font-bold">
+                    {activeGroup.pendingRequests.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setOwnerSettingsTab('policy')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  ownerSettingsTab === 'policy'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>Chính Sách Vào Phòng</span>
+              </button>
+
+              <button
+                onClick={() => setOwnerSettingsTab('members')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  ownerSettingsTab === 'members'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <span>Thành Viên ({activeGroup.memberCount})</span>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
+              {/* Tab 1: Requests */}
+              {ownerSettingsTab === 'requests' && (
+                <div className="space-y-3">
+                  <div className="text-slate-500 text-[11px]">
+                    Giảng viên nhập mã phòng khi nhóm ở chế độ <strong>"Cần duyệt"</strong> sẽ xuất hiện tại đây. Trưởng nhóm cần bấm "Duyệt" để cấp quyền gia nhập.
+                  </div>
+
+                  {(activeGroup.pendingRequests || []).length === 0 ? (
+                    <div className="py-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl">
+                      <UserCheck className="w-7 h-7 mx-auto mb-2 text-slate-300" />
+                      Không có yêu cầu nào đang chờ phê duyệt.
+                    </div>
+                  ) : (
+                    (activeGroup.pendingRequests || []).map((req) => (
+                      <div
+                        key={req.id}
+                        className="p-3 bg-white rounded-2xl border border-slate-200 flex items-center justify-between gap-3 shadow-2xs"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-bold text-slate-900 text-xs">{req.name}</div>
+                          <div className="text-[11px] text-purple-700 font-mono">{req.email}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">Yêu cầu lúc: {req.requestedAt}</div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={() => handleRejectRequest(activeGroup.id, req.id)}
+                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 font-bold transition-colors cursor-pointer"
+                          >
+                            Từ Chối
+                          </button>
+                          <button
+                            onClick={() => handleApproveRequest(activeGroup.id, req.id)}
+                            className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            <span>Duyệt Cho Vào</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {/* Tab 2: Policy */}
+              {ownerSettingsTab === 'policy' && (
+                <div className="space-y-4">
+                  <div className="text-slate-600 text-xs">
+                    Thiết lập cách thức đồng nghiệp có thể tham gia vào nhóm làm việc này:
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <label
+                      onClick={() => handleUpdatePolicy(activeGroup.id, 'open')}
+                      className={`p-3.5 rounded-2xl border flex items-start gap-3 cursor-pointer transition-all ${
+                        activeGroup.joinPolicy === 'open'
+                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="joinPolicy"
+                        checked={activeGroup.joinPolicy === 'open'}
+                        onChange={() => handleUpdatePolicy(activeGroup.id, 'open')}
+                        className="mt-1 text-purple-600"
+                      />
+                      <div>
+                        <strong className="text-slate-900 block text-xs">
+                          🟢 Tự Do Gia Nhập Qua Mã (Open)
+                        </strong>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
+                          Bất kỳ ai nhập đúng mã nhóm <strong>{activeGroup.code}</strong> đều được vào ngay mà không cần phê duyệt.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => handleUpdatePolicy(activeGroup.id, 'approval_required')}
+                      className={`p-3.5 rounded-2xl border flex items-start gap-3 cursor-pointer transition-all ${
+                        activeGroup.joinPolicy === 'approval_required'
+                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="joinPolicy"
+                        checked={activeGroup.joinPolicy === 'approval_required'}
+                        onChange={() => handleUpdatePolicy(activeGroup.id, 'approval_required')}
+                        className="mt-1 text-purple-600"
+                      />
+                      <div>
+                        <strong className="text-slate-900 block text-xs">
+                          🟡 Cần Trưởng Nhóm Phê Duyệt (Approval Required)
+                        </strong>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
+                          Đồng nghiệp nhập mã sẽ vào trạng thái Chờ Duyệt. Trưởng nhóm duyệt thì mới được vào phòng chat.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => handleUpdatePolicy(activeGroup.id, 'email_only')}
+                      className={`p-3.5 rounded-2xl border flex items-start gap-3 cursor-pointer transition-all ${
+                        activeGroup.joinPolicy === 'email_only'
+                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="joinPolicy"
+                        checked={activeGroup.joinPolicy === 'email_only'}
+                        onChange={() => handleUpdatePolicy(activeGroup.id, 'email_only')}
+                        className="mt-1 text-purple-600"
+                      />
+                      <div>
+                        <strong className="text-slate-900 block text-xs">
+                          🔒 Khóa Mã - Chỉ Mời Đích Danh Qua Email (Email Only)
+                        </strong>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
+                          Vô hiệu hóa việc nhập mã bên ngoài. Chỉ những ai được Trưởng nhóm thêm trực tiếp qua Email mới vào được.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Members */}
+              {ownerSettingsTab === 'members' && (
+                <div className="space-y-4">
+                  {/* Direct Add Member Form */}
+                  <form onSubmit={handleAddDirectMember} className="flex gap-2">
+                    <input
+                      type="email"
+                      required
+                      value={directMemberEmailInput}
+                      onChange={(e) => setDirectMemberEmailInput(e.target.value)}
+                      placeholder="Nhập email đồng nghiệp cần thêm (ví dụ: gv@ut.edu.vn)..."
+                      className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-purple-600"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-all cursor-pointer shadow-xs shrink-0 flex items-center gap-1"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Thêm Vào Nhóm</span>
+                    </button>
+                  </form>
+
+                  <div className="space-y-1.5 pt-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Thành viên hiện tại ({activeGroup.members.length}):
+                    </span>
+                    {activeGroup.members.map((email, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs"
+                      >
+                        <span className="font-mono text-slate-700">{email}</span>
+                        {email === activeGroup.ownerEmail ? (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-800">
+                            Trưởng nhóm
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200 text-slate-600">
+                            Thành viên
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
-                )}
-
-                {/* Footer Action */}
-                <div className="pt-2 flex items-center justify-between">
-                  <button
-                    onClick={() => {
-                      const emailToAdd = prompt(`Nhập email của đồng nghiệp để thêm vào nhóm ${group.name}:`);
-                      if (emailToAdd && emailToAdd.includes('@')) {
-                        const updated = qgroups.map((g) => {
-                          if (g.id === group.id) {
-                            return {
-                              ...g,
-                              memberCount: g.memberCount + 1,
-                              members: [...g.members, emailToAdd.trim()]
-                            };
-                          }
-                          return g;
-                        });
-                        saveQgroups(updated);
-                        onShowToast('success', 'Đã thêm thành viên', `Đã mời ${emailToAdd.trim()} vào Q-Group.`);
-                      }
-                    }}
-                    className="text-xs font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1 cursor-pointer"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>+ Thêm Thành Viên Qua Mail</span>
-                  </button>
-
-                  <span className="text-[10px] text-slate-400 font-mono">Bảo mật nội bộ</span>
                 </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setIsOwnerSettingsModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal B: Attach Textbook to Chat */}
+      {isAttachTextbookModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-teal-50/50">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-[#008689]" />
+                <h3 className="font-extrabold text-slate-900 text-xs">
+                  Chọn Giáo Trình Để Chia Sẻ Vào Nhóm
+                </h3>
               </div>
-            ))}
+              <button onClick={() => setIsAttachTextbookModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2 flex-1 text-xs">
+              {textbooks.length === 0 ? (
+                <div className="py-8 text-center text-slate-400">
+                  Kho của bạn chưa có giáo trình nào. Vui lòng tải lên giáo trình trước!
+                </div>
+              ) : (
+                textbooks.map((book) => (
+                  <div
+                    key={book.id}
+                    className="p-3 rounded-2xl border border-slate-200 hover:border-teal-300 bg-white flex items-center justify-between gap-3 shadow-2xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 text-xs truncate" title={book.name}>
+                        {book.name}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        {book.totalPages} trang • {book.size}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleShareTextbookToChat(book)}
+                      className="px-3 py-1.5 bg-[#008689] hover:bg-[#007073] text-white rounded-xl font-bold text-xs shrink-0 shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>Gửi Vào Nhóm</span>
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setIsAttachTextbookModalOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal C: Attach Exam to Chat */}
+      {isAttachExamModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-indigo-50/50">
+              <div className="flex items-center gap-2">
+                <FileCheck2 className="w-4 h-4 text-indigo-600" />
+                <h3 className="font-extrabold text-slate-900 text-xs">
+                  Chọn Bộ Đề Thi Để Chia Sẻ Vào Nhóm
+                </h3>
+              </div>
+              <button onClick={() => setIsAttachExamModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-2 flex-1 text-xs">
+              {getSavedExams().map((exam) => (
+                <div
+                  key={exam.id}
+                  className="p-3 rounded-2xl border border-slate-200 hover:border-indigo-300 bg-white flex items-center justify-between gap-3 shadow-2xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-bold text-slate-900 text-xs truncate" title={exam.title}>
+                      {exam.title}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">
+                      Môn: {exam.subject} • {exam.questionCount || 40} câu • {exam.durationMinutes || 60} phút
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleShareExamToChat(exam)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shrink-0 shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Gửi Đề Vào Nhóm</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 border-t border-slate-100 bg-slate-50 flex justify-end">
+              <button
+                onClick={() => setIsAttachExamModalOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs"
+              >
+                Hủy
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1247,6 +2354,46 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                   rows={2}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-purple-600 resize-none"
                 />
+              </div>
+
+              {/* Join Policy Selection on Create */}
+              <div>
+                <label className="block font-bold text-slate-700 mb-1.5">Chính sách vào phòng mặc định:</label>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="newGroupPolicy"
+                      value="approval_required"
+                      checked={newGroupPolicy === 'approval_required'}
+                      onChange={() => setNewGroupPolicy('approval_required')}
+                      className="text-purple-600"
+                    />
+                    <span>🟡 <strong>Cần duyệt:</strong> Giảng viên nhập mã phải được bạn phê duyệt</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="newGroupPolicy"
+                      value="open"
+                      checked={newGroupPolicy === 'open'}
+                      onChange={() => setNewGroupPolicy('open')}
+                      className="text-purple-600"
+                    />
+                    <span>🟢 <strong>Tự do:</strong> Bất kỳ ai có mã đều vào ngay</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-slate-700 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="newGroupPolicy"
+                      value="email_only"
+                      checked={newGroupPolicy === 'email_only'}
+                      onChange={() => setNewGroupPolicy('email_only')}
+                      className="text-purple-600"
+                    />
+                    <span>🔒 <strong>Riêng tư:</strong> Chỉ mời đích danh qua Email</span>
+                  </label>
+                </div>
               </div>
 
               <div className="pt-2 flex justify-end gap-2">

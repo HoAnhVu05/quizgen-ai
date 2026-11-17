@@ -34,6 +34,8 @@ import {
   Sparkle,
   Palette,
   MessageSquare,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -171,6 +173,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [userOrders, setUserOrders] = useState<any[]>([]);
   const [userSub, setUserSub] = useState<any>(null);
   const [loadingBilling, setLoadingBilling] = useState(false);
+  const [isWorkflowExpanded, setIsWorkflowExpanded] = useState<boolean>(true);
+
+  const isWorkflowActive = ['upload', 'generate', 'review', 'bank'].includes(currentScreen);
 
   const openProfileEditor = async (tab: 'profile' | 'billing' = 'profile') => {
     if (!currentUser) return;
@@ -266,44 +271,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }
 
     // Quy trình làm việc của Giảng viên / Trưởng bộ môn
-    return [
-      {
-        id: 'dashboard',
-        label: 'Tổng quan Học thuật',
-        icon: LayoutDashboard,
-      },
-      {
-        id: 'forum',
-        label: 'Diễn đàn',
-        icon: MessageSquare,
-      },
-      {
-        id: 'upload',
-        stepTag: 'Bước 1',
-        label: 'Kho Giáo trình Môn học',
-        icon: UploadCloud,
-      },
-      {
-        id: 'generate',
-        stepTag: 'Bước 2',
-        label: 'Sinh Câu hỏi AI (Bloom)',
-        icon: Sparkles,
-      },
-      {
-        id: 'review',
-        stepTag: 'Bước 3',
-        label: 'Đối soát & Biên tập Đề',
-        icon: CheckSquare,
-        badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
-      },
-      {
-        id: 'bank',
-        stepTag: 'Bước 4',
-        label: 'Đóng gói & Xuất Đề Thi',
-        icon: Database,
-      },
-    ];
-  }, [activeRole, pendingReviewCount]);
+    return [];
+  }, [activeRole]);
+
+  const lecturerPrimaryItems = useMemo<NavItem[]>(() => [
+    {
+      id: 'dashboard',
+      label: 'Tổng quan Học thuật',
+      icon: LayoutDashboard,
+    },
+    {
+      id: 'forum',
+      label: 'Diễn đàn',
+      icon: MessageSquare,
+    },
+  ], []);
+
+  const lecturerWorkflowSteps = useMemo<NavItem[]>(() => [
+    {
+      id: 'upload',
+      stepTag: 'Bước 1',
+      label: 'Kho Giáo trình Môn học',
+      icon: UploadCloud,
+    },
+    {
+      id: 'generate',
+      stepTag: 'Bước 2',
+      label: 'Sinh Câu hỏi AI (Bloom)',
+      icon: Sparkles,
+    },
+    {
+      id: 'review',
+      stepTag: 'Bước 3',
+      label: 'Đối soát & Biên tập Đề',
+      icon: CheckSquare,
+      badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
+    },
+    {
+      id: 'bank',
+      stepTag: 'Bước 4',
+      label: 'Đóng gói & Xuất Đề Thi',
+      icon: Database,
+    },
+  ], [pendingReviewCount]);
 
   useEffect(() => {
     if (isSystemAdmin && currentScreen !== 'admin_portal') {
@@ -400,80 +410,183 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation List */}
       <nav className="flex-1 py-3 px-3 space-y-1.5 overflow-y-auto relative z-10">
-        {filteredNavItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = isSystemAdmin
-            ? currentScreen === 'admin_portal' && adminTab === item.adminSubTab
-            : currentScreen === item.id;
+        {isSystemAdmin ? (
+          filteredNavItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentScreen === 'admin_portal' && adminTab === item.adminSubTab;
 
-          return (
-            <button
-              key={item.adminSubTab || item.id}
-              onClick={() => {
-                if (isSystemAdmin) {
+            return (
+              <button
+                key={item.adminSubTab || item.id}
+                onClick={() => {
                   onNavigate('admin_portal');
                   if (item.adminSubTab && onAdminTabChange) {
                     onAdminTabChange(item.adminSubTab);
                   }
-                } else {
-                  onNavigate(item.id);
-                }
-              }}
-              className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left transition-all duration-200 relative ${
-                isActive
-                  ? isSystemAdmin
+                }}
+                className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left transition-all duration-200 relative ${
+                  isActive
                     ? 'bg-[#E4F7F7] text-[#007F85] font-bold shadow-2xs'
-                    : 'bg-[#dff5f4] text-[#007d80] font-bold shadow-2xs'
-                  : isSystemAdmin
-                  ? 'text-[#526782] hover:text-[#142B45] hover:bg-[#F0FAFB] font-medium'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
-              }`}
-            >
-              {isActive && isSystemAdmin && (
-                <div className="absolute -left-3 top-1 bottom-1 w-1 bg-[#008689] rounded-r-md" />
-              )}
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Icon
-                  className={`w-4 h-4 shrink-0 transition-colors ${
-                    isActive
-                      ? isSystemAdmin
-                        ? 'text-[#007F85]'
-                        : 'text-[#008689]'
-                      : 'text-[#91A2B8] group-hover:text-[#526782]'
-                  }`}
-                />
-                <div className="min-w-0">
-                  {item.stepTag && (
-                    <span
-                      className={`block text-[9px] font-bold uppercase tracking-wider ${
-                        isActive ? 'text-[#008F95]' : 'text-[#91A2B8]'
-                      }`}
-                    >
-                      {item.stepTag}
-                    </span>
-                  )}
+                    : 'text-[#526782] hover:text-[#142B45] hover:bg-[#F0FAFB] font-medium'
+                }`}
+              >
+                {isActive && (
+                  <div className="absolute -left-3 top-1 bottom-1 w-1 bg-[#008689] rounded-r-md" />
+                )}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Icon
+                    className={`w-4 h-4 shrink-0 transition-colors ${
+                      isActive ? 'text-[#007F85]' : 'text-[#91A2B8] group-hover:text-[#526782]'
+                    }`}
+                  />
                   <span
                     className={`text-xs truncate block leading-snug ${
-                      isActive
-                        ? isSystemAdmin
-                          ? 'text-[#007F85] font-bold'
-                          : 'text-[#007d80] font-bold'
-                        : 'text-[#526782] group-hover:text-[#142B45] font-medium'
+                      isActive ? 'text-[#007F85] font-bold' : 'text-[#526782] group-hover:text-[#142B45] font-medium'
                     }`}
                   >
                     {item.label}
                   </span>
                 </div>
-              </div>
+              </button>
+            );
+          })
+        ) : (
+          <>
+            {/* Primary Lecturer Items (Dashboard, Diễn đàn) */}
+            {lecturerPrimaryItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentScreen === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => onNavigate(item.id)}
+                  className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? 'bg-[#dff5f4] text-[#007d80] font-bold shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Icon
+                      className={`w-4 h-4 shrink-0 transition-colors ${
+                        isActive ? 'text-[#008689]' : 'text-[#91A2B8] group-hover:text-[#526782]'
+                      }`}
+                    />
+                    <span
+                      className={`text-xs truncate block leading-snug ${
+                        isActive ? 'text-[#007d80] font-bold' : 'text-[#526782] group-hover:text-[#142B45] font-medium'
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
 
-              {item.badge !== undefined && (
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  {item.badge}
-                </span>
+            {/* Collapsible Workflow Accordion (4 steps grouped) */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setIsWorkflowExpanded((prev) => !prev)}
+                className={`w-full group flex items-center justify-between px-3 py-2 rounded-2xl text-left transition-all duration-200 cursor-pointer border ${
+                  isWorkflowActive && !isWorkflowExpanded
+                    ? 'bg-teal-50/90 text-[#007d80] font-bold border-teal-200 shadow-2xs'
+                    : 'bg-slate-50/80 hover:bg-slate-100/90 text-slate-700 border-slate-200/70 font-semibold'
+                }`}
+                title="Nhấn để thu gọn hoặc mở rộng 4 bước biên soạn đề"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                      isWorkflowActive
+                        ? 'bg-[#008689] text-white shadow-xs'
+                        : 'bg-white text-slate-500 border border-slate-200 group-hover:text-[#008689]'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold leading-tight truncate text-slate-800">
+                        Quy trình Tạo Đề
+                      </span>
+                      <span className="text-[10px] font-black px-1.5 py-0.2 bg-teal-100 text-teal-800 rounded-md">
+                        4 bước
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {pendingReviewCount > 0 && (
+                    <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                      {pendingReviewCount}
+                    </span>
+                  )}
+                  {isWorkflowExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-transform" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-transform" />
+                  )}
+                </div>
+              </button>
+
+              {/* Collapsible Steps */}
+              {isWorkflowExpanded && (
+                <div className="mt-1.5 pl-3.5 ml-3 border-l-2 border-teal-100/80 space-y-1 py-0.5 animate-in slide-in-from-top-1 duration-150">
+                  {lecturerWorkflowSteps.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = currentScreen === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => onNavigate(item.id)}
+                        className={`w-full group flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-all duration-200 cursor-pointer ${
+                          isActive
+                            ? 'bg-[#dff5f4] text-[#007d80] font-bold shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50/80 font-medium'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Icon
+                            className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                              isActive ? 'text-[#008689]' : 'text-slate-400 group-hover:text-slate-600'
+                            }`}
+                          />
+                          <div className="min-w-0">
+                            {item.stepTag && (
+                              <span
+                                className={`block text-[9px] font-black uppercase tracking-wider ${
+                                  isActive ? 'text-[#008F95]' : 'text-slate-400'
+                                }`}
+                              >
+                                {item.stepTag}
+                              </span>
+                            )}
+                            <span
+                              className={`text-[11px] truncate block leading-tight ${
+                                isActive ? 'text-[#007d80] font-bold' : 'text-slate-700 group-hover:text-slate-900 font-medium'
+                              }`}
+                            >
+                              {item.label}
+                            </span>
+                          </div>
+                        </div>
+
+                        {item.badge !== undefined && (
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            </button>
-          );
-        })}
+            </div>
+          </>
+        )}
       </nav>
 
       {/* Floating Profile Card at Bottom */}
