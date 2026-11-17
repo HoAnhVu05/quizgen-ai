@@ -660,6 +660,21 @@ DEFAULT_QGROUPS = [
 _CACHED_QGROUPS = None
 _CACHED_INVITATIONS = None
 
+def deduplicate_qgroups(groups: list) -> list:
+    seen = set()
+    unique = []
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        # Deduplicate primarily by group code, or by id
+        key = str(g.get("code") or g.get("id") or "").strip()
+        if not key:
+            continue
+        if key not in seen:
+            seen.add(key)
+            unique.append(g)
+    return unique
+
 def load_server_qgroups() -> list:
     global _CACHED_QGROUPS
     if _CACHED_QGROUPS is not None:
@@ -672,7 +687,7 @@ def load_server_qgroups() -> list:
         with open(QGROUPS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, list) and len(data) > 0:
-                _CACHED_QGROUPS = data
+                _CACHED_QGROUPS = deduplicate_qgroups(data)
                 return _CACHED_QGROUPS
     except Exception:
         pass
@@ -681,11 +696,12 @@ def load_server_qgroups() -> list:
 
 def save_server_qgroups(groups: list):
     global _CACHED_QGROUPS
-    _CACHED_QGROUPS = groups
+    cleaned = deduplicate_qgroups(groups)
+    _CACHED_QGROUPS = cleaned
     try:
         QGROUPS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(QGROUPS_FILE, "w", encoding="utf-8") as f:
-            json.dump(groups, f, ensure_ascii=False, indent=2)
+            json.dump(cleaned, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"Error saving qgroups: {e}")
 

@@ -533,20 +533,35 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               const localGroups: QGroup[] = JSON.parse(localSaved);
               if (Array.isArray(localGroups)) {
                 const cleanLocal = flattenGroups(localGroups);
-                const remoteCodes = new Set(cleanRemote.map((g: QGroup) => g.code || g.id));
+                const remoteKeys = new Set(cleanRemote.map((g: QGroup) => (g.code || g.id || '').trim()));
                 const missingLocal = cleanLocal.filter(
-                  (lg) => !remoteCodes.has(lg.code) && !remoteCodes.has(lg.id)
+                  (lg) => {
+                    const k = (lg.code || lg.id || '').trim();
+                    return k && !remoteKeys.has(k);
+                  }
                 );
                 if (missingLocal.length > 0) {
-                  merged = [...missingLocal, ...merged];
+                  merged = [...cleanRemote, ...missingLocal];
                   void syncQGroupsToBackend(merged);
                 }
               }
             }
           } catch {}
-          setQgroups(merged);
+
+          // Deduplicate by code/id so identical groups never repeat
+          const seen = new Set<string>();
+          const deduped: QGroup[] = [];
+          for (const g of merged) {
+            const k = (g.code || g.id || '').trim();
+            if (k && !seen.has(k)) {
+              seen.add(k);
+              deduped.push(g);
+            }
+          }
+
+          setQgroups(deduped);
           try {
-            localStorage.setItem('quizgen_qgroups', JSON.stringify(merged));
+            localStorage.setItem('quizgen_qgroups', JSON.stringify(deduped));
           } catch {}
         }
       }
