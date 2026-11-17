@@ -129,6 +129,14 @@ const NAV_ITEM_STYLES: Record<ScreenId, NavItemStyle> = {
     inactiveIconBox: 'bg-indigo-50 text-indigo-600 border border-indigo-200/60 group-hover:bg-indigo-100/70',
     activeText: 'text-indigo-900',
   },
+  qgroup: {
+    stepTagClass: 'text-purple-600',
+    activeContainer: 'bg-purple-50/90 text-purple-900 font-bold border border-purple-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-purple-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-purple-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-purple-50 text-purple-600 border border-purple-200/60 group-hover:bg-purple-100/70',
+    activeText: 'text-purple-900',
+  },
   admin_portal: {
     stepTagClass: 'text-[#da1c2d]',
     activeContainer: 'bg-rose-50 text-[#da1c2d] font-bold border border-rose-200 shadow-2xs',
@@ -279,6 +287,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'dashboard',
       label: 'Tổng quan Học thuật',
       icon: LayoutDashboard,
+    },
+    {
+      id: 'qgroup',
+      label: 'Hội nhóm Q-Group',
+      icon: Users,
     },
     {
       id: 'forum',

@@ -65,6 +65,7 @@ interface TextbookUploadScreenProps {
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
   subscriptionInfo?: UserSubscriptionInfo | null;
   currentUser?: UserProfile | null;
+  initialTab?: 'my' | 'library' | 'qgroup';
   onOpenPricingModal?: () => void;
 }
 
@@ -176,9 +177,11 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   onShowToast,
   subscriptionInfo,
   currentUser,
+  initialTab,
   onOpenPricingModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'my' | 'library' | 'qgroup'>(() => {
+    if (initialTab) return initialTab;
     try {
       const saved = localStorage.getItem('quizgen_textbook_tab');
       if (saved === 'library' || saved === 'qgroup' || saved === 'my') {
@@ -187,6 +190,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     } catch {}
     return 'my';
   });
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [textbooks, setTextbooks] = useState<TextbookFile[]>([]);
   const [libraryTextbooks, setLibraryTextbooks] = useState<TextbookFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -592,7 +601,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     window.addEventListener('focus', handleFocus);
     const interval = setInterval(() => {
       void fetchQGroupsAndInvitations();
-    }, 3000);
+    }, 1000);
     return () => {
       window.removeEventListener('focus', handleFocus);
       clearInterval(interval);

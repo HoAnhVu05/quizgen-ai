@@ -1,4 +1,4 @@
-export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank' | 'admin_portal' | 'forum';
+export type ScreenId = 'dashboard' | 'upload' | 'generate' | 'review' | 'bank' | 'admin_portal' | 'forum' | 'qgroup';
 export type AuthScreenId = 'login' | 'register';
 
 export type UserRole = 'lecturer' | 'head_of_department' | 'admin';

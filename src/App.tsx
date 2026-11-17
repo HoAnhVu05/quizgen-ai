@@ -971,6 +971,18 @@ const AppContent: React.FC = () => {
               onShowToast={handleShowToast}
               subscriptionInfo={subscriptionInfo}
               currentUser={currentUser}
+              initialTab="my"
+              onOpenPricingModal={() => setIsPricingModalOpen(true)}
+            />
+          )}
+
+          {currentScreen === 'qgroup' && (
+            <TextbookUploadScreen
+              onNavigate={setCurrentScreen}
+              onShowToast={handleShowToast}
+              subscriptionInfo={subscriptionInfo}
+              currentUser={currentUser}
+              initialTab="qgroup"
               onOpenPricingModal={() => setIsPricingModalOpen(true)}
             />
           )}
@@ -980,6 +992,7 @@ const AppContent: React.FC = () => {
               onNavigate={setCurrentScreen}
               onGenerateSuccess={handleGenerateSuccess}
               onShowToast={handleShowToast}
+              currentUser={currentUser}
             />
           )}
 

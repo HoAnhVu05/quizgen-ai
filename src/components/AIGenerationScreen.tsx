@@ -24,8 +24,11 @@ import {
   Calendar,
   X,
   CheckCircle2,
+  UploadCloud,
+  Library,
+  Search,
 } from 'lucide-react';
-import { ScreenId, Question, BloomLevel, QuestionOption } from '../types';
+import { ScreenId, Question, BloomLevel, QuestionOption, UserProfile } from '../types';
 import MathRenderer from './MathRenderer';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
 import apiClient from '../services/apiClient';
@@ -52,6 +55,7 @@ interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
   onGenerateSuccess: (newQuestions?: Question[]) => void;
   onShowToast: (type: 'success' | 'info' | 'warning' | 'error', title: string, message: string) => void;
+  currentUser?: UserProfile | null;
 }
 
 const FALLBACK_DOCUMENTS: Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }> = [];
@@ -178,6 +182,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   onNavigate,
   onGenerateSuccess,
   onShowToast,
+  currentUser,
 }) => {
   const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
@@ -263,10 +268,14 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     loadHistoryFromApi();
   }, [loadHistoryFromApi]);
 
-  const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
+  const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number; isShared?: boolean }>>([]);
+  const [myDocuments, setMyDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
+  const [sharedDocuments, setSharedDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
   const [chaptersByDocument, setChaptersByDocument] = useState<Record<string, string[]>>({});
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
+  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
+  const [librarySearchQuery, setLibrarySearchQuery] = useState('');
 
   const hasWarnedBackendRef = useRef(false);
 
@@ -288,23 +297,33 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const fetchDocuments = useCallback(async () => {
     setIsLoadingDocuments(true);
     try {
-      const res = await apiClient.fetch(`${API_BASE}/documents/documents`);
-      let list: any[] = [];
-      if (res.ok) {
-        const payload = await res.json();
-        if (Array.isArray(payload)) {
-          list = payload;
-        }
-      }
-
-      // Merge with localStorage custom uploaded documents
-      let localUploadedDocs: any[] = [];
+      // 1. Fetch personal docs for current user
+      let myDocsList: any[] = [];
       try {
-        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]').filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
+        const myRes = await apiClient.fetch(
+          `${API_BASE}/documents/documents?scope=my${currentUser?.id ? `&user_id=${currentUser.id}` : ''}`
+        );
+        if (myRes.ok) {
+          const payload = await myRes.json();
+          if (Array.isArray(payload)) myDocsList = payload;
+        }
       } catch {}
 
-      const combined = [...localUploadedDocs, ...list, ...FALLBACK_DOCUMENTS];
-      const readyDocs = combined
+      // Merge personal docs from localStorage for current user
+      let localUploadedDocs: any[] = [];
+      try {
+        const userStorageKey = currentUser?.id
+          ? `quizgen_uploaded_documents_${currentUser.id}`
+          : 'quizgen_uploaded_documents';
+        const rawLocal = localStorage.getItem(userStorageKey);
+        if (rawLocal) {
+          localUploadedDocs = JSON.parse(rawLocal).filter(
+            (d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026'
+          );
+        }
+      } catch {}
+
+      const allMy = [...localUploadedDocs, ...myDocsList]
         .filter((item: any) => item && (item.status === 'ready' || !item.status))
         .map((item: any) => ({
           id: String(item.id),
@@ -312,43 +331,83 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           status: 'ready',
           totalPages: Number(item.totalPages ?? item.total_pages ?? 120),
           chaptersCount: Number(item.chaptersCount ?? item.chapters_count ?? 4),
+          isShared: false,
         }));
-
-      // Deduplicate by ID
-      const uniqueDocs = readyDocs.filter(
+      const uniqueMy = allMy.filter(
         (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
       );
+      setMyDocuments(uniqueMy);
 
-      setDocuments(uniqueDocs);
+      // 2. Fetch shared library docs
+      let sharedDocsList: any[] = [];
+      try {
+        const sharedRes = await apiClient.fetch(`${API_BASE}/documents/documents?scope=shared`);
+        if (sharedRes.ok) {
+          const payload = await sharedRes.json();
+          if (Array.isArray(payload)) sharedDocsList = payload;
+        }
+      } catch {}
+
+      const allShared = [...sharedDocsList, ...FALLBACK_DOCUMENTS]
+        .filter((item: any) => item && (item.status === 'ready' || !item.status))
+        .map((item: any) => ({
+          id: String(item.id),
+          name: String(item.name || item.title || 'Tài liệu giáo trình'),
+          status: 'ready',
+          totalPages: Number(item.totalPages ?? item.total_pages ?? 120),
+          chaptersCount: Number(item.chaptersCount ?? item.chapters_count ?? 4),
+          isShared: true,
+        }));
+      const uniqueShared = allShared.filter(
+        (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
+      );
+      setSharedDocuments(uniqueShared);
+
+      // Combined list
+      const combinedAll = [...uniqueMy, ...uniqueShared];
+      const uniqueCombined = combinedAll.filter(
+        (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
+      );
+      setDocuments(uniqueCombined);
+
+      // Selection logic: prioritize explicitly saved book, otherwise prioritize user's own document
       const savedId = localStorage.getItem('quizgen_selected_book_id');
-      if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+      if (savedId && uniqueCombined.some((d) => d.id === savedId)) {
         setSelectedBook(savedId);
-      } else if (uniqueDocs.length > 0) {
-        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
+      } else if (uniqueMy.length > 0) {
+        // Only auto-select if user has their OWN document!
+        setSelectedBook(uniqueMy[0].id);
+      } else {
+        // If user has 0 personal documents, DO NOT auto-select public document!
+        setSelectedBook('');
+        setSelectedChapters([]);
       }
       setIsUsingFallback(false);
     } catch {
-      let localUploadedDocs: any[] = [];
-      try {
-        localUploadedDocs = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]').filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-      } catch {}
-
-      const combined = [...localUploadedDocs, ...FALLBACK_DOCUMENTS];
-      const uniqueDocs = combined.filter(
-        (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
-      );
-      setDocuments(uniqueDocs);
+      // Fallback
+      setMyDocuments([]);
+      const fallbackShared = FALLBACK_DOCUMENTS.map((item: any) => ({
+        id: String(item.id),
+        name: String(item.name || item.title || 'Tài liệu giáo trình'),
+        status: 'ready',
+        totalPages: Number(item.totalPages ?? item.total_pages ?? 120),
+        chaptersCount: Number(item.chaptersCount ?? item.chapters_count ?? 4),
+        isShared: true,
+      }));
+      setSharedDocuments(fallbackShared);
+      setDocuments(fallbackShared);
       const savedId = localStorage.getItem('quizgen_selected_book_id');
-      if (savedId && uniqueDocs.some((d) => d.id === savedId)) {
+      if (savedId && fallbackShared.some((d) => d.id === savedId)) {
         setSelectedBook(savedId);
-      } else if (uniqueDocs.length > 0) {
-        setSelectedBook((prev) => (uniqueDocs.some((d) => d.id === prev) ? prev : uniqueDocs[0].id));
+      } else {
+        setSelectedBook('');
+        setSelectedChapters([]);
       }
       setIsUsingFallback(true);
     } finally {
       setIsLoadingDocuments(false);
     }
-  }, [API_BASE, onShowToast]);
+  }, [API_BASE, currentUser?.id, onShowToast]);
 
   useEffect(() => {
     void fetchDocuments();
@@ -1060,60 +1119,117 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         <div className="lg:col-span-2 space-y-5">
           {/* Card 1: Chọn giáo trình & chương */}
           <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
-            <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-              1. Chọn giáo trình & chương mục
-            </h2>
-
-            <div>
-              <select
-                value={selectedBook}
-                onChange={(e) => handleSelectBook(e.target.value)}
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
+            <div className="flex items-center justify-between">
+              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
+                1. Chọn giáo trình & chương mục
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsLibraryModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-[#008689] bg-[#e0f7fa]/50 hover:bg-[#e0f7fa] border border-[#008689]/20 rounded-lg transition-colors"
               >
-                {isLoadingDocuments && (
-                  <option value="">Đang tải danh sách giáo trình...</option>
-                )}
-                {!isLoadingDocuments && documents.length === 0 && (
-                  <option value="">Chưa có giáo trình sẵn sàng</option>
-                )}
-                {documents.map((doc) => (
-                  <option key={doc.id} value={doc.id}>
-                    {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
-                  </option>
-                ))}
-              </select>
+                <Library className="w-3 h-3" />
+                Duyệt thư viện ({sharedDocuments.length})
+              </button>
             </div>
 
-            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-              {chaptersList.length === 0 && (
-                <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400">
-                  Chưa có danh sách chương mục cho tài liệu này.
+            {!selectedBook ? (
+              <div className="p-6 rounded-2xl border-2 border-dashed border-teal-200 bg-teal-50/30 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-teal-100/70 text-[#008689] flex items-center justify-center mx-auto">
+                  <BookOpen className="w-6 h-6" />
                 </div>
-              )}
-              {chaptersList.map((ch) => {
-                const isChecked = selectedChapters.includes(ch);
-                return (
-                  <div
-                    key={ch}
-                    onClick={() => handleToggleChapter(ch)}
-                    className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-colors flex items-center justify-between ${
-                      isChecked
-                        ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold'
-                        : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
-                    }`}
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">
+                    Chưa có giáo trình nào được chọn
+                  </h3>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">
+                    Hệ thống ưu tiên giáo trình riêng của bạn. Nếu chưa tải lên tài liệu nào, bạn có thể nạp giáo trình mới hoặc chọn nhanh từ Thư viện giáo trình dùng chung.
+                  </p>
+                </div>
+                <div className="flex items-center justify-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('upload')}
+                    className="px-3.5 py-2 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
                   >
-                    <span className="text-xs truncate pr-2">{ch}</span>
-                    <div
-                      className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                        isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {isChecked && <Check className="w-3 h-3 text-white" />}
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    + Nạp giáo trình của tôi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsLibraryModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                  >
+                    <Library className="w-3.5 h-3.5 text-[#008689]" />
+                    Chọn từ thư viện ({sharedDocuments.length})
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="relative mb-3">
+                  <select
+                    value={selectedBook}
+                    onChange={(e) => handleSelectBook(e.target.value)}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
+                  >
+                    {isLoadingDocuments && (
+                      <option value="">Đang tải danh sách giáo trình...</option>
+                    )}
+                    {myDocuments.length > 0 && (
+                      <optgroup label="👤 Giáo trình của tôi">
+                        {myDocuments.map((doc) => (
+                          <option key={doc.id} value={doc.id}>
+                            {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {sharedDocuments.length > 0 && (
+                      <optgroup label="🏛️ Thư viện giáo trình dùng chung">
+                        {sharedDocuments.map((doc) => (
+                          <option key={doc.id} value={doc.id}>
+                            {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                  {chaptersList.length === 0 && (
+                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400">
+                      Chưa có danh sách chương mục cho tài liệu này.
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  )}
+                  {chaptersList.map((ch) => {
+                    const isChecked = selectedChapters.includes(ch);
+                    return (
+                      <div
+                        key={ch}
+                        onClick={() => handleToggleChapter(ch)}
+                        className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-colors flex items-center justify-between ${
+                          isChecked
+                            ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold'
+                            : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
+                        }`}
+                      >
+                        <span className="text-xs truncate pr-2">{ch}</span>
+                        <div
+                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                            isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {isChecked && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Card 2: Thang đo Bloom */}
@@ -1323,6 +1439,141 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
               >
                 <ArrowRight className="w-3.5 h-3.5" />
                 Nạp bộ câu hỏi này vào Bước 3 (Kiểm duyệt)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== OVERLAY 4: Library Picker Modal ===== */}
+      {isLibraryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-teal-50/50 to-white">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-[#008689] flex items-center justify-center font-bold">
+                  <Library className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">
+                    Thư Viện Giáo Trình Dùng Chung
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Chọn nhanh một giáo trình chuẩn để sinh câu hỏi trắc nghiệm ngay mà không cần tải lên lại.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsLibraryModalOpen(false)}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={librarySearchQuery}
+                  onChange={(e) => setLibrarySearchQuery(e.target.value)}
+                  placeholder="Tìm kiếm giáo trình theo tên môn học, học phần..."
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689]"
+                />
+              </div>
+            </div>
+
+            {/* List of Shared Books */}
+            <div className="p-5 overflow-y-auto space-y-3 flex-1">
+              {sharedDocuments
+                .filter(
+                  (d) =>
+                    !librarySearchQuery ||
+                    d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
+                )
+                .map((doc) => {
+                  const isCurrent = selectedBook === doc.id;
+                  return (
+                    <div
+                      key={doc.id}
+                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isCurrent
+                          ? 'border-[#008689] bg-[#e0f7fa]/30 ring-1 ring-[#008689]'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 text-[#008689] flex items-center justify-center shrink-0 mt-0.5">
+                          <BookOpen className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900 leading-snug">
+                            {doc.name}
+                          </h4>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Dùng chung
+                            </span>
+                            <span>• {doc.chaptersCount} chương mục</span>
+                            <span>• {doc.totalPages} trang</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                        {isCurrent ? (
+                          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-teal-100 text-[#008689] font-bold text-xs">
+                            <Check className="w-3.5 h-3.5" />
+                            Đang chọn
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSelectBook(doc.id);
+                              setIsLibraryModalOpen(false);
+                              onShowToast(
+                                'success',
+                                'Đã chọn giáo trình',
+                                `Đã áp dụng giáo trình "${doc.name}" để cấu hình sinh đề.`
+                              );
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            Dùng Giáo Trình Này
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {sharedDocuments.filter(
+                (d) =>
+                  !librarySearchQuery ||
+                  d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
+              ).length === 0 && (
+                <div className="p-8 text-center text-xs text-slate-400">
+                  Không tìm thấy giáo trình nào phù hợp với từ khóa tìm kiếm.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Tổng cộng {sharedDocuments.length} giáo trình chuẩn trong thư viện
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsLibraryModalOpen(false)}
+                className="px-4 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors"
+              >
+                Đóng
               </button>
             </div>
           </div>

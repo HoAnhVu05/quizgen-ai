@@ -36,6 +36,7 @@ interface AIChatCopilotProps {
 const SCREEN_LABELS: Record<ScreenId, string> = {
   dashboard: 'Tổng quan Học thuật',
   forum: 'Diễn đàn Học thuật',
+  qgroup: 'Hội nhóm Q-Group',
   upload: 'Bước 1: Kho Giáo trình',
   generate: 'Bước 2: Sinh Câu hỏi AI',
   review: 'Bước 3: Đối soát & Biên tập',

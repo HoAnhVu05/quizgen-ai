@@ -657,20 +657,31 @@ DEFAULT_QGROUPS = [
     }
 ]
 
+_CACHED_QGROUPS = None
+_CACHED_INVITATIONS = None
+
 def load_server_qgroups() -> list:
+    global _CACHED_QGROUPS
+    if _CACHED_QGROUPS is not None:
+        return _CACHED_QGROUPS
     if not QGROUPS_FILE.exists():
         save_server_qgroups(DEFAULT_QGROUPS)
-        return DEFAULT_QGROUPS
+        _CACHED_QGROUPS = DEFAULT_QGROUPS
+        return _CACHED_QGROUPS
     try:
         with open(QGROUPS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, list) and len(data) > 0:
-                return data
+                _CACHED_QGROUPS = data
+                return _CACHED_QGROUPS
     except Exception:
         pass
-    return DEFAULT_QGROUPS
+    _CACHED_QGROUPS = DEFAULT_QGROUPS
+    return _CACHED_QGROUPS
 
 def save_server_qgroups(groups: list):
+    global _CACHED_QGROUPS
+    _CACHED_QGROUPS = groups
     try:
         QGROUPS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(QGROUPS_FILE, "w", encoding="utf-8") as f:
@@ -679,18 +690,26 @@ def save_server_qgroups(groups: list):
         logger.error(f"Error saving qgroups: {e}")
 
 def load_server_invitations() -> list:
+    global _CACHED_INVITATIONS
+    if _CACHED_INVITATIONS is not None:
+        return _CACHED_INVITATIONS
     if not QGROUP_INVITATIONS_FILE.exists():
+        _CACHED_INVITATIONS = []
         return []
     try:
         with open(QGROUP_INVITATIONS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, list):
-                return data
+                _CACHED_INVITATIONS = data
+                return _CACHED_INVITATIONS
     except Exception:
         pass
+    _CACHED_INVITATIONS = []
     return []
 
 def save_server_invitations(invitations: list):
+    global _CACHED_INVITATIONS
+    _CACHED_INVITATIONS = invitations
     try:
         QGROUP_INVITATIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(QGROUP_INVITATIONS_FILE, "w", encoding="utf-8") as f:
