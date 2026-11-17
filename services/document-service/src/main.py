@@ -1,6 +1,7 @@
 import os
 import time
 import asyncio
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -365,6 +366,27 @@ async def upload_document(
             detail=f"Kích thước tệp ({_format_file_size(len(content))}) vượt quá giới hạn cho phép {max_upload_mb} MB của gói {plan_tier}.",
         )
 
+    # [SCRUM-99] Tính toán SHA-256 để chống trùng lặp dữ liệu (Deduplication)
+    file_hash = hashlib.sha256(content).hexdigest()
+    existing_doc = db.query(DocumentDB).filter_by(user_id=user_id, file_hash=file_hash, status="ready").first()
+    if existing_doc:
+        return {
+            "message": "Tài liệu đã tồn tại và đã được phân tích trước đó (SHA-256 Deduplication). Tái sử dụng dữ liệu thành công.",
+            "document": {
+                "id": existing_doc.id,
+                "userId": user_id,
+                "name": existing_doc.name,
+                "size": existing_doc.file_size,
+                "totalPages": existing_doc.total_pages,
+                "chaptersCount": existing_doc.chapters_count,
+                "status": "ready",
+                "progress": 100,
+                "fileHash": file_hash,
+                "isDuplicate": True,
+                "uploadedAt": "Tái sử dụng (Deduplicated)"
+            }
+        }
+
     # Sinh mã định danh giáo trình mới an toàn không bao giờ trùng lặp
     max_num = 0
     all_ids = db.query(DocumentDB.id).all()
@@ -387,6 +409,7 @@ async def upload_document(
         name=filename,
         file_path=str(storage_file),
         file_size=file_size_str,
+        file_hash=file_hash,
         total_pages=0,
         chapters_count=0,
         status="extracting",

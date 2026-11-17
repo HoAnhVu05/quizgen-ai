@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 import sqlite3
+import threading
 import httpx
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
@@ -38,6 +39,27 @@ AUTH_DB_PATH = os.path.join(BASE_DIR, "auth-service", "data", "auth.db")
 DOC_DB_PATH = os.path.join(BASE_DIR, "document-service", "data", "documents.db")
 EXAM_DB_PATH = os.path.join(BASE_DIR, "exam-service", "data", "exam.db")
 PAYMENT_DB_PATH = os.path.join(BASE_DIR, "payment-service", "data", "payment.db")
+
+# [SCRUM-99] In-memory TTL Caching Layer cho các tác vụ phân tích nặng
+_ANALYTICS_CACHE: Dict[str, Dict[str, Any]] = {}
+_CACHE_LOCK = threading.Lock()
+ANALYTICS_CACHE_TTL = 30  # 30 giây TTL
+
+def get_from_analytics_cache(key: str) -> Optional[Any]:
+    with _CACHE_LOCK:
+        if key in _ANALYTICS_CACHE:
+            entry = _ANALYTICS_CACHE[key]
+            if time.time() - entry["timestamp"] < ANALYTICS_CACHE_TTL:
+                return entry["data"]
+            del _ANALYTICS_CACHE[key]
+    return None
+
+def set_to_analytics_cache(key: str, data: Any):
+    with _CACHE_LOCK:
+        _ANALYTICS_CACHE[key] = {
+            "timestamp": time.time(),
+            "data": data
+        }
 
 def get_auth_connection():
     os.makedirs(os.path.dirname(AUTH_DB_PATH), exist_ok=True)
@@ -890,6 +912,32 @@ async def monitor_services():
         "services": results
     }
 
+@app.get("/services/health-matrix")
+async def monitor_services_health_matrix():
+    """[SCRUM-99] Bảng ma trận độ trễ và phân tích hiệu năng chuyên sâu Cụm Microservices."""
+    res = await monitor_services()
+    svcs = res.get("services", [])
+    if svcs:
+        latencies = [s.get("latencyMs", 0) for s in svcs]
+        avg_lat = round(sum(latencies) / len(latencies), 1)
+        fastest = min(svcs, key=lambda s: s.get("latencyMs", 9999))
+        slowest = max(svcs, key=lambda s: s.get("latencyMs", 0))
+    else:
+        avg_lat = 0
+        fastest = None
+        slowest = None
+
+    return {
+        "status": "success",
+        "meshStatus": "optimal" if res.get("onlineCount") == res.get("totalServices") else "degraded",
+        "totalMonitored": len(svcs),
+        "onlineServices": res.get("onlineCount", 0),
+        "averageLatencyMs": avg_lat,
+        "fastestService": fastest.get("name") if fastest else None,
+        "slowestService": slowest.get("name") if slowest else None,
+        "matrix": svcs
+    }
+
 # ─── Security & 2FA PIN Management ───────────────────────────────────────────
 @app.get("/security/2fa-pin")
 def get_2fa_pin(db: Session = Depends(get_db)):
@@ -959,6 +1007,60 @@ def get_audit_logs(
         }
         for l in logs
     ]
+
+@app.get("/audit/logs/export")
+def export_audit_logs(
+    format: str = Query("json", description="Định dạng xuất dữ liệu: json hoặc csv"),
+    severity: Optional[str] = Query(None),
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """[SCRUM-99] Xuất dữ liệu kiểm toán hệ thống (JSON hoặc CSV) phục vụ thanh tra và bảo mật."""
+    query = db.query(AdminAuditLogDB)
+    if severity and severity != "all":
+        query = query.filter(AdminAuditLogDB.severity == severity)
+    logs = query.order_by(desc(AdminAuditLogDB.timestamp)).limit(limit).all()
+
+    if format == "csv":
+        import io
+        import csv
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Timestamp", "Actor Email", "Action", "Detail", "Severity", "IP Address"])
+        for l in logs:
+            writer.writerow([
+                l.id,
+                l.timestamp.isoformat() if l.timestamp else "",
+                l.actor_email,
+                l.action,
+                l.detail,
+                l.severity,
+                l.ip_address
+            ])
+        from fastapi.responses import Response
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=quizgen_audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"}
+        )
+
+    return {
+        "status": "success",
+        "exportedAt": datetime.now().isoformat(),
+        "totalRecords": len(logs),
+        "logs": [
+            {
+                "id": l.id,
+                "timestamp": l.timestamp.isoformat() if l.timestamp else "",
+                "actorEmail": l.actor_email,
+                "action": l.action,
+                "detail": l.detail,
+                "severity": l.severity,
+                "ipAddress": l.ip_address
+            }
+            for l in logs
+        ]
+    }
 
 @app.post("/audit/logs", status_code=status.HTTP_201_CREATED)
 def record_audit_log(req: CreateAuditLogRequest, db: Session = Depends(get_db)):
@@ -1055,9 +1157,15 @@ def get_exam_compliance():
 @app.get("/analytics/bloom-distribution")
 def get_bloom_distribution(document_id: Optional[str] = None):
     """
-    Thống kê phân bổ thang đo nhận thức Bloom từ CSDL thực tế [SCRUM-94/SCRUM-96].
+    Thống kê phân bổ thang đo nhận thức Bloom từ CSDL thực tế [SCRUM-94/SCRUM-96/SCRUM-99].
+    [SCRUM-99] Hỗ trợ In-memory TTL Caching giúp giảm tải I/O lên cơ sở dữ liệu.
     Phục vụ biểu đồ Donut Chart và Thẻ thông minh chuẩn sư phạm 40-30-20-10.
     """
+    cache_key = f"bloom_{document_id or 'all'}"
+    cached_val = get_from_analytics_cache(cache_key)
+    if cached_val:
+        return {**cached_val, "cached": True}
+
     total_q = 0
     bloom_counts = {"Nhận biết": 0, "Thông hiểu": 0, "Vận dụng": 0, "Phân tích": 0}
     try:
@@ -1102,7 +1210,7 @@ def get_bloom_distribution(document_id: Optional[str] = None):
     else:
         pct = {"remember": 25.0, "understand": 35.0, "apply": 25.0, "analyze": 15.0}
 
-    return {
+    res_data = {
         "status": "success",
         "totalQuestions": total_q,
         "counts": bloom_counts,
@@ -1111,13 +1219,21 @@ def get_bloom_distribution(document_id: Optional[str] = None):
         "isPedagogicallyAligned": (pct["remember"] >= 30 and pct["understand"] >= 20),
         "source": "exams.v_bloom_distribution_stats"
     }
+    set_to_analytics_cache(cache_key, res_data)
+    return res_data
 
 @app.get("/users/activity-summary")
 def get_user_activity_summary(user_id: Optional[str] = None):
     """
-    View tổng hợp 360 độ hoạt động người dùng [SCRUM-94/SCRUM-96].
+    View tổng hợp 360 độ hoạt động người dùng [SCRUM-94/SCRUM-96/SCRUM-99].
+    [SCRUM-99] Hỗ trợ In-memory TTL Caching giúp phản hồi siêu tốc.
     Truy xuất siêu tốc số tài liệu, đề thi, câu hỏi và thời gian hoạt động.
     """
+    cache_key = f"activity_{user_id or 'all'}"
+    cached_val = get_from_analytics_cache(cache_key)
+    if cached_val:
+        return {**cached_val, "cached": True}
+
     summaries = []
     with get_auth_connection() as a_conn:
         query = "SELECT id, email, full_name, academic_title, university, department, role, is_active, status, created_at FROM users WHERE 1=1"
@@ -1168,12 +1284,14 @@ def get_user_activity_summary(user_id: Optional[str] = None):
                 "lastActiveAt": u["created_at"] or "Vừa xong"
             })
 
-    return {
+    res_data = {
         "status": "success",
         "count": len(summaries),
         "summaries": summaries,
         "source": "auth.v_user_activity_summary"
     }
+    set_to_analytics_cache(cache_key, res_data)
+    return res_data
 
 # ─── CÁC ENDPOINTS QUẢN LÝ CHỦ ĐỀ GIAO DIỆN HỆ THỐNG [THEME ENGINE] ─────────────
 

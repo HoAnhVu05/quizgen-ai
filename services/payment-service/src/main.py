@@ -129,6 +129,19 @@ def init_db():
     );
     """)
 
+    # 5. [SCRUM-99] Bảng nhật ký khóa Idempotency cho Webhook thanh toán
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS webhook_idempotency_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        idempotency_key TEXT UNIQUE NOT NULL,
+        order_code TEXT,
+        source TEXT,
+        status TEXT,
+        response_payload TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # Seed Default Plans nếu chưa có
     cursor.execute("SELECT COUNT(*) FROM plans")
     if cursor.fetchone()[0] == 0:
@@ -816,6 +829,7 @@ def confirm_order(order_id: str, background_tasks: BackgroundTasks):
 async def payment_webhook(request: Request):
     """
     Webhook tiếp nhận biến động số dư từ cổng thanh toán (PayOS / SePay / Casso).
+    [SCRUM-99] Tích hợp cơ chế bảo vệ Idempotency chống trùng lặp callback.
     Khớp nội dung chuyển khoản cú pháp QUIZGEN QZxxxxx để duyệt tự động.
     """
     try:
@@ -824,22 +838,51 @@ async def payment_webhook(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
+    # [SCRUM-99] Trích xuất Idempotency Key từ Header hoặc Payload
+    idem_key = request.headers.get("X-Idempotency-Key") or str(data.get("referenceCode") or data.get("id") or "")
+    if not idem_key and isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+        idem_key = str(data["data"].get("reference") or data["data"].get("orderCode") or "")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if idem_key:
+        cursor.execute("SELECT response_payload FROM webhook_idempotency_logs WHERE idempotency_key = ?", (idem_key,))
+        cached_idem = cursor.fetchone()
+        if cached_idem:
+            conn.close()
+            try:
+                resp_json = json.loads(cached_idem[0])
+            except Exception:
+                resp_json = {"status": "idempotent_duplicate"}
+            return {
+                **resp_json,
+                "isIdempotentDuplicate": True,
+                "idempotencyKey": idem_key,
+                "message": "Giao dịch webhook đã được xử lý an toàn trước đó (Idempotency Protected)."
+            }
+
     # A. Xử lý webhook PayOS
     if payos_client and isinstance(data, dict) and "data" in data and isinstance(data["data"], dict) and "orderCode" in data["data"]:
         try:
             verified_data = payos_client.verifyPaymentWebhookData(data)
             order_code_num = verified_data.orderCode
-            conn = get_db_connection()
-            cursor = conn.cursor()
             cursor.execute("SELECT * FROM orders WHERE payos_order_code = ?", (order_code_num,))
             order = cursor.fetchone()
-            conn.close()
             if order:
                 o = dict(order)
                 if o["status"] != "COMPLETED":
                     _activate_subscription(o, bank_ref=f"PAYOS_WEBHOOK_{order_code_num}")
                     print(f"[PAYOS WEBHOOK] Kích hoạt thành công đơn hàng #{o['order_code']}!")
-                return {"status": "success", "message": f"Duyệt thành công PayOS đơn #{order_code_num}"}
+                
+                resp = {"status": "success", "message": f"Duyệt thành công PayOS đơn #{order_code_num}"}
+                if idem_key:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO webhook_idempotency_logs (idempotency_key, order_code, source, status, response_payload)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (idem_key, o["order_code"], "payos", "COMPLETED", json.dumps(resp)))
+                    conn.commit()
+                conn.close()
+                return resp
         except Exception as err:
             print(f"[PAYOS WEBHOOK WARNING] Xác thực webhook PayOS lỗi: {err}")
 
@@ -850,24 +893,94 @@ async def payment_webhook(request: Request):
     import re
     match = re.search(r"QUIZGEN\s*(QZ\d+)", content, re.IGNORECASE)
     if not match:
+        conn.close()
         return {"status": "ignored", "message": "Nội dung chuyển khoản không chứa mã QuizGen hợp lệ."}
     
     order_code = match.group(1).upper()
-    conn = get_db_connection()
-    cursor = conn.cursor()
     cursor.execute("SELECT * FROM orders WHERE order_code = ?", (order_code,))
     order = cursor.fetchone()
-    conn.close()
     
     if not order:
+        conn.close()
         return {"status": "not_found", "message": f"Không tìm thấy đơn hàng {order_code}."}
     
     o = dict(order)
     if o["status"] == "COMPLETED":
+        conn.close()
         return {"status": "already_completed", "message": "Đơn hàng đã được duyệt trước đó."}
         
     _activate_subscription(o, bank_ref=str(data.get("referenceCode") or data.get("id") or "WEBHOOK_MATCH"))
-    return {"status": "success", "message": f"Đã duyệt tự động đơn hàng {order_code}."}
+    resp = {"status": "success", "message": f"Đã duyệt tự động đơn hàng {order_code}."}
+    
+    if idem_key:
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO webhook_idempotency_logs (idempotency_key, order_code, source, status, response_payload)
+                VALUES (?, ?, ?, ?, ?)
+            """, (idem_key, order_code, "sepay_casso", "COMPLETED", json.dumps(resp)))
+            conn.commit()
+        except Exception:
+            pass
+    conn.close()
+    return resp
+
+@app.get("/admin/revenue-breakdown")
+def get_revenue_breakdown():
+    """[SCRUM-99] Báo cáo chi tiết cơ cấu doanh thu theo gói cước, chỉ số AOV và xu hướng giao dịch."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+        UPDATE orders 
+        SET status = 'EXPIRED' 
+        WHERE status = 'PENDING' AND expires_at IS NOT NULL AND expires_at < ?
+    """, (now_str,))
+    conn.commit()
+    
+    cursor.execute("SELECT COUNT(*), COALESCE(SUM(amount_vnd), 0) FROM orders WHERE status = 'COMPLETED'")
+    comp_row = cursor.fetchone()
+    total_completed = comp_row[0] if comp_row else 0
+    total_revenue = comp_row[1] if comp_row else 0
+    
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'EXPIRED'")
+    total_expired = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE status = 'PENDING'")
+    total_pending = cursor.fetchone()[0]
+    
+    aov = round(total_revenue / total_completed, 2) if total_completed > 0 else 0
+    
+    cursor.execute("""
+        SELECT plan_code, plan_name, COUNT(*) as order_count, COALESCE(SUM(amount_vnd), 0) as subtotal
+        FROM orders WHERE status = 'COMPLETED'
+        GROUP BY plan_code, plan_name
+    """)
+    by_plan = [
+        {"planCode": r[0], "planName": r[1], "orderCount": r[2], "subtotalVnd": r[3]}
+        for r in cursor.fetchall()
+    ]
+    
+    cursor.execute("""
+        SELECT DATE(paid_at) as pay_date, COUNT(*), COALESCE(SUM(amount_vnd), 0)
+        FROM orders WHERE status = 'COMPLETED' AND paid_at IS NOT NULL
+        GROUP BY DATE(paid_at) ORDER BY pay_date DESC LIMIT 7
+    """)
+    daily_trends = [
+        {"date": r[0], "orders": r[1], "revenueVnd": r[2]}
+        for r in cursor.fetchall()
+    ]
+    conn.close()
+    
+    return {
+        "status": "success",
+        "totalRevenueVnd": total_revenue,
+        "totalCompletedOrders": total_completed,
+        "totalExpiredOrders": total_expired,
+        "totalPendingOrders": total_pending,
+        "averageOrderValueVnd": aov,
+        "byPlan": by_plan,
+        "dailyTrends": daily_trends
+    }
 
 @app.get("/orders/history")
 def get_order_history(user_id: Optional[str] = None, status: Optional[str] = None):

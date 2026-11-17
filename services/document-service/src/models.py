@@ -21,6 +21,7 @@ class DocumentDB(Base):
     file_size = Column(String(20), nullable=False)
     total_pages = Column(Integer, default=0)
     chapters_count = Column(Integer, default=0)
+    file_hash = Column(String(64), nullable=True, index=True) # [SCRUM-99] Mã băm SHA-256 chống trùng lặp
     status = Column(String(20), default="extracting", index=True) # extracting, embedding, ready, error
     progress = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
@@ -82,6 +83,7 @@ class DocumentResponse(BaseModel):
     chaptersCount: int
     status: str
     progress: int
+    fileHash: Optional[str] = None
     uploadedAt: str
 
     class Config:
