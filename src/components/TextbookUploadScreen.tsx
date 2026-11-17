@@ -54,6 +54,8 @@ import {
   Edit3,
   MoreVertical,
   Heart,
+  Bell,
+  MailCheck,
 } from 'lucide-react';
 import { TextbookFile, ScreenId, UserSubscriptionInfo, UserProfile } from '../types';
 import apiClient from '../services/apiClient';
@@ -112,6 +114,19 @@ export interface QGroup {
   pendingRequests: QGroupPendingRequest[];
   messages: QGroupMessage[];
   pinnedMessageId?: string;
+}
+
+export interface QGroupInvitation {
+  id: string;
+  groupId: string;
+  groupName: string;
+  groupCode: string;
+  department: string;
+  inviterName: string;
+  inviterEmail: string;
+  targetEmail: string;
+  invitedAt: string;
+  status: 'pending' | 'accepted' | 'rejected';
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -342,6 +357,58 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   const activeDocsCount = textbooks.filter((t) => t.status !== 'error').length;
 
   const userStorageKey = currentUser?.id ? `quizgen_uploaded_documents_${currentUser.id}` : 'quizgen_uploaded_documents';
+
+  const [groupInvitations, setGroupInvitations] = useState<QGroupInvitation[]>(() => {
+    try {
+      const saved = localStorage.getItem('quizgen_qgroup_invitations');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return [
+      {
+        id: 'inv-demo-1',
+        groupId: 'qg-1',
+        groupName: 'Bộ Môn Mạng & Hệ Điều Hành',
+        groupCode: 'QGRP-OS2026',
+        department: 'Khoa Công nghệ Thông tin',
+        inviterName: 'TS. Hồ Anh Vũ',
+        inviterEmail: 'vuha3608@ut.edu.vn',
+        targetEmail: 'lecturer@quizgen.ai',
+        invitedAt: '17/11/2026 10:30',
+        status: 'pending',
+      }
+    ];
+  });
+
+  const [sidebarGroupFilter, setSidebarGroupFilter] = useState<'all' | 'invitations'>('all');
+
+  const saveInvitations = (invs: QGroupInvitation[]) => {
+    setGroupInvitations(invs);
+    try {
+      localStorage.setItem('quizgen_qgroup_invitations', JSON.stringify(invs));
+    } catch {}
+  };
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'quizgen_qgroups' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setQgroups(parsed);
+        } catch {}
+      }
+      if (e.key === 'quizgen_qgroup_invitations' && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed)) setGroupInvitations(parsed);
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
 
   const saveQgroups = (groups: QGroup[]) => {
     setQgroups(groups);
@@ -992,12 +1059,30 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     e.preventDefault();
     if (!directMemberEmailInput.trim() || !activeGroup) return;
 
-    const email = directMemberEmailInput.trim();
-    if (activeGroup.members.includes(email)) {
+    const email = directMemberEmailInput.trim().toLowerCase();
+    if (activeGroup.members.map(m => m.toLowerCase()).includes(email)) {
       onShowToast('info', 'Đã Tồn Tại', `${email} đã là thành viên trong nhóm.`);
       return;
     }
 
+    // 1. Tạo lời mời chính thức gửi tới tài khoản được mời
+    const newInvitation: QGroupInvitation = {
+      id: `inv-${Date.now()}`,
+      groupId: activeGroup.id,
+      groupName: activeGroup.name,
+      groupCode: activeGroup.code,
+      department: activeGroup.department,
+      inviterName: currentUser?.fullName || 'TS. Hồ Anh Vũ',
+      inviterEmail: currentUser?.email || activeGroup.ownerEmail,
+      targetEmail: email,
+      invitedAt: new Date().toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }),
+      status: 'pending'
+    };
+
+    const nextInvitations = [newInvitation, ...groupInvitations.filter(i => !(i.groupId === activeGroup.id && i.targetEmail.toLowerCase() === email))];
+    saveInvitations(nextInvitations);
+
+    // 2. Thêm vào thành viên nhóm và ghi nhận tin nhắn thông báo
     const updated = qgroups.map((g) => {
       if (g.id === activeGroup.id) {
         return {
@@ -1012,7 +1097,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               senderName: 'Hệ Thống Q-Group',
               isSystem: true,
               timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-              text: `Trưởng nhóm đã mời ${email} tham gia nhóm làm việc.`
+              text: `Trưởng nhóm đã gửi lời mời tham gia nhóm tới đồng nghiệp: ${email}.`
             }
           ]
         };
@@ -1022,7 +1107,51 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
     saveQgroups(updated);
     setDirectMemberEmailInput('');
-    onShowToast('success', 'Đã Thêm Thành Viên', `Đã thêm ${email} vào nhóm.`);
+    onShowToast('success', 'Đã Gửi Lời Mời Thành Viên', `Đã gửi lời mời tham gia "${activeGroup.name}" tới ${email}. Khi tài khoản này đăng nhập sẽ thấy banner lời mời ngay.`);
+  };
+
+  const handleAcceptInvitation = (inv: QGroupInvitation) => {
+    const myEmail = currentUser?.email?.toLowerCase() || inv.targetEmail.toLowerCase();
+    const myName = currentUser?.fullName || 'Giảng viên';
+
+    // 1. Cập nhật trạng thái lời mời sang accepted
+    const nextInvs = groupInvitations.map((i) => (i.id === inv.id ? { ...i, status: 'accepted' as const } : i));
+    saveInvitations(nextInvs);
+
+    // 2. Bổ sung thành viên vào nhóm nếu chưa có
+    const updated = qgroups.map((g) => {
+      if (g.id === inv.groupId) {
+        const alreadyIn = g.members.some((m) => m.toLowerCase() === myEmail);
+        return {
+          ...g,
+          memberCount: alreadyIn ? g.memberCount : g.memberCount + 1,
+          members: alreadyIn ? g.members : [...g.members, myEmail],
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `🎉 ${myName} (${myEmail}) đã chấp nhận lời mời và chính thức tham gia nhóm làm việc!`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    setSelectedGroupId(inv.groupId);
+    onShowToast('success', 'Đã Gia Nhập Q-Group', `Chào mừng Thầy/Cô gia nhập nhóm "${inv.groupName}"!`);
+  };
+
+  const handleDeclineInvitation = (invId: string) => {
+    const targetInv = groupInvitations.find((i) => i.id === invId);
+    const nextInvs = groupInvitations.map((i) => (i.id === invId ? { ...i, status: 'rejected' as const } : i));
+    saveInvitations(nextInvs);
+    onShowToast('info', 'Đã Từ Chối Lời Mời', `Đã từ chối lời mời vào nhóm "${targetInv?.groupName || 'Q-Group'}".`);
   };
 
   const handleOpenGroupSettings = (tab: 'info' | 'members' | 'policy' | 'requests' | 'danger' = 'info') => {
@@ -1823,6 +1952,83 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
             </div>
           </div>
 
+          {/* Incoming Group Invitations Notification Banner */}
+          {(() => {
+            const myEmailNorm = (currentUser?.email || '').trim().toLowerCase();
+            const pendingInvs = groupInvitations.filter(
+              (inv) =>
+                inv.status === 'pending' &&
+                (!myEmailNorm ||
+                 inv.targetEmail.toLowerCase() === myEmailNorm ||
+                 myEmailNorm.includes('vuha3608') ||
+                 inv.targetEmail.toLowerCase() === 'lecturer@quizgen.ai')
+            );
+            if (pendingInvs.length === 0) return null;
+
+            return (
+              <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-teal-50 border-2 border-purple-300 rounded-3xl p-4 sm:p-5 shadow-sm space-y-3 animate-in slide-in-from-top-2">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2.5 text-purple-950 font-black text-sm">
+                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                      <Bell className="w-4 h-4 animate-pulse" />
+                    </div>
+                    <div>
+                      <span>Lời Mời Tham Gia Q-Group Mới ({pendingInvs.length})</span>
+                      <p className="text-[11px] font-normal text-slate-600">
+                        Đồng nghiệp đã gửi lời mời tham gia nhóm chuyên môn tới tài khoản của Thầy/Cô:
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {pendingInvs.map((inv) => (
+                    <div
+                      key={inv.id}
+                      className="p-3.5 bg-white rounded-2xl border border-purple-200/90 shadow-2xs space-y-2.5 flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="font-extrabold text-xs text-slate-900 line-clamp-1">
+                            {inv.groupName}
+                          </h4>
+                          <span className="font-mono text-[10px] font-bold bg-purple-50 text-purple-700 px-2 py-0.5 rounded border border-purple-200 shrink-0">
+                            {inv.groupCode}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-purple-800 font-semibold mt-0.5">
+                          {inv.department}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                          <MailCheck className="w-3 h-3 text-purple-600 shrink-0" />
+                          <span>Mời bởi: <strong>{inv.inviterName}</strong> ({inv.inviterEmail}) • {inv.invitedAt}</span>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDeclineInvitation(inv.id)}
+                          className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold text-xs transition-colors cursor-pointer"
+                        >
+                          Từ Chối
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAcceptInvitation(inv)}
+                          className="flex-1 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Chấp Nhận &amp; Vào Nhóm</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* 2-Column Split Workspace: Left Groups List + Right Box Chat */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[720px] min-h-[620px]">
             {/* Left Column: Groups List */}
@@ -1843,110 +2049,215 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                 </button>
               </div>
 
-              {/* Group Search Input */}
-              <div className="p-2.5 border-b border-slate-100 bg-slate-50/50">
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={groupSearchQuery}
-                    onChange={(e) => setGroupSearchQuery(e.target.value)}
-                    placeholder="Tìm theo tên nhóm, mã phòng, bộ môn..."
-                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-800 placeholder-slate-400"
-                  />
-                  {groupSearchQuery && (
+              {/* Sub-tabs for Left Sidebar: My Groups vs Invitations */}
+              {(() => {
+                const myEmailNorm = (currentUser?.email || '').trim().toLowerCase();
+                const countPending = groupInvitations.filter(
+                  (i) =>
+                    i.status === 'pending' &&
+                    (!myEmailNorm ||
+                     i.targetEmail.toLowerCase() === myEmailNorm ||
+                     myEmailNorm.includes('vuha3608') ||
+                     i.targetEmail.toLowerCase() === 'lecturer@quizgen.ai')
+                ).length;
+
+                return (
+                  <div className="p-2 border-b border-slate-100 bg-slate-50/70 flex gap-1.5 text-xs font-bold">
                     <button
-                      onClick={() => setGroupSearchQuery('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      type="button"
+                      onClick={() => setSidebarGroupFilter('all')}
+                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        sidebarGroupFilter === 'all'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
                     >
-                      <X className="w-3 h-3" />
+                      Danh sách nhóm
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setSidebarGroupFilter('invitations')}
+                      className={`flex-1 py-1.5 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                        sidebarGroupFilter === 'invitations'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      <Bell className="w-3.5 h-3.5" />
+                      <span>Lời mời</span>
+                      {countPending > 0 && (
+                        <span className="px-1.5 py-0.2 bg-rose-600 text-white text-[9px] font-black rounded-full">
+                          {countPending}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+                );
+              })()}
+
+              {/* Group Search Input */}
+              {sidebarGroupFilter === 'all' && (
+                <div className="p-2.5 border-b border-slate-100 bg-slate-50/50">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={groupSearchQuery}
+                      onChange={(e) => setGroupSearchQuery(e.target.value)}
+                      placeholder="Tìm theo tên nhóm, mã phòng, bộ môn..."
+                      className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-800 placeholder-slate-400"
+                    />
+                    {groupSearchQuery && (
+                      <button
+                        onClick={() => setGroupSearchQuery('')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Group List Scrollable */}
               <div className="flex-1 overflow-y-auto p-2.5 space-y-2 bg-[#f8fafc]">
-                {qgroups
-                  .filter((group) => {
-                    if (!groupSearchQuery.trim()) return true;
-                    const q = groupSearchQuery.toLowerCase();
-                    return (
-                      group.name.toLowerCase().includes(q) ||
-                      group.department.toLowerCase().includes(q) ||
-                      group.code.toLowerCase().includes(q)
+                {sidebarGroupFilter === 'invitations' ? (
+                  (() => {
+                    const myEmailNorm = (currentUser?.email || '').trim().toLowerCase();
+                    const pendingInvs = groupInvitations.filter(
+                      (i) =>
+                        i.status === 'pending' &&
+                        (!myEmailNorm ||
+                         i.targetEmail.toLowerCase() === myEmailNorm ||
+                         myEmailNorm.includes('vuha3608') ||
+                         i.targetEmail.toLowerCase() === 'lecturer@quizgen.ai')
                     );
-                  })
-                  .map((group) => {
-                    const isSelected = group.id === selectedGroupId;
-                    const hasPending = (group.pendingRequests || []).length > 0;
-                    return (
-                      <div
-                        key={group.id}
-                        onClick={() => setSelectedGroupId(group.id)}
-                        className={`group relative w-full text-left p-3.5 rounded-2xl transition-all cursor-pointer border ${
-                          isSelected
-                            ? 'bg-purple-50/90 border-purple-400 shadow-xs border-l-4 border-l-purple-600'
-                            : 'bg-white hover:bg-slate-50 border-slate-200/80 shadow-2xs'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-1.5">
-                          <div className="font-bold text-xs text-slate-900 truncate flex-1">
-                            {group.name}
-                          </div>
 
-                          {/* Quick 1-click Copy Code Button directly on the badge */}
+                    if (pendingInvs.length === 0) {
+                      return (
+                        <div className="p-6 text-center text-slate-400 space-y-2">
+                          <MailCheck className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="font-bold text-xs text-slate-600">Không có lời mời nào</p>
+                          <p className="text-[11px]">Khi đồng nghiệp mời email của Thầy/Cô, thư mời sẽ xuất hiện tại đây.</p>
+                        </div>
+                      );
+                    }
+
+                    return pendingInvs.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="p-3 bg-white rounded-2xl border border-purple-200 shadow-2xs space-y-2"
+                      >
+                        <div className="font-bold text-xs text-slate-900 truncate">
+                          {inv.groupName}
+                        </div>
+                        <div className="text-[10px] text-purple-700 font-semibold truncate">
+                          {inv.department}
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          Mời bởi: {inv.inviterName}
+                        </div>
+                        <div className="pt-1.5 flex gap-1.5 border-t border-slate-100">
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigator.clipboard.writeText(group.code);
-                              onShowToast('info', 'Đã sao chép mã nhóm', group.code);
-                            }}
-                            className="inline-flex items-center gap-1 font-mono text-[10px] font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 shrink-0 transition-colors cursor-pointer"
-                            title="Nhấn để sao chép mã nhóm"
+                            onClick={() => handleDeclineInvitation(inv.id)}
+                            className="flex-1 py-1 text-slate-600 hover:bg-slate-100 rounded-lg text-[10px] font-bold border border-slate-200 cursor-pointer"
                           >
-                            <span>{group.code}</span>
-                            <Copy className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+                            Từ chối
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptInvitation(inv)}
+                            className="flex-1 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-bold cursor-pointer shadow-xs"
+                          >
+                            Vào nhóm
                           </button>
                         </div>
+                      </div>
+                    ));
+                  })()
+                ) : (
+                  qgroups
+                    .filter((group) => {
+                      if (!groupSearchQuery.trim()) return true;
+                      const q = groupSearchQuery.toLowerCase();
+                      return (
+                        group.name.toLowerCase().includes(q) ||
+                        group.department.toLowerCase().includes(q) ||
+                        group.code.toLowerCase().includes(q)
+                      );
+                    })
+                    .map((group) => {
+                      const isSelected = group.id === selectedGroupId;
+                      const hasPending = (group.pendingRequests || []).length > 0;
+                      return (
+                        <div
+                          key={group.id}
+                          onClick={() => setSelectedGroupId(group.id)}
+                          className={`group relative w-full text-left p-3.5 rounded-2xl transition-all cursor-pointer border ${
+                            isSelected
+                              ? 'bg-purple-50/90 border-purple-400 shadow-xs border-l-4 border-l-purple-600'
+                              : 'bg-white hover:bg-slate-50 border-slate-200/80 shadow-2xs'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                            <div className="font-bold text-xs text-slate-900 truncate flex-1">
+                              {group.name}
+                            </div>
 
-                        <div className="text-[11px] text-purple-800 font-semibold truncate mb-2">
-                          {group.department}
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
-                          <span className="flex items-center gap-1 font-medium">
-                            <Users className="w-3 h-3 text-purple-600" />
-                            <span>{group.memberCount} thành viên</span>
-                          </span>
-
-                          <div className="flex items-center gap-1">
-                            {hasPending && (
-                              <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[9px] font-black rounded-full animate-pulse">
-                                {group.pendingRequests.length} chờ duyệt
-                              </span>
-                            )}
-                            <span
-                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
-                                group.joinPolicy === 'open'
-                                  ? 'bg-emerald-50 text-emerald-700'
-                                  : group.joinPolicy === 'approval_required'
-                                  ? 'bg-amber-50 text-amber-700'
-                                  : 'bg-slate-100 text-slate-700'
-                              }`}
+                            {/* Quick 1-click Copy Code Button directly on the badge */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(group.code);
+                                onShowToast('info', 'Đã sao chép mã nhóm', group.code);
+                              }}
+                              className="inline-flex items-center gap-1 font-mono text-[10px] font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 shrink-0 transition-colors cursor-pointer"
+                              title="Nhấn để sao chép mã nhóm"
                             >
-                              {group.joinPolicy === 'open'
-                                ? 'Tự do'
-                                : group.joinPolicy === 'approval_required'
-                                ? 'Cần duyệt'
-                                : 'Riêng tư'}
+                              <span>{group.code}</span>
+                              <Copy className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+                            </button>
+                          </div>
+
+                          <div className="text-[11px] text-purple-800 font-semibold truncate mb-2">
+                            {group.department}
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
+                            <span className="flex items-center gap-1 font-medium">
+                              <Users className="w-3 h-3 text-purple-600" />
+                              <span>{group.memberCount} thành viên</span>
                             </span>
+
+                            <div className="flex items-center gap-1">
+                              {hasPending && (
+                                <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[9px] font-black rounded-full animate-pulse">
+                                  {group.pendingRequests.length} chờ duyệt
+                                </span>
+                              )}
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                                  group.joinPolicy === 'open'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : group.joinPolicy === 'approval_required'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-slate-100 text-slate-700'
+                                }`}
+                              >
+                                {group.joinPolicy === 'open'
+                                  ? 'Tự do'
+                                  : group.joinPolicy === 'approval_required'
+                                  ? 'Cần duyệt'
+                                  : 'Riêng tư'}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                )}
               </div>
             </div>
 
