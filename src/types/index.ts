@@ -24,6 +24,10 @@ export interface UserProfile {
   role: UserRole;
   roleLabel?: string;
   avatarUrl?: string;
+  office?: string;
+  subjects?: string;
+  researchFocus?: string;
+  phone?: string;
   authProvider?: 'local' | 'google';
   status?: 'active' | 'locked';
   lockType?: 'temporary' | 'permanent';
@@ -176,4 +180,115 @@ export interface ExamExportConfig {
   includeOmrSheet?: boolean;
   baseExamCode?: number;
   format: 'docx' | 'pdf' | 'qti' | 'zip';
+}
+
+export interface QGroupMessage {
+  id: string;
+  senderEmail: string;
+  senderName: string;
+  senderTitle?: string;
+  avatarColor?: string;
+  text?: string;
+  timestamp: string;
+  isSystem?: boolean;
+  isPinned?: boolean;
+  readBy?: string[];
+  reactions?: Record<string, string[]>;
+  attachment?: {
+    type: 'textbook' | 'exam';
+    id: string;
+    name: string;
+    subject?: string;
+    size?: string;
+    totalPages?: number;
+    questionCount?: number;
+    durationMinutes?: number;
+    authorName?: string;
+  };
+}
+
+export interface QGroupPendingRequest {
+  id: string;
+  email: string;
+  name: string;
+  title?: string;
+  requestedAt: string;
+}
+
+export interface QGroup {
+  id: string;
+  code: string;
+  name: string;
+  department: string;
+  description: string;
+  ownerEmail: string;
+  ownerName: string;
+  joinPolicy: 'open' | 'approval_required';
+  memberCount: number;
+  members: string[]; // emails
+  pendingRequests: QGroupPendingRequest[];
+  messages: QGroupMessage[];
+  pinnedMessageId?: string;
+  isDirect?: boolean;
+  directPartnerEmail?: string;
+  directPartnerName?: string;
+  unreadCount?: number;
+  muted?: boolean;
+  updatedAt?: number;
+}
+
+export interface QGroupInvitation {
+  id: string;
+  groupId: string;
+  groupName: string;
+  groupCode: string;
+  department: string;
+  inviterName: string;
+  inviterEmail: string;
+  targetEmail: string;
+  invitedAt: string;
+  status: 'pending' | 'accepted' | 'declined';
+}
+
+export interface FriendRequest {
+  id: string;
+  senderEmail: string;
+  senderName: string;
+  senderTitle?: string;
+  senderAvatarColor?: string;
+  targetEmail: string;
+  requestedAt: string;
+  status: 'pending' | 'accepted' | 'declined';
+}
+
+export interface PublicUserProfile {
+  id: string;
+  email: string;
+  fullName: string;
+  academicTitle?: string;
+  role: UserRole;
+  faculty?: string;
+  department?: string;
+  office?: string;
+  subjects?: string;
+  researchFocus?: string;
+  bio?: string;
+  avatarColor?: string;
+  isFriend?: boolean;
+  hasPendingRequest?: boolean;
+  sharedTextbooks: Array<{
+    id: string;
+    name: string;
+    totalPages: number;
+    chaptersCount: number;
+    subject?: string;
+  }>;
+  forumPosts: Array<{
+    id: string;
+    title: string;
+    content: string;
+    createdAt: string;
+    likesCount: number;
+    commentsCount: number;
+  }>;
 }

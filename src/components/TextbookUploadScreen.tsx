@@ -1813,18 +1813,13 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         </button>
 
         <button
-          onClick={() => handleTabChange('qgroup')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'qgroup'
-              ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
+          onClick={() => onNavigate('qgroup')}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-purple-700 bg-purple-50/70 hover:bg-purple-100 hover:text-purple-900 border border-purple-200/60 transition-all cursor-pointer ml-auto sm:ml-0"
+          title="Chuyển sang module Trò chuyện & Hội nhóm chuyên môn độc lập"
         >
           <Users className="w-3.5 h-3.5 text-purple-600" />
-          <span>Q-Group</span>
-          <span className="px-2 py-0.5 text-[10px] rounded-full bg-purple-50 text-purple-700 font-black border border-purple-200">
-            {qgroups.length} nhóm
-          </span>
+          <span>Hội Nhóm Q-Group</span>
+          <span className="text-[10px] text-purple-500 font-normal">→</span>
         </button>
       </div>
 

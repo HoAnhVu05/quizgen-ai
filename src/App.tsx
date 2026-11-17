@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
 import { DashboardScreen } from './components/DashboardScreen';
 import { TextbookUploadScreen } from './components/TextbookUploadScreen';
+import { QGroupScreen } from './components/QGroupScreen';
 import { AIGenerationScreen } from './components/AIGenerationScreen';
 import { ReviewWorkspaceScreen } from './components/ReviewWorkspaceScreen';
 import { QuestionBankScreen } from './components/QuestionBankScreen';
@@ -979,13 +980,11 @@ const AppContent: React.FC = () => {
             )}
 
             {currentScreen === 'qgroup' && (
-              <TextbookUploadScreen
+              <QGroupScreen
                 onNavigate={setCurrentScreen}
                 onShowToast={handleShowToast}
                 subscriptionInfo={subscriptionInfo}
                 currentUser={currentUser}
-                initialTab="qgroup"
-                onOpenPricingModal={() => setIsPricingModalOpen(true)}
               />
             )}
 
