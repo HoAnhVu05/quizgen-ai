@@ -599,6 +599,7 @@ def toggle_document_share(
 # =========================================================================
 QGROUPS_FILE = STORAGE_DIR.parent / "qgroups.json"
 QGROUP_INVITATIONS_FILE = STORAGE_DIR.parent / "qgroup_invitations.json"
+FRIEND_REQUESTS_FILE = STORAGE_DIR.parent / "friend_requests.json"
 
 DEFAULT_QGROUPS = [
     {
@@ -659,6 +660,7 @@ DEFAULT_QGROUPS = [
 
 _CACHED_QGROUPS = None
 _CACHED_INVITATIONS = None
+_CACHED_FRIEND_REQUESTS = None
 
 def deduplicate_qgroups(groups: list) -> list:
     seen = set()
@@ -890,6 +892,127 @@ async def respond_qgroup_invitation(inv_id: str, request: Request):
                 save_server_qgroups(groups)
 
     return {"status": "success", "invitation": target_inv}
+
+
+# =========================================================================
+# FRIEND REQUESTS (CROSS-ACCOUNT PERSISTENCE)
+# =========================================================================
+
+def load_friend_requests() -> list:
+    global _CACHED_FRIEND_REQUESTS
+    if _CACHED_FRIEND_REQUESTS is not None:
+        return _CACHED_FRIEND_REQUESTS
+    if not FRIEND_REQUESTS_FILE.exists():
+        _CACHED_FRIEND_REQUESTS = []
+        return []
+    try:
+        with open(FRIEND_REQUESTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                _CACHED_FRIEND_REQUESTS = data
+                return _CACHED_FRIEND_REQUESTS
+    except Exception:
+        pass
+    _CACHED_FRIEND_REQUESTS = []
+    return []
+
+def save_friend_requests(requests: list):
+    global _CACHED_FRIEND_REQUESTS
+    _CACHED_FRIEND_REQUESTS = requests
+    try:
+        FRIEND_REQUESTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(FRIEND_REQUESTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(requests, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving friend_requests: {e}")
+
+@app.get("/friend-requests")
+@app.get("/documents/friend-requests")
+def get_friend_requests(email: Optional[str] = None):
+    """Lấy danh sách lời mời kết bạn theo email người nhận"""
+    reqs = load_friend_requests()
+    if email:
+        clean = email.strip().lower()
+        reqs = [r for r in reqs if r.get("targetEmail", "").strip().lower() == clean]
+    return reqs
+
+@app.post("/friend-requests")
+@app.post("/documents/friend-requests")
+async def create_friend_request(request: Request):
+    """Gửi lời mời kết bạn từ tài khoản A tới email B"""
+    payload = await request.json()
+    reqs = load_friend_requests()
+    sender = payload.get("senderEmail", "").strip().lower()
+    target = payload.get("targetEmail", "").strip().lower()
+    if not sender or not target:
+        return {"status": "error", "message": "senderEmail và targetEmail là bắt buộc"}
+    # Tránh duplicate: xóa req cũ cùng cặp sender-target nếu có
+    reqs = [r for r in reqs if not (
+        r.get("senderEmail", "").lower() == sender and
+        r.get("targetEmail", "").lower() == target and
+        r.get("status") == "pending"
+    )]
+    reqs.insert(0, payload)
+    save_friend_requests(reqs)
+    return {"status": "success", "request": payload}
+
+@app.post("/friend-requests/{req_id}/respond")
+@app.post("/documents/friend-requests/{req_id}/respond")
+async def respond_friend_request(req_id: str, request: Request):
+    """Chấp nhận hoặc từ chối lời mời kết bạn"""
+    payload = await request.json()
+    action = payload.get("action")  # "accept" | "reject"
+    user_email = payload.get("userEmail", "").strip().lower()
+    user_name = payload.get("userName", "Giảng viên")
+
+    reqs = load_friend_requests()
+    target_req = next((r for r in reqs if r.get("id") == req_id), None)
+    if not target_req:
+        raise HTTPException(status_code=404, detail="Lời mời kết bạn không tìm thấy")
+
+    target_req["status"] = "accepted" if action == "accept" else "rejected"
+    save_friend_requests(reqs)
+
+    if action == "accept":
+        # Tạo cuộc trò chuyện DM 1-1 trên backend
+        sender_email = target_req.get("senderEmail", "").lower()
+        sender_name = target_req.get("senderName", "Giảng viên")
+        dm_id = f"dm-{int(time.time()*1000)}"
+        dm_code = f"DM-{dm_id[-6:].upper()}"
+        groups = load_server_qgroups()
+        # Kiểm tra DM đã tồn tại chưa
+        existing_dm = next((g for g in groups if g.get("isDirect") and
+            set(g.get("members", [])) == {sender_email, user_email}), None)
+        if not existing_dm:
+            new_dm = {
+                "id": dm_id,
+                "code": dm_code,
+                "name": sender_name,  # Hiển thị tên đối phương
+                "department": "Bạn bè • Tin nhắn riêng",
+                "description": f"Cuộc trò chuyện giữa {user_name} và {sender_name}",
+                "ownerEmail": user_email,
+                "ownerName": user_name,
+                "joinPolicy": "open",
+                "memberCount": 2,
+                "members": [user_email, sender_email],
+                "pendingRequests": [],
+                "isDirect": True,
+                "directPartnerEmail": sender_email,
+                "directPartnerName": sender_name,
+                "updatedAt": int(time.time() * 1000),
+                "messages": [{
+                    "id": f"msg-{int(time.time()*1000)}",
+                    "senderEmail": "system",
+                    "senderName": "Hệ Thống QuizGen AI",
+                    "isSystem": True,
+                    "timestamp": time.strftime("%H:%M"),
+                    "text": f"🎉 {user_name} và {sender_name} đã trở thành bạn bè! Hãy gửi lời chào và bắt đầu chia sẻ học liệu cùng nhau."
+                }]
+            }
+            groups.insert(0, new_dm)
+            save_server_qgroups(groups)
+
+    return {"status": "success", "request": target_req}
 
 
 @app.get("/{document_id}")
