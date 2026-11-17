@@ -8,6 +8,7 @@ import { AIGenerationScreen } from './components/AIGenerationScreen';
 import { ReviewWorkspaceScreen } from './components/ReviewWorkspaceScreen';
 import { QuestionBankScreen } from './components/QuestionBankScreen';
 import { AdminPortalScreen } from './components/AdminPortalScreen';
+import { ForumScreen } from './components/ForumScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { UserProfileModal } from './components/UserProfileModal';
 import { LoginScreen } from './components/LoginScreen';
@@ -953,6 +954,14 @@ const AppContent: React.FC = () => {
               approvedCount={approvedCount}
               currentUser={currentUser}
               questions={questions}
+            />
+          )}
+
+          {currentScreen === 'forum' && (
+            <ForumScreen
+              currentUser={currentUser}
+              onNavigate={setCurrentScreen}
+              onShowToast={handleShowToast}
             />
           )}
 

@@ -33,6 +33,7 @@ import {
   Briefcase,
   Sparkle,
   Palette,
+  MessageSquare,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -117,6 +118,14 @@ const NAV_ITEM_STYLES: Record<ScreenId, NavItemStyle> = {
     activeIconBox: 'bg-slate-800 text-white shadow-xs',
     inactiveIconBox: 'bg-slate-100 text-slate-500 group-hover:bg-slate-200/80',
     activeText: 'text-slate-900',
+  },
+  forum: {
+    stepTagClass: 'text-indigo-600',
+    activeContainer: 'bg-indigo-50/90 text-indigo-900 font-bold border border-indigo-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-indigo-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-indigo-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-indigo-50 text-indigo-600 border border-indigo-200/60 group-hover:bg-indigo-100/70',
+    activeText: 'text-indigo-900',
   },
   admin_portal: {
     stepTagClass: 'text-[#da1c2d]',
@@ -262,6 +271,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         id: 'dashboard',
         label: 'Tổng quan Học thuật',
         icon: LayoutDashboard,
+      },
+      {
+        id: 'forum',
+        label: 'Diễn đàn',
+        icon: MessageSquare,
       },
       {
         id: 'upload',

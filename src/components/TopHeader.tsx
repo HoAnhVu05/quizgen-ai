@@ -18,6 +18,7 @@ import {
   LogOut,
   User,
   EyeOff,
+  MessageSquare,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -71,6 +72,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           shortLabel: 'Tổng quan Học thuật',
           icon: LayoutDashboard,
           iconStyle: 'bg-slate-100 text-slate-700 border-slate-200',
+        };
+      case 'forum':
+        return {
+          label: 'Diễn đàn Học thuật & Trao đổi Chuyên môn',
+          shortLabel: 'Diễn đàn',
+          icon: MessageSquare,
+          iconStyle: 'bg-indigo-50 text-indigo-600 border-indigo-200',
         };
       case 'upload':
         return {
