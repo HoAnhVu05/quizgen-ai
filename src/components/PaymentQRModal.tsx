@@ -38,6 +38,16 @@ export const PaymentQRModal: React.FC<PaymentQRModalProps> = ({
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
   const [isConfirmingManual, setIsConfirmingManual] = useState<boolean>(false);
 
+  // Tự động làm mới trạng thái mỗi khi mở một đơn hàng / gói cước mới
+  useEffect(() => {
+    setIsSuccess(false);
+    setIsConfirmingManual(false);
+    setCopiedField(null);
+    if (order) {
+      setTimeLeft(order.countdown_seconds || 900);
+    }
+  }, [order?.order_id]);
+
   // Countdown Timer
   useEffect(() => {
     if (!order || isSuccess) return;

@@ -22,6 +22,9 @@ class DocumentDB(Base):
     total_pages = Column(Integer, default=0)
     chapters_count = Column(Integer, default=0)
     file_hash = Column(String(64), nullable=True, index=True) # [SCRUM-99] Mã băm SHA-256 chống trùng lặp
+    author_name = Column(String(100), nullable=True, default="Giảng viên UTH")
+    is_shared = Column(Integer, default=0, index=True) # 0: Private (Riêng tư), 1: Shared (Chia sẻ)
+    sharing_scope = Column(String(50), default="private", index=True) # 'private', 'department', 'public'
     status = Column(String(20), default="extracting", index=True) # extracting, embedding, ready, error
     progress = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
@@ -77,6 +80,7 @@ class DocumentChunkDB(Base):
 # ====================================================================
 class DocumentResponse(BaseModel):
     id: str
+    userId: Optional[str] = None
     name: str
     size: str
     totalPages: int
@@ -84,6 +88,9 @@ class DocumentResponse(BaseModel):
     status: str
     progress: int
     fileHash: Optional[str] = None
+    authorName: Optional[str] = None
+    isShared: Optional[bool] = False
+    sharingScope: Optional[str] = "private"
     uploadedAt: str
 
     class Config:

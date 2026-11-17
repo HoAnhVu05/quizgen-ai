@@ -69,6 +69,17 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
     }
   };
 
+  const PLAN_TIER_LEVEL: Record<string, number> = {
+    FREE: 0,
+    PRO_MONTH: 1,
+    PRO_YEAR: 2,
+    ENTERPRISE: 3
+  };
+
+  const currentPlanCode = subscriptionInfo?.plan_code || 'FREE';
+  const currentLevel = PLAN_TIER_LEVEL[currentPlanCode] ?? 0;
+  const isUserPro = currentPlanCode === 'PRO_MONTH' || currentPlanCode === 'PRO_YEAR' || currentPlanCode === 'ENTERPRISE';
+
   const handleBuyPlan = async (plan: SubscriptionPlan) => {
     if (!currentUser) {
       onShowToast('error', 'Chưa đăng nhập', 'Vui lòng đăng nhập để nâng cấp gói cước.');
@@ -77,6 +88,12 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
 
     if (plan.code === 'FREE') {
       onShowToast('info', 'Gói Miễn Phí', 'Tài khoản của bạn đã có sẵn hạn mức gói Miễn Phí.');
+      return;
+    }
+
+    const targetLevel = PLAN_TIER_LEVEL[plan.code] ?? 0;
+    if (targetLevel <= currentLevel) {
+      onShowToast('warning', 'Không thể mua gói thấp hơn', 'Quý Thầy/Cô đang sở hữu gói dịch vụ tương đương hoặc cao cấp hơn.');
       return;
     }
 
@@ -110,9 +127,6 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
   };
 
   if (!isOpen) return null;
-
-  const currentPlanCode = subscriptionInfo?.plan_code || 'FREE';
-  const isUserPro = currentPlanCode === 'PRO_MONTH' || currentPlanCode === 'PRO_YEAR';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
@@ -230,11 +244,14 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
           {/* Pricing Tier Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
             {plans.map((p) => {
+              const planLevel = PLAN_TIER_LEVEL[p.code] ?? 0;
               const isCurrent = currentPlanCode === p.code;
+              const isLowerTier = planLevel < currentLevel;
               const isHeroPlan = p.code === 'PRO_YEAR';
               const isProMonth = p.code === 'PRO_MONTH';
               const isEnterprise = p.code === 'ENTERPRISE';
               const isFree = p.code === 'FREE';
+              const isDisabled = isCurrent || isLowerTier || isFree || isCreatingOrder;
 
               return (
                 <div
@@ -281,6 +298,11 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                         {isCurrent && (
                           <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
                             Đang Dùng
+                          </span>
+                        )}
+                        {!isCurrent && isLowerTier && (
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                            Đã Mua Gói Cao Hơn
                           </span>
                         )}
                       </div>
@@ -344,21 +366,25 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
                   <div className="pt-4 mt-5 border-t border-slate-100">
                     <button
                       onClick={() => handleBuyPlan(p)}
-                      disabled={isCurrent || isCreatingOrder}
-                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer ${
+                      disabled={isDisabled}
+                      className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold transition-all duration-200 flex items-center justify-center gap-1.5 ${
                         isCurrent
                           ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                          : isLowerTier || isFree
+                          ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                           : isHeroPlan
-                          ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white shadow-md shadow-amber-500/25 hover:scale-[1.01]'
+                          ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-white shadow-md shadow-amber-500/25 hover:scale-[1.01] cursor-pointer'
                           : isEnterprise
-                          ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-sm hover:scale-[1.01]'
+                          ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white shadow-sm hover:scale-[1.01] cursor-pointer'
                           : isProMonth
-                          ? 'bg-[#008689] hover:bg-[#006e71] text-white shadow-sm hover:scale-[1.01]'
-                          : 'bg-slate-800 hover:bg-slate-900 text-white'
+                          ? 'bg-[#008689] hover:bg-[#006e71] text-white shadow-sm hover:scale-[1.01] cursor-pointer'
+                          : 'bg-slate-800 hover:bg-slate-900 text-white cursor-pointer'
                       }`}
                     >
                       {isCurrent ? (
                         <span>✓ Đang Dùng Gói Này</span>
+                      ) : isLowerTier ? (
+                        <span>Đã Có Gói Cao Hơn</span>
                       ) : isFree ? (
                         <span>Gói Mặc Định</span>
                       ) : isHeroPlan ? (

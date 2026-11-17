@@ -4,13 +4,13 @@ import asyncio
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Depends, Query, status
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Depends, Query, status, Body
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, or_
 import httpx
 import sqlite3
 
@@ -496,13 +496,38 @@ def root_list_documents(db: Session = Depends(get_db)):
 @app.get("/documents")
 def list_documents(
     user_id: Optional[str] = Query(None, description="Lọc theo mã giảng viên sở hữu"),
-    current_user_id: Optional[str] = Depends(get_optional_user_id),
+    scope: Optional[str] = Query("my", description="Phạm vi: 'my' (cá nhân), 'shared' (ngân hàng dùng chung), 'all' (tất cả)"),
+    current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
     db: Session = Depends(get_db)
 ):
-    """Lấy danh sách giáo trình đã nạp trong hệ thống (hỗ trợ lọc theo user_id nếu có)"""
+    """
+    Lấy danh sách giáo trình bảo đảm tính riêng tư cho từng tài khoản:
+    - scope = 'my': Chỉ lấy giáo trình do chính giảng viên đó tải lên (trừ Admin).
+    - scope = 'shared': Ngân hàng giáo trình dùng chung toàn trường / Khoa (is_shared == 1).
+    - scope = 'all': Admin xem toàn bộ, hoặc trả về giáo trình cá nhân + giáo trình dùng chung.
+    """
+    effective_user_id = user_id or (current_user_info.get("id") if current_user_info else None)
+    is_admin = current_user_info.get("role") == "admin" if current_user_info else False
+
     query = db.query(DocumentDB)
-    if user_id:
-        query = query.filter(DocumentDB.user_id == user_id)
+
+    if scope == "shared":
+        query = query.filter(DocumentDB.is_shared == 1)
+    elif scope == "my":
+        if is_admin:
+            if user_id:
+                query = query.filter(DocumentDB.user_id == user_id)
+        else:
+            if effective_user_id:
+                query = query.filter(DocumentDB.user_id == effective_user_id)
+            elif user_id:
+                query = query.filter(DocumentDB.user_id == user_id)
+    elif scope == "all":
+        if not is_admin:
+            if effective_user_id:
+                query = query.filter(or_(DocumentDB.user_id == effective_user_id, DocumentDB.is_shared == 1))
+        elif user_id:
+            query = query.filter(DocumentDB.user_id == user_id)
 
     docs = query.order_by(DocumentDB.created_at.desc()).all()
     return [
@@ -515,10 +540,54 @@ def list_documents(
             "chaptersCount": d.chapters_count,
             "status": d.status,
             "progress": d.progress,
+            "authorName": getattr(d, "author_name", "Giảng viên UTH") or "Giảng viên UTH",
+            "isShared": bool(getattr(d, "is_shared", 0)),
+            "sharingScope": getattr(d, "sharing_scope", "private") or "private",
             "uploadedAt": d.created_at.strftime("%d/%m/%Y, %H:%M") if d.created_at else "Hôm nay"
         }
         for d in docs
     ]
+
+
+@app.post("/documents/{document_id}/share")
+def toggle_document_share(
+    document_id: str,
+    payload: Dict[str, Any] = Body(default={}),
+    current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
+    db: Session = Depends(get_db)
+):
+    """
+    Chia sẻ hoặc thu hồi chia sẻ giáo trình vào Ngân hàng Giáo trình dùng chung.
+    Hỗ trợ gói Enterprise / Khoa & Bộ môn và giảng viên.
+    """
+    doc = db.query(DocumentDB).filter(DocumentDB.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tài liệu.")
+
+    caller_id = current_user_info.get("id") if current_user_info else None
+    caller_role = current_user_info.get("role") if current_user_info else None
+
+    # Kiểm tra quyền sở hữu (trừ Admin)
+    if caller_id and caller_role != "admin" and doc.user_id != caller_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ người tải lên giáo trình này mới có quyền chia sẻ.")
+
+    target_shared = payload.get("is_shared", not bool(doc.is_shared))
+    doc.is_shared = 1 if target_shared else 0
+    doc.sharing_scope = payload.get("sharing_scope", "department" if target_shared else "private")
+    if payload.get("author_name"):
+        doc.author_name = payload["author_name"]
+
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "status": "success",
+        "document_id": doc.id,
+        "is_shared": bool(doc.is_shared),
+        "sharingScope": doc.sharing_scope,
+        "authorName": doc.author_name,
+        "message": "Đã chia sẻ giáo trình lên Ngân hàng Dùng chung UTH!" if doc.is_shared else "Đã chuyển giáo trình về chế độ Riêng tư."
+    }
 
 
 @app.get("/{document_id}")

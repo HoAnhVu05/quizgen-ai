@@ -961,6 +961,7 @@ const AppContent: React.FC = () => {
               onNavigate={setCurrentScreen}
               onShowToast={handleShowToast}
               subscriptionInfo={subscriptionInfo}
+              currentUser={currentUser}
               onOpenPricingModal={() => setIsPricingModalOpen(true)}
             />
           )}

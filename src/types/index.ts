@@ -149,6 +149,10 @@ export interface TextbookFile {
   progress: number;
   uploadedAt: string;
   chunksPreview?: string[];
+  userId?: string;
+  authorName?: string;
+  isShared?: boolean;
+  sharingScope?: 'private' | 'department' | 'public';
 }
 
 export interface ToastMessage {
