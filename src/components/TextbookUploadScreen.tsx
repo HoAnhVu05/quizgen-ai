@@ -47,6 +47,13 @@ import {
   Download,
   Check,
   CheckSquare,
+  Pin,
+  PinOff,
+  Smile,
+  LogOut,
+  Edit3,
+  MoreVertical,
+  Heart,
 } from 'lucide-react';
 import { TextbookFile, ScreenId, UserSubscriptionInfo, UserProfile } from '../types';
 import apiClient from '../services/apiClient';
@@ -68,6 +75,8 @@ export interface QGroupMessage {
   text?: string;
   timestamp: string;
   isSystem?: boolean;
+  isPinned?: boolean;
+  reactions?: Record<string, string[]>;
   attachment?: {
     type: 'textbook' | 'exam';
     id: string;
@@ -102,6 +111,7 @@ export interface QGroup {
   members: string[];
   pendingRequests: QGroupPendingRequest[];
   messages: QGroupMessage[];
+  pinnedMessageId?: string;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -295,9 +305,17 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   const [isAttachTextbookModalOpen, setIsAttachTextbookModalOpen] = useState(false);
   const [isAttachExamModalOpen, setIsAttachExamModalOpen] = useState(false);
   const [isOwnerSettingsModalOpen, setIsOwnerSettingsModalOpen] = useState(false);
-  const [ownerSettingsTab, setOwnerSettingsTab] = useState<'policy' | 'requests' | 'members'>('requests');
+  const [ownerSettingsTab, setOwnerSettingsTab] = useState<'info' | 'members' | 'policy' | 'requests' | 'danger'>('info');
   const [newGroupPolicy, setNewGroupPolicy] = useState<'open' | 'approval_required' | 'email_only'>('approval_required');
   const [directMemberEmailInput, setDirectMemberEmailInput] = useState('');
+  const [groupSearchQuery, setGroupSearchQuery] = useState('');
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [isChatSearchOpen, setIsChatSearchOpen] = useState(false);
+  const [activeEmojiMenuMsgId, setActiveEmojiMenuMsgId] = useState<string | null>(null);
+  const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupDept, setEditGroupDept] = useState('');
+  const [editGroupDesc, setEditGroupDesc] = useState('');
+  const [isConfirmDeleteGroupOpen, setIsConfirmDeleteGroupOpen] = useState(false);
   const chatMessagesEndRef = useRef<HTMLDivElement>(null);
 
   // Modal State for Q-Group & Email Share
@@ -1007,6 +1025,265 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     onShowToast('success', 'Đã Thêm Thành Viên', `Đã thêm ${email} vào nhóm.`);
   };
 
+  const handleOpenGroupSettings = (tab: 'info' | 'members' | 'policy' | 'requests' | 'danger' = 'info') => {
+    if (activeGroup) {
+      setEditGroupName(activeGroup.name);
+      setEditGroupDept(activeGroup.department);
+      setEditGroupDesc(activeGroup.description);
+    }
+    setOwnerSettingsTab(tab);
+    setIsOwnerSettingsModalOpen(true);
+  };
+
+  const handleSaveGroupInfo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeGroup || !editGroupName.trim()) return;
+
+    const trimmedName = editGroupName.trim();
+    const trimmedDept = editGroupDept.trim() || 'Khoa Chuyên Ngành';
+    const trimmedDesc = editGroupDesc.trim() || 'Nhóm trao đổi học thuật và biên soạn đề thi.';
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          name: trimmedName,
+          department: trimmedDept,
+          description: trimmedDesc,
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `Trưởng nhóm đã cập nhật thông tin phòng thành: "${trimmedName}".`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('success', 'Đã Cập Nhật Thông Tin', `Thông tin nhóm "${trimmedName}" đã được lưu thành công.`);
+  };
+
+  const handleKickMember = (targetEmail: string) => {
+    if (!activeGroup) return;
+    if (targetEmail === activeGroup.ownerEmail) {
+      onShowToast('warning', 'Không thể thực hiện', 'Không thể xóa Trưởng nhóm khỏi phòng làm việc.');
+      return;
+    }
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        const nextMembers = g.members.filter((m) => m !== targetEmail);
+        return {
+          ...g,
+          members: nextMembers,
+          memberCount: Math.max(1, nextMembers.length),
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `Trưởng nhóm đã xóa ${targetEmail} khỏi nhóm làm việc.`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('success', 'Đã Xóa Thành Viên', `Đã xóa ${targetEmail} khỏi nhóm "${activeGroup.name}".`);
+  };
+
+  const handleTransferOwner = (newOwnerEmail: string) => {
+    if (!activeGroup) return;
+    if (newOwnerEmail === activeGroup.ownerEmail) return;
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          ownerEmail: newOwnerEmail,
+          ownerName: newOwnerEmail.split('@')[0],
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `Trưởng nhóm đã chuyển giao quyền quản trị phòng cho ${newOwnerEmail}.`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('success', 'Chuyển Quyền Thành Công', `Đã bàn giao quyền Trưởng nhóm cho ${newOwnerEmail}.`);
+  };
+
+  const handleLeaveGroup = () => {
+    if (!activeGroup) return;
+    const myEmail = currentUser?.email || 'my-account@quizgen.ai';
+    const myName = currentUser?.fullName || 'Thành viên';
+
+    if (isOwner && activeGroup.members.length > 1) {
+      onShowToast('warning', 'Yêu cầu chuyển quyền', 'Thầy/Cô là Trưởng nhóm. Vui lòng chuyển quyền Trưởng nhóm cho thành viên khác trước khi rời nhóm!');
+      setOwnerSettingsTab('members');
+      return;
+    }
+
+    const nextGroups = qgroups.filter((g) => {
+      if (g.id === activeGroup.id) {
+        if (g.members.length <= 1) return false;
+        return true;
+      }
+      return true;
+    }).map((g) => {
+      if (g.id === activeGroup.id) {
+        const nextMembers = g.members.filter((m) => m !== myEmail);
+        return {
+          ...g,
+          members: nextMembers,
+          memberCount: Math.max(0, nextMembers.length),
+          messages: [
+            ...(g.messages || []),
+            {
+              id: `msg-${Date.now()}`,
+              senderEmail: 'system',
+              senderName: 'Hệ Thống Q-Group',
+              isSystem: true,
+              timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+              text: `${myName} đã rời khỏi nhóm.`
+            }
+          ]
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(nextGroups);
+    setIsOwnerSettingsModalOpen(false);
+    const remaining = nextGroups.find((g) => g.id !== activeGroup.id);
+    if (remaining) {
+      setSelectedGroupId(remaining.id);
+    }
+    onShowToast('info', 'Đã Rời Khỏi Nhóm', `Thầy/Cô đã rời khỏi nhóm "${activeGroup.name}".`);
+  };
+
+  const handleDeleteGroup = () => {
+    if (!activeGroup) return;
+    const groupNameToDelete = activeGroup.name;
+    const nextGroups = qgroups.filter((g) => g.id !== activeGroup.id);
+    saveQgroups(nextGroups);
+    setIsConfirmDeleteGroupOpen(false);
+    setIsOwnerSettingsModalOpen(false);
+    if (nextGroups.length > 0) {
+      setSelectedGroupId(nextGroups[0].id);
+    }
+    onShowToast('success', 'Đã Xóa Q-Group', `Nhóm "${groupNameToDelete}" đã được giải tán và xóa vĩnh viễn.`);
+  };
+
+  const handleToggleReaction = (msgId: string, emoji: string) => {
+    if (!activeGroup) return;
+    const myId = currentUser?.email || currentUser?.fullName || 'me';
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        const updatedMessages = (g.messages || []).map((msg) => {
+          if (msg.id !== msgId) return msg;
+
+          const currentReactions: Record<string, string[]> = { ...(msg.reactions || {}) };
+          const userList = currentReactions[emoji] ? [...currentReactions[emoji]] : [];
+          const exists = userList.includes(myId);
+
+          if (exists) {
+            const nextList = userList.filter((u) => u !== myId);
+            if (nextList.length === 0) {
+              delete currentReactions[emoji];
+            } else {
+              currentReactions[emoji] = nextList;
+            }
+          } else {
+            currentReactions[emoji] = [...userList, myId];
+          }
+
+          return {
+            ...msg,
+            reactions: currentReactions
+          };
+        });
+
+        return {
+          ...g,
+          messages: updatedMessages
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    setActiveEmojiMenuMsgId(null);
+  };
+
+  const handleTogglePinMessage = (msgId: string) => {
+    if (!activeGroup) return;
+
+    const isCurrentlyPinned = activeGroup.pinnedMessageId === msgId;
+    const newPinnedId = isCurrentlyPinned ? undefined : msgId;
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        return {
+          ...g,
+          pinnedMessageId: newPinnedId,
+          messages: (g.messages || []).map((m) =>
+            m.id === msgId ? { ...m, isPinned: !isCurrentlyPinned } : m
+          )
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    if (isCurrentlyPinned) {
+      onShowToast('info', 'Đã Bỏ Ghim Tin Nhắn', 'Tin nhắn đã được gỡ bỏ khỏi đầu phòng chat.');
+    } else {
+      onShowToast('success', 'Đã Ghim Tin Nhắn', 'Tin nhắn quan trọng đã được ghim lên đầu phòng chat.');
+    }
+  };
+
+  const handleDeleteMessage = (msgId: string) => {
+    if (!activeGroup) return;
+
+    const updated = qgroups.map((g) => {
+      if (g.id === activeGroup.id) {
+        const nextMsgs = (g.messages || []).filter((m) => m.id !== msgId);
+        return {
+          ...g,
+          pinnedMessageId: g.pinnedMessageId === msgId ? undefined : g.pinnedMessageId,
+          messages: nextMsgs
+        };
+      }
+      return g;
+    });
+
+    saveQgroups(updated);
+    onShowToast('info', 'Đã Xóa Tin Nhắn', 'Tin nhắn đã được xóa khỏi phòng trao đổi.');
+  };
+
   const handleSendDirectEmailShare = (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetColleagueEmail.trim() || !selectedBookForEmail) return;
@@ -1550,7 +1827,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-[720px] min-h-[620px]">
             {/* Left Column: Groups List */}
             <div className="lg:col-span-4 xl:col-span-3.5 bg-white rounded-3xl border border-slate-200 shadow-2xs flex flex-col overflow-hidden">
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <div className="p-3.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
                 <div className="flex items-center gap-2">
                   <FolderGit2 className="w-4 h-4 text-purple-700" />
                   <span className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
@@ -1559,73 +1836,117 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                 </div>
                 <button
                   onClick={() => setIsCreateGroupModalOpen(true)}
-                  className="p-1 rounded-lg text-purple-700 hover:bg-purple-100 transition-colors"
+                  className="p-1 rounded-lg text-purple-700 hover:bg-purple-100 transition-colors cursor-pointer"
                   title="Tạo nhóm mới"
                 >
                   <PlusCircle className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Group List Scrollable */}
-              <div className="flex-1 overflow-y-auto p-2.5 space-y-2">
-                {qgroups.map((group) => {
-                  const isSelected = group.id === selectedGroupId;
-                  const hasPending = (group.pendingRequests || []).length > 0;
-                  return (
+              {/* Group Search Input */}
+              <div className="p-2.5 border-b border-slate-100 bg-slate-50/50">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={groupSearchQuery}
+                    onChange={(e) => setGroupSearchQuery(e.target.value)}
+                    placeholder="Tìm theo tên nhóm, mã phòng, bộ môn..."
+                    className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-800 placeholder-slate-400"
+                  />
+                  {groupSearchQuery && (
                     <button
-                      key={group.id}
-                      onClick={() => setSelectedGroupId(group.id)}
-                      className={`w-full text-left p-3.5 rounded-2xl transition-all cursor-pointer border ${
-                        isSelected
-                          ? 'bg-purple-50/90 border-purple-300 shadow-2xs'
-                          : 'bg-white hover:bg-slate-50 border-slate-200/80'
-                      }`}
+                      onClick={() => setGroupSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     >
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <div className="font-bold text-xs text-slate-900 truncate flex-1">
-                          {group.name}
-                        </div>
-                        <span className="font-mono text-[10px] bg-slate-100 px-2 py-0.5 rounded-md text-slate-600 border border-slate-200 shrink-0">
-                          {group.code}
-                        </span>
-                      </div>
-
-                      <div className="text-[11px] text-purple-800 font-semibold truncate mb-2">
-                        {group.department}
-                      </div>
-
-                      <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
-                        <span className="flex items-center gap-1 font-medium">
-                          <Users className="w-3 h-3 text-purple-600" />
-                          <span>{group.memberCount} thành viên</span>
-                        </span>
-
-                        <div className="flex items-center gap-1">
-                          {hasPending && (
-                            <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[9px] font-black rounded-full animate-pulse">
-                              {group.pendingRequests.length} chờ duyệt
-                            </span>
-                          )}
-                          <span
-                            className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
-                              group.joinPolicy === 'open'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : group.joinPolicy === 'approval_required'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            {group.joinPolicy === 'open'
-                              ? 'Tự do'
-                              : group.joinPolicy === 'approval_required'
-                              ? 'Cần duyệt'
-                              : 'Riêng tư'}
-                          </span>
-                        </div>
-                      </div>
+                      <X className="w-3 h-3" />
                     </button>
-                  );
-                })}
+                  )}
+                </div>
+              </div>
+
+              {/* Group List Scrollable */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-2 bg-[#f8fafc]">
+                {qgroups
+                  .filter((group) => {
+                    if (!groupSearchQuery.trim()) return true;
+                    const q = groupSearchQuery.toLowerCase();
+                    return (
+                      group.name.toLowerCase().includes(q) ||
+                      group.department.toLowerCase().includes(q) ||
+                      group.code.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((group) => {
+                    const isSelected = group.id === selectedGroupId;
+                    const hasPending = (group.pendingRequests || []).length > 0;
+                    return (
+                      <div
+                        key={group.id}
+                        onClick={() => setSelectedGroupId(group.id)}
+                        className={`group relative w-full text-left p-3.5 rounded-2xl transition-all cursor-pointer border ${
+                          isSelected
+                            ? 'bg-purple-50/90 border-purple-400 shadow-xs border-l-4 border-l-purple-600'
+                            : 'bg-white hover:bg-slate-50 border-slate-200/80 shadow-2xs'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <div className="font-bold text-xs text-slate-900 truncate flex-1">
+                            {group.name}
+                          </div>
+
+                          {/* Quick 1-click Copy Code Button directly on the badge */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(group.code);
+                              onShowToast('info', 'Đã sao chép mã nhóm', group.code);
+                            }}
+                            className="inline-flex items-center gap-1 font-mono text-[10px] font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200 shrink-0 transition-colors cursor-pointer"
+                            title="Nhấn để sao chép mã nhóm"
+                          >
+                            <span>{group.code}</span>
+                            <Copy className="w-2.5 h-2.5 opacity-60 group-hover:opacity-100" />
+                          </button>
+                        </div>
+
+                        <div className="text-[11px] text-purple-800 font-semibold truncate mb-2">
+                          {group.department}
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1.5 border-t border-slate-100">
+                          <span className="flex items-center gap-1 font-medium">
+                            <Users className="w-3 h-3 text-purple-600" />
+                            <span>{group.memberCount} thành viên</span>
+                          </span>
+
+                          <div className="flex items-center gap-1">
+                            {hasPending && (
+                              <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 text-[9px] font-black rounded-full animate-pulse">
+                                {group.pendingRequests.length} chờ duyệt
+                              </span>
+                            )}
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                                group.joinPolicy === 'open'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : group.joinPolicy === 'approval_required'
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}
+                            >
+                              {group.joinPolicy === 'open'
+                                ? 'Tự do'
+                                : group.joinPolicy === 'approval_required'
+                                ? 'Cần duyệt'
+                                : 'Riêng tư'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
@@ -1634,7 +1955,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               {activeGroup ? (
                 <>
                   {/* Chat Top Bar */}
-                  <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white">
+                  <div className="p-3.5 sm:p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 bg-white z-10 shadow-2xs">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-xs">
                         {activeGroup.name.slice(0, 2).toUpperCase()}
@@ -1644,19 +1965,19 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                           <h3 className="font-extrabold text-slate-900 text-sm truncate">
                             {activeGroup.name}
                           </h3>
-                          <div className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold text-slate-700 border border-slate-200">
+                          {/* Quick Copy Pill in Header */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(activeGroup.code);
+                              onShowToast('info', 'Đã sao chép mã nhóm', activeGroup.code);
+                            }}
+                            className="inline-flex items-center gap-1 bg-slate-100 hover:bg-purple-100 hover:text-purple-700 px-2 py-0.5 rounded-md font-mono text-[10px] font-bold text-slate-700 border border-slate-200 transition-colors cursor-pointer"
+                            title="Sao chép mã nhóm"
+                          >
                             <span>{activeGroup.code}</span>
-                            <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(activeGroup.code);
-                                onShowToast('info', 'Đã sao chép mã nhóm', activeGroup.code);
-                              }}
-                              className="text-slate-400 hover:text-slate-800 p-0.5"
-                              title="Sao chép mã nhóm"
-                            >
-                              <Copy className="w-2.5 h-2.5" />
-                            </button>
-                          </div>
+                            <Copy className="w-2.5 h-2.5" />
+                          </button>
                         </div>
 
                         <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
@@ -1686,24 +2007,35 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                       </div>
                     </div>
 
-                    {/* Owner Action Buttons */}
+                    {/* Chat Action Buttons */}
                     <div className="flex items-center gap-2 shrink-0">
+                      {/* Search In-Chat Toggle */}
                       <button
-                        onClick={() => {
-                          setOwnerSettingsTab(
-                            (activeGroup.pendingRequests || []).length > 0 ? 'requests' : 'policy'
-                          );
-                          setIsOwnerSettingsModalOpen(true);
-                        }}
+                        type="button"
+                        onClick={() => setIsChatSearchOpen((prev) => !prev)}
+                        className={`p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center justify-center ${
+                          isChatSearchOpen
+                            ? 'bg-purple-100 text-purple-800 border-purple-300'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                        title="Tìm kiếm nội dung trong phòng chat"
+                      >
+                        <Search className="w-4 h-4" />
+                      </button>
+
+                      {/* Settings & Management Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleOpenGroupSettings((activeGroup.pendingRequests || []).length > 0 ? 'requests' : 'info')}
                         className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                           (activeGroup.pendingRequests || []).length > 0
                             ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 animate-pulse'
                             : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                         }`}
-                        title="Cài đặt chính sách vào phòng & duyệt yêu cầu"
+                        title="Tùy biến nhóm, quản lý thành viên, duyệt đơn và chính sách"
                       >
                         <Settings className="w-3.5 h-3.5" />
-                        <span>Cài Đặt &amp; Duyệt Thành Viên</span>
+                        <span>Cài Đặt &amp; Quản Lý Nhóm</span>
                         {(activeGroup.pendingRequests || []).length > 0 && (
                           <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center font-bold">
                             {activeGroup.pendingRequests.length}
@@ -1713,10 +2045,65 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                     </div>
                   </div>
 
-                  {/* Chat Messages Stream */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40">
+                  {/* Chat Search Dropdown Bar */}
+                  {isChatSearchOpen && (
+                    <div className="px-4 py-2 bg-purple-50/70 border-b border-purple-200/80 flex items-center gap-2 animate-in slide-in-from-top-1">
+                      <Search className="w-3.5 h-3.5 text-purple-600" />
+                      <input
+                        type="text"
+                        value={chatSearchQuery}
+                        onChange={(e) => setChatSearchQuery(e.target.value)}
+                        placeholder="Tìm kiếm nội dung tin nhắn, file giáo trình, đề thi..."
+                        className="flex-1 bg-transparent text-xs text-slate-800 focus:outline-none placeholder-purple-400"
+                        autoFocus
+                      />
+                      {chatSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setChatSearchQuery('')}
+                          className="text-purple-400 hover:text-purple-700 text-xs cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Pinned Message Banner */}
+                  {(() => {
+                    const pinnedMsg = (activeGroup.messages || []).find((m) => m.id === activeGroup.pinnedMessageId);
+                    if (!pinnedMsg) return null;
+                    return (
+                      <div className="px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200/90 flex items-center justify-between gap-3 text-xs shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Pin className="w-3.5 h-3.5 text-amber-600 fill-amber-600 shrink-0" />
+                          <div className="truncate">
+                            <span className="font-extrabold text-amber-900 mr-1.5">Đã ghim:</span>
+                            <span className="text-amber-800 font-medium">
+                              {pinnedMsg.text || pinnedMsg.attachment?.name || 'File đính kèm'}
+                            </span>
+                            <span className="text-[10px] text-amber-700/80 ml-2">
+                              ({pinnedMsg.senderName} • {pinnedMsg.timestamp})
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePinMessage(pinnedMsg.id)}
+                          className="text-amber-800 hover:text-amber-950 font-bold text-[11px] shrink-0 px-2 py-0.5 rounded-md hover:bg-amber-100 transition-colors flex items-center gap-1 cursor-pointer"
+                          title="Bỏ ghim tin nhắn này"
+                        >
+                          <PinOff className="w-3 h-3" />
+                          <span className="hidden sm:inline">Bỏ ghim</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Chat Messages Stream with Distinct Slate Feed Wallpaper */}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f1f5f9]">
                     {/* Welcome Banner */}
-                    <div className="p-3.5 bg-purple-50/60 rounded-2xl border border-purple-100 text-center text-xs text-slate-600 space-y-1">
+                    <div className="p-3.5 bg-white/90 rounded-2xl border border-slate-200 text-center text-xs text-slate-600 space-y-1 shadow-2xs">
                       <p className="font-bold text-purple-900">
                         🎉 Chào mừng Quý Thầy/Cô đến với Phòng làm việc "{activeGroup.name}"
                       </p>
@@ -1725,169 +2112,266 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                       </p>
                     </div>
 
-                    {/* Message items */}
-                    {(activeGroup.messages || []).map((msg) => {
-                      if (msg.isSystem) {
+                    {/* Filtered Messages Stream */}
+                    {(activeGroup.messages || [])
+                      .filter((msg) => {
+                        if (!chatSearchQuery.trim()) return true;
+                        const q = chatSearchQuery.toLowerCase();
                         return (
-                          <div key={msg.id} className="flex justify-center my-2">
-                            <span className="px-3 py-1 rounded-full bg-slate-200/80 text-slate-600 text-[11px] font-semibold flex items-center gap-1.5 border border-slate-300/60">
-                              <Shield className="w-3 h-3 text-purple-700" />
-                              <span>{msg.text}</span>
-                              <span className="text-[9px] text-slate-400 font-mono ml-1">
-                                {msg.timestamp}
-                              </span>
-                            </span>
-                          </div>
+                          (msg.text && msg.text.toLowerCase().includes(q)) ||
+                          (msg.attachment && msg.attachment.name.toLowerCase().includes(q)) ||
+                          (msg.senderName && msg.senderName.toLowerCase().includes(q))
                         );
-                      }
-
-                      const isMe =
-                        msg.senderEmail === currentUser?.email ||
-                        msg.senderName === currentUser?.fullName;
-
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex gap-3 max-w-[85%] ${
-                            isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'
-                          }`}
-                        >
-                          {/* Avatar */}
-                          <div
-                            className={`w-8 h-8 rounded-full ${
-                              msg.avatarColor || 'bg-indigo-600'
-                            } text-white text-xs font-bold flex items-center justify-center shrink-0 shadow-xs`}
-                          >
-                            {msg.senderName.slice(0, 2).toUpperCase()}
-                          </div>
-
-                          <div className={`space-y-1 ${isMe ? 'items-end text-right' : ''}`}>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                              <span className="font-bold text-slate-800">
-                                {msg.senderName}
-                              </span>
-                              {msg.senderTitle && (
-                                <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[9px] font-semibold border border-slate-200">
-                                  {msg.senderTitle}
+                      })
+                      .map((msg) => {
+                        if (msg.isSystem) {
+                          return (
+                            <div key={msg.id} className="flex justify-center my-2">
+                              <span className="px-3.5 py-1 rounded-full bg-slate-200/90 text-slate-600 text-[11px] font-semibold flex items-center gap-1.5 border border-slate-300/70 shadow-2xs">
+                                <Shield className="w-3 h-3 text-purple-700" />
+                                <span>{msg.text}</span>
+                                <span className="text-[9px] text-slate-400 font-mono ml-1">
+                                  {msg.timestamp}
                                 </span>
-                              )}
-                              <span className="text-[10px] font-mono text-slate-400">
-                                {msg.timestamp}
                               </span>
                             </div>
+                          );
+                        }
 
-                            {/* Text Message Bubble */}
-                            {msg.text && (
+                        const isMe =
+                          msg.senderEmail === currentUser?.email ||
+                          msg.senderName === currentUser?.fullName;
+                        const isPinned = activeGroup.pinnedMessageId === msg.id;
+                        const myId = currentUser?.email || currentUser?.fullName || 'me';
+
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`group relative flex gap-3 max-w-[85%] ${
+                              isMe ? 'ml-auto flex-row-reverse' : 'mr-auto'
+                            }`}
+                          >
+                            {/* Avatar */}
+                            <div
+                              className={`w-8 h-8 rounded-full ${
+                                msg.avatarColor || 'bg-indigo-600'
+                              } text-white text-xs font-bold flex items-center justify-center shrink-0 shadow-xs`}
+                            >
+                              {msg.senderName.slice(0, 2).toUpperCase()}
+                            </div>
+
+                            <div className={`space-y-1 relative ${isMe ? 'items-end text-right' : ''}`}>
+                              {/* Sender Header */}
+                              <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                                <span className="font-bold text-slate-800">
+                                  {msg.senderName}
+                                </span>
+                                {msg.senderTitle && (
+                                  <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded text-[9px] font-semibold border border-slate-200">
+                                    {msg.senderTitle}
+                                  </span>
+                                )}
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  {msg.timestamp}
+                                </span>
+                                {isPinned && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold border border-amber-200">
+                                    <Pin className="w-2.5 h-2.5 fill-amber-700" />
+                                    <span>Đã ghim</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Text Message Bubble */}
+                              {msg.text && (
+                                <div
+                                  className={`p-3.5 rounded-2xl text-xs leading-relaxed text-left transition-all relative ${
+                                    isMe
+                                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-tr-none shadow-xs font-medium'
+                                      : 'bg-white text-slate-800 border border-slate-200/90 rounded-tl-none shadow-2xs'
+                                  }`}
+                                >
+                                  {msg.text}
+                                </div>
+                              )}
+
+                              {/* Textbook Attachment Card */}
+                              {msg.attachment?.type === 'textbook' && (
+                                <div className="p-3.5 bg-white rounded-2xl border-2 border-teal-500/30 shadow-xs space-y-2.5 text-left mt-1.5 max-w-sm">
+                                  <div className="flex items-start gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-[#008689] text-white flex items-center justify-center shrink-0 shadow-2xs">
+                                      <BookOpen className="w-4.5 h-4.5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-[#008689] block">
+                                        Giáo trình đính kèm
+                                      </span>
+                                      <div className="font-bold text-xs text-slate-900 truncate" title={msg.attachment.name}>
+                                        {msg.attachment.name}
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                        {msg.attachment.totalPages} trang • {msg.attachment.size}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        localStorage.setItem('quizgen_selected_book_id', msg.attachment?.id || '');
+                                        localStorage.setItem('quizgen_selected_book_name', msg.attachment?.name || '');
+                                        onShowToast('success', 'Đã Chọn Giáo Trình Nhóm', `Đang chuyển sang sinh đề với "${msg.attachment?.name}"...`);
+                                        onNavigate('generate');
+                                      }}
+                                      className="flex-1 px-3 py-2 bg-[#008689] hover:bg-[#007073] text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                      <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
+                                      <span>Dùng Sinh Đề Ngay</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Exam Attachment Card */}
+                              {msg.attachment?.type === 'exam' && (
+                                <div className="p-3.5 bg-white rounded-2xl border-2 border-indigo-500/30 shadow-xs space-y-2.5 text-left mt-1.5 max-w-sm">
+                                  <div className="flex items-start gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                                      <FileCheck2 className="w-4.5 h-4.5" />
+                                    </div>
+                                    <div className="min-w-0">
+                                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 block">
+                                        Bộ đề thi trắc nghiệm AI
+                                      </span>
+                                      <div className="font-bold text-xs text-slate-900 truncate" title={msg.attachment.name}>
+                                        {msg.attachment.name}
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                        Môn: {msg.attachment.subject} • {msg.attachment.questionCount} câu • {msg.attachment.durationMinutes} phút
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onShowToast('success', 'Đã Nạp Đề Thi Nhóm', `Đang mở bộ đề "${msg.attachment?.name}" trong Bước 4 Đóng gói & Xuất đề...`);
+                                        onNavigate('bank');
+                                      }}
+                                      className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                    >
+                                      <CheckSquare className="w-3.5 h-3.5" />
+                                      <span>Nạp Vào Biên Tập &amp; Xuất Đề</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Emoji Reactions List below bubble */}
+                              {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                                <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                  {Object.entries(msg.reactions).map(([emoji, users]) => {
+                                    if (users.length === 0) return null;
+                                    const userReacted = users.includes(myId);
+                                    return (
+                                      <button
+                                        key={emoji}
+                                        type="button"
+                                        onClick={() => handleToggleReaction(msg.id, emoji)}
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                                          userReacted
+                                            ? 'bg-purple-100 text-purple-900 border-purple-300 shadow-2xs'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 shadow-2xs'
+                                        }`}
+                                        title={`${users.length} người đã thả ${emoji}`}
+                                      >
+                                        <span>{emoji}</span>
+                                        <span className="text-[10px]">{users.length}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Slack/Messenger Hover Action Toolbar */}
                               <div
-                                className={`p-3 rounded-2xl text-xs leading-relaxed text-left ${
-                                  isMe
-                                    ? 'bg-purple-600 text-white rounded-tr-none shadow-xs'
-                                    : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none shadow-2xs'
-                                }`}
+                                className={`opacity-0 group-hover:opacity-100 transition-opacity absolute top-0 ${
+                                  isMe ? 'left-0 -translate-x-full pr-2' : 'right-0 translate-x-full pl-2'
+                                } flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-1.5 py-1 shadow-md z-20`}
                               >
-                                {msg.text}
-                              </div>
-                            )}
-
-                            {/* Textbook Attachment Card */}
-                            {msg.attachment?.type === 'textbook' && (
-                              <div className="p-3.5 bg-teal-50/90 rounded-2xl border border-teal-200 shadow-2xs space-y-2 text-left mt-1.5 max-w-sm">
-                                <div className="flex items-start gap-2.5">
-                                  <div className="w-8 h-8 rounded-xl bg-[#008689] text-white flex items-center justify-center shrink-0">
-                                    <BookOpen className="w-4 h-4" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-[#008689] block">
-                                      Giáo trình đính kèm
-                                    </span>
-                                    <div className="font-bold text-xs text-slate-900 truncate" title={msg.attachment.name}>
-                                      {msg.attachment.name}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                      {msg.attachment.totalPages} trang • {msg.attachment.size}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="pt-2 border-t border-teal-200/80 flex items-center gap-2">
+                                {/* Quick Emoji React Buttons */}
+                                {['👍', '❤️', '👏', '💡', '🔥'].map((em) => (
                                   <button
-                                    onClick={() => {
-                                      localStorage.setItem('quizgen_selected_book_id', msg.attachment?.id || '');
-                                      localStorage.setItem('quizgen_selected_book_name', msg.attachment?.name || '');
-                                      onShowToast('success', 'Đã Chọn Giáo Trình Nhóm', `Đang chuyển sang sinh đề với "${msg.attachment?.name}"...`);
-                                      onNavigate('generate');
-                                    }}
-                                    className="flex-1 px-3 py-1.5 bg-[#008689] hover:bg-[#007073] text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                    key={em}
+                                    type="button"
+                                    onClick={() => handleToggleReaction(msg.id, em)}
+                                    className="p-1 hover:bg-slate-100 rounded-md text-xs transition-colors cursor-pointer"
+                                    title={`Thả ${em}`}
                                   >
-                                    <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
-                                    <span>Dùng Sinh Đề Ngay</span>
+                                    {em}
                                   </button>
-                                </div>
-                              </div>
-                            )}
+                                ))}
 
-                            {/* Exam Attachment Card */}
-                            {msg.attachment?.type === 'exam' && (
-                              <div className="p-3.5 bg-indigo-50/90 rounded-2xl border border-indigo-200 shadow-2xs space-y-2 text-left mt-1.5 max-w-sm">
-                                <div className="flex items-start gap-2.5">
-                                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                                    <FileCheck2 className="w-4 h-4" />
-                                  </div>
-                                  <div className="min-w-0">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700 block">
-                                      Bộ đề thi trắc nghiệm AI
-                                    </span>
-                                    <div className="font-bold text-xs text-slate-900 truncate" title={msg.attachment.name}>
-                                      {msg.attachment.name}
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                      Môn: {msg.attachment.subject} • {msg.attachment.questionCount} câu • {msg.attachment.durationMinutes} phút
-                                    </div>
-                                  </div>
-                                </div>
+                                <div className="w-[1px] h-3.5 bg-slate-200 mx-0.5" />
 
-                                <div className="pt-2 border-t border-indigo-200/80 flex items-center gap-2">
+                                {/* Pin/Unpin */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePinMessage(msg.id)}
+                                  className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                    isPinned
+                                      ? 'text-amber-600 hover:bg-amber-50'
+                                      : 'text-slate-500 hover:bg-slate-100'
+                                  }`}
+                                  title={isPinned ? 'Bỏ ghim tin nhắn' : 'Ghim tin nhắn'}
+                                >
+                                  <Pin className="w-3 h-3" />
+                                </button>
+
+                                {/* Delete Message */}
+                                {(isMe || isOwner) && (
                                   <button
-                                    onClick={() => {
-                                      onShowToast('success', 'Đã Nạp Đề Thi Nhóm', `Đang mở bộ đề "${msg.attachment?.name}" trong Bước 4 Đóng gói & Xuất đề...`);
-                                      onNavigate('bank');
-                                    }}
-                                    className="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                                    type="button"
+                                    onClick={() => handleDeleteMessage(msg.id)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors cursor-pointer"
+                                    title="Xóa tin nhắn này"
                                   >
-                                    <CheckSquare className="w-3.5 h-3.5" />
-                                    <span>Nạp Vào Biên Tập &amp; Xuất Đề</span>
+                                    <Trash2 className="w-3 h-3" />
                                   </button>
-                                </div>
+                                )}
                               </div>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
                     <div ref={chatMessagesEndRef} />
                   </div>
 
                   {/* Chat Input Bar */}
-                  <div className="p-3.5 border-t border-slate-200 bg-white relative">
+                  <div className="p-3.5 border-t border-slate-200 bg-white relative z-10 shadow-sm">
                     {/* Attachment Quick Menu Popup */}
                     {isAttachMenuOpen && (
                       <div className="absolute bottom-16 left-4 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 space-y-1 z-30 animate-in fade-in duration-100">
                         <button
+                          type="button"
                           onClick={() => {
                             setIsAttachMenuOpen(false);
                             setIsAttachTextbookModalOpen(true);
                           }}
-                          className="w-full text-left px-3.5 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-[#008689] text-xs font-bold flex items-center gap-2 transition-colors"
+                          className="w-full text-left px-3.5 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-[#008689] text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
                         >
                           <BookOpen className="w-4 h-4 text-[#008689]" />
                           <span>Đính kèm Giáo trình từ Kho của tôi</span>
                         </button>
                         <button
+                          type="button"
                           onClick={() => {
                             setIsAttachMenuOpen(false);
                             setIsAttachExamModalOpen(true);
                           }}
-                          className="w-full text-left px-3.5 py-2 rounded-xl hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold flex items-center gap-2 transition-colors"
+                          className="w-full text-left px-3.5 py-2 rounded-xl hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
                         >
                           <FileCheck2 className="w-4 h-4 text-indigo-600" />
                           <span>Đính kèm Bộ Đề Thi đã soạn</span>
@@ -1913,7 +2397,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                         type="text"
                         value={chatInputText}
                         onChange={(e) => setChatInputText(e.target.value)}
-                        placeholder="Nhập trao đổi học thuật, đóng góp ma trận câu hỏi với các thầy cô..."
+                        placeholder="Nhập trao đổi học thuật, đóng góp ma trận câu hỏi với các thầy cô... (Enter để gửi)"
                         className="flex-1 px-4 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-purple-600 text-slate-800 placeholder-slate-400"
                       />
 
@@ -1970,17 +2454,58 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               </button>
             </div>
 
-            {/* Sub-tabs inside Owner Settings */}
-            <div className="flex border-b border-slate-200 bg-slate-50/50 px-4 pt-2 gap-2 text-xs font-bold">
+            {/* Sub-tabs inside Group Settings */}
+            <div className="flex border-b border-slate-200 bg-slate-50/50 px-4 pt-2 gap-1.5 text-xs font-bold overflow-x-auto">
               <button
+                type="button"
+                onClick={() => setOwnerSettingsTab('info')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  ownerSettingsTab === 'info'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Thông Tin Nhóm</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOwnerSettingsTab('members')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  ownerSettingsTab === 'members'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Thành Viên ({activeGroup.members.length})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOwnerSettingsTab('policy')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  ownerSettingsTab === 'policy'
+                    ? 'border-purple-600 text-purple-700'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>Chính Sách Vào Phòng</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setOwnerSettingsTab('requests')}
-                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                   ownerSettingsTab === 'requests'
                     ? 'border-purple-600 text-purple-700'
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
-                <span>Yêu Cầu Chờ Duyệt</span>
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Chờ Duyệt</span>
                 {(activeGroup.pendingRequests || []).length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-rose-600 text-white text-[9px] flex items-center justify-center font-bold">
                     {activeGroup.pendingRequests.length}
@@ -1989,35 +2514,274 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               </button>
 
               <button
-                onClick={() => setOwnerSettingsTab('policy')}
-                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  ownerSettingsTab === 'policy'
-                    ? 'border-purple-600 text-purple-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                type="button"
+                onClick={() => setOwnerSettingsTab('danger')}
+                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  ownerSettingsTab === 'danger'
+                    ? 'border-rose-600 text-rose-700'
+                    : 'border-transparent text-slate-500 hover:text-rose-600'
                 }`}
               >
-                <span>Chính Sách Vào Phòng</span>
-              </button>
-
-              <button
-                onClick={() => setOwnerSettingsTab('members')}
-                className={`pb-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  ownerSettingsTab === 'members'
-                    ? 'border-purple-600 text-purple-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <span>Thành Viên ({activeGroup.memberCount})</span>
+                <AlertCircle className="w-3.5 h-3.5" />
+                <span>Rời / Xóa Nhóm</span>
               </button>
             </div>
 
             {/* Modal Body */}
             <div className="p-5 overflow-y-auto space-y-4 flex-1 text-xs">
-              {/* Tab 1: Requests */}
+              {/* Tab 1: Info & Edit */}
+              {ownerSettingsTab === 'info' && (
+                <form onSubmit={handleSaveGroupInfo} className="space-y-4">
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1.5">
+                      Tên Q-Group:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      disabled={!isOwner}
+                      value={editGroupName}
+                      onChange={(e) => setEditGroupName(e.target.value)}
+                      placeholder="Ví dụ: Bộ Môn Mạng & Hệ Điều Hành..."
+                      className="w-full px-3.5 py-2 text-xs bg-slate-50 disabled:bg-slate-100 disabled:cursor-not-allowed border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1.5">
+                      Khoa / Ban Chuyên Ngành:
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!isOwner}
+                      value={editGroupDept}
+                      onChange={(e) => setEditGroupDept(e.target.value)}
+                      placeholder="Ví dụ: Khoa Công nghệ Thông tin..."
+                      className="w-full px-3.5 py-2 text-xs bg-slate-50 disabled:bg-slate-100 disabled:cursor-not-allowed border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-slate-700 block mb-1.5">
+                      Mô Tả &amp; Mục Đích Nhóm:
+                    </label>
+                    <textarea
+                      rows={3}
+                      disabled={!isOwner}
+                      value={editGroupDesc}
+                      onChange={(e) => setEditGroupDesc(e.target.value)}
+                      placeholder="Mô tả phạm vi chia sẻ học liệu, biên soạn đề thi..."
+                      className="w-full px-3.5 py-2 text-xs bg-slate-50 disabled:bg-slate-100 disabled:cursor-not-allowed border border-slate-200 rounded-xl focus:outline-none focus:border-purple-600 text-slate-900 resize-none"
+                    />
+                  </div>
+
+                  {isOwner ? (
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Lưu Thay Đổi Thông Tin</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-800 text-[11px]">
+                      ℹ️ Thầy/Cô đang tham gia với vai trò Thành viên. Chỉ Trưởng nhóm ({activeGroup.ownerName}) mới có quyền chỉnh sửa thông tin nhóm.
+                    </div>
+                  )}
+                </form>
+              )}
+
+              {/* Tab 2: Members & Management */}
+              {ownerSettingsTab === 'members' && (
+                <div className="space-y-4">
+                  {/* Direct Add Member Form (For Owner) */}
+                  {isOwner && (
+                    <form onSubmit={handleAddDirectMember} className="flex gap-2">
+                      <input
+                        type="email"
+                        required
+                        value={directMemberEmailInput}
+                        onChange={(e) => setDirectMemberEmailInput(e.target.value)}
+                        placeholder="Nhập email đồng nghiệp cần thêm (ví dụ: gv@ut.edu.vn)..."
+                        className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-purple-600"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-all cursor-pointer shadow-xs shrink-0 flex items-center gap-1"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>Thêm Vào Nhóm</span>
+                      </button>
+                    </form>
+                  )}
+
+                  <div className="space-y-2 pt-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Danh Sách Thành Viên ({activeGroup.members.length}):
+                    </span>
+                    {activeGroup.members.map((email, idx) => {
+                      const isMemberOwner = email === activeGroup.ownerEmail;
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200 flex items-center justify-between text-xs gap-2"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-[10px] shrink-0">
+                              {email.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <span className="font-mono text-slate-800 font-semibold block truncate">
+                                {email}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                {isMemberOwner ? 'Quản trị viên / Trưởng nhóm' : 'Thành viên tham gia'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {isMemberOwner ? (
+                              <span className="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
+                                Trưởng nhóm
+                              </span>
+                            ) : (
+                              <>
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200 text-slate-600">
+                                  Thành viên
+                                </span>
+                                {isOwner && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTransferOwner(email)}
+                                      className="px-2 py-1 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                                      title="Chuyển giao quyền Trưởng nhóm cho thành viên này"
+                                    >
+                                      Nhượng quyền
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleKickMember(email)}
+                                      className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                      title="Xóa / Kick thành viên này khỏi nhóm"
+                                    >
+                                      <UserX className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 3: Policy */}
+              {ownerSettingsTab === 'policy' && (
+                <div className="space-y-4">
+                  <div className="text-slate-600 text-xs">
+                    Thiết lập cách thức đồng nghiệp có thể tham gia vào nhóm làm việc này:
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <label
+                      onClick={() => isOwner && handleUpdatePolicy(activeGroup.id, 'open')}
+                      className={`p-3.5 rounded-2xl border flex items-start gap-3 transition-all ${
+                        !isOwner ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'
+                      } ${
+                        activeGroup.joinPolicy === 'open'
+                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="joinPolicy"
+                        disabled={!isOwner}
+                        checked={activeGroup.joinPolicy === 'open'}
+                        onChange={() => isOwner && handleUpdatePolicy(activeGroup.id, 'open')}
+                        className="mt-1 text-purple-600"
+                      />
+                      <div>
+                        <strong className="text-slate-900 block text-xs">
+                          🟢 Tự Do Gia Nhập Qua Mã (Open)
+                        </strong>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
+                          Bất kỳ ai nhập đúng mã nhóm <strong>{activeGroup.code}</strong> đều được vào ngay mà không cần phê duyệt.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => isOwner && handleUpdatePolicy(activeGroup.id, 'approval_required')}
+                      className={`p-3.5 rounded-2xl border flex items-start gap-3 transition-all ${
+                        !isOwner ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'
+                      } ${
+                        activeGroup.joinPolicy === 'approval_required'
+                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="joinPolicy"
+                        disabled={!isOwner}
+                        checked={activeGroup.joinPolicy === 'approval_required'}
+                        onChange={() => isOwner && handleUpdatePolicy(activeGroup.id, 'approval_required')}
+                        className="mt-1 text-purple-600"
+                      />
+                      <div>
+                        <strong className="text-slate-900 block text-xs">
+                          🟡 Cần Trưởng Nhóm Phê Duyệt (Approval Required)
+                        </strong>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
+                          Đồng nghiệp nhập mã sẽ vào trạng thái Chờ Duyệt. Trưởng nhóm duyệt thì mới được vào phòng chat.
+                        </span>
+                      </div>
+                    </label>
+
+                    <label
+                      onClick={() => isOwner && handleUpdatePolicy(activeGroup.id, 'email_only')}
+                      className={`p-3.5 rounded-2xl border flex items-start gap-3 transition-all ${
+                        !isOwner ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'
+                      } ${
+                        activeGroup.joinPolicy === 'email_only'
+                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
+                          : 'bg-white border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="joinPolicy"
+                        disabled={!isOwner}
+                        checked={activeGroup.joinPolicy === 'email_only'}
+                        onChange={() => isOwner && handleUpdatePolicy(activeGroup.id, 'email_only')}
+                        className="mt-1 text-purple-600"
+                      />
+                      <div>
+                        <strong className="text-slate-900 block text-xs">
+                          🔒 Khóa Mã - Chỉ Mời Đích Danh Qua Email (Email Only)
+                        </strong>
+                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
+                          Vô hiệu hóa việc nhập mã bên ngoài. Chỉ những ai được Trưởng nhóm thêm trực tiếp qua Email mới vào được.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 4: Requests */}
               {ownerSettingsTab === 'requests' && (
                 <div className="space-y-3">
                   <div className="text-slate-500 text-[11px]">
-                    Giảng viên nhập mã phòng khi nhóm ở chế độ <strong>"Cần duyệt"</strong> sẽ xuất hiện tại đây. Trưởng nhóm cần bấm "Duyệt" để cấp quyền gia nhập.
+                    Giảng viên nhập mã phòng khi nhóm ở chế độ <strong>"Cần duyệt"</strong> sẽ xuất hiện tại đây. Trưởng nhóm bấm "Duyệt" để cấp quyền gia nhập.
                   </div>
 
                   {(activeGroup.pendingRequests || []).length === 0 ? (
@@ -2037,157 +2801,100 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                           <div className="text-[10px] text-slate-400 mt-0.5">Yêu cầu lúc: {req.requestedAt}</div>
                         </div>
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            onClick={() => handleRejectRequest(activeGroup.id, req.id)}
-                            className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 font-bold transition-colors cursor-pointer"
-                          >
-                            Từ Chối
-                          </button>
-                          <button
-                            onClick={() => handleApproveRequest(activeGroup.id, req.id)}
-                            className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            <span>Duyệt Cho Vào</span>
-                          </button>
-                        </div>
+                        {isOwner ? (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleRejectRequest(activeGroup.id, req.id)}
+                              className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-rose-600 hover:bg-rose-50 font-bold transition-colors cursor-pointer"
+                            >
+                              Từ Chối
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveRequest(activeGroup.id, req.id)}
+                              className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors cursor-pointer shadow-xs flex items-center gap-1"
+                            >
+                              <UserCheck className="w-3.5 h-3.5" />
+                              <span>Duyệt Cho Vào</span>
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-semibold">Chờ Trưởng nhóm duyệt</span>
+                        )}
                       </div>
                     ))
                   )}
                 </div>
               )}
 
-              {/* Tab 2: Policy */}
-              {ownerSettingsTab === 'policy' && (
+              {/* Tab 5: Danger Zone (Leave / Delete) */}
+              {ownerSettingsTab === 'danger' && (
                 <div className="space-y-4">
-                  <div className="text-slate-600 text-xs">
-                    Thiết lập cách thức đồng nghiệp có thể tham gia vào nhóm làm việc này:
-                  </div>
-
-                  <div className="space-y-2.5">
-                    <label
-                      onClick={() => handleUpdatePolicy(activeGroup.id, 'open')}
-                      className={`p-3.5 rounded-2xl border flex items-start gap-3 cursor-pointer transition-all ${
-                        activeGroup.joinPolicy === 'open'
-                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="joinPolicy"
-                        checked={activeGroup.joinPolicy === 'open'}
-                        onChange={() => handleUpdatePolicy(activeGroup.id, 'open')}
-                        className="mt-1 text-purple-600"
-                      />
-                      <div>
-                        <strong className="text-slate-900 block text-xs">
-                          🟢 Tự Do Gia Nhập Qua Mã (Open)
-                        </strong>
-                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
-                          Bất kỳ ai nhập đúng mã nhóm <strong>{activeGroup.code}</strong> đều được vào ngay mà không cần phê duyệt.
-                        </span>
-                      </div>
-                    </label>
-
-                    <label
-                      onClick={() => handleUpdatePolicy(activeGroup.id, 'approval_required')}
-                      className={`p-3.5 rounded-2xl border flex items-start gap-3 cursor-pointer transition-all ${
-                        activeGroup.joinPolicy === 'approval_required'
-                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="joinPolicy"
-                        checked={activeGroup.joinPolicy === 'approval_required'}
-                        onChange={() => handleUpdatePolicy(activeGroup.id, 'approval_required')}
-                        className="mt-1 text-purple-600"
-                      />
-                      <div>
-                        <strong className="text-slate-900 block text-xs">
-                          🟡 Cần Trưởng Nhóm Phê Duyệt (Approval Required)
-                        </strong>
-                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
-                          Đồng nghiệp nhập mã sẽ vào trạng thái Chờ Duyệt. Trưởng nhóm duyệt thì mới được vào phòng chat.
-                        </span>
-                      </div>
-                    </label>
-
-                    <label
-                      onClick={() => handleUpdatePolicy(activeGroup.id, 'email_only')}
-                      className={`p-3.5 rounded-2xl border flex items-start gap-3 cursor-pointer transition-all ${
-                        activeGroup.joinPolicy === 'email_only'
-                          ? 'bg-purple-50/80 border-purple-400 shadow-xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="joinPolicy"
-                        checked={activeGroup.joinPolicy === 'email_only'}
-                        onChange={() => handleUpdatePolicy(activeGroup.id, 'email_only')}
-                        className="mt-1 text-purple-600"
-                      />
-                      <div>
-                        <strong className="text-slate-900 block text-xs">
-                          🔒 Khóa Mã - Chỉ Mời Đích Danh Qua Email (Email Only)
-                        </strong>
-                        <span className="text-[11px] text-slate-500 leading-snug block mt-0.5">
-                          Vô hiệu hóa việc nhập mã bên ngoài. Chỉ những ai được Trưởng nhóm thêm trực tiếp qua Email mới vào được.
-                        </span>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab 3: Members */}
-              {ownerSettingsTab === 'members' && (
-                <div className="space-y-4">
-                  {/* Direct Add Member Form */}
-                  <form onSubmit={handleAddDirectMember} className="flex gap-2">
-                    <input
-                      type="email"
-                      required
-                      value={directMemberEmailInput}
-                      onChange={(e) => setDirectMemberEmailInput(e.target.value)}
-                      placeholder="Nhập email đồng nghiệp cần thêm (ví dụ: gv@ut.edu.vn)..."
-                      className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-purple-600"
-                    />
+                  {/* Option 1: Leave Group */}
+                  <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-2">
+                    <div className="flex items-center gap-2 text-slate-900 font-bold">
+                      <LogOut className="w-4 h-4 text-slate-600" />
+                      <span>Rời Khỏi Nhóm Này</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      Thầy/Cô sẽ không còn nhận được các tin nhắn trao đổi, giáo trình và bộ đề thi trong nhóm này nữa.
+                    </p>
                     <button
-                      type="submit"
-                      className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-all cursor-pointer shadow-xs shrink-0 flex items-center gap-1"
+                      type="button"
+                      onClick={handleLeaveGroup}
+                      className="px-3.5 py-2 rounded-xl bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>Thêm Vào Nhóm</span>
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>Rời Khỏi Q-Group</span>
                     </button>
-                  </form>
-
-                  <div className="space-y-1.5 pt-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Thành viên hiện tại ({activeGroup.members.length}):
-                    </span>
-                    {activeGroup.members.map((email, idx) => (
-                      <div
-                        key={idx}
-                        className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs"
-                      >
-                        <span className="font-mono text-slate-700">{email}</span>
-                        {email === activeGroup.ownerEmail ? (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-800">
-                            Trưởng nhóm
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-200 text-slate-600">
-                            Thành viên
-                          </span>
-                        )}
-                      </div>
-                    ))}
                   </div>
+
+                  {/* Option 2: Delete Group (Owner Only) */}
+                  {isOwner && (
+                    <div className="p-4 rounded-2xl border-2 border-rose-200 bg-rose-50/60 space-y-3">
+                      <div className="flex items-center gap-2 text-rose-800 font-extrabold">
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                        <span>Giải Tán &amp; Xóa Vĩnh Viễn Q-Group</span>
+                      </div>
+                      <p className="text-[11px] text-rose-700 leading-relaxed">
+                        Hành động này sẽ xóa toàn bộ lịch sử trao đổi, liên kết tài liệu trong phòng và loại bỏ tất cả thành viên. Dữ liệu sau khi xóa sẽ không thể khôi phục!
+                      </p>
+
+                      {isConfirmDeleteGroupOpen ? (
+                        <div className="p-3 bg-white rounded-xl border border-rose-300 space-y-2">
+                          <p className="font-bold text-rose-900 text-xs">
+                            Thầy/Cô có chắc chắn muốn giải tán nhóm "{activeGroup.name}"?
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleDeleteGroup}
+                              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs"
+                            >
+                              Xác Nhận Giải Tán
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsConfirmDeleteGroupOpen(false)}
+                              className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 font-semibold text-xs transition-colors cursor-pointer"
+                            >
+                              Hủy Bỏ
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsConfirmDeleteGroupOpen(true)}
+                          className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Giải Tán &amp; Xóa Nhóm</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
