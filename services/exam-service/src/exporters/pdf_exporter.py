@@ -9,6 +9,88 @@ from typing import List, Dict, Any, Optional, Tuple
 from PIL import Image as PILImage
 from fpdf import FPDF
 
+def clean_latex_to_text(text: str) -> str:
+    """
+    [SCRUM-102] Bộ chuyển đổi và chuẩn hóa công thức LaTeX sang chuỗi hiển thị trực quan trong PDF:
+    Chuyển phân số, căn số, số mũ, chỉ số dưới và ký hiệu toán học sang ký tự Unicode tương ứng.
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    s = text
+
+    # Thay thế căn bậc hai trước khi làm phân số để xử lý lồng nhau
+    s = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', s)
+    s = re.sub(r'\\sqrt\[([^{}]+)\]\{([^{}]+)\}', r'^\1√(\2)', s)
+
+    # Thay thế phân số \frac{a}{b} -> (a/b) (chạy 3 lần để xử lý phân số lồng nhau)
+    for _ in range(3):
+        s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1/\2)', s)
+
+    # Thay thế lũy thừa số đơn giản ^{2} -> ², ^2 -> ²
+    sup_map = {
+        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+        '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+        'n': 'ⁿ', 'i': 'ⁱ'
+    }
+    def replace_sup(match):
+        val = match.group(1)
+        return "".join(sup_map.get(c, c) for c in val)
+
+    s = re.sub(r'\^\{([0-9n\+\-]+)\}', replace_sup, s)
+    s = re.sub(r'\^([0-9n])', replace_sup, s)
+
+    # Thay thế chỉ số dưới _{1} -> ₁
+    sub_map = {
+        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+        '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+        '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+        'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ', 'x': 'ₓ'
+    }
+    def replace_sub(match):
+        val = match.group(1)
+        return "".join(sub_map.get(c, c) for c in val)
+
+    s = re.sub(r'_\{([0-9a-z\+\-]+)\}', replace_sub, s)
+    s = re.sub(r'_([0-9a-z])', replace_sub, s)
+
+    # Ký hiệu toán học & Hy Lạp phổ biến (xếp \\int, \\infty trước \\in)
+    symbols_map = [
+        (r'\\alpha\b', 'α'), (r'\\beta\b', 'β'), (r'\\gamma\b', 'γ'), (r'\\delta\b', 'δ'),
+        (r'\\epsilon\b', 'ε'), (r'\\theta\b', 'θ'), (r'\\lambda\b', 'λ'), (r'\\mu\b', 'μ'),
+        (r'\\pi\b', 'π'), (r'\\sigma\b', 'σ'), (r'\\tau\b', 'τ'), (r'\\omega\b', 'ω'),
+        (r'\\Delta\b', 'Δ'), (r'\\Sigma\b', 'Σ'), (r'\\Omega\b', 'Ω'),
+        (r'\\times\b', '×'), (r'\\div\b', '÷'), (r'\\pm\b', '±'), (r'\\mp\b', '∓'),
+        (r'\\le(q)?\b', '≤'), (r'\\ge(q)?\b', '≥'), (r'\\neq\b', '≠'), (r'\\approx\b', '≈'),
+        (r'\\infty\b', '∞'), (r'\\partial\b', '∂'), (r'\\nabla\b', '∇'),
+        (r'\\int\b', '∫'), (r'\\sum\b', '∑'), (r'\\prod\b', '∏'),
+        (r'\\notin\b', '∉'), (r'\\in\b', '∈'), (r'\\subset\b', '⊂'), (r'\\subseteq\b', '⊆'),
+        (r'\\cap\b', '∩'), (r'\\cup\b', '∪'), (r'\\emptyset\b', '∅'),
+        (r'\\rightarrow\b', '→'), (r'\\leftarrow\b', '←'), (r'\\Rightarrow\b', '⇒'), (r'\\Leftrightarrow\b', '⇔'),
+        (r'\\log\b', 'log'), (r'\\ln\b', 'ln'), (r'\\sin\b', 'sin'), (r'\\cos\b', 'cos'), (r'\\tan\b', 'tan'),
+        (r'\\cdot\b', '·'), (r'\\circ\b', '°')
+    ]
+    for pattern, repl in symbols_map:
+        s = re.sub(pattern, repl, s)
+
+    # Thay thế phân số \frac{a}{b} -> (a/b) (chạy 3 lần để xử lý phân số lồng nhau)
+    for _ in range(3):
+        s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1/\2)', s)
+
+    # Xóa bỏ các ký tự dấu $ bao quanh công thức (loại bỏ tất cả dấu $)
+    s = s.replace('$$', '').replace('$', '')
+
+    # Xóa các lệnh định dạng thừa trong LaTeX
+    s = re.sub(r'\\(text|mathbf|mathit|mathrm|mathbb)\{([^{}]+)\}', r'\2', s)
+
+    # Làm sạch khoảng trắng thừa
+    s = re.sub(r'\\,', ' ', s)
+    s = re.sub(r'\\;', ' ', s)
+    s = re.sub(r'\\quad', '   ', s)
+
+    return s.strip()
+
 # Import ReportLab với cơ chế kiểm tra khả dụng an toàn
 try:
     import reportlab
@@ -508,7 +590,8 @@ class ReportLabExamExporter:
 
         for idx, q in enumerate(questions, 1):
             q_flowables = []
-            q_text = q.get("question") or q.get("question_text") or ""
+            raw_q_text = q.get("question") or q.get("question_text") or ""
+            q_text = clean_latex_to_text(raw_q_text)
             q_flowables.append(Paragraph(f"<b>Câu {idx}:</b> {q_text}", style_q))
 
             # Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi
@@ -559,7 +642,8 @@ class ReportLabExamExporter:
             options = q.get("options", [])
             for opt in options:
                 opt_label = opt.get("label", "A")
-                opt_text = opt.get("text", "")
+                raw_opt_text = opt.get("text", "")
+                opt_text = clean_latex_to_text(str(raw_opt_text))
                 q_flowables.append(Paragraph(f"<b>{opt_label}.</b> {opt_text}", style_opt))
 
             q_flowables.append(Spacer(1, 2 * RL_MM))
@@ -616,7 +700,8 @@ class ReportLabExamExporter:
                 story.append(Spacer(1, 2 * RL_MM))
                 for item in answer_keys:
                     if item.get("explanation"):
-                        p_exp = Paragraph(f"<b>Câu {item['idx']} (Đáp án {item['label']}):</b> {item['explanation']}", style_q)
+                        exp_text = clean_latex_to_text(str(item["explanation"]))
+                        p_exp = Paragraph(f"<b>Câu {item['idx']} (Đáp án {item['label']}):</b> {exp_text}", style_q)
                         story.append(p_exp)
 
         doc.build(story)
