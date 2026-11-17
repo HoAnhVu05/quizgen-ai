@@ -23,9 +23,13 @@ import {
   ChevronRight,
   Lightbulb,
   FileCheck,
+  Maximize2,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Question, BloomLevel, ScreenId, UserProfile, QuestionStatus } from '../types';
 import MathRenderer from './MathRenderer';
+import { LatexFormulaToolbar } from './LatexFormulaToolbar';
+import { ImageLightboxModal } from './ImageLightboxModal';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -200,6 +204,21 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   const [editCorrectId, setEditCorrectId] = useState('');
   const [editExplanation, setEditExplanation] = useState('');
   const [editBloom, setEditBloom] = useState<BloomLevel>('Thông hiểu');
+  const [editHasImage, setEditHasImage] = useState(false);
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editImageCaption, setEditImageCaption] = useState('');
+  const [activeFocusedField, setActiveFocusedField] = useState<'stem' | 'explanation' | string>('stem');
+
+  // Lightbox modal state
+  const [lightboxData, setLightboxData] = useState<{
+    isOpen: boolean;
+    url: string;
+    caption?: string;
+  }>({
+    isOpen: false,
+    url: '',
+    caption: '',
+  });
 
   const filteredQuestions = questions.filter((q) => {
     const matchStatus = filterStatus === 'all' || q.status === filterStatus;
@@ -217,6 +236,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       setEditCorrectId(activeQuestion.correctAnswerId);
       setEditExplanation(activeQuestion.explanation);
       setEditBloom(activeQuestion.bloomLevel);
+      setEditHasImage(!!activeQuestion.hasImage);
+      setEditImageUrl(activeQuestion.imageUrl || '');
+      setEditImageCaption(activeQuestion.imageCaption || '');
       setIsEditing(false);
     }
   }, [activeQuestion?.id]);
@@ -272,8 +294,28 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleStatusChange, isEditing]);
 
+  const handleInsertFormula = (snippet: string) => {
+    if (activeFocusedField === 'stem') {
+      setEditStem((prev) => (prev ? `${prev} ${snippet}` : snippet));
+    } else if (activeFocusedField === 'explanation') {
+      setEditExplanation((prev) => (prev ? `${prev} ${snippet}` : snippet));
+    } else {
+      setEditOptions((prev) =>
+        prev.map((opt) =>
+          opt.id === activeFocusedField ? { ...opt, text: opt.text ? `${opt.text} ${snippet}` : snippet } : opt
+        )
+      );
+    }
+  };
+
   const handleSaveEdit = () => {
     if (!activeQuestion) return;
+    const hasFormula =
+      editStem.includes('$') ||
+      editExplanation.includes('$') ||
+      editOptions.some((o) => o.text.includes('$')) ||
+      !!activeQuestion.hasFormula;
+
     onUpdateQuestion({
       ...activeQuestion,
       question: editStem,
@@ -281,9 +323,13 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       correctAnswerId: editCorrectId,
       explanation: editExplanation,
       bloomLevel: editBloom,
+      hasImage: editHasImage && !!editImageUrl,
+      imageUrl: editHasImage ? editImageUrl : undefined,
+      imageCaption: editHasImage ? editImageCaption : undefined,
+      hasFormula,
     });
     setIsEditing(false);
-    onShowToast('info', 'Đã lưu chỉnh sửa', 'Nội dung câu hỏi và mức độ Bloom đã được cập nhật.');
+    onShowToast('info', 'Đã lưu chỉnh sửa', 'Nội dung câu hỏi, công thức và hình ảnh minh họa đã được cập nhật.');
   };
 
   const handleQuickBloomCycle = () => {
@@ -601,31 +647,113 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
 
             {/* Question Stem */}
             <div>
-              <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">
-                Nội dung câu hỏi — {activeQuestion.chapter}
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[11px] font-bold text-slate-400 uppercase">
+                  Nội dung câu hỏi — {activeQuestion.chapter}
+                </label>
+                {isEditing && (
+                  <span className="text-[11px] text-indigo-600 font-medium">
+                    Đang chọn ô: <strong className="font-bold">{activeFocusedField === 'stem' ? 'Câu hỏi' : activeFocusedField === 'explanation' ? 'Giải thích' : `Đáp án`}</strong>
+                  </span>
+                )}
+              </div>
+
+              {isEditing && (
+                <div className="mb-2">
+                  <LatexFormulaToolbar onInsert={handleInsertFormula} />
+                </div>
+              )}
+
               {isEditing ? (
                 <div className="space-y-2">
                   <textarea
                     rows={3}
                     value={editStem}
+                    onFocus={() => setActiveFocusedField('stem')}
                     onChange={(e) => setEditStem(e.target.value)}
                     className="w-full p-3 rounded-lg border border-slate-300 text-sm text-slate-800 focus:outline-none focus:border-[#008689]"
+                    placeholder="Nhập nội dung câu hỏi (sử dụng $...$ cho công thức toán)..."
                   />
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-slate-600">Mức độ Bloom:</span>
-                    <select
-                      value={editBloom}
-                      onChange={(e) => setEditBloom(e.target.value as BloomLevel)}
-                      className="px-2.5 py-1 rounded border border-slate-300 text-xs font-semibold text-slate-700"
-                    >
-                      {BLOOM_ORDER.map((lvl) => (
-                        <option key={lvl} value={lvl}>
-                          {BLOOM_STYLE[lvl].label} ({BLOOM_STYLE[lvl].en})
-                        </option>
-                      ))}
-                    </select>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-600">Mức độ Bloom:</span>
+                      <select
+                        value={editBloom}
+                        onChange={(e) => setEditBloom(e.target.value as BloomLevel)}
+                        className="px-2.5 py-1 rounded border border-slate-300 text-xs font-semibold text-slate-700"
+                      >
+                        {BLOOM_ORDER.map((lvl) => (
+                          <option key={lvl} value={lvl}>
+                            {BLOOM_STYLE[lvl].label} ({BLOOM_STYLE[lvl].en})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md transition-colors">
+                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                      <input
+                        type="checkbox"
+                        checked={editHasImage}
+                        onChange={(e) => setEditHasImage(e.target.checked)}
+                        className="rounded text-[#008689]"
+                      />
+                      <span>Đính kèm hình vẽ / sơ đồ</span>
+                    </label>
                   </div>
+
+                  {/* Multimodal Image Input Section */}
+                  {editHasImage && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
+                      <span className="font-bold text-slate-700 block">Hình ảnh / Sơ đồ minh chứng câu hỏi:</span>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          placeholder="Nhập URL hình ảnh (https://...)"
+                          value={editImageUrl}
+                          onChange={(e) => setEditImageUrl(e.target.value)}
+                          className="flex-1 px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
+                        />
+                        <label className="px-3 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold cursor-pointer shrink-0 text-center transition-colors">
+                          📁 Tải ảnh từ máy
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                  setEditImageUrl(reader.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Chú thích hình ảnh (ví dụ: Sơ đồ khối nguyên lý hoạt động)"
+                        value={editImageCaption}
+                        onChange={(e) => setEditImageCaption(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
+                      />
+                      {editImageUrl && (
+                        <div className="pt-1 flex items-center gap-3">
+                          <img
+                            src={editImageUrl}
+                            alt="Xem trước"
+                            className="max-h-24 rounded border border-slate-200 object-contain bg-white p-1"
+                          />
+                          <div className="text-[11px] text-slate-500 italic">
+                            Xem trước hiển thị sơ đồ trong câu hỏi
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="text-sm font-semibold text-slate-800 leading-relaxed space-y-3">
@@ -633,14 +761,35 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                     <MathRenderer content={activeQuestion.question} />
                   </div>
                   {activeQuestion.hasImage && activeQuestion.imageUrl && (
-                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg max-w-md mx-auto text-center shadow-xs">
+                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg max-w-md mx-auto text-center shadow-xs group relative">
                       <img
                         src={activeQuestion.imageUrl}
                         alt={activeQuestion.imageCaption || 'Sơ đồ câu hỏi'}
-                        className="max-h-60 mx-auto rounded object-contain border border-slate-100"
+                        className="max-h-60 mx-auto rounded object-contain border border-slate-100 cursor-pointer hover:opacity-95 transition-opacity"
+                        onClick={() =>
+                          setLightboxData({
+                            isOpen: true,
+                            url: activeQuestion.imageUrl!,
+                            caption: activeQuestion.imageCaption,
+                          })
+                        }
                       />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLightboxData({
+                            isOpen: true,
+                            url: activeQuestion.imageUrl!,
+                            caption: activeQuestion.imageCaption,
+                          })
+                        }
+                        className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium transition-colors"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        Phóng to hình ảnh / Xem chi tiết
+                      </button>
                       {activeQuestion.imageCaption && (
-                        <p className="text-[11px] text-slate-500 italic mt-1.5 font-normal">
+                        <p className="text-[11px] text-slate-500 italic mt-1 font-normal">
                           {activeQuestion.imageCaption}
                         </p>
                       )}
@@ -683,6 +832,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                       <input
                         type="text"
                         value={opt.text}
+                        onFocus={() => setActiveFocusedField(opt.id)}
                         onChange={(e) => handleOptionTextChange(opt.id, e.target.value)}
                         className="flex-1 bg-white px-2.5 py-1 rounded border border-slate-300 text-sm focus:outline-none focus:border-[#008689]"
                       />
@@ -705,8 +855,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 <textarea
                   rows={2}
                   value={editExplanation}
+                  onFocus={() => setActiveFocusedField('explanation')}
                   onChange={(e) => setEditExplanation(e.target.value)}
-                  className="w-full p-2 rounded border border-slate-300 text-xs text-slate-700 bg-white focus:outline-none"
+                  className="w-full p-2 rounded border border-slate-300 text-xs text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
                 />
               ) : (
                 <div className="text-xs text-slate-600 leading-relaxed">
@@ -776,6 +927,14 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* Image Lightbox Modal */}
+      <ImageLightboxModal
+        isOpen={lightboxData.isOpen}
+        imageUrl={lightboxData.url}
+        imageCaption={lightboxData.caption}
+        onClose={() => setLightboxData({ isOpen: false, url: '', caption: '' })}
+      />
     </div>
   );
 };

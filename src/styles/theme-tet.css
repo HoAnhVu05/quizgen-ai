@@ -1,0 +1,111 @@
+/* ==========================================================================
+   QUIZGEN AI - MODERN VIETNAMESE TET THEME (XUÂN ĐINH MÙI 2027)
+   Bảng màu quy chuẩn:
+   - Đỏ Tết:   #B82025
+   - Đỏ đậm:   #8F171C
+   - Vàng kim: #E7B947
+   - Kem sáng: #FFF8E9
+   - Trắng:    #FFFFFF
+   - Xanh ngọc:#087E79
+   ========================================================================== */
+
+:root {
+  --tet-red: #B82025;
+  --tet-dark-red: #8F171C;
+  --tet-gold: #E7B947;
+  --tet-cream: #FFF8E9;
+  --tet-white: #FFFFFF;
+  --tet-teal: #087E79;
+}
+
+[data-theme="spring"] {
+  --theme-primary: #B82025;
+  --theme-accent: #E7B947;
+  --theme-secondary: #8F171C;
+  --theme-glow: rgba(184, 32, 37, 0.15);
+}
+
+/* Lồng đèn đung đưa nhẹ nhàng, trang trọng */
+@keyframes tetLanternSway {
+  0% {
+    transform: rotate(-3.5deg);
+  }
+  50% {
+    transform: rotate(3.5deg);
+  }
+  100% {
+    transform: rotate(-3.5deg);
+  }
+}
+
+.tet-lantern-swing {
+  transform-origin: top center;
+  animation: tetLanternSway 3.6s ease-in-out infinite;
+}
+
+/* Nhịp thở lấp lánh kim tuyến nhẹ */
+@keyframes tetGoldGaze {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(231, 185, 71, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(231, 185, 71, 0.5);
+  }
+}
+
+.tet-gold-glow {
+  animation: tetGoldGaze 2.8s ease-in-out infinite;
+}
+
+/* Hiệu ứng pháo hoa mừng hoàn thành thao tác */
+@keyframes tetFireworkSpark {
+  0% {
+    transform: scale(0.3) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.4) rotate(45deg);
+    opacity: 0;
+  }
+}
+
+.tet-firework-burst {
+  animation: tetFireworkSpark 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Hiệu ứng cánh mai vàng rơi nhẹ nhàng */
+@keyframes tetPetalDrift {
+  0% {
+    transform: translateY(-20px) translateX(0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  90% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateY(105vh) translateX(40px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.tet-petal-drift {
+  animation: tetPetalDrift linear infinite;
+  will-change: transform, opacity;
+}
+
+/* Chế độ hỗ trợ giảm chuyển động (prefers-reduced-motion) */
+@media (prefers-reduced-motion: reduce) {
+  .tet-lantern-swing,
+  .tet-gold-glow,
+  .tet-firework-burst,
+  .tet-petal-drift {
+    animation: none !important;
+    transform: none !important;
+  }
+}

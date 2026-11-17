@@ -1,3 +1,10 @@
+@import './styles/theme-tet.css';
+@import './styles/theme-summer.css';
+@import './styles/theme-autumn.css';
+@import './styles/theme-winter.css';
+@import './styles/theme-30-4.css';
+@import './styles/theme-2-9.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

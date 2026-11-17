@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTheme } from '../context/ThemeContext';
 import {
   ShieldCheck,
   Cpu,
@@ -15,6 +16,8 @@ import {
   Search,
   UserCog,
   LogOut,
+  User,
+  EyeOff,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -47,7 +50,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onToggleMobileMenu,
   onOpenProfileModal,
 }) => {
+  const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
   const isAdmin = currentUser?.role === 'admin';
+  const isAdminScreen = currentScreen === 'admin_portal';
+  const showAdminHeader = isAdmin || isAdminScreen;
   const [searchValue, setSearchValue] = useState('');
 
   const getScreenMeta = (screen: ScreenId) => {
@@ -55,9 +61,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       case 'admin_portal':
         return {
           label: 'Cổng Quản trị Hệ thống',
-          shortLabel: 'Quản trị',
+          shortLabel: 'Cổng Quản trị',
           icon: ShieldCheck,
-          iconStyle: 'bg-rose-50 text-[#da1c2d] border-rose-200',
+          iconStyle: 'bg-teal-50 text-[#008689] border-teal-200',
         };
       case 'dashboard':
         return {
@@ -123,7 +129,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none gap-3 shadow-2xs">
+    <header
+      className={`${
+        showAdminHeader ? 'h-[72px]' : 'h-16'
+      } bg-white border-b border-[#E5EDF5] px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none gap-3 shadow-2xs transition-all`}
+    >
       {/* Left: Mobile Toggle + Screen Title & Breadcrumb */}
       <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 shrink-0">
         {onToggleMobileMenu && (
@@ -136,20 +146,43 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           </button>
         )}
         <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${screenMeta.iconStyle} shadow-2xs`}
+          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
+            showAdminHeader
+              ? 'bg-[#E4F7F7] text-[#008F95] border-[#E4F7F7]'
+              : screenMeta.iconStyle
+          } shadow-2xs`}
         >
           <ScreenIcon className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-xs sm:text-sm font-bold text-slate-800 truncate leading-snug">
-            <span className="hidden sm:inline">{screenMeta.label}</span>
-            <span className="sm:hidden">{screenMeta.shortLabel}</span>
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className={`text-xs sm:text-sm font-bold truncate leading-snug ${showAdminHeader ? 'text-[#142B45]' : 'text-slate-800'}`}>
+              <span className="hidden sm:inline">{screenMeta.label}</span>
+              <span className="sm:hidden">{screenMeta.shortLabel}</span>
+            </h2>
+            {activeThemeId !== 'default' && (
+              <span
+                className="hidden md:inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs animate-in fade-in duration-300"
+                style={{
+                  backgroundColor: `${currentTheme.colors.primary}15`,
+                  borderColor: `${currentTheme.colors.primary}40`,
+                  color: currentTheme.colors.primary,
+                }}
+              >
+                <span>{currentTheme.seasonLabel}</span>
+              </span>
+            )}
+          </div>
+          {showAdminHeader && (
+            <p className="text-[11px] text-[#91A2B8] font-medium hidden sm:block leading-none mt-0.5">
+              QuizGen AI - Admin Portal
+            </p>
+          )}
         </div>
       </div>
 
       {/* Middle: Spotlight Search Bar */}
-      {!isAdmin && (
+      {!showAdminHeader && (
         <form
           onSubmit={handleSearchSubmit}
           className="hidden md:flex items-center flex-1 max-w-md mx-2 lg:mx-6"
@@ -172,129 +205,302 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </form>
       )}
 
-      {/* Right: User Profile & Account Settings + Logout Button */}
-      <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
-        {!isAdmin && (
-          <button
-            type="button"
-            onClick={onOpenProfileModal}
-            className="flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50 transition-all text-left shadow-2xs group"
-            title="Nhấp để xem & cập nhật hồ sơ tài khoản"
-          >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-[#008689] to-teal-400 text-white font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-              {userInitial}
-            </div>
-            <div className="hidden sm:block min-w-0 max-w-[150px] lg:max-w-[200px]">
-              <div className="text-xs font-bold text-slate-800 truncate leading-tight group-hover:text-[#008689]">
-                {userDisplayName}
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
-                {currentUser?.department || 'Khoa Công nghệ thông tin'}
-              </div>
-            </div>
-            <UserCog className="w-4 h-4 text-slate-400 group-hover:text-[#008689] shrink-0 ml-0.5" />
-          </button>
-        )}
-
-        {/* Subscription Plan Badge & Upgrade Action */}
-        <div className="flex items-center gap-2">
-          {subscriptionInfo?.plan_code === 'PRO_MONTH' ? (
-            <div className="flex items-center gap-2">
-              <div 
-                title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-amber-100/80 transition-colors"
-                onClick={onOpenPricingModal}
-              >
-                <Crown className="w-3.5 h-3.5 text-amber-600" />
-                <span>Gói PRO (Tháng)</span>
-              </div>
-              {onOpenPricingModal && (
-                <button
-                  onClick={onOpenPricingModal}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer"
-                  title="Nâng cấp lên gói 1 Năm để tiết kiệm 80%"
-                >
-                  <Sparkles className="w-3 h-3 text-amber-200" />
-                  <span>Lên gói 1 Năm</span>
-                </button>
-              )}
-            </div>
-          ) : subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
-            <div 
-              title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên VIP (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên 1 Năm'}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500 text-white border border-amber-400 text-[11px] font-black shadow-xs cursor-pointer hover:bg-amber-600 transition-colors"
-              onClick={onOpenPricingModal}
-            >
-              <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
-              <span>Gói PRO (1 Năm VIP)</span>
-            </div>
-          ) : subscriptionInfo?.plan_code === 'ENTERPRISE' ? (
-            <div 
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-purple-100/80 transition-colors"
-              onClick={onOpenPricingModal}
-            >
-              <Crown className="w-3.5 h-3.5 text-purple-600" />
-              <span>Gói Bộ Môn Toàn Năng</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-                Gói Miễn Phí
-              </span>
-              {onOpenPricingModal && (
-                <button
-                  onClick={onOpenPricingModal}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02]"
-                >
-                  <Sparkles className="w-3 h-3 text-amber-200" />
-                  <span>Nâng cấp</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {isAdmin && (
-          <div className="flex items-center gap-2">
+      {/* Right: Actions */}
+      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+        {showAdminHeader ? (
+          /* ── ADMIN HEADER ACTIONS ── */
+          <>
+            {/* Nút Kiểm tra Sức khỏe */}
             <button
+              type="button"
               onClick={() => {
                 onNavigate?.('admin_portal');
                 onAdminTabChange?.('services');
               }}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#008689] text-white hover:bg-[#006d70] transition-colors flex items-center gap-1.5 shadow-2xs"
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#008689] hover:bg-[#007073] active:bg-[#005f62] text-white text-xs font-semibold shadow-xs transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+              title="Kiểm tra trạng thái sức khỏe các dịch vụ hệ thống"
             >
-              <Activity className="w-3.5 h-3.5" />
+              <Activity className="w-4 h-4 text-white shrink-0" />
               <span className="hidden sm:inline">Kiểm tra Sức khỏe</span>
               <span className="sm:hidden">Sức khỏe</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0 ml-0.5" />
             </button>
+
+            {/* Nút quay lại Cổng Admin (nếu đang ở màn hình khác) */}
             {onNavigate && currentScreen !== 'admin_portal' && (
               <button
+                type="button"
                 onClick={() => onNavigate('admin_portal')}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-white hover:bg-slate-900 transition-colors whitespace-nowrap shadow-2xs"
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-white hover:bg-slate-900 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                title="Quay lại Cổng Quản trị Admin"
               >
                 Cổng Admin
               </button>
             )}
+
+            {/* Subtle vertical divider */}
+            <div className="h-5 w-px bg-slate-200 mx-1 hidden sm:block" />
+
+            {/* Nút biểu tượng tài khoản người dùng */}
             <button
               type="button"
               onClick={onOpenProfileModal}
-              className="p-1.5 rounded-xl border border-slate-200 bg-white hover:border-[#008689] text-slate-600 hover:text-[#008689] transition-colors"
-              title="Cập nhật tài khoản Admin"
+              className="w-9 h-9 rounded-full bg-white border border-slate-200/90 hover:border-[#008689] hover:bg-teal-50/40 text-slate-600 hover:text-[#008689] transition-all duration-200 shadow-2xs flex items-center justify-center cursor-pointer shrink-0 hover:-translate-y-0.5 active:translate-y-0"
+              title="Hồ sơ tài khoản Quản trị viên"
             >
-              <UserCog className="w-4 h-4" />
+              <User className="w-4 h-4 shrink-0" />
             </button>
-          </div>
-        )}
 
-        {/* Global Logout Button */}
-        <button
-          type="button"
-          onClick={onLogout}
-          className="p-2 rounded-xl border border-slate-200 hover:border-rose-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors shadow-2xs"
-          title="Đăng xuất khỏi hệ thống"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
+            {/* Nút Đăng xuất */}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="w-9 h-9 rounded-full bg-white border border-slate-200/90 hover:border-rose-300 hover:bg-rose-50 text-slate-600 hover:text-rose-600 transition-all duration-200 shadow-2xs flex items-center justify-center cursor-pointer shrink-0 hover:-translate-y-0.5 active:translate-y-0"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+            </button>
+          </>
+        ) : (
+          /* ── LECTURER & HOD HEADER ACTIONS (GIỮ NGUYÊN) ── */
+          <>
+            <button
+              type="button"
+              onClick={onOpenProfileModal}
+              className={`flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-xl border transition-all text-left shadow-2xs group ${
+                activeThemeId === 'spring'
+                  ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/60'
+                  : activeThemeId === 'summer'
+                  ? 'border-[#26B9D5]/70 hover:border-[#087EAD] bg-[#EAFBFF]/60'
+                  : activeThemeId === 'autumn'
+                  ? 'border-[#E9B85D]/70 hover:border-[#B85C38] bg-[#FFF3DF]/60'
+                  : activeThemeId === 'winter'
+                  ? 'border-[#78BDE8]/70 hover:border-[#2563A6] bg-[#F3FAFF]/60'
+                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                  ? 'border-[#E7B947]/70 hover:border-[#DA251D] bg-[#FFF3D1]/60'
+                  : 'border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50'
+              }`}
+              title="Nhấp để xem & cập nhật hồ sơ tài khoản"
+            >
+              <div
+                className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
+                  activeThemeId === 'spring'
+                    ? 'bg-gradient-to-tr from-[#B82025] to-[#E7B947] text-white'
+                    : activeThemeId === 'summer'
+                    ? 'bg-gradient-to-tr from-[#087EAD] to-[#26B9D5] text-white'
+                    : activeThemeId === 'autumn'
+                    ? 'bg-gradient-to-tr from-[#B85C38] to-[#E9B85D] text-white'
+                    : activeThemeId === 'winter'
+                    ? 'bg-gradient-to-tr from-[#2563A6] to-[#78BDE8] text-white'
+                    : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                    ? 'bg-gradient-to-tr from-[#DA251D] to-[#FFCD00] text-white'
+                    : 'bg-gradient-to-tr from-[#008689] to-teal-400 text-white'
+                }`}
+              >
+                {userInitial}
+              </div>
+              <div className="hidden sm:block min-w-0 max-w-[150px] lg:max-w-[200px]">
+                <div
+                  className={`text-xs font-bold truncate leading-tight transition-colors ${
+                    activeThemeId === 'spring'
+                      ? 'text-[#8F171C] group-hover:text-[#B82025]'
+                      : activeThemeId === 'summer'
+                      ? 'text-[#087EAD] group-hover:text-[#26B9D5]'
+                      : activeThemeId === 'autumn'
+                      ? 'text-[#70452F] group-hover:text-[#B85C38]'
+                      : activeThemeId === 'winter'
+                      ? 'text-[#243B64] group-hover:text-[#2563A6]'
+                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                      ? 'text-[#8F171C] group-hover:text-[#DA251D]'
+                      : 'text-slate-800 group-hover:text-[#008689]'
+                  }`}
+                >
+                  {userDisplayName}
+                </div>
+                <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                  {currentUser?.department || 'Khoa Công nghệ thông tin'}
+                </div>
+              </div>
+              <UserCog className={`w-4 h-4 shrink-0 ml-0.5 transition-colors ${
+                activeThemeId === 'spring'
+                  ? 'text-[#E7B947] group-hover:text-[#B82025]'
+                  : activeThemeId === 'summer'
+                  ? 'text-[#26B9D5] group-hover:text-[#087EAD]'
+                  : activeThemeId === 'autumn'
+                  ? 'text-[#E9B85D] group-hover:text-[#B85C38]'
+                  : activeThemeId === 'winter'
+                  ? 'text-[#78BDE8] group-hover:text-[#2563A6]'
+                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                  ? 'text-[#FFCD00] group-hover:text-[#DA251D]'
+                  : 'text-slate-400 group-hover:text-[#008689]'
+              }`} />
+            </button>
+
+            {/* Subscription Plan Badge & Upgrade Action */}
+            <div className="flex items-center gap-2">
+              {subscriptionInfo?.plan_code === 'PRO_MONTH' ? (
+                <div className="flex items-center gap-2">
+                  <div 
+                    title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold shadow-2xs cursor-pointer transition-colors ${
+                      activeThemeId === 'spring'
+                        ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947] hover:bg-amber-100/90'
+                        : activeThemeId === 'summer'
+                        ? 'bg-[#EAFBFF] text-[#087EAD] border border-[#26B9D5] hover:bg-cyan-100/90'
+                        : activeThemeId === 'autumn'
+                        ? 'bg-[#FFF3DF] text-[#70452F] border border-[#E9B85D] hover:bg-amber-100/90'
+                        : activeThemeId === 'winter'
+                        ? 'bg-[#F3FAFF] text-[#243B64] border border-[#78BDE8] hover:bg-sky-100/90'
+                        : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                        ? 'bg-[#FFF3D1] text-[#8F171C] border border-[#E7B947] hover:bg-amber-100/90'
+                        : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100/80'
+                    }`}
+                    onClick={onOpenPricingModal}
+                  >
+                    <Crown className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Gói PRO (Tháng)</span>
+                  </div>
+                  {onOpenPricingModal && (
+                    <button
+                      onClick={onOpenPricingModal}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                        activeThemeId === 'spring'
+                          ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
+                          : activeThemeId === 'summer'
+                          ? 'bg-gradient-to-r from-[#087EAD] to-[#26B9D5] text-[#FFD166] border border-[#FFD166]'
+                          : activeThemeId === 'autumn'
+                          ? 'bg-gradient-to-r from-[#B85C38] to-[#70452F] text-[#FFF3DF] border border-[#E9B85D]'
+                          : activeThemeId === 'winter'
+                          ? 'bg-gradient-to-r from-[#243B64] to-[#2563A6] text-[#F3FAFF] border border-[#78BDE8]'
+                          : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                          ? 'bg-gradient-to-r from-[#DA251D] to-[#8F171C] text-[#FFF3D1] border border-[#FFCD00]'
+                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
+                      }`}
+                      title="Nâng cấp lên gói 1 Năm để tiết kiệm 80%"
+                    >
+                      <Sparkles className="w-3 h-3 text-[#E7B947]" />
+                      <span>Lên gói 1 Năm</span>
+                    </button>
+                  )}
+                </div>
+              ) : subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
+                <div 
+                  title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên VIP (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên 1 Năm'}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-white text-[11px] font-black shadow-xs cursor-pointer transition-colors ${
+                    activeThemeId === 'spring'
+                      ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] border border-[#E7B947] hover:brightness-110'
+                      : activeThemeId === 'summer'
+                      ? 'bg-gradient-to-r from-[#087EAD] to-[#26B9D5] text-white border border-[#FFD166] hover:brightness-110'
+                      : activeThemeId === 'autumn'
+                      ? 'bg-gradient-to-r from-[#B85C38] to-[#70452F] text-[#FFF3DF] border border-[#E9B85D] hover:brightness-110'
+                      : activeThemeId === 'winter'
+                      ? 'bg-gradient-to-r from-[#243B64] to-[#2563A6] text-white border border-[#78BDE8] hover:brightness-110'
+                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                      ? 'bg-gradient-to-r from-[#DA251D] to-[#8F171C] text-[#FFCD00] border border-[#FFCD00] hover:brightness-110'
+                      : 'bg-amber-500 border border-amber-400 hover:bg-amber-600'
+                  }`}
+                  onClick={onOpenPricingModal}
+                >
+                  <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
+                  <span>Gói PRO (1 Năm VIP)</span>
+                </div>
+              ) : subscriptionInfo?.plan_code === 'ENTERPRISE' ? (
+                <div 
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-purple-100/80 transition-colors"
+                  onClick={onOpenPricingModal}
+                >
+                  <Crown className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Gói Bộ Môn Toàn Năng</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                    Gói Miễn Phí
+                  </span>
+                  {onOpenPricingModal && (
+                    <button
+                      onClick={onOpenPricingModal}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                        activeThemeId === 'spring'
+                          ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
+                          : activeThemeId === 'summer'
+                          ? 'bg-gradient-to-r from-[#087EAD] to-[#26B9D5] text-[#FFD166] border border-[#FFD166]'
+                          : activeThemeId === 'autumn'
+                          ? 'bg-gradient-to-r from-[#B85C38] to-[#70452F] text-[#FFF3DF] border border-[#E9B85D]'
+                          : activeThemeId === 'winter'
+                          ? 'bg-gradient-to-r from-[#243B64] to-[#2563A6] text-[#F3FAFF] border border-[#78BDE8]'
+                          : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                          ? 'bg-gradient-to-r from-[#DA251D] to-[#8F171C] text-[#FFF3D1] border border-[#FFCD00]'
+                          : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 text-[#E7B947]" />
+                      <span>Nâng cấp</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Nút Bật / Tắt hiệu ứng mùa lễ hội (Bố trí gọn gàng trên Header) */}
+            {activeThemeId !== 'default' && (
+              <button
+                type="button"
+                onClick={toggleParticles}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-2xs ${
+                  showParticles
+                    ? activeThemeId === 'spring'
+                      ? 'bg-[#FFF8E9] border-[#E7B947] text-[#8F171C] hover:bg-amber-100/80'
+                      : activeThemeId === 'summer'
+                      ? 'bg-[#EAFBFF] border-[#26B9D5] text-[#087EAD] hover:bg-cyan-100/80'
+                      : activeThemeId === 'autumn'
+                      ? 'bg-[#FFF3DF] border-[#E9B85D] text-[#B85C38] hover:bg-amber-100/80'
+                      : activeThemeId === 'winter'
+                      ? 'bg-[#F3FAFF] border-[#78BDE8] text-[#2563A6] hover:bg-sky-100/80'
+                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                      ? 'bg-[#FFF3D1] border-[#E7B947] text-[#DA251D] hover:bg-amber-100/80'
+                      : 'bg-teal-50 border-teal-200 text-[#008689] hover:bg-teal-100/70'
+                    : 'bg-slate-50 border-slate-200 text-slate-400 hover:text-slate-600'
+                }`}
+                title={showParticles ? "Nhấn để tắt hiệu ứng hạt" : "Nhấn để bật hiệu ứng hạt"}
+              >
+                {showParticles ? (
+                  <>
+                    <Sparkles className={`w-3.5 h-3.5 ${
+                      activeThemeId === 'spring'
+                        ? 'text-[#E7B947]'
+                        : activeThemeId === 'summer'
+                        ? 'text-[#FFD166]'
+                        : activeThemeId === 'autumn'
+                        ? 'text-[#E9B85D]'
+                        : activeThemeId === 'winter'
+                        ? 'text-[#78BDE8]'
+                        : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                        ? 'text-[#FFCD00]'
+                        : 'text-[#008689]'
+                    }`} />
+                    <span className="hidden lg:inline">Hiệu ứng: Bật</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                    <span className="hidden lg:inline">Hiệu ứng: Tắt</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {/* Global Logout Button */}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="p-2 rounded-xl border border-slate-200 hover:border-rose-200 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors shadow-2xs"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </>
+        )}
       </div>
     </header>
   );

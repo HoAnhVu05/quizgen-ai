@@ -1,0 +1,68 @@
+/* ==========================================================================
+   QUIZGEN AI - MODERN AUTUMN ACADEMIC THEME (MÙA THU TRI THỨC)
+   Bảng màu quy chuẩn:
+   - Cam đất:  #B85C38
+   - Cam vàng: #D98E36
+   - Vàng lá:  #E9B85D
+   - Kem sáng: #FFF3DF
+   - Nâu trầm: #70452F
+   - Trắng:    #FFFFFF
+   ========================================================================== */
+
+:root {
+  --autumn-terracotta: #B85C38;
+  --autumn-amber: #D98E36;
+  --autumn-gold: #E9B85D;
+  --autumn-cream: #FFF3DF;
+  --autumn-brown: #70452F;
+  --autumn-white: #FFFFFF;
+}
+
+[data-theme="autumn"] {
+  --theme-primary: #B85C38;
+  --theme-accent: #D98E36;
+  --theme-secondary: #70452F;
+  --theme-glow: rgba(184, 92, 56, 0.16);
+}
+
+/* Lá phong chao liệng trong gió thu */
+@keyframes autumnLeafSway {
+  0% {
+    transform: rotate(-6deg) translateX(-3px);
+  }
+  50% {
+    transform: rotate(6deg) translateX(3px);
+  }
+  100% {
+    transform: rotate(-6deg) translateX(-3px);
+  }
+}
+
+.autumn-leaf-sway {
+  transform-origin: top center;
+  animation: autumnLeafSway 4.8s ease-in-out infinite;
+}
+
+/* Ánh nắng thu vàng ấm áp */
+@keyframes autumnGoldenGaze {
+  0%, 100% {
+    opacity: 0.8;
+    filter: drop-shadow(0 0 6px rgba(217, 142, 54, 0.3));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 12px rgba(217, 142, 54, 0.55));
+  }
+}
+
+.autumn-sun-glow {
+  animation: autumnGoldenGaze 3.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .autumn-leaf-sway,
+  .autumn-sun-glow {
+    animation: none !important;
+    transform: none !important;
+  }
+}

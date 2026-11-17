@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeKpiFlowerCorner } from './ThemeFestiveComponents';
 
 interface DashboardScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -42,6 +44,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   currentUser,
   questions: propsQuestions,
 }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const role = currentUser?.role || 'lecturer';
   const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
@@ -531,9 +534,63 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   return (
     <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
-      {/* Clean Welcome Banner */}
-      <div className="bg-gradient-to-r from-[#d0f2f0] via-[#ebfaf9] to-white rounded-2xl border border-[#b2e5e7]/80 p-4 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div className="flex items-center gap-4">
+      {/* Clean Welcome Banner / Festive Seasonal Hero Banner (Theo đúng ảnh mẫu) */}
+      <div
+        className={`rounded-2xl border p-4 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 relative overflow-hidden transition-all duration-300 ${
+          activeThemeId === 'spring'
+            ? 'bg-gradient-to-r from-[#FFF8E9] via-[#FFF1F2] to-[#FFF8E9] border-[#E7B947]/60'
+            : activeThemeId === 'summer'
+            ? 'bg-gradient-to-r from-[#EAFBFF] via-white to-[#EAFBFF] border-[#26B9D5]/40'
+            : activeThemeId === 'autumn'
+            ? 'bg-gradient-to-r from-[#FFF3DF] via-white to-[#FFF3DF] border-[#E9B85D]/45'
+            : activeThemeId === 'winter'
+            ? 'bg-gradient-to-r from-[#F3FAFF] via-white to-[#F3FAFF] border-[#C8E8FA]'
+            : activeThemeId === 'victory_30_4'
+            ? 'bg-gradient-to-r from-[#FFF3D1] via-white to-[#FFF3D1] border-[#E7B947]/50'
+            : activeThemeId === 'national_day_2_9'
+            ? 'bg-gradient-to-r from-[#FFF7E6] via-white to-[#FFF7E6] border-[#E7B947]/50'
+            : 'bg-gradient-to-r from-[#d0f2f0] via-[#ebfaf9] to-white border-[#b2e5e7]/80'
+        }`}
+      >
+        {/* Seasonal SVG Watermark Backdrop */}
+        {activeThemeId !== 'default' && (
+          <div className="absolute right-0 top-0 bottom-0 w-80 pointer-events-none opacity-20 select-none hidden lg:block overflow-hidden" aria-hidden="true">
+            {activeThemeId === 'spring' && (
+              <svg viewBox="0 0 300 140" fill="none" className="w-full h-full">
+                <path d="M120 40 C140 20 180 20 200 40 L220 55 L100 55 Z" fill="#B82025" />
+                <path d="M90 70 C130 45 190 45 230 70 L250 85 L70 85 Z" fill="#8F171C" />
+                <circle cx="60" cy="30" r="3" fill="#E7B947" />
+              </svg>
+            )}
+            {activeThemeId === 'summer' && (
+              <svg viewBox="0 0 300 140" fill="none" className="w-full h-full summer-wave-motion">
+                <circle cx="220" cy="45" r="32" fill="#FFD166" opacity="0.6" className="summer-sunbeam-glow" />
+                <path d="M0 110 C80 90 160 130 300 105 L300 140 L0 140 Z" fill="#26B9D5" opacity="0.4" />
+                <path d="M0 125 C90 110 180 135 300 120 L300 140 L0 140 Z" fill="#087EAD" opacity="0.3" />
+              </svg>
+            )}
+            {activeThemeId === 'autumn' && (
+              <svg viewBox="0 0 300 140" fill="none" className="w-full h-full">
+                <circle cx="220" cy="50" r="28" fill="#E9B85D" opacity="0.5" className="autumn-sun-glow" />
+                <path d="M170 30 C190 20 230 35 240 50 L220 70 Z" fill="#B85C38" opacity="0.35" />
+              </svg>
+            )}
+            {activeThemeId === 'winter' && (
+              <svg viewBox="0 0 300 140" fill="none" className="w-full h-full">
+                <path d="M160 40 L210 110 L110 110 Z" fill="#78BDE8" opacity="0.4" />
+                <path d="M210 30 L270 110 L150 110 Z" fill="#2563A6" opacity="0.3" />
+              </svg>
+            )}
+            {(activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9') && (
+              <svg viewBox="0 0 300 140" fill="none" className="w-full h-full">
+                <circle cx="220" cy="50" r="26" fill="#DA251D" opacity="0.4" />
+                <polygon points="220,32 225,44 238,44 227,52 231,64 220,56 209,64 213,52 202,44 215,44" fill="#FFCD00" opacity="0.8" className="star-aura-glow" />
+              </svg>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 relative z-10">
           {/* Document Sheet Graphic with Checkmark Circle */}
           <div className="hidden sm:flex relative w-12 h-14 bg-white/95 rounded-xl shadow-xs border border-teal-100 flex-col justify-center px-2.5 space-y-1.5 shrink-0">
             <div className="w-4 h-1 bg-slate-200 rounded-full" />
@@ -545,29 +602,107 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
 
           <div className="space-y-1">
-            <div className="inline-flex items-center gap-2 text-xs font-bold text-[#007d80] bg-[#cbf0ee] px-3 py-0.5 rounded-full">
+            <div
+              className={`inline-flex items-center gap-2 text-xs font-bold px-3 py-0.5 rounded-full ${
+                activeThemeId === 'spring'
+                  ? 'text-[#B82025] bg-[#FFF8E9] border border-[#E7B947]/60'
+                  : activeThemeId === 'summer'
+                  ? 'text-[#087EAD] bg-[#EAFBFF] border border-[#26B9D5]/40'
+                  : activeThemeId === 'autumn'
+                  ? 'text-[#B85C38] bg-[#FFF3DF] border border-[#E9B85D]/50'
+                  : activeThemeId === 'winter'
+                  ? 'text-[#2563A6] bg-[#F3FAFF] border border-[#C8E8FA]'
+                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                  ? 'text-[#DA251D] bg-[#FFF3D1] border border-[#E7B947]/60'
+                  : 'text-[#007d80] bg-[#cbf0ee]'
+              }`}
+            >
               <span>{roleHeaderConfig.badge}</span>
             </div>
             <h2 className="text-lg sm:text-xl font-extrabold text-slate-800 pt-0.5">{roleHeaderConfig.title}</h2>
-            <p className="text-xs sm:text-sm text-slate-500 max-w-2xl">{roleHeaderConfig.subtitle}</p>
+            <p className="text-xs sm:text-sm max-w-2xl font-medium">
+              {activeThemeId === 'spring' ? (
+                <span className="text-[#8F171C]">
+                  Chào mừng Xuân Đinh Mùi 2027. 🧧 Kính chúc quý thầy cô sức khỏe, thành công và nhiều may mắn!
+                </span>
+              ) : activeThemeId === 'summer' ? (
+                <span className="text-[#087EAD]">
+                  Chào đón mùa hè rực rỡ! ☀️ Khơi nguồn tri thức – Bứt phá sáng tạo – Chinh phục những mục tiêu mới!
+                </span>
+              ) : activeThemeId === 'autumn' ? (
+                <span className="text-[#B85C38]">
+                  Chào mùa thu tri thức! 🍂 Thu hoạch kiến thức – Gặt hái thành công – Không ngừng phát triển!
+                </span>
+              ) : activeThemeId === 'winter' ? (
+                <span className="text-[#2563A6]">
+                  Chào mùa đông! ❄️ Giữ lửa đam mê – Vững bước tri thức – Chinh phục những đỉnh cao mới!
+                </span>
+              ) : activeThemeId === 'victory_30_4' ? (
+                <span className="text-[#DA251D]">
+                  Kỷ niệm Ngày Giải phóng miền Nam, thống nhất đất nước 30/4 (30/04/1975 – 30/04/2027). ⭐ Tự hào lịch sử – Tiếp bước tương lai – Phát triển tri thức Việt Nam!
+                </span>
+              ) : activeThemeId === 'national_day_2_9' ? (
+                <span className="text-[#DA251D]">
+                  Chào mừng Quốc khánh nước Cộng hòa Xã hội Chủ nghĩa Việt Nam 2/9 (02/09/1945 – 02/09/2027). 🇻🇳 Độc lập – Tự do – Hạnh phúc. Tự hào Việt Nam, vững bước tương lai!
+                </span>
+              ) : (
+                <span className="text-slate-500">{roleHeaderConfig.subtitle}</span>
+              )}
+            </p>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 sm:gap-2.5 shrink-0 relative z-10">
           {role === 'lecturer' && (
             <>
               <button
                 onClick={() => onNavigate('upload')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto"
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 text-white font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto ${
+                  activeThemeId === 'spring'
+                    ? 'bg-[#B82025] hover:bg-[#8F171C]'
+                    : activeThemeId === 'summer'
+                    ? 'bg-[#087EAD] hover:bg-[#066890]'
+                    : activeThemeId === 'autumn'
+                    ? 'bg-[#B85C38] hover:bg-[#9B4C2D]'
+                    : activeThemeId === 'winter'
+                    ? 'bg-[#2563A6] hover:bg-[#1E4E85]'
+                    : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                    ? 'bg-[#DA251D] hover:bg-[#8F171C]'
+                    : 'bg-[#008689] hover:bg-[#006f72]'
+                }`}
               >
                 <BookOpen className="w-4 h-4" />
                 Nạp Giáo trình Mới
               </button>
               <button
                 onClick={() => onNavigate('generate')}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white/95 hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto"
+                className={`flex items-center justify-center gap-2 px-4 py-2.5 bg-white/95 hover:bg-slate-50 border font-bold text-xs sm:text-sm rounded-xl transition-colors shadow-xs w-full sm:w-auto ${
+                  activeThemeId === 'spring'
+                    ? 'border-[#E7B947] text-[#B82025]'
+                    : activeThemeId === 'summer'
+                    ? 'border-[#26B9D5] text-[#087EAD]'
+                    : activeThemeId === 'autumn'
+                    ? 'border-[#E9B85D] text-[#B85C38]'
+                    : activeThemeId === 'winter'
+                    ? 'border-[#78BDE8] text-[#2563A6]'
+                    : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                    ? 'border-[#FFCD00] text-[#DA251D]'
+                    : 'border-slate-200 text-slate-700'
+                }`}
               >
-                <Sparkles className="w-4 h-4 text-[#008689]" />
+                <Sparkles className={`w-4 h-4 ${
+                  activeThemeId === 'spring'
+                    ? 'text-[#E7B947]'
+                    : activeThemeId === 'summer'
+                    ? 'text-[#FFD166]'
+                    : activeThemeId === 'autumn'
+                    ? 'text-[#D98E36]'
+                    : activeThemeId === 'winter'
+                    ? 'text-[#78BDE8]'
+                    : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                    ? 'text-[#FFCD00]'
+                    : 'text-[#008689]'
+                }`} />
                 Sinh Đề Thi AI
               </button>
             </>
@@ -618,10 +753,36 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           return (
             <div
               key={idx}
-              className={`${stat.cardBg || 'bg-white'} rounded-2xl p-4 sm:p-5 border ${
-                stat.cardBorder || 'border-slate-200'
-              } shadow-xs flex flex-col justify-between`}
+              className={`${
+                activeThemeId === 'spring'
+                  ? 'bg-[#FFF8E9]'
+                  : activeThemeId === 'summer'
+                  ? 'bg-[#EAFBFF]'
+                  : activeThemeId === 'autumn'
+                  ? 'bg-[#FFF3DF]'
+                  : activeThemeId === 'winter'
+                  ? 'bg-[#F3FAFF]'
+                  : activeThemeId === 'victory_30_4'
+                  ? 'bg-[#FFF3D1]'
+                  : activeThemeId === 'national_day_2_9'
+                  ? 'bg-[#FFF7E6]'
+                  : stat.cardBg || 'bg-white'
+              } rounded-2xl p-4 sm:p-5 border ${
+                activeThemeId === 'spring'
+                  ? 'border-[#E7B947]/60'
+                  : activeThemeId === 'summer'
+                  ? 'border-[#26B9D5]/50'
+                  : activeThemeId === 'autumn'
+                  ? 'border-[#E9B85D]/60'
+                  : activeThemeId === 'winter'
+                  ? 'border-[#C8E8FA]'
+                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
+                  ? 'border-[#E7B947]/60'
+                  : stat.cardBorder || 'border-slate-200'
+              } shadow-xs flex flex-col justify-between relative overflow-hidden`}
             >
+              {/* Cụm hoa mai vàng nở rộ góc dưới thẻ KPI */}
+              <ThemeKpiFlowerCorner themeId={activeThemeId} />
               <div className="flex items-center gap-2.5">
                 <div
                   className={`w-9 h-9 rounded-xl ${stat.bg} flex items-center justify-center shrink-0`}

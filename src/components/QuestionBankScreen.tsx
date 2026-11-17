@@ -28,6 +28,7 @@ import {
 import { Question, BloomLevel, UserProfile } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
 import MathRenderer from './MathRenderer';
+import { ImageLightboxModal } from './ImageLightboxModal';
 
 export interface SavedExamItem {
   id: string;
@@ -123,6 +124,26 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isExporting, setIsExporting] = useState<string | null>(null);
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+
+  // Lightbox modal state
+  const [lightboxData, setLightboxData] = useState<{
+    isOpen: boolean;
+    url: string;
+    caption?: string;
+  }>({
+    isOpen: false,
+    url: '',
+    caption: '',
+  });
+
+  // Tự động trở về trang 1 khi lọc hoặc tìm kiếm
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedSubject, selectedBloom]);
 
   // Exam Paper Configuration for the Lecturer
   const [examTitle, setExamTitle] = useState('ĐỀ KIỂM TRA GIỮA KỲ / KẾT THÚC HỌC PHẦN');
@@ -342,6 +363,14 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     const matchBloom = selectedBloom === 'all' || q.bloomLevel === selectedBloom;
     return matchSearch && matchSubject && matchBloom;
   });
+
+  const totalFiltered = filteredQuestions.length;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / itemsPerPage));
+  const currentDisplayPage = Math.min(currentPage, totalPages);
+  const paginatedQuestions = useMemo(() => {
+    const start = (currentDisplayPage - 1) * itemsPerPage;
+    return filteredQuestions.slice(start, start + itemsPerPage);
+  }, [filteredQuestions, currentDisplayPage, itemsPerPage]);
 
   const targetExamQuestions = useMemo(() => {
     return selectedIds.length > 0
@@ -1056,8 +1085,15 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                             <img
                               src={(q as any).imageUrl || q.imageUrl}
                               alt={(q as any).imageCaption || q.imageCaption || `Sơ đồ câu ${index + 1}`}
-                              className="max-h-56 max-w-full rounded-md object-contain border border-slate-200 shadow-2xs bg-white p-1"
+                              className="max-h-56 max-w-full rounded-md object-contain border border-slate-200 shadow-2xs bg-white p-1 cursor-pointer hover:opacity-90 transition-opacity"
                               loading="lazy"
+                              onClick={() =>
+                                setLightboxData({
+                                  isOpen: true,
+                                  url: (q as any).imageUrl || q.imageUrl,
+                                  caption: (q as any).imageCaption || q.imageCaption,
+                                })
+                              }
                             />
                             {((q as any).imageCaption || q.imageCaption) && (
                               <span className="text-[11px] text-slate-500 italic mt-1 text-center font-medium">
@@ -1293,7 +1329,8 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             </div>
 
             <div className="divide-y divide-slate-100">
-              {filteredQuestions.map((q, index) => {
+              {paginatedQuestions.map((q, index) => {
+                const globalIndex = (currentDisplayPage - 1) * itemsPerPage + index + 1;
                 const isExpanded = expandedId === q.id;
                 const isSelected = selectedIds.includes(q.id);
                 const bloomCfg = BLOOM_STYLE[q.bloomLevel];
@@ -1310,7 +1347,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                          <span className="text-xs font-bold text-slate-500">#{index + 1}</span>
+                          <span className="text-xs font-bold text-slate-500">#{globalIndex}</span>
                           <span
                             className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${bloomCfg.bg} ${bloomCfg.color} ${bloomCfg.border}`}
                           >
@@ -1335,7 +1372,18 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                           <MathRenderer content={q.question} />
                           {q.hasImage && q.imageUrl && (
                             <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200 rounded max-w-sm">
-                              <img src={q.imageUrl} alt={q.imageCaption || 'Hình sơ đồ'} className="max-h-48 rounded object-contain mx-auto" />
+                              <img
+                                src={q.imageUrl}
+                                alt={q.imageCaption || 'Hình sơ đồ'}
+                                className="max-h-48 rounded object-contain mx-auto cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() =>
+                                  setLightboxData({
+                                    isOpen: true,
+                                    url: q.imageUrl!,
+                                    caption: q.imageCaption,
+                                  })
+                                }
+                              />
                               {q.imageCaption && <p className="text-[10px] text-slate-500 italic mt-1 text-center">{q.imageCaption}</p>}
                             </div>
                           )}
@@ -1408,6 +1456,77 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
                       ? 'Chưa có câu hỏi nào được lưu. Hãy tải lên tài liệu giáo trình ở Bước 1 và tạo câu hỏi để bắt đầu.'
                       : 'Thử điều chỉnh lại từ khóa tìm kiếm hoặc mức độ Bloom.'}
                   </p>
+                </div>
+              )}
+
+              {/* Pagination Controls */}
+              {totalFiltered > 0 && (
+                <div className="p-4 bg-slate-50/80 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <span>Hiển thị</span>
+                    <select
+                      value={itemsPerPage}
+                      onChange={(e) => {
+                        setItemsPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="px-2 py-1 rounded border border-slate-300 bg-white font-medium text-slate-700 focus:outline-none"
+                    >
+                      <option value={10}>10 câu / trang</option>
+                      <option value={25}>25 câu / trang</option>
+                      <option value={50}>50 câu / trang</option>
+                      <option value={100}>100 câu / trang</option>
+                    </select>
+                    <span>
+                      ({(currentDisplayPage - 1) * itemsPerPage + 1} - {Math.min(currentDisplayPage * itemsPerPage, totalFiltered)} trong {totalFiltered} câu)
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={currentDisplayPage <= 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                    >
+                      Trước
+                    </button>
+                    {Array.from({ length: totalPages }).map((_, i) => {
+                      const p = i + 1;
+                      if (p === 1 || p === totalPages || (p >= currentDisplayPage - 1 && p <= currentDisplayPage + 1)) {
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`min-w-[32px] py-1.5 px-2 rounded font-semibold text-xs transition-colors ${
+                              currentDisplayPage === p
+                                ? 'bg-[#008689] text-white shadow-xs'
+                                : 'border border-slate-300 bg-white hover:bg-slate-50 text-slate-700'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        );
+                      }
+                      if (p === currentDisplayPage - 2 || p === currentDisplayPage + 2) {
+                        return (
+                          <span key={p} className="px-1 text-slate-400">
+                            ...
+                          </span>
+                        );
+                      }
+                      return null;
+                    })}
+                    <button
+                      type="button"
+                      disabled={currentDisplayPage >= totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-3 py-1.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition-colors"
+                    >
+                      Sau
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1522,6 +1641,14 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           </div>
         </div>
       )}
+
+      {/* Image Lightbox Modal */}
+      <ImageLightboxModal
+        isOpen={lightboxData.isOpen}
+        imageUrl={lightboxData.url}
+        imageCaption={lightboxData.caption}
+        onClose={() => setLightboxData({ isOpen: false, url: '', caption: '' })}
+      />
     </div>
   );
 };

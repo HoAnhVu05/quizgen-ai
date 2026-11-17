@@ -26,6 +26,8 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 import apiClient from '../services/apiClient';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeCornerSticker, ThemeLogoBadge, ThemeHangingScrolls } from './ThemeStickers';
 
 declare global {
   interface Window {
@@ -226,6 +228,7 @@ const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_DURATION_SECONDS = 60;
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateRegister }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const [selectedRole, setSelectedRole] = useState<UserRole>('lecturer');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -1218,30 +1221,63 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   };
 
   return (
-    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70]">
-      {/* Minimal Top Accent Bar */}
-      <div className="h-1.5 w-full bg-[#008689] shrink-0" />
+    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70] relative overflow-hidden">
+      {/* Festive Corner Stickers (Top-Left & Top-Right) */}
+      <ThemeCornerSticker themeId={activeThemeId} position="top-right" />
+      <ThemeCornerSticker themeId={activeThemeId} position="top-left" />
+
+      {/* Đôi câu đối / Dải liễn đỏ 2 bên hông theo ảnh mẫu tham khảo */}
+      <ThemeHangingScrolls themeId={activeThemeId} />
+
+      {/* Dynamic Seasonal Top Accent Bar */}
+      <div
+        className="h-1.5 w-full shrink-0 transition-all duration-300"
+        style={{
+          background: `linear-gradient(90deg, ${currentTheme.colors.primary}, ${currentTheme.colors.accent}, ${currentTheme.colors.primary})`
+        }}
+      />
 
       {/* Centered Minimal Login Container */}
-      <div className="flex-1 flex items-center justify-center px-4 py-8">
+      <div className="flex-1 flex items-center justify-center px-4 py-8 relative z-10">
         <div className="w-full max-w-md space-y-5">
-          {/* Clean Brand Header */}
+          {/* Clean Brand Header with Seasonal Accessories */}
           <div className="text-center space-y-1.5">
-            <img
-              src="/logo.jpg"
-              alt="QuizGen AI Logo"
-              className="w-14 h-14 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
-            />
+            <div className="relative inline-block mx-auto mb-1">
+              <img
+                src="/logo.jpg"
+                alt="QuizGen AI Logo"
+                className="w-14 h-14 rounded-2xl shadow-md object-cover border border-[#008689]/20"
+              />
+              <ThemeLogoBadge themeId={activeThemeId} />
+            </div>
             <h1 className="text-xl font-extrabold text-[#008689] tracking-tight uppercase">
               QuizGen AI
             </h1>
             <p className="text-xs text-slate-500">
               Nền tảng Khởi tạo Đề thi Học thuật & Khảo thí Trực tuyến
             </p>
+
+            {/* Festive Greeting Banner if not default theme */}
+            {activeThemeId !== 'default' && (
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border shadow-xs animate-in fade-in duration-300 mt-1"
+                style={{
+                  backgroundColor: `${currentTheme.colors.primary}15`,
+                  borderColor: `${currentTheme.colors.primary}40`,
+                  color: currentTheme.colors.primary
+                }}
+              >
+                <span>{currentTheme.seasonLabel}</span>
+                <span>{currentTheme.greetingTitle}</span>
+              </div>
+            )}
           </div>
 
           {/* Login Card */}
-          <div className="bg-white rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] shadow-sm p-4 sm:p-7 space-y-4 sm:space-y-5">
+          <div
+            className="bg-white rounded-2xl border border-slate-200/90 border-t-4 shadow-sm p-4 sm:p-7 space-y-4 sm:space-y-5 transition-all duration-300"
+            style={{ borderTopColor: currentTheme.colors.primary }}
+          >
             <div className="text-center border-b border-slate-100 pb-3.5">
               <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
                 Đăng nhập hệ thống

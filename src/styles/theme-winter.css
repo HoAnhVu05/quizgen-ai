@@ -1,0 +1,64 @@
+/* ==========================================================================
+   QUIZGEN AI - MODERN WINTER ACADEMIC THEME (MÙA ĐÔNG TINH KHIẾT)
+   Bảng màu quy chuẩn:
+   - Xanh băng:   #2563A6
+   - Xanh tuyết:  #78BDE8
+   - Xanh nhạt:   #C8E8FA
+   - Trắng tuyết: #F3FAFF
+   - Xanh navy:   #243B64
+   - Trắng:       #FFFFFF
+   ========================================================================== */
+
+:root {
+  --winter-ice: #2563A6;
+  --winter-snow-blue: #78BDE8;
+  --winter-light-blue: #C8E8FA;
+  --winter-snow-white: #F3FAFF;
+  --winter-navy: #243B64;
+  --winter-white: #FFFFFF;
+}
+
+[data-theme="winter"] {
+  --theme-primary: #2563A6;
+  --theme-accent: #78BDE8;
+  --theme-secondary: #243B64;
+  --theme-glow: rgba(37, 99, 166, 0.16);
+}
+
+/* Tinh thể tuyết xoay lấp lánh chậm */
+@keyframes winterCrystalSpin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.winter-crystal-spin {
+  animation: winterCrystalSpin 20s linear infinite;
+}
+
+/* Ánh băng giá tinh khôi phát sáng nhẹ */
+@keyframes winterIceGleam {
+  0%, 100% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 5px rgba(120, 189, 232, 0.4));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 12px rgba(120, 189, 232, 0.7));
+  }
+}
+
+.winter-ice-gleam {
+  animation: winterIceGleam 3.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .winter-crystal-spin,
+  .winter-ice-gleam {
+    animation: none !important;
+    transform: none !important;
+  }
+}

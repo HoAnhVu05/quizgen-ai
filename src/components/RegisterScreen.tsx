@@ -19,6 +19,8 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeCornerSticker, ThemeLogoBadge, ThemeHangingScrolls } from './ThemeStickers';
 
 interface RegisterScreenProps {
   onRegister: (user: UserProfile) => void;
@@ -100,6 +102,7 @@ const STRICT_EMAIL_REGEX =
   /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
 export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNavigateLogin }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const [form, setForm] = useState<RegisterForm>({
     fullName: '',
     academicTitle: 'TS.',
@@ -344,29 +347,62 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
   };
 
   return (
-    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70]">
-      {/* Minimal Top Accent Bar */}
-      <div className="h-1.5 w-full bg-[#008689] shrink-0" />
+    <div className="w-full min-h-full bg-[#f4f7f9] text-slate-800 flex flex-col justify-between selection:bg-[#008689]/20 selection:text-[#006d70] relative overflow-hidden">
+      {/* Festive Corner Stickers */}
+      <ThemeCornerSticker themeId={activeThemeId} position="top-right" />
+      <ThemeCornerSticker themeId={activeThemeId} position="top-left" />
 
-      <div className="flex-1 flex items-center justify-center px-4 py-8">
+      {/* Đôi câu đối / Dải liễn đỏ 2 bên hông theo ảnh mẫu tham khảo */}
+      <ThemeHangingScrolls themeId={activeThemeId} />
+
+      {/* Dynamic Seasonal Top Accent Bar */}
+      <div
+        className="h-1.5 w-full shrink-0 transition-all duration-300"
+        style={{
+          background: `linear-gradient(90deg, ${currentTheme.colors.primary}, ${currentTheme.colors.accent}, ${currentTheme.colors.primary})`
+        }}
+      />
+
+      <div className="flex-1 flex items-center justify-center px-4 py-8 relative z-10">
         <div className="w-full max-w-lg space-y-5">
-          {/* Clean Brand Header */}
+          {/* Clean Brand Header with Seasonal Accessories */}
           <div className="text-center space-y-1.5">
-            <img
-              src="/logo.jpg"
-              alt="QuizGen AI Logo"
-              className="w-12 h-12 rounded-2xl shadow-md mx-auto mb-1 object-cover border border-[#008689]/20"
-            />
+            <div className="relative inline-block mx-auto mb-1">
+              <img
+                src="/logo.jpg"
+                alt="QuizGen AI Logo"
+                className="w-12 h-12 rounded-2xl shadow-md object-cover border border-[#008689]/20"
+              />
+              <ThemeLogoBadge themeId={activeThemeId} />
+            </div>
             <h1 className="text-lg font-extrabold text-[#008689] tracking-tight uppercase">
               QuizGen AI
             </h1>
             <p className="text-xs text-slate-500">
               Đăng ký tài khoản Giảng viên & Cán bộ Khảo thí
             </p>
+
+            {/* Festive Greeting Banner if not default theme */}
+            {activeThemeId !== 'default' && (
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border shadow-xs animate-in fade-in duration-300 mt-1"
+                style={{
+                  backgroundColor: `${currentTheme.colors.primary}15`,
+                  borderColor: `${currentTheme.colors.primary}40`,
+                  color: currentTheme.colors.primary
+                }}
+              >
+                <span>{currentTheme.seasonLabel}</span>
+                <span>{currentTheme.greetingTitle}</span>
+              </div>
+            )}
           </div>
 
           {/* Card */}
-          <div className="rounded-2xl border border-slate-200/90 border-t-4 border-t-[#008689] bg-white shadow-sm p-4 sm:p-7 space-y-4">
+          <div
+            className="rounded-2xl border border-slate-200/90 border-t-4 bg-white shadow-sm p-4 sm:p-7 space-y-4 transition-all duration-300"
+            style={{ borderTopColor: currentTheme.colors.primary }}
+          >
             <div className="text-center border-b border-slate-100 pb-3">
               <h2 className="text-base font-extrabold uppercase tracking-wide text-[#da1c2d]">
                 Tạo tài khoản mới

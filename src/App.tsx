@@ -17,10 +17,14 @@ import { PaymentQRModal } from './components/PaymentQRModal';
 import { AIChatCopilot } from './components/AIChatCopilot';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
+import { ThemeLuckyMoneyModal } from './components/ThemeFestiveComponents';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
-export const App: React.FC = () => {
+const AppContent: React.FC = () => {
+  const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
   // ─── Authentication State ────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
@@ -75,6 +79,13 @@ export const App: React.FC = () => {
   const [adminTab, setAdminTab] = useState<string>('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isLuckyMoneyOpen, setIsLuckyMoneyOpen] = useState(() => {
+    try {
+      return localStorage.getItem('quizgen_lucky_money_seen_2027') !== 'true';
+    } catch {
+      return false;
+    }
+  });
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_questions');
@@ -767,6 +778,13 @@ export const App: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <div className="fixed inset-0 h-full w-full overflow-y-auto overflow-x-hidden bg-[#f3f7f8] text-slate-800 font-sans">
+        {/* Seasonal Particle Ambient Effect */}
+        <ThemeParticleOverlay
+          themeId={activeThemeId}
+          particleType={currentTheme.particleType}
+          showParticles={showParticles}
+          onToggleParticles={toggleParticles}
+        />
         <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
         {lockedAlert?.isOpen && (
           <div className="fixed inset-0 z-[9999] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -820,6 +838,14 @@ export const App: React.FC = () => {
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
+      {/* Seasonal Particle Ambient Effect */}
+      <ThemeParticleOverlay
+        themeId={activeThemeId}
+        particleType={currentTheme.particleType}
+        showParticles={showParticles}
+        onToggleParticles={toggleParticles}
+      />
+
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
@@ -1000,10 +1026,26 @@ export const App: React.FC = () => {
           }}
           onShowToast={handleShowToast}
         />
+
+        {/* Lì Xì Khai Xuân Như Ý Popup (Xuân Đinh Mùi 2027) */}
+        {activeThemeId === 'spring' && (
+          <ThemeLuckyMoneyModal
+            isOpen={isLuckyMoneyOpen}
+            onClose={() => {
+              setIsLuckyMoneyOpen(false);
+              try {
+                localStorage.setItem('quizgen_lucky_money_seen_2027', 'true');
+              } catch {}
+            }}
+            onClaim={() => {
+              handleShowToast('success', 'Khai Xuân Đinh Mùi 2027', '🌸 Quý Thầy/Cô đã nhận Lộc Đầu Xuân! Kính chúc Vạn Sự Như Ý, Giảng Đường Hân Hoan!');
+            }}
+          />
+        )}
       </main>
 
       {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}
-      {isAuthenticated && (
+      {isAuthenticated && currentScreen !== 'admin_portal' && (
         <AIChatCopilot
           currentScreen={currentScreen}
           currentUser={currentUser}
@@ -1012,6 +1054,14 @@ export const App: React.FC = () => {
         />
       )}
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  return (
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 };
 
