@@ -143,5 +143,17 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-katex': ['katex', 'react-katex'],
+          'vendor-icons': ['lucide-react']
+        }
+      }
+    }
   }
 });
