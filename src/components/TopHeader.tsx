@@ -19,6 +19,7 @@ import {
   User,
   EyeOff,
   MessageSquare,
+  Users,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -79,6 +80,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           shortLabel: 'Diễn đàn',
           icon: MessageSquare,
           iconStyle: 'bg-indigo-50 text-indigo-600 border-indigo-200',
+        };
+      case 'qgroup':
+        return {
+          label: 'Hội Nhóm Chuyên Môn Q-Group',
+          shortLabel: 'Hội nhóm Q-Group',
+          icon: Users,
+          iconStyle: 'bg-purple-50 text-purple-600 border-purple-200',
         };
       case 'upload':
         return {

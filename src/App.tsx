@@ -21,6 +21,7 @@ import apiClient, { API_BASE } from './services/apiClient';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
 import { ThemeLuckyMoneyModal } from './components/ThemeFestiveComponents';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
@@ -936,97 +937,99 @@ const AppContent: React.FC = () => {
 
         {/* Screen Content Viewport */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {currentScreen === 'admin_portal' && (
-            <AdminPortalScreen
-              currentUser={currentUser}
-              onNavigate={setCurrentScreen}
-              onShowToast={handleShowToast}
-              activeTab={adminTab}
-              onTabChange={setAdminTab}
-              onCurrentUserChange={setCurrentUser}
-            />
-          )}
+          <ErrorBoundary>
+            {currentScreen === 'admin_portal' && (
+              <AdminPortalScreen
+                currentUser={currentUser}
+                onNavigate={setCurrentScreen}
+                onShowToast={handleShowToast}
+                activeTab={adminTab}
+                onTabChange={setAdminTab}
+                onCurrentUserChange={setCurrentUser}
+              />
+            )}
 
-          {currentScreen === 'dashboard' && (
-            <DashboardScreen
-              onNavigate={setCurrentScreen}
-              pendingReviewCount={pendingCount}
-              approvedCount={approvedCount}
-              currentUser={currentUser}
-              questions={questions}
-            />
-          )}
+            {currentScreen === 'dashboard' && (
+              <DashboardScreen
+                onNavigate={setCurrentScreen}
+                pendingReviewCount={pendingCount}
+                approvedCount={approvedCount}
+                currentUser={currentUser}
+                questions={questions}
+              />
+            )}
 
-          {currentScreen === 'forum' && (
-            <ForumScreen
-              currentUser={currentUser}
-              onNavigate={setCurrentScreen}
-              onShowToast={handleShowToast}
-            />
-          )}
+            {currentScreen === 'forum' && (
+              <ForumScreen
+                currentUser={currentUser}
+                onNavigate={setCurrentScreen}
+                onShowToast={handleShowToast}
+              />
+            )}
 
-          {currentScreen === 'upload' && (
-            <TextbookUploadScreen
-              onNavigate={setCurrentScreen}
-              onShowToast={handleShowToast}
-              subscriptionInfo={subscriptionInfo}
-              currentUser={currentUser}
-              initialTab="my"
-              onOpenPricingModal={() => setIsPricingModalOpen(true)}
-            />
-          )}
+            {currentScreen === 'upload' && (
+              <TextbookUploadScreen
+                onNavigate={setCurrentScreen}
+                onShowToast={handleShowToast}
+                subscriptionInfo={subscriptionInfo}
+                currentUser={currentUser}
+                initialTab="my"
+                onOpenPricingModal={() => setIsPricingModalOpen(true)}
+              />
+            )}
 
-          {currentScreen === 'qgroup' && (
-            <TextbookUploadScreen
-              onNavigate={setCurrentScreen}
-              onShowToast={handleShowToast}
-              subscriptionInfo={subscriptionInfo}
-              currentUser={currentUser}
-              initialTab="qgroup"
-              onOpenPricingModal={() => setIsPricingModalOpen(true)}
-            />
-          )}
+            {currentScreen === 'qgroup' && (
+              <TextbookUploadScreen
+                onNavigate={setCurrentScreen}
+                onShowToast={handleShowToast}
+                subscriptionInfo={subscriptionInfo}
+                currentUser={currentUser}
+                initialTab="qgroup"
+                onOpenPricingModal={() => setIsPricingModalOpen(true)}
+              />
+            )}
 
-          {currentScreen === 'generate' && (
-            <AIGenerationScreen
-              onNavigate={setCurrentScreen}
-              onGenerateSuccess={handleGenerateSuccess}
-              onShowToast={handleShowToast}
-              currentUser={currentUser}
-            />
-          )}
+            {currentScreen === 'generate' && (
+              <AIGenerationScreen
+                onNavigate={setCurrentScreen}
+                onGenerateSuccess={handleGenerateSuccess}
+                onShowToast={handleShowToast}
+                currentUser={currentUser}
+              />
+            )}
 
-          {currentScreen === 'review' && (
-            <ReviewWorkspaceScreen
-              questions={questions}
-              onUpdateQuestion={handleUpdateQuestion}
-              onBatchApprove={handleBatchApprove}
-              onNavigate={setCurrentScreen}
-              onShowToast={handleShowToast}
-              currentUser={currentUser}
-              onLoadQuestions={(loadedQs) => {
-                setQuestions(loadedQs);
-                try {
-                  localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
-                } catch {}
-              }}
-            />
-          )}
+            {currentScreen === 'review' && (
+              <ReviewWorkspaceScreen
+                questions={questions}
+                onUpdateQuestion={handleUpdateQuestion}
+                onBatchApprove={handleBatchApprove}
+                onNavigate={setCurrentScreen}
+                onShowToast={handleShowToast}
+                currentUser={currentUser}
+                onLoadQuestions={(loadedQs) => {
+                  setQuestions(loadedQs);
+                  try {
+                    localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                  } catch {}
+                }}
+              />
+            )}
 
-          {currentScreen === 'bank' && (
-            <QuestionBankScreen
-              questions={questions}
-              onShowToast={handleShowToast}
-              currentUser={currentUser}
-              onNavigate={setCurrentScreen}
-              onLoadQuestions={(loadedQs) => {
-                setQuestions(loadedQs);
-                try {
-                  localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
-                } catch {}
-              }}
-            />
-          )}
+            {currentScreen === 'bank' && (
+              <QuestionBankScreen
+                questions={questions}
+                onShowToast={handleShowToast}
+                currentUser={currentUser}
+                onNavigate={setCurrentScreen}
+                onLoadQuestions={(loadedQs) => {
+                  setQuestions(loadedQs);
+                  try {
+                    localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                  } catch {}
+                }}
+              />
+            )}
+          </ErrorBoundary>
         </div>
 
         {/* Pricing Plans & Payment QR Modals */}

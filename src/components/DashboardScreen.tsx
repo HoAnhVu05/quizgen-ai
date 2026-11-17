@@ -454,6 +454,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             cardBg: 'bg-[#f0faf9]',
             cardBorder: 'border-[#bdeae7]',
             arrowBg: 'bg-[#d0f2f0] text-[#008689]',
+            targetScreen: 'upload' as ScreenId,
             badge: null
           },
           {
@@ -466,34 +467,39 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             cardBg: 'bg-[#eff6ff]',
             cardBorder: 'border-blue-200/80',
             arrowBg: 'bg-blue-100 text-blue-600',
+            targetScreen: 'generate' as ScreenId,
             badge: null
           },
           {
             label: 'Câu hỏi chờ đối soát',
             value: String(pendingReviewCount),
-            valueColor: 'text-amber-600',
-            sub: 'Cần kiểm tra trích dẫn & gửi duyệt',
+            valueColor: pendingReviewCount > 0 ? 'text-amber-600' : 'text-slate-800',
+            sub: pendingReviewCount > 0 ? 'Cần kiểm tra trích dẫn & gửi duyệt' : 'Chưa có câu hỏi chờ duyệt ở Bước 3',
             icon: Clock,
             color: 'text-amber-600',
             bg: 'bg-amber-100',
             cardBg: 'bg-[#fffbeb]',
             cardBorder: 'border-amber-200/80',
             arrowBg: 'bg-amber-100 text-amber-600',
-            badge: {
+            targetScreen: 'review' as ScreenId,
+            badge: pendingReviewCount > 0 ? {
               text: 'Cần đối soát',
               className: 'bg-amber-100 text-amber-800 border-amber-300'
-            }
+            } : null
           },
           {
-            label: 'Đề thi nháp đã lưu',
-            value: String(approvedCount > 0 ? 1 : 0),
-            sub: `${approvedCount} câu hỏi đã đạt chuẩn`,
+            label: 'Đề thi đã lưu',
+            value: String(approvedCount > 0 ? 1 : (JSON.parse(localStorage.getItem('quizgen_saved_exams') || '[]').length)),
+            sub: (approvedCount > 0 || (JSON.parse(localStorage.getItem('quizgen_saved_exams') || '[]').length) > 0)
+              ? 'Đề thi sẵn sàng xuất Word, PDF, OMR'
+              : 'Chưa có đề thi được lưu ở Bước 4',
             icon: FileText,
             color: 'text-purple-600',
             bg: 'bg-purple-100',
             cardBg: 'bg-[#faf5ff]',
             cardBorder: 'border-purple-200/80',
             arrowBg: 'bg-purple-100 text-purple-600',
+            targetScreen: 'bank' as ScreenId,
             badge: null
           }
         ]
@@ -802,7 +808,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           return (
             <div
               key={idx}
-              className={`${
+              onClick={() => {
+                if (stat.targetScreen) {
+                  onNavigate(stat.targetScreen);
+                }
+              }}
+              className={`${stat.targetScreen ? 'cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all' : ''} ${
                 activeThemeId === 'spring'
                   ? 'bg-[#FFF8E9]'
                   : activeThemeId === 'summer'
