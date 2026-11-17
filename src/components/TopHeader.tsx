@@ -398,124 +398,172 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         </div>
       </div>
 
-      {/* Middle: Spotlight Command Palette Search Bar */}
+      {/* Middle: Spotlight Trigger Button on Header */}
       {!showAdminHeader && (
+        <div className="hidden md:flex items-center mx-2 lg:mx-4">
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchOpen(true);
+              setTimeout(() => searchInputRef.current?.focus(), 80);
+            }}
+            className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer w-48 lg:w-64 justify-between"
+            title="Tìm kiếm chức năng hệ thống (Ctrl + K)"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="truncate text-[11px]">Tìm nhanh chức năng...</span>
+            </div>
+            <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-white border border-slate-200 text-slate-400 rounded shadow-2xs shrink-0">
+              Ctrl K
+            </kbd>
+          </button>
+        </div>
+      )}
+
+      {/* Spotlight Command Palette Modal (Raycast / Mac Spotlight Style) */}
+      {isSearchOpen && (
         <div
-          ref={searchContainerRef}
-          className="hidden md:flex items-center flex-1 max-w-lg mx-2 lg:mx-6 relative"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-16 sm:pt-24 px-4 backdrop-blur-sm bg-slate-900/50 animate-fade-in"
+          onClick={() => setIsSearchOpen(false)}
         >
-          <div className="relative w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchValue}
-              onFocus={() => setIsSearchOpen(true)}
-              onChange={(e) => {
-                setSearchValue(e.target.value);
-                setIsSearchOpen(true);
-                setSelectedIndex(0);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  setSelectedIndex((prev) => (prev + 1) % Math.max(1, filteredCommands.length));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % Math.max(1, filteredCommands.length));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  if (filteredCommands[selectedIndex]) {
-                    handleSelectCommand(filteredCommands[selectedIndex]);
+          <div
+            ref={searchContainerRef}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-2xl w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[75vh]"
+          >
+            {/* Spotlight Search Input */}
+            <div className="p-4 border-b border-slate-100 flex items-center gap-3 bg-white">
+              <Search className="w-5 h-5 text-teal-600 shrink-0" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchValue}
+                onChange={(e) => {
+                  setSearchValue(e.target.value);
+                  setSelectedIndex(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSelectedIndex((prev) => (prev + 1) % Math.max(1, filteredCommands.length));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSelectedIndex((prev) => (prev - 1 + filteredCommands.length) % Math.max(1, filteredCommands.length));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredCommands[selectedIndex]) {
+                      handleSelectCommand(filteredCommands[selectedIndex]);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setIsSearchOpen(false);
                   }
-                }
-              }}
-              placeholder="Tìm nhanh chức năng: thư viện, sinh đề, đối soát, nhóm... (Ctrl + K)"
-              className="w-full pl-9 pr-14 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all shadow-2xs"
-            />
-            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center pointer-events-none">
-              <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-white border border-slate-200 text-slate-400 rounded shadow-2xs">
-                Ctrl K
+                }}
+                placeholder="Tìm trang hoặc chức năng: thư viện, sinh đề, đối soát, nhóm, xuất bản..."
+                className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent font-medium"
+                autoFocus
+              />
+              {searchValue && (
+                <button
+                  type="button"
+                  onClick={() => setSearchValue('')}
+                  className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              <kbd className="px-2 py-1 text-[10px] font-mono font-bold bg-slate-100 border border-slate-200 text-slate-500 rounded-lg">
+                ESC
               </kbd>
             </div>
-          </div>
 
-          {/* Spotlight Search Dropdown Panel */}
-          {isSearchOpen && (
-            <div className="absolute left-0 right-0 top-full mt-2 bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden z-50 animate-fade-in text-xs max-h-[460px] flex flex-col">
-              <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-                <span>
-                  {searchValue.trim()
-                    ? `Tìm thấy ${filteredCommands.length} chức năng phù hợp`
-                    : 'Gõ từ khóa hoặc chọn chức năng để chuyển trang nhanh'}
-                </span>
-                <span className="flex items-center gap-1 text-[10px]">
-                  <kbd className="px-1 py-0.5 bg-white border rounded">↑↓</kbd> chuyển
-                  <kbd className="px-1 py-0.5 bg-white border rounded ml-1">Enter</kbd> chọn
-                  <kbd className="px-1 py-0.5 bg-white border rounded ml-1">Esc</kbd> đóng
-                </span>
-              </div>
+            {/* Spotlight Results List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1 divide-y divide-slate-100">
+              {filteredCommands.length === 0 ? (
+                <div className="p-10 text-center text-slate-400 space-y-2">
+                  <Search className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="font-bold text-sm text-slate-700">Không tìm thấy chức năng phù hợp</p>
+                  <p className="text-xs">
+                    Thử tìm với từ khóa: &quot;thư viện&quot;, &quot;sinh đề&quot;, &quot;đối soát&quot;, &quot;nhóm&quot;, &quot;xuất đề&quot;...
+                  </p>
+                </div>
+              ) : (
+                filteredCommands.map((cmd, idx) => {
+                  const Icon = cmd.icon;
+                  const isSelected = idx === selectedIndex;
+                  const isCurrent = cmd.screenId === currentScreen;
 
-              <div className="overflow-y-auto p-2 divide-y divide-slate-100">
-                {filteredCommands.length === 0 ? (
-                  <div className="p-8 text-center text-slate-400 space-y-1.5">
-                    <p className="font-bold text-slate-600">Không tìm thấy chức năng phù hợp</p>
-                    <p className="text-[11px]">Thử gõ: &quot;thư viện&quot;, &quot;sinh đề&quot;, &quot;đối soát&quot;, &quot;nhóm&quot;, &quot;xuất đề&quot;...</p>
-                  </div>
-                ) : (
-                  filteredCommands.map((cmd, idx) => {
-                    const Icon = cmd.icon;
-                    const isSelected = idx === selectedIndex;
-                    const isCurrent = cmd.screenId === currentScreen;
-
-                    return (
-                      <div
-                        key={cmd.id}
-                        onClick={() => handleSelectCommand(cmd)}
-                        onMouseEnter={() => setSelectedIndex(idx)}
-                        className={`p-2.5 rounded-xl cursor-pointer transition-all flex items-center gap-3 ${
-                          isSelected
-                            ? 'bg-teal-50/80 text-teal-950 ring-1 ring-teal-200'
-                            : 'hover:bg-slate-50 text-slate-700'
-                        }`}
-                      >
+                  return (
+                    <div
+                      key={cmd.id}
+                      onClick={() => handleSelectCommand(cmd)}
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                      className={`p-3 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 ${
+                        isSelected
+                          ? 'bg-teal-50 text-teal-950 ring-1 ring-teal-200/90 shadow-2xs'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
                         <div
-                          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-2xs ${cmd.iconBg} ${cmd.iconColor}`}
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-2xs ${cmd.iconBg} ${cmd.iconColor}`}
                         >
-                          <Icon className="w-4 h-4" />
+                          <Icon className="w-5 h-5" />
                         </div>
 
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
                             {cmd.stepTag && (
-                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-100 text-slate-600 shrink-0">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-slate-100 text-slate-600 shrink-0">
                                 {cmd.stepTag}
                               </span>
                             )}
-                            <h4 className="font-extrabold text-slate-800 truncate">
+                            <h4 className="font-bold text-xs sm:text-sm text-slate-900 truncate">
                               {cmd.title}
                             </h4>
                             {isCurrent && (
-                              <span className="px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-700 shrink-0">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 shrink-0">
                                 Đang mở
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                          <p className="text-xs text-slate-400 truncate mt-0.5">
                             {cmd.description}
                           </p>
                         </div>
+                      </div>
 
-                        <div className="shrink-0 flex items-center text-slate-300 group-hover:text-teal-600">
-                          <ArrowRight className="w-3.5 h-3.5" />
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                          {cmd.categoryLabel}
+                        </span>
+                        <div className={`p-1.5 rounded-xl ${isSelected ? 'bg-teal-600 text-white' : 'text-slate-300'}`}>
+                          <CornerDownLeft className="w-3.5 h-3.5" />
                         </div>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          )}
+
+            {/* Spotlight Footer */}
+            <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+              <span className="flex items-center gap-2">
+                <span>QuizGen AI Spotlight</span>
+                <span>•</span>
+                <span>{filteredCommands.length} kết quả</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span>Dùng</span>
+                <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono text-[10px]">↑</kbd>
+                <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono text-[10px]">↓</kbd>
+                <span>để chọn,</span>
+                <kbd className="px-1.5 py-0.5 bg-white border border-slate-200 rounded font-mono text-[10px]">Enter</kbd>
+                <span>để mở</span>
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
