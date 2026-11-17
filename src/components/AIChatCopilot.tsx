@@ -16,6 +16,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
+import { useTheme } from '../context/ThemeContext';
 
 interface ChatMessage {
   id: string;
@@ -62,6 +63,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   activeQuestion,
   onNavigate,
 }) => {
+  const { activeThemeId } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
@@ -246,15 +248,25 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       {!isOpen && (
         <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex items-center gap-3">
           {/* Subtle floating badge tooltip */}
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 text-slate-700 text-xs font-semibold shadow-md border border-slate-200 select-none animate-bounce">
-            <Sparkles className="w-3.5 h-3.5 text-[#008689]" />
+          <div
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md select-none animate-bounce ${
+              activeThemeId === 'spring'
+                ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
+                : 'bg-white/95 text-slate-700 border border-slate-200'
+            }`}
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${activeThemeId === 'spring' ? 'text-[#E7B947]' : 'text-[#008689]'}`} />
             <span>Hỏi Quanta AI</span>
           </div>
 
           <button
             onClick={() => setIsOpen(true)}
             aria-label="Mở Trợ lý Khảo thí AI"
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-[#008689] to-[#00b4b8] text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center relative group"
+            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center relative group ${
+              activeThemeId === 'spring'
+                ? 'bg-gradient-to-tr from-[#087E79] to-[#00a3a8] ring-2 ring-[#E7B947] ring-offset-2 tet-gold-glow'
+                : 'bg-gradient-to-tr from-[#008689] to-[#00b4b8]'
+            }`}
           >
             <div className="absolute inset-0 rounded-full bg-[#008689] opacity-25 animate-ping" />
             <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10" />

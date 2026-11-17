@@ -322,6 +322,22 @@ def query_context(
         except Exception:
             db.rollback()
 
+        citation_cards = [
+            {
+                "chunkId": c.get("chunkId"),
+                "documentId": c.get("documentId", doc_id or ""),
+                "documentName": c.get("documentName", "Giáo trình"),
+                "chapter": c.get("chapter", ""),
+                "pageNumber": c.get("pageNumber", 1),
+                "relevanceScore": c.get("relevanceScore", 0.0),
+                "denseScore": c.get("denseScore", 0.0),
+                "lexicalScore": c.get("lexicalScore", 0.0),
+                "citationRef": c.get("citationRef") or f"Trang {c.get('pageNumber', 1)} ({c.get('chapter', '')})",
+                "highlightExcerpt": c.get("highlightExcerpt") or (c.get("textSnippet", "")[:280] + ("..." if len(c.get("textSnippet", "")) > 280 else ""))
+            }
+            for c in contexts
+        ]
+
         return {
             "query": req.query,
             "totalMatches": len(contexts),
@@ -335,6 +351,7 @@ def query_context(
             "performance": perf_metrics,
             "contexts": contexts,
             "chunks": contexts,
+            "citationCards": citation_cards,
             "userId": user_id
         }
     except Exception as e:
@@ -381,6 +398,7 @@ def get_chunk(chunk_id: str):
     return chunk
 
 
+@app.delete("/vectors/document/{document_id}")
 @app.delete("/documents/{document_id}")
 def delete_document_vectors(document_id: str, db: Session = Depends(get_db)):
     """Xóa sạch toàn bộ vectors của tài liệu khỏi ChromaDB khi giảng viên xóa giáo trình"""

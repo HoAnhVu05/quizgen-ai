@@ -46,20 +46,49 @@ class TextChunker:
         return s.startswith("|") and s.endswith("|") and s.count("|") >= 2
 
     @classmethod
+    def _find_math_span_at(cls, text: str, pos: int) -> Tuple[bool, int, int]:
+        """
+        [SCRUM-99] Phát hiện toàn diện công thức toán học (Toán, Lý, Hóa) bao trùm vị trí pos:
+        1. Khối công thức hiển thị nhiều dòng: $$ ... $$
+        2. Khối LaTeX hiển thị chuẩn: \\[ ... \\]
+        3. Khối LaTeX nội dòng: \\( ... \\)
+        4. Công thức nội dòng: $ ... $
+        Trả về: (is_inside, span_start, span_end)
+        """
+        # Quét các khối $$ ... $$
+        for m in re.finditer(r"(?<!\\)\$\$.*?(?<!\\)\$\$", text, re.DOTALL):
+            if m.start() <= pos < m.end():
+                return True, m.start(), m.end()
+
+        # Quét các khối \[ ... \]
+        for m in re.finditer(r"\\\[.*?\\\]", text, re.DOTALL):
+            if m.start() <= pos < m.end():
+                return True, m.start(), m.end()
+
+        # Quét các khối \( ... \)
+        for m in re.finditer(r"\\\(.*?\\\)", text, re.DOTALL):
+            if m.start() <= pos < m.end():
+                return True, m.start(), m.end()
+
+        # Quét các công thức inline $ ... $ (không phải $$)
+        for m in re.finditer(r"(?<![\$\\])\$(?!\$).*?(?<![\$\\])\$", text):
+            if m.start() <= pos < m.end():
+                return True, m.start(), m.end()
+
+        return False, -1, -1
+
+    @classmethod
     def _is_inside_math(cls, text: str, pos: int) -> bool:
-        """Kiểm tra vị trí pos có nằm giữa công thức toán $...$ hay không"""
-        prev_nl = text.rfind("\n", 0, pos)
-        line_start = prev_nl + 1 if prev_nl != -1 else 0
-        line_sub = text[line_start:pos]
-        dollar_count = len(re.findall(r"(?<!\\)\$", line_sub))
-        return (dollar_count % 2) != 0
+        """Kiểm tra vị trí pos có nằm giữa bất kỳ công thức toán học nào hay không"""
+        inside, _, _ = cls._find_math_span_at(text, pos)
+        return inside
 
     @classmethod
     def _find_clean_boundary(cls, text: str, target_pos: int, window: int = 150, prefer_end: bool = True) -> int:
         """
-        Tìm ranh giới ngắt câu sạch sẽ (không cắt giữa từ, giữa dòng bảng):
+        Tìm ranh giới ngắt câu sạch sẽ (không cắt giữa từ, giữa dòng bảng, giữa công thức LaTeX):
         - Ưu tiên 1: Bảo toàn nguyên vẹn dòng bảng biểu (| ... |)
-        - Ưu tiên 2: Bảo toàn công thức toán học ($...$)
+        - Ưu tiên 2: Bảo toàn tuyệt đối công thức toán học LaTeX ($$, \\[, \\(, $) [SCRUM-99]
         - Ưu tiên 3: Kết thúc đoạn văn bản (\n\n)
         - Ưu tiên 4: Kết thúc câu (. ! ? ;)
         - Ưu tiên 5: Kết thúc dòng (\n)
@@ -71,7 +100,7 @@ class TextChunker:
         if target_pos <= 0:
             return 0
 
-        # 1. Bảo vệ bảng biểu
+        # 1. Bảo vệ bảng biểu Markdown
         prev_nl = text.rfind("\n", 0, target_pos)
         next_nl = text.find("\n", target_pos)
         line_start = prev_nl + 1 if prev_nl != -1 else 0
@@ -84,11 +113,15 @@ class TextChunker:
             if line_start > 0:
                 return line_start
 
-        # 2. Bảo vệ công thức toán học $...$
-        if cls._is_inside_math(text, target_pos):
-            next_dollar = text.find("$", target_pos)
-            if next_dollar != -1 and (next_dollar - target_pos) <= 60:
-                return next_dollar + 1
+        # 2. [SCRUM-99] Bảo vệ toàn vẹn công thức toán học LaTeX
+        inside_math, m_start, m_end = cls._find_math_span_at(text, target_pos)
+        if inside_math:
+            # Nếu vị trí kết thúc công thức nằm trong phạm vi cửa sổ cho phép
+            if prefer_end and (m_end - target_pos) <= window:
+                return m_end
+            # Hoặc ngắt ngay trước khi công thức bắt đầu để bảo toàn trọn vẹn cho chunk tiếp theo
+            if m_start > 0:
+                return m_start
 
         search_start = max(0, target_pos - window)
         search_end = min(text_len, target_pos + (window // 2 if not prefer_end else 0))

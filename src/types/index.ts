@@ -33,6 +33,14 @@ export interface UserProfile {
   twoFactorVerified?: boolean;
   planTier?: 'FREE' | 'PRO_MONTH' | 'PRO_YEAR' | 'ENTERPRISE' | string;
   planExpiresAt?: string;
+  staffId?: string;
+  academicPosition?: string;
+  phoneNumber?: string;
+  officeRoom?: string;
+  primarySubjects?: string;
+  researchInterests?: string;
+  defaultExamDuration?: number;
+  bio?: string;
 }
 
 export interface SubscriptionPlan {

@@ -198,3 +198,9 @@ async def admin_proxy(request: Request, path: str = ""):
 async def payment_proxy(request: Request, path: str = ""):
     target = f"/{path}" if path else "/plans"
     return await proxy_request(settings.PAYMENT_SERVICE_URL, target, request)
+
+@app.api_route("/api/v1/theme", methods=METHODS)
+@app.api_route("/api/v1/theme/{path:path}", methods=METHODS)
+async def theme_proxy(request: Request, path: str = ""):
+    target = f"/theme/{path}" if path else "/theme/current"
+    return await proxy_request(settings.ADMIN_SERVICE_URL, target, request)

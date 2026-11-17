@@ -44,7 +44,10 @@ class LexicalScorer:
     def extract_acronyms_and_formulas(cls, text: str) -> List[str]:
         acronyms = re.findall(r"\b[A-Z]{2,}\b", text)
         formulas = re.findall(r"\$[^\$]+\$", text)
-        return [a.lower() for a in acronyms] + [f.lower() for f in formulas]
+        # [SCRUM-99] Nhận diện đa dạng công thức LaTeX và từ khóa toán học
+        latex_blocks = re.findall(r"\$\$.*?\$\$|\\\[.*?\\\]|\\\(.*?\\\)", text, re.DOTALL)
+        math_keywords = re.findall(r"\\[a-zA-Z]+", text)
+        return [a.lower() for a in acronyms] + [f.lower() for f in formulas] + [b.lower() for b in latex_blocks] + [k.lower() for k in math_keywords]
 
     @classmethod
     def compute_lexical_score(cls, query: str, document_text: str) -> float:
@@ -299,14 +302,25 @@ class RAGVectorStore:
                 relevance_score = round(hybrid_score * 100, 2)
                 metadata = metadatas[0][idx] if metadatas and len(metadatas[0]) > idx else {}
 
+                page_num = metadata.get("page_number", 1)
+                chap_name = metadata.get("chapter", "Không rõ chương")
+                doc_uuid = metadata.get("document_id") or document_id or ""
+                doc_title = metadata.get("document_name") or "Giáo trình"
+                excerpt = chunk_text[:280] + ("..." if len(chunk_text) > 280 else "")
+
                 formatted.append({
                     "chunkId": ids[0][idx],
                     "chunk_id": ids[0][idx],
-                    "pageNumber": metadata.get("page_number", 1),
-                    "page_number": metadata.get("page_number", 1),
-                    "chapter": metadata.get("chapter", "Không rõ chương"),
+                    "documentId": doc_uuid,
+                    "document_id": doc_uuid,
+                    "documentName": doc_title,
+                    "pageNumber": page_num,
+                    "page_number": page_num,
+                    "chapter": chap_name,
                     "textSnippet": chunk_text,
                     "text": chunk_text,
+                    "highlightExcerpt": excerpt,
+                    "citationRef": f"Trang {page_num} ({chap_name})",
                     "relevanceScore": relevance_score,
                     "relevance_score": relevance_score,
                     "denseScore": round(dense_similarity * 100, 2),

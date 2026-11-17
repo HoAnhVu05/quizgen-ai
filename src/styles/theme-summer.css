@@ -1,0 +1,80 @@
+/* ==========================================================================
+   QUIZGEN AI - MODERN TROPICAL SUMMER THEME (MÙA HẠ RỰC RỠ)
+   Bảng màu quy chuẩn:
+   - Xanh đại dương: #087EAD
+   - Xanh biển sáng: #26B9D5
+   - Vàng nắng:      #FFD166
+   - Xanh ngọc:      #087E79
+   - Trắng xanh:     #EAFBFF
+   - Trắng:          #FFFFFF
+   ========================================================================== */
+
+:root {
+  --summer-ocean: #087EAD;
+  --summer-cyan: #26B9D5;
+  --summer-gold: #FFD166;
+  --summer-teal: #087E79;
+  --summer-foam: #EAFBFF;
+  --summer-white: #FFFFFF;
+}
+
+[data-theme="summer"] {
+  --theme-primary: #087EAD;
+  --theme-accent: #FFD166;
+  --theme-secondary: #087E79;
+  --theme-glow: rgba(8, 126, 173, 0.16);
+}
+
+/* Sóng biển dập dềnh êm dịu */
+@keyframes summerWaveSway {
+  0%, 100% {
+    transform: translateY(0) scaleY(1);
+  }
+  50% {
+    transform: translateY(-4px) scaleY(1.05);
+  }
+}
+
+.summer-wave-motion {
+  animation: summerWaveSway 4.5s ease-in-out infinite;
+}
+
+/* Mặt trời xoay chậm tinh tế */
+@keyframes summerSunRotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.summer-sun-spin {
+  animation: summerSunRotate 24s linear infinite;
+}
+
+/* Ánh dương lấp lánh nhẹ nhàng */
+@keyframes summerSunbeam {
+  0%, 100% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 6px rgba(255, 209, 102, 0.4));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 14px rgba(255, 209, 102, 0.7));
+  }
+}
+
+.summer-sunbeam-glow {
+  animation: summerSunbeam 3.8s ease-in-out infinite;
+}
+
+/* Hỗ trợ prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .summer-wave-motion,
+  .summer-sun-spin,
+  .summer-sunbeam-glow {
+    animation: none !important;
+    transform: none !important;
+  }
+}

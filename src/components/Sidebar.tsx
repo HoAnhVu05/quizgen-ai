@@ -20,9 +20,25 @@ import {
   Check,
   RefreshCw,
   ShoppingBag,
+  Building2,
+  Phone,
+  BookOpen,
+  GraduationCap,
+  MapPin,
+  Mail,
+  RotateCw,
+  FileText,
+  User,
+  Hash,
+  Briefcase,
+  Sparkle,
+  Palette,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
+import { useTheme } from '../context/ThemeContext';
+import { ThemeLogoBadge } from './ThemeStickers';
+import { ThemeChibiMascot, ThemeSidebarHeaderCorner } from './ThemeFestiveComponents';
 
 interface SidebarProps {
   currentScreen: ScreenId;
@@ -32,11 +48,7 @@ interface SidebarProps {
   onLogout: () => void;
   adminTab?: string;
   onAdminTabChange?: (tab: string) => void;
-  onUpdateProfile?: (updates: {
-    fullName: string;
-    academicTitle: string;
-    department?: string;
-  }) => void;
+  onUpdateProfile?: (updates: Partial<UserProfile>) => void;
   onOpenPricingModal?: () => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
@@ -130,13 +142,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCloseMobile,
   onOpenProfileModal,
 }) => {
+  const { currentTheme, activeThemeId } = useTheme();
   const activeRole: UserRole = currentUser?.role || 'lecturer';
   const isSystemAdmin = activeRole === 'admin';
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileModalTab, setProfileModalTab] = useState<'profile' | 'billing'>('profile');
   const [draftName, setDraftName] = useState('');
   const [draftTitle, setDraftTitle] = useState('');
+  const [draftStaffId, setDraftStaffId] = useState('');
+  const [draftPosition, setDraftPosition] = useState('');
+  const [draftUniv, setDraftUniv] = useState('');
+  const [draftFaculty, setDraftFaculty] = useState('');
   const [draftDept, setDraftDept] = useState('');
+  const [draftPhone, setDraftPhone] = useState('');
+  const [draftOffice, setDraftOffice] = useState('');
+  const [draftSubjects, setDraftSubjects] = useState('');
+  const [draftResearch, setDraftResearch] = useState('');
+  const [draftBio, setDraftBio] = useState('');
   const [userOrders, setUserOrders] = useState<any[]>([]);
   const [userSub, setUserSub] = useState<any>(null);
   const [loadingBilling, setLoadingBilling] = useState(false);
@@ -145,7 +167,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (!currentUser) return;
     setDraftName(currentUser.fullName || '');
     setDraftTitle(currentUser.academicTitle || '');
-    setDraftDept(currentUser.department || currentUser.faculty || '');
+    setDraftStaffId(currentUser.staffId || '');
+    setDraftPosition(currentUser.academicPosition || '');
+    setDraftUniv(currentUser.university || '');
+    setDraftFaculty(currentUser.faculty || '');
+    setDraftDept(currentUser.department || '');
+    setDraftPhone(currentUser.phoneNumber || '');
+    setDraftOffice(currentUser.officeRoom || '');
+    setDraftSubjects(currentUser.primarySubjects || '');
+    setDraftResearch(currentUser.researchInterests || '');
+    setDraftBio(currentUser.bio || '');
     setProfileModalTab(tab);
     setShowProfileModal(true);
 
@@ -215,6 +246,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           adminSubTab: 'exams',
           label: 'Kiểm soát Đề thi Toàn trường',
           icon: Database,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'themes',
+          label: 'Tùy biến Giao diện Hệ thống',
+          icon: Palette,
         },
       ];
     }
@@ -305,7 +342,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={`h-1 w-full relative z-10 ${isSystemAdmin ? 'bg-[#008F95]' : 'bg-[#008689]'}`} />
 
       {/* Brand Header */}
-      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-10">
+      <div className="px-5 py-4 border-b border-[#E7EEF5] flex items-center space-x-3 bg-white relative z-20">
+        {/* Lồng đèn đỏ treo tinh tế góc phải */}
+        <ThemeSidebarHeaderCorner themeId={activeThemeId} />
+
         <img
           src="/logo.jpg"
           alt="QuizGen AI Logo"
@@ -320,7 +360,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </span>
             )}
           </h1>
-          <p className="text-[11px] text-[#91A2B8] truncate">
+          <p className="text-[11px] text-[#91A2B8] truncate mt-0.5">
             {isSystemAdmin ? 'Quản trị Hệ thống' : 'Trợ lý Đề thi Giảng viên'}
           </p>
         </div>
@@ -424,6 +464,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Floating Profile Card at Bottom */}
       <div className="p-3 relative z-10">
+        {/* Chibi Festive Mascot Sticker (Tương tự ảnh mẫu người dùng) */}
+        <ThemeChibiMascot themeId={activeThemeId} />
         <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
           <div
             onClick={() => openProfileEditor('profile')}
@@ -504,7 +546,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onClick={() => setShowProfileModal(false)}
         >
           <div
-            className="w-full max-w-xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
+            className="w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -572,88 +614,266 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     e.preventDefault();
                     if (!draftName.trim()) return;
                     onUpdateProfile({
-                      fullName: draftName,
+                      fullName: draftName.trim(),
                       academicTitle: draftTitle,
-                      department: draftDept,
+                      staffId: draftStaffId.trim(),
+                      academicPosition: draftPosition.trim(),
+                      university: draftUniv.trim(),
+                      faculty: draftFaculty.trim(),
+                      department: draftDept.trim(),
+                      phoneNumber: draftPhone.trim(),
+                      officeRoom: draftOffice.trim(),
+                      primarySubjects: draftSubjects.trim(),
+                      researchInterests: draftResearch.trim(),
+                      bio: draftBio.trim(),
                     });
                     setShowProfileModal(false);
                   }}
-                  className="space-y-3.5"
+                  className="space-y-4"
                 >
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-bold text-slate-700">Học hàm / Học vị</label>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { value: '', label: 'Không' },
-                        { value: 'CN.', label: 'CN.' },
-                        { value: 'KS.', label: 'KS.' },
-                        { value: 'ThS.', label: 'ThS.' },
-                        { value: 'TS.', label: 'TS.' },
-                        { value: 'PGS. TS.', label: 'PGS. TS.' },
-                        { value: 'GS. TS.', label: 'GS. TS.' },
-                      ].map((item) => (
-                        <button
-                          key={item.label}
-                          type="button"
-                          onClick={() => setDraftTitle(item.value)}
-                          className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
-                            draftTitle === item.value
-                              ? 'bg-[#008689] text-white border-[#008689]'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-white'
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
+                  {/* Nhóm 1: Học hàm / Học vị & Định danh */}
+                  <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                      <GraduationCap className="w-4 h-4 text-[#008689]" />
+                      <span>1. Học hàm / Học vị &amp; Định danh</span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-semibold text-slate-600">Học hàm / Học vị</label>
+                      <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5">
+                        {[
+                          { value: '', label: 'Không' },
+                          { value: 'CN.', label: 'CN.' },
+                          { value: 'KS.', label: 'KS.' },
+                          { value: 'ThS.', label: 'ThS.' },
+                          { value: 'TS.', label: 'TS.' },
+                          { value: 'PGS. TS.', label: 'PGS. TS.' },
+                          { value: 'GS. TS.', label: 'GS. TS.' },
+                        ].map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={() => setDraftTitle(item.value)}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-bold border transition-colors ${
+                              draftTitle === item.value
+                                ? 'bg-[#008689] text-white border-[#008689] shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-semibold text-slate-600">Họ và tên (*)</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const parts = draftName.trim().split(/\s+/);
+                              if (parts.length > 1) setDraftName(parts.reverse().join(' '));
+                            }}
+                            className="text-[10px] font-semibold text-[#008689] hover:underline flex items-center gap-0.5"
+                          >
+                            <RotateCw className="w-2.5 h-2.5" />
+                            <span>Đảo ngược tên</span>
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={draftName}
+                          onChange={(e) => setDraftName(e.target.value)}
+                          placeholder="VD: Nguyễn Văn An"
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs font-semibold text-slate-900 outline-none"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Mã số Giảng viên / Cán bộ</label>
+                        <div className="relative">
+                          <Hash className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={draftStaffId}
+                            onChange={(e) => setDraftStaffId(e.target.value)}
+                            placeholder="VD: GV2024-001"
+                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs font-mono text-slate-900 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-slate-600">Chức vụ / Vị trí công tác</label>
+                      <div className="relative">
+                        <Briefcase className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={draftPosition}
+                          onChange={(e) => setDraftPosition(e.target.value)}
+                          placeholder="VD: Giảng viên chính, Trưởng Bộ môn, Nghiên cứu viên..."
+                          className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-700">Họ và tên</label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const parts = draftName.trim().split(/\s+/);
-                          if (parts.length > 1) setDraftName(parts.reverse().join(' '));
-                        }}
-                        className="text-[11px] font-semibold text-[#008689] hover:underline"
-                      >
-                        Đảo ngược tên
-                      </button>
+                  {/* Nhóm 2: Đơn vị Công tác & Nơi làm việc */}
+                  <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                      <Building2 className="w-4 h-4 text-[#008689]" />
+                      <span>2. Cơ sở đào tạo &amp; Đơn vị trực thuộc</span>
                     </div>
-                    <input
-                      type="text"
-                      value={draftName}
-                      onChange={(e) => setDraftName(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs font-semibold text-slate-900 outline-none"
-                      required
-                    />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Trường Đại học / Học viện</label>
+                        <input
+                          type="text"
+                          value={draftUniv}
+                          onChange={(e) => setDraftUniv(e.target.value)}
+                          placeholder="VD: Trường ĐH Giao thông Vận tải TP.HCM"
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Khoa / Viện</label>
+                        <input
+                          type="text"
+                          value={draftFaculty}
+                          onChange={(e) => setDraftFaculty(e.target.value)}
+                          placeholder="VD: Khoa Công nghệ Thông tin"
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Bộ môn / Chuyên ngành</label>
+                        <input
+                          type="text"
+                          value={draftDept}
+                          onChange={(e) => setDraftDept(e.target.value)}
+                          placeholder="VD: Bộ môn Kỹ thuật Phần mềm & AI"
+                          className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Phòng làm việc / Lab</label>
+                        <div className="relative">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            value={draftOffice}
+                            onChange={(e) => setDraftOffice(e.target.value)}
+                            placeholder="VD: P. A2-304, Lab AI & Data"
+                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="block text-xs font-bold text-slate-700">Khoa / Đơn vị bộ môn</label>
-                    <input
-                      type="text"
-                      value={draftDept}
-                      onChange={(e) => setDraftDept(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#008689] text-xs text-slate-900 outline-none"
-                    />
+                  {/* Nhóm 3: Chuyên môn Giảng dạy & Nghiên cứu */}
+                  <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                      <BookOpen className="w-4 h-4 text-[#008689]" />
+                      <span>3. Chuyên môn &amp; Hướng nghiên cứu</span>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-slate-600">Môn học / Học phần phụ trách chính</label>
+                      <input
+                        type="text"
+                        value={draftSubjects}
+                        onChange={(e) => setDraftSubjects(e.target.value)}
+                        placeholder="VD: Trí tuệ Nhân tạo, Học máy, Cấu trúc Dữ liệu & Giải thuật..."
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-slate-600">Hướng nghiên cứu chuyên sâu</label>
+                      <input
+                        type="text"
+                        value={draftResearch}
+                        onChange={(e) => setDraftResearch(e.target.value)}
+                        placeholder="VD: Xử lý ngôn ngữ tự nhiên (NLP), Large Language Models trong giáo dục..."
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none"
+                      />
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  {/* Nhóm 4: Thông tin Liên hệ & Giới thiệu */}
+                  <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                      <Phone className="w-4 h-4 text-[#008689]" />
+                      <span>4. Liên hệ &amp; Giới thiệu học thuật</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Số điện thoại liên hệ</label>
+                        <div className="relative">
+                          <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="tel"
+                            value={draftPhone}
+                            onChange={(e) => setDraftPhone(e.target.value)}
+                            placeholder="VD: 0912 345 678"
+                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs font-mono text-slate-900 outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-semibold text-slate-600">Email học thuật</label>
+                        <div className="relative">
+                          <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="email"
+                            value={currentUser?.email || ''}
+                            disabled
+                            className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-100 border border-slate-200 text-xs font-mono text-slate-500 cursor-not-allowed outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-semibold text-slate-600">Tiểu sử / Giới thiệu học thuật ngắn</label>
+                      <textarea
+                        rows={2}
+                        value={draftBio}
+                        onChange={(e) => setDraftBio(e.target.value)}
+                        placeholder="VD: Giảng viên có hơn 8 năm nghiên cứu và giảng dạy chuyên ngành Kỹ thuật Phần mềm và Trí tuệ Nhân tạo..."
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 focus:border-[#008689] focus:ring-1 focus:ring-[#008689] text-xs text-slate-900 outline-none resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Actions Bar */}
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 sticky bottom-0 bg-white/95 backdrop-blur-xs">
                     <button
                       type="button"
                       onClick={() => setShowProfileModal(false)}
-                      className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
                     >
                       Hủy
                     </button>
                     <button
                       type="submit"
-                      className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70] transition-colors"
+                      className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#008689] hover:bg-[#006d70] transition-colors shadow-xs flex items-center gap-1.5"
                     >
-                      Lưu thay đổi
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Lưu thông tin hồ sơ</span>
                     </button>
                   </div>
                 </form>
