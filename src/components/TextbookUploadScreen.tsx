@@ -219,8 +219,9 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       const saved = localStorage.getItem('quizgen_qgroups');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].messages) {
-          return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((g: any) => g && g.id && g.name);
+          if (valid.length > 0) return valid;
         }
       }
     } catch {}
@@ -510,14 +511,30 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       if (resGroups.ok) {
         const remoteGroups = await resGroups.json();
         if (Array.isArray(remoteGroups) && remoteGroups.length > 0) {
-          let merged = [...remoteGroups];
+          // Flatten if any item has nested groups
+          const flattenGroups = (items: any[]): QGroup[] => {
+            const out: QGroup[] = [];
+            for (const it of items) {
+              if (it && typeof it === 'object') {
+                if (Array.isArray(it.groups)) {
+                  out.push(...flattenGroups(it.groups));
+                } else if (it.id && it.name) {
+                  out.push(it as QGroup);
+                }
+              }
+            }
+            return out;
+          };
+          const cleanRemote = flattenGroups(remoteGroups);
+          let merged = [...cleanRemote];
           try {
             const localSaved = localStorage.getItem('quizgen_qgroups');
             if (localSaved) {
               const localGroups: QGroup[] = JSON.parse(localSaved);
               if (Array.isArray(localGroups)) {
-                const remoteCodes = new Set(remoteGroups.map((g: QGroup) => g.code || g.id));
-                const missingLocal = localGroups.filter(
+                const cleanLocal = flattenGroups(localGroups);
+                const remoteCodes = new Set(cleanRemote.map((g: QGroup) => g.code || g.id));
+                const missingLocal = cleanLocal.filter(
                   (lg) => !remoteCodes.has(lg.code) && !remoteCodes.has(lg.id)
                 );
                 if (missingLocal.length > 0) {
@@ -2506,12 +2523,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                           }`}
                         >
                           <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs shrink-0">
-                            {group.name.substring(0, 2).toUpperCase()}
+                            {String(group.name || 'DM').slice(0, 2).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1">
                               <h4 className="font-bold text-xs text-slate-900 truncate">
-                                {group.name}
+                                {group.name || 'Tin nhắn riêng'}
                               </h4>
                               {lastMsg && (
                                 <span className="text-[10px] text-slate-400 shrink-0 font-medium">
@@ -2562,12 +2579,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                           }`}
                         >
                           <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-xs shrink-0">
-                            {group.name.substring(0, 2).toUpperCase()}
+                            {String(group.name || 'QG').slice(0, 2).toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1">
                               <h4 className="font-bold text-xs text-slate-900 truncate">
-                                {group.name}
+                                {group.name || 'Hội nhóm Q-Group'}
                               </h4>
                               {lastMsg && (
                                 <span className="text-[10px] text-slate-400 shrink-0 font-medium">
