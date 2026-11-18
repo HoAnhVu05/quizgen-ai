@@ -1367,6 +1367,18 @@ async def create_friend_request(request: Request):
     target = payload.get("targetEmail", "").strip().lower()
     if not sender or not target:
         return {"status": "error", "message": "senderEmail và targetEmail là bắt buộc"}
+    if sender == target:
+        return {"status": "error", "message": "Không thể kết bạn với chính mình"}
+
+    # Kiểm tra nếu đã là bạn bè (đã có phòng DM 1-1)
+    groups = load_server_qgroups()
+    is_already_friend = any(
+        g.get("isDirect") and {sender, target}.issubset({str(m).strip().lower() for m in g.get("members", [])})
+        for g in groups
+    )
+    if is_already_friend:
+        return {"status": "already_friend", "message": "Hai Thầy/Cô đã là đồng nghiệp kết nối thành công trước đó."}
+
     # Tránh duplicate: xóa req cũ cùng cặp sender-target nếu có
     reqs = [r for r in reqs if not (
         r.get("senderEmail", "").strip().lower() == sender and
@@ -1391,6 +1403,14 @@ async def respond_friend_request(req_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Lời mời kết bạn không tìm thấy")
 
     target_req["status"] = "accepted" if action == "accept" else "rejected"
+    # Đồng thời cập nhật mọi lời mời pending giữa cùng cặp người dùng này để xóa sạch trạng thái chờ
+    sender_email = target_req.get("senderEmail", "").strip().lower()
+    target_email = target_req.get("targetEmail", "").strip().lower()
+    for r in reqs:
+        s = r.get("senderEmail", "").strip().lower()
+        t = r.get("targetEmail", "").strip().lower()
+        if (s == sender_email and t == target_email) or (s == target_email and t == sender_email):
+            r["status"] = "accepted" if action == "accept" else "rejected"
     save_friend_requests(reqs)
 
     if action == "accept":

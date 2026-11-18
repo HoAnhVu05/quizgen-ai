@@ -432,10 +432,10 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         }`}
         title="Nhấp để mở Quanta AI — kéo ra đâu cũng được, khi buông tay sẽ tự hút về mép trái/phải"
       >
-        {/* Subtle floating badge tooltip - Ẩn khi đang kéo để bóng tròn gọn gàng không bị cấn lề */}
+        {/* Subtle floating badge tooltip - Hiện mượt mà khi hover để không che khuất tin nhắn & nút gửi */}
         {!isCurrentlyDragging && (
           <div
-            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none animate-in fade-in duration-200 ${
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 shrink-0 ${
               activeThemeId === 'spring'
                 ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
                 : 'bg-white/95 text-slate-700 border border-slate-200'
@@ -449,7 +449,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         <button
           type="button"
           aria-label="Mở Trợ lý Khảo thí AI"
-          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative group ${
+          className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative ${
             isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105 shadow-2xl' : 'hover:scale-105 active:scale-95'
           } ${
             activeThemeId === 'spring'

@@ -59,6 +59,9 @@ import {
   Clock,
   AlertCircle,
   AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  ArrowRight,
 } from 'lucide-react';
 import {
   QGroup,
@@ -85,6 +88,34 @@ interface QGroupScreenProps {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+const parseLegacyForumShare = (text: string) => {
+  if (!text || !text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]')) return null;
+  const tagMatch = text.match(/#(\S+)/);
+  const authorMatch = text.match(/Tác giả:\s*([^\n\r]+)/);
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(
+      (l) =>
+        l &&
+        !l.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') &&
+        !l.startsWith('Tác giả:') &&
+        !l.startsWith('Đính kèm:') &&
+        !l.startsWith('Video:')
+    );
+  const content = lines.join(' ').slice(0, 180);
+  return {
+    id: undefined,
+    tag: tagMatch ? tagMatch[1] : 'HọcThuật',
+    authorName: authorMatch ? authorMatch[1].trim() : 'Giảng viên',
+    authorTitle: undefined,
+    department: 'Khoa Công nghệ Thông tin',
+    content: content || 'Bài viết trao đổi học thuật trên diễn đàn.',
+    attachmentFileName: text.includes('Đính kèm:') ? text.split('Đính kèm:')[1]?.split('\n')[0]?.trim() : undefined,
+    attachmentFileSize: undefined,
+  };
+};
+
 const initials = (name: string) =>
   String(name || 'QG')
     .trim()
@@ -254,8 +285,10 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
 // MAIN COMPONENT
 // ============================================================================
 export const QGroupScreen: React.FC<QGroupScreenProps> = ({
+  onNavigate,
   onShowToast,
   currentUser,
+  subscriptionInfo,
 }) => {
   const myEmail = useMemo(
     () => (currentUser?.email || '').trim().toLowerCase(),
@@ -359,6 +392,33 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // Public profile modal
   const [profileEmail, setProfileEmail] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | undefined>(undefined);
+
+  // Collapsible Sections cho Sidebar Slack/Teams
+  const [isChannelsOpen, setIsChannelsOpen] = useState(true);
+  const [isDmsOpen, setIsDmsOpen] = useState(true);
+
+  // Kiểm tra quan hệ bạn bè / đồng nghiệp theo profile đang mở
+  const isTargetFriend = useMemo(() => {
+    if (!profileEmail || !myEmail) return false;
+    const target = profileEmail.trim().toLowerCase();
+    return qgroups.some((g) => {
+      if (!g.isDirect) return false;
+      const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
+      const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
+      const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
+      return (
+        (cleanOwner === target && cleanPartner === myEmail) ||
+        (cleanPartner === target && cleanOwner === myEmail) ||
+        (members.includes(target) && members.includes(myEmail))
+      );
+    });
+  }, [profileEmail, myEmail, qgroups]);
+
+  const hasTargetPendingRequest = useMemo(() => {
+    if (!profileEmail) return false;
+    const target = profileEmail.trim().toLowerCase();
+    return sentFriendRequests.some((r) => r.targetEmail?.trim().toLowerCase() === target && r.status === 'pending');
+  }, [profileEmail, sentFriendRequests]);
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1020,6 +1080,31 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       onShowToast('warning', 'Không hợp lệ', 'Bạn không thể kết bạn với chính mình.');
       return;
     }
+
+    // Kiểm tra nếu đã là bạn bè / có phòng nhắn tin riêng 1-1
+    const alreadyFriend = qgroups.some((g) => {
+      if (!g.isDirect) return false;
+      const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
+      const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
+      const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
+      return (
+        (cleanOwner === email && cleanPartner === myEmail) ||
+        (cleanPartner === email && cleanOwner === myEmail) ||
+        (members.includes(email) && members.includes(myEmail))
+      );
+    });
+    if (alreadyFriend) {
+      onShowToast('info', 'Đã là đồng nghiệp', `Thầy/Cô và ${email} đã kết nối bạn bè thành công trước đó.`);
+      return;
+    }
+
+    // Kiểm tra nếu đã gửi lời mời đang chờ duyệt
+    const alreadyPending = sentFriendRequests.some((r) => r.targetEmail?.trim().toLowerCase() === email && r.status === 'pending');
+    if (alreadyPending) {
+      onShowToast('info', 'Lời mời đang chờ duyệt', `Thầy/Cô đã gửi lời mời kết nối tới ${email} trước đó.`);
+      return;
+    }
+
     const req: FriendRequest = {
       id: `fr-${Date.now()}`,
       senderEmail: myEmail,
@@ -1036,12 +1121,16 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
       });
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.status !== 'already_friend') {
         setSentFriendRequests((prev) => [req, ...prev.filter((r) => r.targetEmail !== email)]);
         onShowToast('success', 'Đã gửi lời mời', `Đã gửi lời mời kết bạn tới: ${email}`);
         setFriendEmailInput('');
         setIsAddFriendOpen(false);
         void fetchFriendRequests();
+      } else if (data.status === 'already_friend') {
+        onShowToast('info', 'Đã là đồng nghiệp', data.message || `Đã kết nối với ${email}.`);
+        setIsAddFriendOpen(false);
       }
     } catch {
       onShowToast('error', 'Lỗi', 'Không thể gửi lời mời.');
@@ -1442,11 +1531,20 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               <div className="space-y-3">
                 {/* SECTION 1: KÊNH CHUYÊN MÔN (SLACK CHANNELS) */}
                 <div>
-                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800">
-                    <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800 select-none">
+                    <button
+                      type="button"
+                      onClick={() => setIsChannelsOpen((prev) => !prev)}
+                      className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {isChannelsOpen ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      )}
                       <Hash className="w-3.5 h-3.5" />
                       <span>Kênh chuyên môn ({sortedGroups.filter((g) => !g.isDirect).length})</span>
-                    </span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -1460,60 +1558,71 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     </button>
                   </div>
 
-                  <div className="space-y-0.5 mt-0.5">
-                    {sortedGroups
-                      .filter((g) => !g.isDirect)
-                      .map((group) => (
-                        <ConversationItem
-                          key={group.id}
-                          group={group}
-                          isSelected={group.id === selectedGroupId}
-                          myEmail={myEmail}
-                          isMenuOpen={menuGroupId === group.id}
-                          onSelect={() => {
-                            setSelectedGroupId(group.id);
-                            markGroupAsRead(group.id);
-                            setMenuGroupId(null);
-                          }}
-                          onMenuToggle={(e) => {
-                            e.stopPropagation();
-                            setMenuGroupId((prev) => (prev === group.id ? null : group.id));
-                          }}
-                          onViewProfile={() => {
-                            const info = resolveChatDisplayInfo(group, myEmail);
-                            setProfileEmail(info.partnerEmail || null);
-                            setProfileName(info.displayName);
-                            setMenuGroupId(null);
-                          }}
-                          onViewDetails={() => {
-                            setChannelDetailsTab('about');
-                            setIsChannelDetailsOpen(true);
-                            setMenuGroupId(null);
-                          }}
-                          onMute={() => handleToggleMute(group)}
-                          onDelete={() => handleDeleteChat(group)}
-                          onLeave={() => handleLeaveGroup(group)}
-                          onDisband={() => handleDisbandGroup(group)}
-                          onCopyCode={() => {
-                            navigator.clipboard.writeText(group.code);
-                            onShowToast('info', 'Đã sao chép mã phòng', group.code);
-                            setMenuGroupId(null);
-                          }}
-                        />
-                      ))}
-                    {sortedGroups.filter((g) => !g.isDirect).length === 0 && (
-                      <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có kênh học thuật nào</p>
-                    )}
-                  </div>
+                  {isChannelsOpen && (
+                    <div className="space-y-0.5 mt-0.5">
+                      {sortedGroups
+                        .filter((g) => !g.isDirect)
+                        .map((group) => (
+                          <ConversationItem
+                            key={group.id}
+                            group={group}
+                            isSelected={group.id === selectedGroupId}
+                            myEmail={myEmail}
+                            isMenuOpen={menuGroupId === group.id}
+                            onSelect={() => {
+                              setSelectedGroupId(group.id);
+                              markGroupAsRead(group.id);
+                              setMenuGroupId(null);
+                            }}
+                            onMenuToggle={(e) => {
+                              e.stopPropagation();
+                              setMenuGroupId((prev) => (prev === group.id ? null : group.id));
+                            }}
+                            onViewProfile={() => {
+                              const info = resolveChatDisplayInfo(group, myEmail);
+                              setProfileEmail(info.partnerEmail || null);
+                              setProfileName(info.displayName);
+                              setMenuGroupId(null);
+                            }}
+                            onViewDetails={() => {
+                              setChannelDetailsTab('about');
+                              setIsChannelDetailsOpen(true);
+                              setMenuGroupId(null);
+                            }}
+                            onMute={() => handleToggleMute(group)}
+                            onDelete={() => handleDeleteChat(group)}
+                            onLeave={() => handleLeaveGroup(group)}
+                            onDisband={() => handleDisbandGroup(group)}
+                            onCopyCode={() => {
+                              navigator.clipboard.writeText(group.code);
+                              onShowToast('info', 'Đã sao chép mã phòng', group.code);
+                              setMenuGroupId(null);
+                            }}
+                          />
+                        ))}
+                      {sortedGroups.filter((g) => !g.isDirect).length === 0 && (
+                        <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có kênh học thuật nào</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* SECTION 2: TIN NHẮN TRỰC TIẾP (SLACK DIRECT MESSAGES) */}
                 <div className="pt-2 border-t border-slate-200/60">
-                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800">
-                    <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800 select-none">
+                    <button
+                      type="button"
+                      onClick={() => setIsDmsOpen((prev) => !prev)}
+                      className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {isDmsOpen ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                      )}
                       <Users className="w-3.5 h-3.5" />
                       <span>Tin nhắn trực tiếp ({sortedGroups.filter((g) => Boolean(g.isDirect)).length})</span>
-                    </span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsAddFriendOpen(true)}
@@ -1524,51 +1633,53 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     </button>
                   </div>
 
-                  <div className="space-y-0.5 mt-0.5">
-                    {sortedGroups
-                      .filter((g) => Boolean(g.isDirect))
-                      .map((group) => (
-                        <ConversationItem
-                          key={group.id}
-                          group={group}
-                          isSelected={group.id === selectedGroupId}
-                          myEmail={myEmail}
-                          isMenuOpen={menuGroupId === group.id}
-                          onSelect={() => {
-                            setSelectedGroupId(group.id);
-                            markGroupAsRead(group.id);
-                            setMenuGroupId(null);
-                          }}
-                          onMenuToggle={(e) => {
-                            e.stopPropagation();
-                            setMenuGroupId((prev) => (prev === group.id ? null : group.id));
-                          }}
-                          onViewProfile={() => {
-                            const info = resolveChatDisplayInfo(group, myEmail);
-                            setProfileEmail(info.partnerEmail || null);
-                            setProfileName(info.displayName);
-                            setMenuGroupId(null);
-                          }}
-                          onViewDetails={() => {
-                            setChannelDetailsTab('about');
-                            setIsChannelDetailsOpen(true);
-                            setMenuGroupId(null);
-                          }}
-                          onMute={() => handleToggleMute(group)}
-                          onDelete={() => handleDeleteChat(group)}
-                          onLeave={() => handleLeaveGroup(group)}
-                          onDisband={() => handleDisbandGroup(group)}
-                          onCopyCode={() => {
-                            navigator.clipboard.writeText(group.code);
-                            onShowToast('info', 'Đã sao chép mã phòng', group.code);
-                            setMenuGroupId(null);
-                          }}
-                        />
-                      ))}
-                    {sortedGroups.filter((g) => Boolean(g.isDirect)).length === 0 && (
-                      <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có tin nhắn 1-1 nào</p>
-                    )}
-                  </div>
+                  {isDmsOpen && (
+                    <div className="space-y-0.5 mt-0.5">
+                      {sortedGroups
+                        .filter((g) => Boolean(g.isDirect))
+                        .map((group) => (
+                          <ConversationItem
+                            key={group.id}
+                            group={group}
+                            isSelected={group.id === selectedGroupId}
+                            myEmail={myEmail}
+                            isMenuOpen={menuGroupId === group.id}
+                            onSelect={() => {
+                              setSelectedGroupId(group.id);
+                              markGroupAsRead(group.id);
+                              setMenuGroupId(null);
+                            }}
+                            onMenuToggle={(e) => {
+                              e.stopPropagation();
+                              setMenuGroupId((prev) => (prev === group.id ? null : group.id));
+                            }}
+                            onViewProfile={() => {
+                              const info = resolveChatDisplayInfo(group, myEmail);
+                              setProfileEmail(info.partnerEmail || null);
+                              setProfileName(info.displayName);
+                              setMenuGroupId(null);
+                            }}
+                            onViewDetails={() => {
+                              setChannelDetailsTab('about');
+                              setIsChannelDetailsOpen(true);
+                              setMenuGroupId(null);
+                            }}
+                            onMute={() => handleToggleMute(group)}
+                            onDelete={() => handleDeleteChat(group)}
+                            onLeave={() => handleLeaveGroup(group)}
+                            onDisband={() => handleDisbandGroup(group)}
+                            onCopyCode={() => {
+                              navigator.clipboard.writeText(group.code);
+                              onShowToast('info', 'Đã sao chép mã phòng', group.code);
+                              setMenuGroupId(null);
+                            }}
+                          />
+                        ))}
+                      {sortedGroups.filter((g) => Boolean(g.isDirect)).length === 0 && (
+                        <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có tin nhắn 1-1 nào</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1853,13 +1964,110 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         </span>
                       </div>
 
-                      {msg.text && (
+                      {/* Text Message (Ẩn text thô nếu là bài chia sẻ diễn đàn dạng legacy để card hiển thị chuyên nghiệp) */}
+                      {msg.text && !msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
                         <div className="text-[13px] text-slate-800 leading-relaxed mt-1 whitespace-pre-wrap font-normal">
                           {msg.text}
                         </div>
                       )}
 
-                      {msg.attachment && (
+                      {/* ─── LINKED ACADEMIC FORUM POST CARD (Thẻ hình chữ nhật liên kết trực tiếp bài viết Diễn Đàn) ─── */}
+                      {(msg.sharedPost || (msg.text && msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]'))) && (() => {
+                        const post = msg.sharedPost;
+                        const legacy = !post && msg.text ? parseLegacyForumShare(msg.text) : null;
+                        const tag = post?.tag || legacy?.tag || 'HọcThuật';
+                        const author = post?.authorName || legacy?.authorName || 'Giảng viên UTH';
+                        const authorTitle = post?.authorTitle || legacy?.authorTitle;
+                        const department = post?.department || legacy?.department;
+                        const content = post?.content || legacy?.content || '';
+                        const attachmentName = post?.attachmentFileName || legacy?.attachmentFileName;
+                        const attachmentSize = post?.attachmentFileSize || legacy?.attachmentFileSize;
+                        const postId = post?.id || legacy?.id;
+
+                        return (
+                          <div className="mt-2.5 rounded-2xl border border-slate-200/90 bg-white shadow-xs max-w-lg overflow-hidden transition-all hover:border-teal-400 hover:shadow-md">
+                            {/* Card Header Bar */}
+                            <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
+                                <Share2 className="w-3.5 h-3.5 text-teal-600" />
+                                <span className="text-[11px] uppercase tracking-wider font-extrabold text-teal-800">
+                                  Bài viết Diễn đàn Học thuật UTH
+                                </span>
+                              </div>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
+                                #{tag}
+                              </span>
+                            </div>
+
+                            {/* Card Body */}
+                            <div className="p-3.5 space-y-2.5">
+                              {/* Author metadata */}
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg bg-slate-800 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                                  {initials(author)}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-slate-900 truncate">
+                                      {author}
+                                    </span>
+                                    {authorTitle && (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                        {authorTitle}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {department && (
+                                    <p className="text-[10px] text-slate-500 truncate">
+                                      {department}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Quotation text */}
+                              <div className="p-2.5 rounded-xl bg-slate-50 border-l-2 border-teal-500 text-xs text-slate-700 italic leading-relaxed">
+                                &ldquo;{content}&rdquo;
+                              </div>
+
+                              {/* Attached document inside shared post */}
+                              {attachmentName && (
+                                <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                  <FileText className="w-4 h-4 text-teal-600 shrink-0" />
+                                  <div className="min-w-0 flex-1">
+                                    <p className="font-bold text-slate-800 truncate text-[11px]">
+                                      {attachmentName}
+                                    </p>
+                                    {attachmentSize && (
+                                      <p className="text-[9px] text-slate-400 font-mono">
+                                        {attachmentSize} • Tệp học thuật đính kèm
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Action Deep-link Button */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (postId) {
+                                    sessionStorage.setItem('quizgen_focus_post_id', postId);
+                                  }
+                                  onNavigate('forum');
+                                }}
+                                className="w-full mt-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-teal-700 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs group"
+                              >
+                                <span>Xem bài viết trên Diễn Đàn</span>
+                                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Direct Attachment (Chỉ hiển thị nếu không phải tin nhắn chia sẻ bài viết để tránh duplicate) */}
+                      {msg.attachment && !msg.sharedPost && !msg.text?.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
                         <div className="mt-2 p-3 rounded-xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs max-w-md">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-lg bg-slate-100 text-teal-700 flex items-center justify-center shrink-0 border border-slate-200">
@@ -2287,11 +2495,31 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         isOpen={Boolean(profileEmail)}
         userEmail={profileEmail}
         userName={profileName}
+        isFriend={isTargetFriend}
+        hasSentRequest={hasTargetPendingRequest}
         onClose={() => {
           setProfileEmail(null);
           setProfileName(undefined);
         }}
         currentUser={currentUser}
+        onStartDirectChat={(targetEmail) => {
+          setProfileEmail(null);
+          setProfileName(undefined);
+          const target = (targetEmail || '').trim().toLowerCase();
+          const dm = qgroups.find((g) => {
+            if (!g.isDirect) return false;
+            const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
+            const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
+            const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
+            return cleanOwner === target || cleanPartner === target || members.includes(target);
+          });
+          if (dm) {
+            setSelectedGroupId(dm.id);
+            setFilterTab('all');
+          } else {
+            onShowToast('info', 'Bắt đầu trò chuyện', `Chưa có đoạn chat riêng với ${targetEmail}`);
+          }
+        }}
         onSendFriendRequest={(email) => {
           void handleSendFriendRequest(email);
         }}

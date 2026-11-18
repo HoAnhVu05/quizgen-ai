@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   MessageSquare,
   Image as ImageIcon,
@@ -183,6 +183,26 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     } catch {}
   };
 
+  // Tự động cuộn và làm nổi bật bài viết khi được điều hướng từ liên kết tin nhắn Q-Group
+  useEffect(() => {
+    try {
+      const focusId = sessionStorage.getItem('quizgen_focus_post_id');
+      if (focusId) {
+        sessionStorage.removeItem('quizgen_focus_post_id');
+        setTimeout(() => {
+          const el = document.getElementById(`post-${focusId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('ring-2', 'ring-teal-500', 'bg-teal-50/30');
+            setTimeout(() => {
+              el.classList.remove('ring-2', 'ring-teal-500', 'bg-teal-50/30');
+            }, 3000);
+          }
+        }, 200);
+      }
+    } catch {}
+  }, []);
+
   const handleCreatePost = (e: React.FormEvent) => {
     e.preventDefault();
     if (!postContent.trim()) {
@@ -331,9 +351,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     const targetName = targetGroup?.name || targetGroup?.directPartnerName || 'Cuộc trò chuyện';
 
     const authorDisplayName = `${sharingPost.authorTitle ? sharingPost.authorTitle + ' ' : ''}${sharingPost.authorName}`;
-    const previewText = sharingPost.content.length > 140 ? `${sharingPost.content.slice(0, 140)}...` : sharingPost.content;
-
-    const messageText = `[DIỄN ĐÀN HỌC THUẬT UTH]\nChủ đề: #${sharingPost.tag}\nTác giả: ${authorDisplayName}\nTrích đoạn: "${previewText}"${shareNote.trim() ? `\nLời nhắn: ${shareNote.trim()}` : ''}\n(Truy cập Diễn Đàn Học Thuật để xem toàn văn và tài liệu đính kèm)`;
+    const previewText = sharingPost.content.length > 160 ? `${sharingPost.content.slice(0, 160)}...` : sharingPost.content;
 
     const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
     const myEmail = currentUser?.email || 'user@uth.edu.vn';
@@ -343,9 +361,23 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       senderEmail: myEmail,
       senderName: myName,
       senderTitle: currentUser?.academicTitle || 'TS.',
-      avatarColor: 'from-indigo-600 to-indigo-800',
-      text: messageText,
+      avatarColor: 'bg-slate-700',
+      text: shareNote.trim() || undefined,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      sharedPost: {
+        id: sharingPost.id,
+        tag: sharingPost.tag,
+        authorName: authorDisplayName,
+        authorTitle: sharingPost.authorTitle,
+        department: sharingPost.department,
+        content: previewText,
+        fullContent: sharingPost.content,
+        attachmentFileName: sharingPost.attachmentFileName,
+        attachmentFileSize: sharingPost.attachmentFileSize,
+        videoUrl: sharingPost.videoUrl,
+        timestamp: sharingPost.timestamp,
+        note: shareNote.trim() || undefined,
+      },
       attachment: sharingPost.attachmentFileName ? {
         type: 'textbook',
         id: `att-${Date.now()}`,
@@ -369,7 +401,8 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
     // 2. Sync to local storage
     try {
-      const local = localStorage.getItem('quizgen_qgroups');
+      const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
+      const local = localStorage.getItem(storageKey) || localStorage.getItem('quizgen_qgroups');
       if (local) {
         const groups = JSON.parse(local);
         const updated = groups.map((g: any) => {
@@ -382,12 +415,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           }
           return g;
         });
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         localStorage.setItem('quizgen_qgroups', JSON.stringify(updated));
       }
     } catch {}
 
     setIsSendingShare(false);
     setSharingPost(null);
+    setShareNote('');
+    onShowToast('success', 'Đã chia sẻ thành công', `Đã chuyển bài viết vào "${targetName}"`);
     onShowToast('success', 'Chia sẻ thành công', `Đã chia sẻ bài viết vào "${targetName}"!`);
   };
 
@@ -717,6 +753,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           filteredPosts.map((post) => (
             <div
               key={post.id}
+              id={`post-${post.id}`}
               className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs hover:border-slate-300 transition-all space-y-4"
             >
               {/* Post Header */}

@@ -18,6 +18,7 @@ import {
   FileText,
   MapPin,
   ExternalLink,
+  Clock,
 } from 'lucide-react';
 import { PublicUserProfile, UserProfile } from '../types';
 
@@ -233,32 +234,32 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
             {!isMe && (
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                 {isFriend ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 font-bold text-xs border border-emerald-200">
-                    <UserCheck className="w-3.5 h-3.5" />
-                    Đã là bạn bè
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 font-semibold text-xs border border-emerald-200">
+                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                    Đồng nghiệp (Bạn bè)
                   </span>
                 ) : hasSentRequest ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 text-purple-700 font-bold text-xs border border-purple-200">
-                    <UserPlus className="w-3.5 h-3.5" />
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
                     Đã gửi lời mời
                   </span>
                 ) : (
                   <button
                     type="button"
                     onClick={handleSendFriendAction}
-                    className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+                    className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
-                    Kết bạn
+                    Kết nối đồng nghiệp
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={handleStartChatAction}
-                  className="px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 border border-indigo-200 transition-colors"
+                  className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  <Send className="w-3.5 h-3.5 text-slate-600" />
                   Nhắn tin
                 </button>
               </div>

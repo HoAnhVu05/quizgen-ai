@@ -408,12 +408,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               setIsSearchOpen(true);
               setTimeout(() => searchInputRef.current?.focus(), 80);
             }}
-            className="hidden xl:flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer w-44 lg:w-56 justify-between"
+            className="hidden xl:flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer w-52 2xl:w-64 justify-between"
             title="Tìm kiếm chức năng hệ thống (Ctrl + K)"
           >
             <div className="flex items-center gap-2 min-w-0">
               <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="truncate text-[11px]">Tìm nhanh chức năng...</span>
+              <span className="truncate text-[11px]">Tìm chức năng...</span>
             </div>
             <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-white border border-slate-200 text-slate-400 rounded shadow-2xs shrink-0">
               Ctrl K
@@ -734,13 +734,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     onClick={onOpenPricingModal}
                   >
                     <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                    <span className="hidden sm:inline">Gói PRO (Tháng)</span>
-                    <span className="sm:hidden font-extrabold">PRO</span>
+                    <span className="hidden lg:inline">Gói PRO (Tháng)</span>
+                    <span className="lg:hidden font-extrabold">PRO</span>
                   </div>
                   {onOpenPricingModal && (
                     <button
                       onClick={onOpenPricingModal}
-                      className={`hidden xl:flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                      className={`hidden 2xl:flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
                         activeThemeId === 'spring'
                           ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
                           : activeThemeId === 'summer'
@@ -779,8 +779,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   onClick={onOpenPricingModal}
                 >
                   <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200 shrink-0" />
-                  <span className="hidden sm:inline">Gói PRO (1 Năm VIP)</span>
-                  <span className="sm:hidden font-extrabold">VIP</span>
+                  <span className="hidden lg:inline">Gói PRO (1 Năm VIP)</span>
+                  <span className="lg:hidden font-extrabold">VIP</span>
                 </div>
               ) : subscriptionInfo?.plan_code === 'ENTERPRISE' ? (
                 <div 
@@ -788,14 +788,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   onClick={onOpenPricingModal}
                 >
                   <Crown className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                  <span className="hidden sm:inline">Gói Bộ Môn Toàn Năng</span>
-                  <span className="sm:hidden font-extrabold">Bộ Môn</span>
+                  <span className="hidden lg:inline">Gói Bộ Môn Toàn Năng</span>
+                  <span className="lg:hidden font-extrabold">Bộ Môn</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-                    <span className="hidden sm:inline">Gói Miễn Phí</span>
-                    <span className="sm:hidden">FREE</span>
+                    <span className="hidden lg:inline">Gói Miễn Phí</span>
+                    <span className="lg:hidden font-bold">FREE</span>
                   </span>
                   {onOpenPricingModal && (
                     <button

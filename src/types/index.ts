@@ -205,6 +205,20 @@ export interface QGroupMessage {
     durationMinutes?: number;
     authorName?: string;
   };
+  sharedPost?: {
+    id: string;
+    tag: string;
+    authorName: string;
+    authorTitle?: string;
+    department?: string;
+    content: string;
+    fullContent?: string;
+    attachmentFileName?: string;
+    attachmentFileSize?: string;
+    videoUrl?: string;
+    timestamp?: string;
+    note?: string;
+  };
 }
 
 export interface QGroupPendingRequest {
