@@ -72,8 +72,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // ─── Vị trí Draggable của Nút Quanta AI FAB ───────────────────────────────
-  const [fabPosition, setFabPosition] = useState<{ x: number; y: number } | null>(() => {
+  // ─── Vị trí Draggable của Nút Quanta AI FAB (Có Lực Hút Snap 2 Bên Cánh) ───
+  const [fabPosition, setFabPosition] = useState<{ x: number; y: number; side?: 'left' | 'right' } | null>(() => {
     try {
       const saved = localStorage.getItem('quizgen_quanta_fab_pos');
       if (saved) {
@@ -84,6 +84,20 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       }
     } catch {}
     return null;
+  });
+
+  const [snapSide, setSnapSide] = useState<'left' | 'right'>(() => {
+    try {
+      const saved = localStorage.getItem('quizgen_quanta_fab_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.side === 'left' || parsed?.side === 'right') return parsed.side;
+        if (typeof parsed?.x === 'number' && typeof window !== 'undefined') {
+          return parsed.x < window.innerWidth / 2 ? 'left' : 'right';
+        }
+      }
+    } catch {}
+    return 'right';
   });
 
   const [isCurrentlyDragging, setIsCurrentlyDragging] = useState(false);
@@ -104,23 +118,22 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     hasMoved: false,
   });
 
-  // Tự động kiểm tra giới hạn mép màn hình khi cửa sổ resize
+  // Tự động kiểm tra giới hạn mép màn hình khi cửa sổ resize và hút lại vào cánh
   useEffect(() => {
     const handleWindowResize = () => {
       setFabPosition((prev) => {
         if (!prev) return null;
-        const maxX = Math.max(16, window.innerWidth - 76);
-        const maxY = Math.max(16, window.innerHeight - 76);
-        const clampedX = Math.min(Math.max(16, prev.x), maxX);
+        const midX = window.innerWidth / 2;
+        const side: 'left' | 'right' = prev.x < midX ? 'left' : 'right';
+        const snappedX = side === 'left' ? 16 : Math.max(16, window.innerWidth - 72);
+        const maxY = Math.max(16, window.innerHeight - 80);
         const clampedY = Math.min(Math.max(16, prev.y), maxY);
-        if (clampedX !== prev.x || clampedY !== prev.y) {
-          const clamped = { x: clampedX, y: clampedY };
-          try {
-            localStorage.setItem('quizgen_quanta_fab_pos', JSON.stringify(clamped));
-          } catch {}
-          return clamped;
-        }
-        return prev;
+        const clamped = { x: snappedX, y: clampedY, side };
+        setSnapSide(side);
+        try {
+          localStorage.setItem('quizgen_quanta_fab_pos', JSON.stringify(clamped));
+        } catch {}
+        return clamped;
       });
     };
 
@@ -156,8 +169,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       }
 
       if (dragRef.current.hasMoved) {
-        const maxX = Math.max(16, window.innerWidth - 76);
-        const maxY = Math.max(16, window.innerHeight - 76);
+        const maxX = Math.max(16, window.innerWidth - 72);
+        const maxY = Math.max(16, window.innerHeight - 80);
         const newX = Math.min(Math.max(16, dragRef.current.originX + dx), maxX);
         const newY = Math.min(Math.max(16, dragRef.current.originY + dy), maxY);
         setFabPosition({ x: newX, y: newY });
@@ -175,14 +188,22 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       window.removeEventListener('pointerup', handlePointerUp);
 
       if (moved) {
-        // Đã kéo thả di dời -> Lưu vị trí vào localStorage
+        // Lực hút (Snap) tự động dạt về mép trái hoặc mép phải gần nhất
         const rect = fabElementRef.current?.getBoundingClientRect();
-        if (rect) {
-          const finalPos = { x: Math.round(rect.left), y: Math.round(rect.top) };
-          try {
-            localStorage.setItem('quizgen_quanta_fab_pos', JSON.stringify(finalPos));
-          } catch {}
-        }
+        const curX = rect ? rect.left : (fabPosition?.x ?? (window.innerWidth - 72));
+        const curY = rect ? rect.top : (fabPosition?.y ?? (window.innerHeight - 80));
+
+        const midX = window.innerWidth / 2;
+        const targetSide: 'left' | 'right' = curX < midX ? 'left' : 'right';
+        const snappedX = targetSide === 'left' ? 16 : Math.max(16, window.innerWidth - 72);
+        const clampedY = Math.min(Math.max(16, curY), window.innerHeight - 80);
+
+        const finalPos = { x: Math.round(snappedX), y: Math.round(clampedY), side: targetSide };
+        setFabPosition(finalPos);
+        setSnapSide(targetSide);
+        try {
+          localStorage.setItem('quizgen_quanta_fab_pos', JSON.stringify(finalPos));
+        } catch {}
       } else {
         // Nhấp chuột thông thường -> Mở khung chat
         setIsOpen(true);
@@ -367,7 +388,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
   return (
     <>
-      {/* ─── Floating Action Button (FAB) (Draggable kéo thả tự do) ─────── */}
+      {/* ─── Floating Action Button (FAB) (Draggable kéo thả + Tự hút 2 cánh) ─── */}
       {!isOpen && (
         <div
           ref={fabElementRef}
@@ -381,6 +402,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                   right: 'auto',
                   bottom: 'auto',
                   touchAction: 'none',
+                  transition: isCurrentlyDragging ? 'none' : 'all 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
                 }
               : {
                   touchAction: 'none',
@@ -388,15 +410,15 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           }
           className={`${
             fabPosition ? '' : 'fixed bottom-4 right-4 sm:bottom-6 sm:right-6'
-          } z-40 flex items-center gap-2 select-none group transition-[shadow,transform] duration-150 ${
+          } z-40 flex items-center gap-2 select-none group ${
             isCurrentlyDragging ? 'cursor-grabbing scale-105' : 'cursor-grab'
-          }`}
-          title="Nhấp để mở Quanta AI — hoặc kéo thả để di chuyển đến vị trí thuận tiện"
+          } ${snapSide === 'left' ? 'flex-row-reverse' : ''}`}
+          title="Nhấp để mở Quanta AI — kéo ra đâu cũng được, khi buông tay sẽ tự hút về mép trái/phải"
         >
           {/* Subtle floating badge tooltip */}
           <div
             className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none ${
-              isCurrentlyDragging ? 'opacity-80' : 'animate-bounce'
+              isCurrentlyDragging ? 'opacity-70' : 'animate-bounce'
             } ${
               activeThemeId === 'spring'
                 ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
@@ -411,7 +433,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
             type="button"
             aria-label="Mở Trợ lý Khảo thí AI"
             className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative group ${
-              isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105' : 'hover:scale-105 active:scale-95'
+              isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105 shadow-2xl' : 'hover:scale-105 active:scale-95'
             } ${
               activeThemeId === 'spring'
                 ? 'bg-gradient-to-tr from-[#087E79] to-[#00a3a8] ring-2 ring-[#E7B947] ring-offset-2 tet-gold-glow'
@@ -427,10 +449,14 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         </div>
       )}
 
-      {/* ─── Modern AI Chat Drawer / Window ───────────────────────────────── */}
+      {/* ─── Modern AI Chat Drawer / Window (Mở theo bên cánh bong bóng) ──── */}
       {isOpen && (
         <div
-          className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:right-6 sm:w-96 ${
+          className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 ${
+            snapSide === 'left'
+              ? 'sm:left-6 sm:right-auto animate-in fade-in slide-in-from-left-4'
+              : 'sm:right-6 sm:left-auto animate-in fade-in slide-in-from-right-4'
+          } sm:w-96 ${
             isMinimized ? 'h-14 sm:h-16' : 'h-[520px] max-h-[82vh] sm:max-h-[85vh]'
           }`}
         >

@@ -17,9 +17,19 @@ import {
   Sparkles,
   Bookmark,
   Building2,
-  UserCheck
+  UserCheck,
+  MoreVertical,
+  Pencil,
+  Trash2,
+  Lock,
+  Globe,
+  Check,
+  Users,
+  Shield,
+  Forward,
 } from 'lucide-react';
 import { UserProfile, ScreenId } from '../types';
+import apiClient, { API_BASE } from '../services/apiClient';
 
 interface ForumScreenProps {
   currentUser?: UserProfile | null;
@@ -29,6 +39,7 @@ interface ForumScreenProps {
 
 export interface ForumPost {
   id: string;
+  authorEmail?: string;
   authorName: string;
   authorTitle?: string;
   authorRole: string;
@@ -36,6 +47,7 @@ export interface ForumPost {
   timestamp: string;
   tag: string;
   content: string;
+  privacy?: 'public' | 'department' | 'private';
   imageUrl?: string;
   attachmentFileName?: string;
   attachmentFileSize?: string;
@@ -136,9 +148,26 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
 
+  // ─── Post Actions & Menu States ──────────────────────────────────────────
+  const [activeMenuPostId, setActiveMenuPostId] = useState<string | null>(null);
+
+  // Edit Post Modal State
+  const [editingPost, setEditingPost] = useState<ForumPost | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [editTag, setEditTag] = useState('');
+  const [editPrivacy, setEditPrivacy] = useState<'public' | 'department' | 'private'>('public');
+
+  // Share to Chat / Q-Group Modal State
+  const [sharingPost, setSharingPost] = useState<ForumPost | null>(null);
+  const [shareTargetGroups, setShareTargetGroups] = useState<any[]>([]);
+  const [selectedShareGroupId, setSelectedShareGroupId] = useState<string>('');
+  const [shareNote, setShareNote] = useState('');
+  const [isSendingShare, setIsSendingShare] = useState(false);
+
   // Form inputs for creating post
   const [postContent, setPostContent] = useState('');
   const [postTag, setPostTag] = useState('Hệ Điều Hành');
+  const [postPrivacy, setPostPrivacy] = useState<'public' | 'department' | 'private'>('public');
   const [showAttachImage, setShowAttachImage] = useState(false);
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [showAttachFile, setShowAttachFile] = useState(false);
@@ -163,12 +192,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
     const newPost: ForumPost = {
       id: `post-${Date.now()}`,
+      authorEmail: currentUser?.email,
       authorName: currentUser?.fullName || 'TS. Hồ Anh Vũ',
       authorTitle: currentUser?.academicTitle || 'TS.',
       authorRole: currentUser?.role === 'admin' ? 'Quản trị viên' : 'Giảng viên',
       department: (currentUser as any)?.department || 'Khoa Công nghệ Thông tin',
       timestamp: 'Vừa xong',
       tag: postTag,
+      privacy: postPrivacy,
       content: postContent.trim(),
       imageUrl: imageUrlInput.trim() || undefined,
       attachmentFileName: attachedFileName.trim() || undefined,
@@ -193,6 +224,169 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     setShowAttachVideo(false);
 
     onShowToast('success', 'Đăng bài thành công', 'Bài viết đã được chia sẻ lên Diễn đàn Học thuật!');
+  };
+
+  // ─── Menu & Post Management Handlers ─────────────────────────────────────
+  const handleDeletePost = (postId: string) => {
+    if (window.confirm('Thầy/Cô có chắc chắn muốn xóa bài viết này khỏi Diễn đàn không?')) {
+      const updated = posts.filter((p) => p.id !== postId);
+      savePosts(updated);
+      setActiveMenuPostId(null);
+      onShowToast('success', 'Đã xóa bài viết', 'Bài viết đã được gỡ khỏi Diễn đàn Học thuật.');
+    }
+  };
+
+  const handleChangePrivacy = (postId: string, privacy: 'public' | 'department' | 'private') => {
+    const updated = posts.map((p) => (p.id === postId ? { ...p, privacy } : p));
+    savePosts(updated);
+    setActiveMenuPostId(null);
+    const labels = {
+      public: 'Công khai toàn trường',
+      department: 'Nội bộ Khoa',
+      private: 'Riêng tư (Chỉ nhóm chia sẻ)',
+    };
+    onShowToast('info', 'Đã cập nhật quyền riêng tư', `Bài viết hiện được đặt ở chế độ: ${labels[privacy]}.`);
+  };
+
+  const handleStartEditPost = (post: ForumPost) => {
+    setEditingPost(post);
+    setEditContent(post.content);
+    setEditTag(post.tag);
+    setEditPrivacy(post.privacy || 'public');
+    setActiveMenuPostId(null);
+  };
+
+  const handleSaveEditPost = () => {
+    if (!editingPost) return;
+    if (!editContent.trim()) {
+      onShowToast('warning', 'Nội dung trống', 'Vui lòng không để trống nội dung bài viết.');
+      return;
+    }
+    const updated = posts.map((p) => {
+      if (p.id === editingPost.id) {
+        return {
+          ...p,
+          content: editContent.trim(),
+          tag: editTag,
+          privacy: editPrivacy,
+        };
+      }
+      return p;
+    });
+    savePosts(updated);
+    setEditingPost(null);
+    onShowToast('success', 'Đã lưu chỉnh sửa', 'Bài viết đã được cập nhật thành công.');
+  };
+
+  // ─── Share to Q-Group / Friends Handlers ─────────────────────────────────
+  const handleOpenShareModal = async (post: ForumPost) => {
+    setSharingPost(post);
+    setShareNote('');
+    setActiveMenuPostId(null);
+
+    let available: any[] = [];
+    try {
+      const local = localStorage.getItem('quizgen_qgroups');
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          available = parsed;
+        }
+      }
+    } catch {}
+
+    if (available.length === 0) {
+      try {
+        const res = await apiClient.fetch(`${API_BASE}/documents/qgroups`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.groups && Array.isArray(data.groups)) {
+            available = data.groups;
+          }
+        }
+      } catch {}
+    }
+
+    if (available.length === 0) {
+      available = [
+        { id: 'grp-os', name: 'Bộ Môn Mạng & Hệ Điều Hành', memberCount: 12, isDirect: false },
+        { id: 'grp-llct', name: 'Tổ Bộ Môn Lý Luận Chính Trị', memberCount: 8, isDirect: false },
+        { id: 'grp-ktvm', name: 'Tổ Chuyên Môn Kinh Tế Vi Mô', memberCount: 15, isDirect: false },
+        { id: 'dm-hanbich', name: 'ThS. Hân Bích', directPartnerName: 'ThS. Hân Bích', isDirect: true },
+        { id: 'dm-tan', name: 'ThS. Nguyễn Văn Tân', directPartnerName: 'ThS. Nguyễn Văn Tân', isDirect: true },
+      ];
+    }
+
+    setShareTargetGroups(available);
+    setSelectedShareGroupId(available[0]?.id || '');
+  };
+
+  const handleSendShareToChat = async () => {
+    if (!sharingPost || !selectedShareGroupId) return;
+    setIsSendingShare(true);
+
+    const targetGroup = shareTargetGroups.find((g) => g.id === selectedShareGroupId);
+    const targetName = targetGroup?.name || targetGroup?.directPartnerName || 'Cuộc trò chuyện';
+
+    const authorDisplayName = `${sharingPost.authorTitle ? sharingPost.authorTitle + ' ' : ''}${sharingPost.authorName}`;
+    const previewText = sharingPost.content.length > 140 ? `${sharingPost.content.slice(0, 140)}...` : sharingPost.content;
+
+    const messageText = `📢 [CHIA SẺ TỪ DIỄN ĐÀN HỌC THUẬT]\n📌 Chủ đề: #${sharingPost.tag}\n👤 Tác giả: ${authorDisplayName}\n📝 Trích đoạn: "${previewText}"${shareNote.trim() ? `\n💬 Lời nhắn: ${shareNote.trim()}` : ''}\n👉 Mở Diễn Đàn Học Thuật để xem toàn văn và thảo luận.`;
+
+    const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
+    const myEmail = currentUser?.email || 'user@uth.edu.vn';
+
+    const newMessage: any = {
+      id: `msg-share-${Date.now()}`,
+      senderEmail: myEmail,
+      senderName: myName,
+      senderTitle: currentUser?.academicTitle || 'TS.',
+      avatarColor: 'from-indigo-600 to-indigo-800',
+      text: messageText,
+      timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+      attachment: sharingPost.attachmentFileName ? {
+        type: 'textbook',
+        id: `att-${Date.now()}`,
+        name: sharingPost.attachmentFileName,
+        size: sharingPost.attachmentFileSize || '1.2 MB',
+        subject: sharingPost.tag,
+        authorName: authorDisplayName
+      } : undefined
+    };
+
+    // 1. Send via API
+    try {
+      await apiClient.fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(selectedShareGroupId)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMessage),
+      });
+    } catch (e) {
+      console.warn('Backend sync failed, storing locally:', e);
+    }
+
+    // 2. Sync to local storage
+    try {
+      const local = localStorage.getItem('quizgen_qgroups');
+      if (local) {
+        const groups = JSON.parse(local);
+        const updated = groups.map((g: any) => {
+          if (g.id === selectedShareGroupId) {
+            return {
+              ...g,
+              messages: [...(g.messages || []), newMessage],
+              unreadCount: (g.unreadCount || 0) + 1,
+            };
+          }
+          return g;
+        });
+        localStorage.setItem('quizgen_qgroups', JSON.stringify(updated));
+      }
+    } catch {}
+
+    setIsSendingShare(false);
+    setSharingPost(null);
+    onShowToast('success', 'Chia sẻ thành công', `Đã chia sẻ bài viết vào "${targetName}"!`);
   };
 
   const handleToggleLike = (postId: string) => {
@@ -272,7 +466,12 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
   });
 
   return (
-    <div className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-5 bg-[#f7f9fb] text-slate-800">
+    <div
+      onClick={() => {
+        if (activeMenuPostId) setActiveMenuPostId(null);
+      }}
+      className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-5 bg-[#f7f9fb] text-slate-800 w-full max-w-full overflow-x-hidden relative"
+    >
       
       {/* 1. Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
@@ -447,6 +646,19 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                   <option value="Khảo Thí">#Khảo Thí</option>
                 </select>
               </div>
+
+              <div className="flex items-center gap-1">
+                <span className="text-[11px] font-bold text-slate-400">Quyền xem:</span>
+                <select
+                  value={postPrivacy}
+                  onChange={(e) => setPostPrivacy(e.target.value as any)}
+                  className="text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:bg-white"
+                >
+                  <option value="public">🌐 Toàn trường</option>
+                  <option value="department">🏛️ Nội bộ Khoa</option>
+                  <option value="private">🔒 Riêng tư</option>
+                </select>
+              </div>
             </div>
 
             <button
@@ -527,9 +739,140 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                   </div>
                 </div>
 
-                <span className="px-3 py-1 rounded-full text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  #{post.tag}
-                </span>
+                <div className="flex items-center gap-2 shrink-0 relative">
+                  {post.privacy === 'department' && (
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                      <Building2 className="w-3 h-3" />
+                      Nội bộ khoa
+                    </span>
+                  )}
+                  {post.privacy === 'private' && (
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                      <Lock className="w-3 h-3" />
+                      Riêng tư
+                    </span>
+                  )}
+                  <span className="px-3 py-1 rounded-full text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    #{post.tag}
+                  </span>
+
+                  {/* Three-dots menu button */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuPostId((prev) => (prev === post.id ? null : post.id));
+                      }}
+                      className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                      title="Tùy chọn bài viết"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {activeMenuPostId === post.id && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150 text-xs"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditPost(post)}
+                          className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium transition-colors cursor-pointer"
+                        >
+                          <Pencil className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <span>Chỉnh sửa bài viết</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenShareModal(post)}
+                          className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium transition-colors cursor-pointer"
+                        >
+                          <Share2 className="w-4 h-4 text-teal-600 shrink-0" />
+                          <span>Chia sẻ vào Chat / Nhóm</span>
+                        </button>
+
+                        <div className="h-px bg-slate-100 my-1" />
+
+                        {/* Privacy Submenu */}
+                        <div className="px-3.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Quyền riêng tư
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleChangePrivacy(post.id, 'public')}
+                          className={`w-full px-3.5 py-1.5 text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                            (!post.privacy || post.privacy === 'public')
+                              ? 'text-indigo-600 font-bold bg-indigo-50/50'
+                              : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Globe className="w-3.5 h-3.5" />
+                            Toàn trường (Công khai)
+                          </span>
+                          {(!post.privacy || post.privacy === 'public') && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChangePrivacy(post.id, 'department')}
+                          className={`w-full px-3.5 py-1.5 text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                            post.privacy === 'department'
+                              ? 'text-indigo-600 font-bold bg-indigo-50/50'
+                              : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Building2 className="w-3.5 h-3.5" />
+                            Nội bộ Khoa
+                          </span>
+                          {post.privacy === 'department' && <Check className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleChangePrivacy(post.id, 'private')}
+                          className={`w-full px-3.5 py-1.5 text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                            post.privacy === 'private'
+                              ? 'text-indigo-600 font-bold bg-indigo-50/50'
+                              : 'text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <Lock className="w-3.5 h-3.5" />
+                            Riêng tư (Chỉ nhóm chia sẻ)
+                          </span>
+                          {post.privacy === 'private' && <Check className="w-3.5 h-3.5" />}
+                        </button>
+
+                        <div className="h-px bg-slate-100 my-1" />
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(window.location.href);
+                            setActiveMenuPostId(null);
+                            onShowToast('info', 'Đã sao chép liên kết', 'Đã lưu đường dẫn bài viết vào bộ nhớ tạm.');
+                          }}
+                          className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium transition-colors cursor-pointer"
+                        >
+                          <Forward className="w-4 h-4 text-slate-500 shrink-0" />
+                          <span>Sao chép liên kết</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePost(post.id)}
+                          className="w-full px-3.5 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 font-bold transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>Xóa bài viết</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Post Content */}
@@ -620,11 +963,9 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
-                      onShowToast('info', 'Đã sao chép liên kết', 'Đã lưu đường dẫn bài viết vào bộ nhớ tạm.');
-                    }}
-                    className="flex items-center gap-1.5 font-bold text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                    onClick={() => handleOpenShareModal(post)}
+                    className="flex items-center gap-1.5 font-bold text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                    title="Chia sẻ vào tin nhắn với bạn bè hoặc nhóm Q-Group"
                   >
                     <Share2 className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Chia sẻ</span>
@@ -687,6 +1028,240 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           ))
         )}
       </div>
+
+      {/* ─── 5. Modal Chỉnh Sửa Bài Viết ───────────────────────────────────── */}
+      {editingPost && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setEditingPost(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Chỉnh Sửa Bài Viết</h3>
+                  <p className="text-[11px] text-slate-400">Cập nhật nội dung và thiết lập quyền riêng tư</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPost(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">Nội dung bài viết:</label>
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={4}
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-indigo-600 text-slate-800 leading-relaxed resize-none"
+                  placeholder="Nhập nội dung bài viết..."
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Chủ đề (#tag):</label>
+                  <select
+                    value={editTag}
+                    onChange={(e) => setEditTag(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-semibold focus:outline-none focus:bg-white focus:border-indigo-600"
+                  >
+                    <option value="Hệ Điều Hành">#Hệ Điều Hành</option>
+                    <option value="Kinh Tế Vi Mô">#Kinh Tế Vi Mô</option>
+                    <option value="Tư Tưởng HCM">#Tư Tưởng HCM</option>
+                    <option value="Ma Trận Bloom">#Ma Trận Bloom</option>
+                    <option value="Mẹo Ra Đề">#Mẹo Ra Đề</option>
+                    <option value="Khảo Thí">#Khảo Thí</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Quyền riêng tư:</label>
+                  <select
+                    value={editPrivacy}
+                    onChange={(e) => setEditPrivacy(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-semibold focus:outline-none focus:bg-white focus:border-indigo-600"
+                  >
+                    <option value="public">🌐 Toàn trường (Công khai)</option>
+                    <option value="department">🏛️ Nội bộ Khoa</option>
+                    <option value="private">🔒 Riêng tư (Chỉ nhóm)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setEditingPost(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditPost}
+                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Lưu Thay Đổi</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── 6. Modal Chia Sẻ Vào Q-Group & Tin Nhắn ────────────────────────── */}
+      {sharingPost && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setSharingPost(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
+                  <Share2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Chia Sẻ Vào Cuộc Trò Chuyện</h3>
+                  <p className="text-[11px] text-slate-400">Gửi bài viết đến Hội nhóm Q-Group hoặc Đồng nghiệp</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSharingPost(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Trích dẫn bài viết preview */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-indigo-700 text-[11px]">
+                  #{sharingPost.tag} • {sharingPost.authorTitle ? `${sharingPost.authorTitle} ` : ''}{sharingPost.authorName}
+                </span>
+                <span className="text-[10px] text-slate-400">{sharingPost.timestamp}</span>
+              </div>
+              <p className="text-slate-600 line-clamp-2 text-xs italic">
+                "{sharingPost.content}"
+              </p>
+              {sharingPost.attachmentFileName && (
+                <div className="pt-1 flex items-center gap-2 text-[11px] text-amber-700 font-semibold">
+                  <FileText className="w-3.5 h-3.5" />
+                  <span className="truncate">{sharingPost.attachmentFileName}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Danh sách phòng chat / bạn bè để chọn */}
+            <div className="space-y-2 text-xs">
+              <label className="block text-[11px] font-bold text-slate-700">
+                Chọn phòng trò chuyện nhận tin:
+              </label>
+              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-2xl p-2 bg-slate-50/50">
+                {shareTargetGroups.map((g) => {
+                  const isSelected = selectedShareGroupId === g.id;
+                  const label = g.name || g.directPartnerName || 'Hội nhóm Q-Group';
+                  const isDm = !!g.isDirect;
+                  return (
+                    <div
+                      key={g.id}
+                      onClick={() => setSelectedShareGroupId(g.id)}
+                      className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-teal-50 border border-teal-300 text-teal-900 shadow-2xs'
+                          : 'bg-white hover:bg-slate-100 border border-slate-200/80 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                            isDm ? 'bg-indigo-100 text-indigo-700' : 'bg-teal-100 text-teal-700'
+                          }`}
+                        >
+                          {isDm ? (
+                            <UserCheck className="w-3.5 h-3.5" />
+                          ) : (
+                            <Users className="w-3.5 h-3.5" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-extrabold text-xs truncate">{label}</div>
+                          <div className="text-[10px] text-slate-400">
+                            {isDm ? 'Tin nhắn riêng 1-1' : `${g.memberCount || 2} thành viên`}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 pl-2">
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                            isSelected ? 'border-teal-600 bg-teal-600 text-white' : 'border-slate-300'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3" />}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Lời nhắn gửi kèm */}
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                Lời nhắn gửi kèm (tùy chọn):
+              </label>
+              <input
+                type="text"
+                value={shareNote}
+                onChange={(e) => setShareNote(e.target.value)}
+                placeholder="Ví dụ: Kính mời Thầy/Cô tham khảo sơ đồ này..."
+                className="w-full px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-teal-600 text-slate-800"
+              />
+            </div>
+
+            {/* Nút hành động */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSharingPost(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={!selectedShareGroupId || isSendingShare}
+                onClick={handleSendShareToChat}
+                className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSendingShare ? 'Đang gửi...' : 'Gửi Vào Trò Chuyện'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

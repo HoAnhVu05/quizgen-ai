@@ -362,8 +362,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 md:static md:z-20 w-64 bg-white text-slate-700 flex flex-col border-r border-[#E7EEF5] shrink-0 select-none transition-transform duration-300 ease-in-out relative overflow-hidden ${
-          isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'
+        className={`fixed inset-y-0 left-0 z-50 md:relative md:z-20 w-64 bg-white text-slate-700 flex flex-col border-r border-[#E7EEF5] shrink-0 select-none transition-transform duration-300 ease-in-out overflow-hidden ${
+          isMobileOpen ? 'translate-x-0 shadow-2xl pointer-events-auto' : '-translate-x-full md:translate-x-0 pointer-events-none md:pointer-events-auto'
         }`}
       >
       {/* Gentle Ambient Cyan Wave at Lower Sidebar */}
