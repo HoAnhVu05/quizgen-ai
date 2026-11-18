@@ -252,10 +252,9 @@ async def process_document_pipeline(
         db.add_all(chunks_db)
         db.commit()
 
-        # [INSTANT READY PATTERN] Toàn bộ văn bản, mục lục chương mục và chunks đã lưu vào CSDL an toàn.
-        # Chuyển trạng thái sang ready (100%) ngay lập tức để Giảng viên có thể xem chương & bấm Sinh Đề lập tức mà không phải chờ đợi!
-        _update_doc_progress(document_id, progress=100, status="ready", total_pages=len(pages), chapters_count=len(chapters_metadata), error_message=None)
-        cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages), chapters_count=len(chapters_metadata))
+        # Đã lưu metadata vào CSDL, tiếp tục chuyển sang Pha 4 để lập chỉ mục vector RAG
+        cache.set_upload_progress(document_id, progress=75, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
+        _update_doc_progress(document_id, progress=75, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
     except Exception as e:
         db.rollback()
         _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
@@ -263,8 +262,11 @@ async def process_document_pipeline(
     finally:
         db.close()
 
-    # Pha 4: Chuyển tiếp các chunks sang RAG Service trong nền (Background Vector Indexing)
-    # RAG vector store được lập chỉ mục ngầm, không làm nghẽn hoặc trì hoãn trải nghiệm của người dùng
+    # Pha 4: Chuyển tiếp các chunks sang RAG Service để lập chỉ mục vector (ChromaDB)
+    # Chỉ khi ChromaDB hoàn tất việc tính toán vector và nạp vào cơ sở dữ liệu thì tài liệu mới được coi là SẴN SÀNG THẬT SỰ (True Readiness)
+    cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
+    _update_doc_progress(document_id, progress=85, status="embedding")
+
     headers = {}
     if user_id:
         headers["X-User-Id"] = user_id
@@ -287,7 +289,7 @@ async def process_document_pipeline(
                 )
                 if res.status_code == 200:
                     rag_success = True
-                    logger.info(f"[DocumentService] Background RAG vector indexing completed successfully for document {document_id}")
+                    logger.info(f"[DocumentService] True Readiness achieved: Vector indexing completed for document {document_id}")
                     break
                 else:
                     last_rag_error = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
@@ -297,8 +299,12 @@ async def process_document_pipeline(
         if attempt < max_retries:
             await asyncio.sleep(2 ** (attempt - 1))  # 1s, 2s
 
-    if not rag_success:
-        logger.warning(f"[DocumentService] Background RAG indexing warning for document {document_id}: {last_rag_error}")
+    # Pha 5: Hoàn tất Sẵn Sàng Thật Sự (Chỉ kích hoạt khi Vector RAG đã xong 100%)
+    if rag_success:
+        _update_doc_progress(document_id, progress=100, status="ready", error_message=None)
+        cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages), chapters_count=len(chapters_metadata))
+    else:
+        _mark_doc_error(document_id, last_rag_error, stage="rag_error")
 
 
 @app.get("/health")
