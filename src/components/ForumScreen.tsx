@@ -837,34 +837,48 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
           {/* Attachment Preview Trays */}
           {showAttachImage && (
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5 overflow-hidden flex-1">
-                <ImageIcon className="w-4 h-4 text-slate-700 shrink-0" />
-                {imageUrlInput ? (
-                  <span className="font-semibold text-slate-800 truncate">
-                    {imageUrlInput.startsWith('data:') ? 'Ảnh từ thiết bị' : imageUrlInput}
-                  </span>
-                ) : (
-                  <input
-                    type="text"
-                    value={imageUrlInput}
-                    onChange={(e) => setImageUrlInput(e.target.value)}
-                    placeholder="Dán đường dẫn ảnh trực tuyến (URL)..."
-                    className="bg-white px-3 py-1.5 rounded-lg border border-slate-300 text-xs w-full focus:outline-none"
-                  />
-                )}
-                {isUploadingImage && <span className="text-[11px] text-teal-600 animate-pulse">Đang tải lên...</span>}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                  <ImageIcon className="w-4 h-4 text-slate-700 shrink-0" />
+                  {imageUrlInput ? (
+                    <span className="font-semibold text-slate-800 truncate">
+                      {imageUrlInput.startsWith('data:') ? 'Ảnh đính kèm từ thiết bị' : imageUrlInput}
+                    </span>
+                  ) : (
+                    <input
+                      type="text"
+                      value={imageUrlInput}
+                      onChange={(e) => setImageUrlInput(e.target.value)}
+                      placeholder="Dán đường dẫn ảnh trực tuyến (URL)..."
+                      className="bg-white px-3 py-1.5 rounded-lg border border-slate-300 text-xs w-full focus:outline-none"
+                    />
+                  )}
+                  {isUploadingImage && <span className="text-[11px] text-teal-600 animate-pulse font-medium">Đang tải lên...</span>}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setImageUrlInput('');
+                    setShowAttachImage(false);
+                  }}
+                  className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                  title="Xóa ảnh"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setImageUrlInput('');
-                  setShowAttachImage(false);
-                }}
-                className="p-1 text-slate-400 hover:text-rose-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              {/* Xem trước ảnh đầy đủ trước khi đăng */}
+              {imageUrlInput && (
+                <div className="rounded-xl overflow-hidden border border-slate-200 bg-white p-2 flex items-center justify-center max-h-64">
+                  <img
+                    src={imageUrlInput}
+                    alt="Xem trước ảnh tải lên"
+                    className="max-h-60 w-auto h-auto object-contain rounded-lg"
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1328,21 +1342,23 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                   {post.content}
                 </p>
 
-                {/* Attached Image with Lightbox Zoom */}
+                {/* Attached Image with Lightbox Zoom - Hiển thị 100% kích thước gốc của ảnh, không cắt xén */}
                 {post.imageUrl && (
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-200 max-h-96 bg-slate-100 group">
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-50/70 group flex items-center justify-center p-1 sm:p-1.5 shadow-2xs">
                     <img
                       src={post.imageUrl}
                       alt="Minh họa bài viết"
-                      className="w-full h-full object-cover max-h-96 group-hover:scale-101 transition-transform cursor-pointer"
+                      className="w-full h-auto object-contain max-h-[85vh] rounded-xl group-hover:opacity-95 transition-all cursor-pointer block"
                       onClick={() => setLightboxImageUrl(post.imageUrl || null)}
                     />
                     <button
+                      type="button"
                       onClick={() => setLightboxImageUrl(post.imageUrl || null)}
-                      className="absolute bottom-3 right-3 px-3 py-1.5 rounded-lg bg-slate-900/80 backdrop-blur-xs text-white text-[11px] font-semibold flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      className="absolute bottom-3 right-3 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-900 backdrop-blur-md text-white text-[11px] font-semibold flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-all cursor-pointer shadow-lg"
+                      title="Phóng to ảnh xem toàn màn hình"
                     >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                      <span>Phóng to ảnh</span>
+                      <Maximize2 className="w-3.5 h-3.5 text-teal-400" />
+                      <span>Xem toàn màn hình</span>
                     </button>
                   </div>
                 )}
@@ -1552,40 +1568,40 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       {/* ─── 5. Lightbox Modal Phóng To Ảnh ───────────────────────────────── */}
       {lightboxImageUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-150"
           onClick={() => setLightboxImageUrl(null)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="relative max-w-4xl max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col items-center"
+            className="relative max-w-5xl w-full max-h-[92vh] bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col items-center"
           >
-            <div className="w-full flex items-center justify-between p-3 bg-slate-900/90 border-b border-slate-800 text-white text-xs">
-              <span className="font-semibold text-slate-300">Xem sơ đồ minh họa toàn màn hình</span>
+            <div className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800 text-white text-xs">
+              <span className="font-semibold text-slate-300">Xem ảnh nguyên bản toàn màn hình</span>
               <div className="flex items-center gap-2">
                 <a
                   href={lightboxImageUrl}
-                  download="diagram.png"
+                  download="image_full.png"
                   target="_blank"
                   rel="noreferrer"
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-semibold"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Tải ảnh về</span>
+                  <Download className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Tải ảnh gốc về</span>
                 </a>
                 <button
                   type="button"
                   onClick={() => setLightboxImageUrl(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
-            <div className="p-2 overflow-auto max-h-[80vh] flex items-center justify-center">
+            <div className="p-3 overflow-auto max-h-[84vh] w-full flex items-center justify-center bg-black/40">
               <img
                 src={lightboxImageUrl}
                 alt="Phóng to"
-                className="max-h-[75vh] w-auto object-contain rounded-lg"
+                className="max-h-[80vh] max-w-full w-auto h-auto object-contain rounded-lg shadow-lg"
               />
             </div>
           </div>
