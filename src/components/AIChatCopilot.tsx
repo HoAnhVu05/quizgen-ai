@@ -423,19 +423,19 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         ref={fabElementRef}
         onPointerDown={handlePointerDown}
         style={fabStyle}
-        className={`fixed z-40 flex items-center gap-2 select-none group transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          snapSide === 'left' ? 'flex-row-reverse' : ''
-        } ${
+        className={`fixed z-40 w-12 h-12 sm:w-14 sm:h-14 select-none group transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           isCurrentlyDragging ? 'cursor-grabbing scale-105' : 'cursor-grab'
         } ${
           isOpen ? 'scale-0 opacity-0 pointer-events-none' : 'scale-100 opacity-100 pointer-events-auto'
         }`}
         title="Nhấp để mở Quanta AI — kéo ra đâu cũng được, khi buông tay sẽ tự hút về mép trái/phải"
       >
-        {/* Subtle floating badge tooltip - Hiện mượt mà khi hover để không che khuất tin nhắn & nút gửi */}
+        {/* Subtle floating badge tooltip - Neo chính xác bên trái hoặc phải của nút tròn không làm lệch nút */}
         {!isCurrentlyDragging && (
           <div
-            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 shrink-0 ${
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none opacity-0 group-hover:opacity-100 transition-all duration-200 shrink-0 absolute top-1/2 -translate-y-1/2 whitespace-nowrap ${
+              snapSide === 'left' ? 'left-full ml-3' : 'right-full mr-3'
+            } ${
               activeThemeId === 'spring'
                 ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
                 : 'bg-white/95 text-slate-700 border border-slate-200'
@@ -449,7 +449,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         <button
           type="button"
           aria-label="Mở Trợ lý Khảo thí AI"
-          className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative ${
+          className={`w-full h-full rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative ${
             isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105 shadow-2xl' : 'hover:scale-105 active:scale-95'
           } ${
             activeThemeId === 'spring'
@@ -467,7 +467,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
       {/* ─── Modern AI Chat Drawer / Window (Dãn nở mượt mà từ bong bóng & Co rút khi đóng) ──── */}
       <div
-        className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-350 ease-[cubic-bezier(0.16,1,0.3,1)] inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:w-96 ${
+        className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:w-96 ${
           snapSide === 'left'
             ? 'sm:left-6 sm:right-auto origin-bottom-left'
             : 'sm:right-6 sm:left-auto origin-bottom-right'
@@ -476,7 +476,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         } ${
           isOpen
             ? 'scale-100 opacity-100 pointer-events-auto translate-y-0'
-            : 'scale-[0.1] opacity-0 pointer-events-none translate-y-8'
+            : 'scale-0 opacity-0 pointer-events-none translate-y-4'
         }`}
       >
           {/* Header */}

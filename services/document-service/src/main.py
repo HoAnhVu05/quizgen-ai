@@ -937,6 +937,58 @@ async def respond_join_request(group_id: str, request: Request):
     save_server_qgroups(groups)
     return {"status": "success", "action": action, "group": target}
 
+@app.post("/qgroups/{group_id}/members")
+@app.post("/documents/qgroups/{group_id}/members")
+async def add_qgroup_member(group_id: str, request: Request):
+    payload = await request.json()
+    new_email = (payload.get("email") or payload.get("userEmail") or payload.get("targetEmail") or "").strip().lower()
+    member_name = payload.get("name") or payload.get("userName") or payload.get("fullName") or new_email
+    inviter_name = payload.get("inviterName") or "Đồng nghiệp"
+
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+
+    members = target.get("members", [])
+    if new_email and new_email not in [str(m).strip().lower() for m in members]:
+        members.append(new_email)
+        target["members"] = members
+        target["memberCount"] = len(members)
+        now_ms = int(time.time() * 1000)
+        target["updatedAt"] = now_ms
+        msgs = target.get("messages", [])
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"🎉 {inviter_name} đã thêm {member_name} ({new_email}) vào kênh #{target.get('name', 'kênh')}."
+        })
+        target["messages"] = msgs
+        save_server_qgroups(groups)
+
+    return {"status": "success", "group": target}
+
+@app.patch("/qgroups/{group_id}")
+@app.patch("/documents/qgroups/{group_id}")
+async def patch_qgroup(group_id: str, request: Request):
+    payload = await request.json()
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+
+    for key, value in payload.items():
+        if key in ("members", "memberCount", "name", "description", "department", "joinPolicy", "muted", "pinned"):
+            target[key] = value
+
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+    save_server_qgroups(groups)
+    return {"status": "success", "group": target}
+
 @app.post("/qgroups/{group_id}/kick-member")
 @app.post("/documents/qgroups/{group_id}/kick-member")
 async def kick_qgroup_member(group_id: str, request: Request):

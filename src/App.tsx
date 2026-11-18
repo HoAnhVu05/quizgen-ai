@@ -840,7 +840,7 @@ const AppContent: React.FC = () => {
 
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
+    <div className="flex h-screen w-full max-w-full overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
       {/* Seasonal Particle Ambient Effect */}
       <ThemeParticleOverlay
         themeId={activeThemeId}
