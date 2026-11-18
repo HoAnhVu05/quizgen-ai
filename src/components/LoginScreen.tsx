@@ -865,28 +865,45 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         const isProjectAdmin = userEmail === 'quizgen.ai.team@gmail.com';
         const resolvedRole: UserRole = isProjectAdmin ? 'admin' : targetRole;
 
-        const sessionId = `gg-${Date.now().toString(36)}`;
-        const mockAccess = `mock-jwt-${sessionId}-${Date.now()}`;
-        const mockRefresh = `mock-jwt-refresh-${resolvedRole}-${Date.now()}`;
+        // Tra cứu tài khoản hiện có trong auth-service để giữ nguyên ID và học vị chuẩn
+        let existingUser: any = null;
+        try {
+          const lookupRes = await fetch(`${API_BASE}/auth/users/lookup?email=${encodeURIComponent(userEmail)}`);
+          if (lookupRes.ok) {
+            const lookupData = await lookupRes.json();
+            if (lookupData?.exists && lookupData?.user) {
+              existingUser = lookupData.user;
+            }
+          }
+        } catch {}
+
+        const realUserId = existingUser?.id || `usr-gg-${Date.now().toString(36)}`;
+        const realAcademicTitle = existingUser?.academicTitle || existingUser?.academic_title || '';
+        const realFullName = existingUser?.fullName || existingUser?.full_name || (
+          gUser.family_name && gUser.given_name
+            ? `${gUser.family_name} ${gUser.given_name}`.trim()
+            : (gUser.name || gUser.given_name || userEmail.split('@')[0])
+        );
+        const realDepartment = existingUser?.department || roleObj.defaultDept;
+        const realUniversity = existingUser?.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)';
+        const realRole: UserRole = isProjectAdmin ? 'admin' : ((existingUser?.role as UserRole) || resolvedRole);
+
+        const mockAccess = `mock-jwt-${realUserId}-${Date.now()}`;
+        const mockRefresh = `mock-jwt-refresh-${realRole}-${Date.now()}`;
         apiClient.setTokens(mockAccess, mockRefresh);
         localStorage.setItem('quizgen_token', mockAccess);
         localStorage.setItem('quizgen_auth_token', mockAccess);
 
-        const vietnameseName =
-          gUser.family_name && gUser.given_name
-            ? `${gUser.family_name} ${gUser.given_name}`.trim()
-            : (gUser.name || gUser.given_name || gUser.email.split('@')[0]);
-
         authenticatedUser = {
-          id: sessionId,
-          fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : vietnameseName,
+          id: realUserId,
+          fullName: isProjectAdmin ? 'Ban Quản trị QuizGen AI' : realFullName,
           email: userEmail,
-          academicTitle: isProjectAdmin ? 'Admin' : '',
-          department: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : roleObj.defaultDept,
-          faculty: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : roleObj.defaultDept,
-          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-          role: resolvedRole,
-          roleLabel: resolvedRole === 'admin' ? 'Quản trị Hệ thống' : roleObj.title,
+          academicTitle: isProjectAdmin ? 'Admin' : realAcademicTitle,
+          department: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : realDepartment,
+          faculty: isProjectAdmin ? 'Ban Quản trị Hệ thống QuizGen AI' : realDepartment,
+          university: realUniversity,
+          role: realRole,
+          roleLabel: realRole === 'admin' ? 'Quản trị Hệ thống' : roleObj.title,
           avatarUrl: gUser.picture || '',
           authProvider: 'google',
         };
@@ -899,11 +916,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             google_access_token: googleAccessToken,
             client_id: clientIdUsed,
             email: userEmail,
-            full_name: vietnameseName,
+            full_name: realFullName,
+            academic_title: realAcademicTitle,
             avatar_url: gUser.picture || '',
-            university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-            department: roleObj.defaultDept,
-            role: resolvedRole,
+            university: realUniversity,
+            department: realDepartment,
+            role: realRole,
           }),
         }).then(async (syncRes) => {
           if (syncRes.ok) {
@@ -927,13 +945,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             savedProfile = profiles[authenticatedUser.email.toLowerCase()] || null;
           } catch {}
 
-          if (savedProfile) {
+          // Nếu đã có học vị xác nhận từ trước (trong auth.db hoặc localStorage), đăng nhập trực tiếp không hỏi lại
+          if (savedProfile || (authenticatedUser.academicTitle && authenticatedUser.academicTitle.trim() !== '')) {
             const mergedUser: UserProfile = {
               ...authenticatedUser,
-              fullName: savedProfile.fullName || authenticatedUser.fullName,
-              academicTitle: savedProfile.academicTitle ?? '',
-              department: savedProfile.department || authenticatedUser.department,
-              faculty: savedProfile.department || authenticatedUser.faculty,
+              fullName: savedProfile?.fullName || authenticatedUser.fullName,
+              academicTitle: savedProfile?.academicTitle ?? authenticatedUser.academicTitle ?? '',
+              department: savedProfile?.department || authenticatedUser.department,
+              faculty: savedProfile?.department || authenticatedUser.faculty,
             };
             localStorage.setItem('quizgen_user', JSON.stringify(mergedUser));
             onLogin(mergedUser);
@@ -941,7 +960,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             // Chưa từng xác nhận học vị -> Mở mục hỏi học vị & xác nhận họ tên ngay
             setPendingGoogleUser(authenticatedUser);
             setGoogleFullNameDraft(authenticatedUser.fullName);
-            setGoogleAcademicTitleDraft('');
+            setGoogleAcademicTitleDraft('ThS.');
             setGoogleDepartmentDraft(authenticatedUser.department || 'Khoa Công nghệ Thông tin');
             setGoogleOnboardingError('');
             setShowGoogleOnboardingModal(true);

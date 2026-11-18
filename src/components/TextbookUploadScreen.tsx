@@ -662,7 +662,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     try {
       // 1. Giáo trình cá nhân (scope=my)
       const resMy = await apiClient.fetch(
-        `${API_BASE}/documents/documents?scope=my${currentUser?.id ? `&user_id=${currentUser.id}` : ''}`
+        `${API_BASE}/documents/documents?scope=my${currentUser?.id ? `&user_id=${currentUser.id}` : ''}${currentUser?.email ? `&email=${encodeURIComponent(currentUser.email)}` : ''}`
       );
       if (resMy.ok) {
         const payloadMy = await resMy.json();

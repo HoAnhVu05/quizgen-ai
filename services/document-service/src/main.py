@@ -500,6 +500,7 @@ def root_list_documents(db: Session = Depends(get_db)):
 @app.get("/documents")
 def list_documents(
     user_id: Optional[str] = Query(None, description="Lọc theo mã giảng viên sở hữu"),
+    email: Optional[str] = Query(None, description="Email giảng viên sở hữu tài liệu"),
     scope: Optional[str] = Query("my", description="Phạm vi: 'my' (cá nhân), 'shared' (ngân hàng dùng chung), 'all' (tất cả)"),
     current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
     db: Session = Depends(get_db)
@@ -523,8 +524,24 @@ def list_documents(
                 query = query.filter(DocumentDB.user_id == user_id)
         else:
             target_uids = [effective_user_id] if effective_user_id else []
+            # Tra cứu thêm user_id từ auth.db theo email nếu có để không bị mất tài liệu
+            lookup_email = email or (current_user_info.get("email") if current_user_info else None)
+            if lookup_email and os.path.exists(AUTH_DB_PATH):
+                try:
+                    conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (lookup_email.strip(),))
+                    row = cursor.fetchone()
+                    if row and row[0] and row[0] not in target_uids:
+                        target_uids.append(row[0])
+                    conn.close()
+                except Exception:
+                    pass
+
             if effective_user_id in ["usr-lec-001", "usr-lec-003", "lec-001"]:
-                target_uids = ["usr-lec-001", "usr-lec-003", "lec-001"]
+                target_uids.extend(["usr-lec-001", "usr-lec-003", "lec-001"])
+
+            target_uids = [u for u in set(target_uids) if u]
             if target_uids:
                 query = query.filter(DocumentDB.user_id.in_(target_uids))
             elif user_id:
@@ -532,8 +549,23 @@ def list_documents(
     elif scope == "all":
         if not is_admin:
             target_uids = [effective_user_id] if effective_user_id else []
+            lookup_email = email or (current_user_info.get("email") if current_user_info else None)
+            if lookup_email and os.path.exists(AUTH_DB_PATH):
+                try:
+                    conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (lookup_email.strip(),))
+                    row = cursor.fetchone()
+                    if row and row[0] and row[0] not in target_uids:
+                        target_uids.append(row[0])
+                    conn.close()
+                except Exception:
+                    pass
+
             if effective_user_id in ["usr-lec-001", "usr-lec-003", "lec-001"]:
-                target_uids = ["usr-lec-001", "usr-lec-003", "lec-001"]
+                target_uids.extend(["usr-lec-001", "usr-lec-003", "lec-001"])
+
+            target_uids = [u for u in set(target_uids) if u]
             if target_uids:
                 query = query.filter(or_(DocumentDB.user_id.in_(target_uids), DocumentDB.is_shared == 1))
         elif user_id:
