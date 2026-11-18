@@ -411,6 +411,16 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // Basic Modals
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
   const [friendEmailInput, setFriendEmailInput] = useState('');
+  const [friendLookedUpUser, setFriendLookedUpUser] = useState<{
+    id?: string;
+    email: string;
+    fullName: string;
+    academicTitle?: string;
+    department?: string;
+    university?: string;
+    role?: string;
+  } | null>(null);
+  const [friendLookupStatus, setFriendLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [groupModalTab, setGroupModalTab] = useState<'create' | 'join'>('create');
   const [joinCodeInput, setJoinCodeInput] = useState('');
@@ -516,7 +526,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     return Array.from(map.values());
   }, [qgroups, myEmail]);
 
-  // Bộ lọc danh sách bạn bè theo ô tìm kiếm / ký tự @
+  // Bộ lọc danh sách bạn bè theo ô tìm kiếm / ký tự @ (khi thêm thành viên vào kênh)
   const filteredFriends = useMemo(() => {
     const q = directAddMemberEmail.trim().toLowerCase();
     if (!q || q === '@') {
@@ -531,6 +541,22 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         (f.dept && f.dept.toLowerCase().includes(cleanQ))
     );
   }, [connectedFriends, directAddMemberEmail]);
+
+  // Bộ lọc danh sách đồng nghiệp / giảng viên (khi thêm bạn bè mới)
+  const filteredColleaguesForFriend = useMemo(() => {
+    const q = friendEmailInput.trim().toLowerCase();
+    if (!q || q === '@') {
+      return connectedFriends;
+    }
+    const cleanQ = q.startsWith('@') ? q.slice(1).trim() : q;
+    if (!cleanQ) return connectedFriends;
+    return connectedFriends.filter(
+      (f) =>
+        f.name.toLowerCase().includes(cleanQ) ||
+        f.email.toLowerCase().includes(cleanQ) ||
+        (f.dept && f.dept.toLowerCase().includes(cleanQ))
+    );
+  }, [connectedFriends, friendEmailInput]);
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -1065,6 +1091,155 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     },
     [qgroups]
   );
+
+  // ── Tra cứu tài khoản đồng nghiệp cho modal Thêm bạn bè ───────────────────
+  const handleFriendLookup = useCallback(
+    async (emailVal: string) => {
+      const clean = emailVal.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (!clean || !emailRegex.test(clean)) {
+        setFriendLookupStatus('idle');
+        setFriendLookedUpUser(null);
+        return;
+      }
+
+      setFriendLookupStatus('searching');
+      try {
+        const res = await apiClient.fetch(
+          `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.exists && data.user) {
+            setFriendLookedUpUser(data.user);
+            setFriendLookupStatus('found');
+            return;
+          }
+        }
+      } catch {
+        // Fallback local check
+      }
+
+      // Danh sách tài khoản mẫu/hệ thống đã đăng ký (Demo accounts)
+      const localRegistered: Record<
+        string,
+        { fullName: string; academicTitle: string; department: string }
+      > = {
+        'mr.av1222005@gmail.com': {
+          fullName: 'ThS. Mr. AVvvv',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'avanimechannel@gmail.com': {
+          fullName: 'TS. Hồ Anh Vũ',
+          academicTitle: 'TS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'nguyentann0804@gmail.com': {
+          fullName: 'ThS. Nguyễn Văn Tân',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'quizgen.ai.team@gmail.com': {
+          fullName: 'Ban Quản trị QuizGen AI',
+          academicTitle: 'Admin',
+          department: 'Hệ thống Khảo thí UTH',
+        },
+        'hod.cntt@uth.edu.vn': {
+          fullName: 'PGS. TS. Trưởng Khoa CNTT',
+          academicTitle: 'PGS. TS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'gv.kinhte@uth.edu.vn': {
+          fullName: 'TS. Giảng viên Kinh tế',
+          academicTitle: 'TS.',
+          department: 'Khoa Kinh tế Vận tải',
+        },
+      };
+
+      if (localRegistered[clean]) {
+        const info = localRegistered[clean];
+        setFriendLookedUpUser({
+          email: clean,
+          fullName: info.fullName,
+          academicTitle: info.academicTitle,
+          department: info.department,
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+          role: 'lecturer',
+        });
+        setFriendLookupStatus('found');
+        return;
+      }
+
+      // Kiểm tra nếu người này đã có trong bất kỳ group nào trước đó
+      const foundInGroups = qgroups.find((g) => {
+        const members = (g.members || []).map((m) => String(m).toLowerCase());
+        return members.includes(clean) || g.ownerEmail?.toLowerCase() === clean;
+      });
+
+      if (foundInGroups) {
+        setFriendLookedUpUser({
+          email: clean,
+          fullName: clean.split('@')[0],
+          academicTitle: 'Giảng viên',
+          department: foundInGroups.department || 'Khoa Chuyên Ngành',
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+          role: 'lecturer',
+        });
+        setFriendLookupStatus('found');
+        return;
+      }
+
+      setFriendLookedUpUser(null);
+      setFriendLookupStatus('not_found');
+    },
+    [qgroups]
+  );
+
+  // Kiểm tra quan hệ bạn bè của 1 email bất kỳ
+  const getFriendshipState = useCallback(
+    (targetEmail: string) => {
+      const target = targetEmail.trim().toLowerCase();
+      if (target === myEmail.toLowerCase()) return { type: 'self' as const };
+
+      // 1. Đã là bạn bè (đã có phòng DM 1-1)
+      const isAlreadyFriend = qgroups.some((g) => {
+        if (!g.isDirect) return false;
+        const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
+        const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
+        const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
+        return (
+          (cleanOwner === target && cleanPartner === myEmail.toLowerCase()) ||
+          (cleanPartner === target && cleanOwner === myEmail.toLowerCase()) ||
+          (members.includes(target) && members.includes(myEmail.toLowerCase()))
+        );
+      });
+      if (isAlreadyFriend) return { type: 'friend' as const };
+
+      // 2. Lời mời đã gửi đi đang chờ duyệt
+      const isPendingSent = sentFriendRequests.some(
+        (r) => r.targetEmail?.trim().toLowerCase() === target && r.status === 'pending'
+      );
+      if (isPendingSent) return { type: 'sent_pending' as const };
+
+      // 3. Lời mời đối phương gửi đến đang chờ chấp nhận
+      const incomingReq = friendRequests.find(
+        (r) => r.senderEmail?.trim().toLowerCase() === target && r.status === 'pending'
+      );
+      if (incomingReq) return { type: 'received_pending' as const, req: incomingReq };
+
+      return { type: 'none' as const };
+    },
+    [myEmail, qgroups, sentFriendRequests, friendRequests]
+  );
+
+  // Đóng modal Thêm Bạn Bè và reset trạng thái
+  const handleCloseAddFriendModal = useCallback(() => {
+    setIsAddFriendOpen(false);
+    setFriendEmailInput('');
+    setFriendLookedUpUser(null);
+    setFriendLookupStatus('idle');
+  }, []);
 
   // ── Thêm thành viên trực tiếp vào kênh đang mở (kèm tin nhắn thông báo) ────
   const handleAddUserToActiveChannel = useCallback(
@@ -1674,12 +1849,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       if (res.ok && data.status !== 'already_friend') {
         setSentFriendRequests((prev) => [req, ...prev.filter((r) => r.targetEmail !== email)]);
         onShowToast('success', 'Đã gửi lời mời', `Đã gửi lời mời kết bạn tới: ${email}`);
-        setFriendEmailInput('');
-        setIsAddFriendOpen(false);
+        if (!overrideEmail) {
+          setFriendEmailInput('');
+          setFriendLookedUpUser(null);
+          setFriendLookupStatus('idle');
+          setIsAddFriendOpen(false);
+        }
         void fetchFriendRequests();
       } else if (data.status === 'already_friend') {
         onShowToast('info', 'Đã là đồng nghiệp', data.message || `Đã kết nối với ${email}.`);
-        setIsAddFriendOpen(false);
+        if (!overrideEmail) {
+          setIsAddFriendOpen(false);
+        }
       }
     } catch {
       onShowToast('error', 'Lỗi', 'Không thể gửi lời mời.');
@@ -3634,42 +3815,267 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       />
 
       {isAddFriendOpen && (
-        <Modal onClose={() => setIsAddFriendOpen(false)} title="Thêm Đồng Nghiệp Mới" icon={<UserPlus className="w-4 h-4 text-slate-700" />}>
-          <p className="text-xs text-slate-500 leading-relaxed">
-            Nhập email đồng nghiệp để gửi lời mời kết nối học thuật. Khi đối phương chấp nhận, phòng trò chuyện
-            1-1 sẽ tự động mở.
-          </p>
-          <div className="space-y-1">
-            <label className="text-[11px] font-semibold text-slate-700">Email giảng viên / đồng nghiệp</label>
-            <input
-              type="email"
-              value={friendEmailInput}
-              onChange={(e) => setFriendEmailInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && void handleSendFriendRequest()}
-              placeholder="VD: lecturer@uth.edu.vn..."
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-slate-600"
-              autoFocus
-            />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
+          onClick={handleCloseAddFriendModal}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-1.5">
+                  <UserPlus className="w-4 h-4 text-[#008689]" />
+                  <span>Thêm Đồng Nghiệp Mới</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Gợi ý giảng viên, đồng nghiệp hoặc nhập email để gửi lời mời kết nối học thuật
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseAddFriendModal}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                  <span>Tìm kiếm đồng nghiệp hoặc nhập email:</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Gõ @ để gợi ý tài khoản</span>
+                </label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={friendEmailInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFriendEmailInput(val);
+                      void handleFriendLookup(val);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        if (friendLookupStatus === 'found' && friendLookedUpUser) {
+                          void handleSendFriendRequest(friendLookedUpUser.email);
+                        } else if (friendEmailInput.trim()) {
+                          void handleSendFriendRequest();
+                        }
+                      }
+                    }}
+                    placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên..."
+                    className="w-full pl-8.5 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
+                    autoFocus
+                  />
+                  {friendLookupStatus === 'searching' && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <span className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
+                    </div>
+                  )}
+                  {friendEmailInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFriendEmailInput('');
+                        setFriendLookedUpUser(null);
+                        setFriendLookupStatus('idle');
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* THẺ TÀI KHOẢN (NẾU NGƯỜI ĐÓ ĐÃ ĐĂNG KÝ TÀI KHOẢN) */}
+              {friendLookupStatus === 'found' && friendLookedUpUser && (() => {
+                const cardState = getFriendshipState(friendLookedUpUser.email);
+                return (
+                  <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                        {initials(friendLookedUpUser.fullName)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs text-slate-900 truncate">{friendLookedUpUser.fullName}</span>
+                          {friendLookedUpUser.academicTitle && (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
+                              {friendLookedUpUser.academicTitle}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate">{friendLookedUpUser.email}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{friendLookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
+                      <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span>Tài khoản đã kích hoạt hệ thống</span>
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {cardState.type === 'self' && (
+                          <span className="text-xs text-slate-400 italic">Tài khoản của bạn</span>
+                        )}
+                        {cardState.type === 'friend' && (
+                          <span className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center gap-1.5 border border-emerald-300">
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Đã là bạn bè</span>
+                          </span>
+                        )}
+                        {cardState.type === 'sent_pending' && (
+                          <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 font-semibold text-xs flex items-center gap-1.5 border border-amber-300">
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Đang chờ duyệt</span>
+                          </span>
+                        )}
+                        {cardState.type === 'received_pending' && (
+                          <button
+                            type="button"
+                            onClick={() => void handleAcceptFriendRequest(cardState.req)}
+                            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Chấp nhận kết bạn</span>
+                          </button>
+                        )}
+                        {cardState.type === 'none' && (
+                          <button
+                            type="button"
+                            onClick={() => void handleSendFriendRequest(friendLookedUpUser.email)}
+                            className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>Gửi lời mời kết bạn</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* CẢNH BÁO TÀI KHOẢN CHƯA ĐĂNG KÝ / KHÔNG TỒN TẠI (CHỈ KHI ĐÃ NHẬP ĐẦY ĐỦ DOMAIN EMAIL) */}
+              {friendLookupStatus === 'not_found' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(friendEmailInput.trim()) && (
+                <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex items-start gap-3 animate-fade-in">
+                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                  <div className="min-w-0 text-xs text-rose-800 space-y-1">
+                    <p className="font-bold">Người dùng không tồn tại trên hệ thống</p>
+                    <p className="text-[11px] text-rose-600 leading-relaxed">
+                      Địa chỉ email <strong>{friendEmailInput}</strong> chưa được dùng để đăng ký tài khoản QuizGen AI. Thầy/Cô vui lòng kiểm tra lại địa chỉ email hoặc mời đồng nghiệp đăng ký trước khi kết nối học thuật.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* MỤC GỢI Ý ĐỒNG NGHIỆP: KẾT NỐI 1-CHẠM */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    Gợi ý Đồng nghiệp & Giảng viên ({filteredColleaguesForFriend.length})
+                  </span>
+                  <span className="text-[10px] text-slate-400">Kết nối 1-chạm</span>
+                </div>
+
+                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                  {filteredColleaguesForFriend.length === 0 ? (
+                    <p className="text-center text-xs text-slate-400 py-3 italic">
+                      Không tìm thấy đồng nghiệp phù hợp
+                    </p>
+                  ) : (
+                    filteredColleaguesForFriend.map((f) => {
+                      const state = getFriendshipState(f.email);
+                      return (
+                        <div
+                          key={f.email}
+                          className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 flex items-center justify-between gap-2.5 transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                              {initials(f.name)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
+                                {f.title && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
+                                    {f.title}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-400 truncate">{f.email}</p>
+                              {f.dept && (
+                                <p className="text-[10px] text-slate-400 truncate">{f.dept}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {state.type === 'self' && (
+                            <span className="text-[10px] text-slate-400 italic">Bạn</span>
+                          )}
+                          {state.type === 'friend' && (
+                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>Đã là bạn bè</span>
+                            </span>
+                          )}
+                          {state.type === 'sent_pending' && (
+                            <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>Đang chờ duyệt</span>
+                            </span>
+                          )}
+                          {state.type === 'received_pending' && (
+                            <button
+                              type="button"
+                              onClick={() => void handleAcceptFriendRequest(state.req)}
+                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                              title="Chấp nhận lời mời kết bạn từ đồng nghiệp"
+                            >
+                              <Check className="w-3 h-3" />
+                              <span>Chấp nhận</span>
+                            </button>
+                          )}
+                          {state.type === 'none' && (
+                            <button
+                              type="button"
+                              onClick={() => void handleSendFriendRequest(f.email)}
+                              className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+                              title="Gửi lời mời kết nối học thuật 1-1"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>Kết bạn</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={handleCloseAddFriendModal}
+                className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
-          <div className="flex items-center justify-end gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setIsAddFriendOpen(false)}
-              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
-            >
-              Hủy
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleSendFriendRequest()}
-              disabled={!friendEmailInput.trim()}
-              className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
-            >
-              <Send className="w-3.5 h-3.5" />
-              Gửi lời mời
-            </button>
-          </div>
-        </Modal>
+        </div>
       )}
 
       {isCreateGroupOpen && (
