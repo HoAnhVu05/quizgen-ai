@@ -816,6 +816,248 @@ def delete_qgroup_endpoint(group_id: str):
     save_server_qgroups(cleaned)
     return {"status": "success", "message": f"Đã xóa nhóm {group_id}", "remaining": len(cleaned)}
 
+@app.post("/qgroups/{group_id}/join-by-code")
+@app.post("/documents/qgroups/{group_id}/join-by-code")
+async def join_qgroup_by_code(group_id: str, request: Request):
+    payload = await request.json()
+    user_email = (payload.get("userEmail") or "").strip().lower()
+    user_name = payload.get("userName") or "Giảng viên"
+    user_title = payload.get("userTitle") or "ThS."
+    
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code", "")).upper() == str(group_id).upper()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm tương ứng")
+    
+    members = target.get("members", [])
+    if any(m.lower() == user_email for m in members):
+        return {"status": "already_member", "message": "Bạn đã là thành viên của nhóm này", "group": target}
+    
+    policy = target.get("joinPolicy", "open")
+    now_ms = int(time.time() * 1000)
+    
+    if policy == "invite_only":
+        return {
+            "status": "invite_only",
+            "message": "Nhóm này đang đặt chế độ Riêng tư (Chỉ tham gia khi được Trưởng nhóm mời trực tiếp).",
+            "group": target
+        }
+    
+    if policy == "approval_required":
+        reqs = target.get("pendingRequests", [])
+        if any(r.get("email", "").lower() == user_email for r in reqs):
+            return {
+                "status": "pending_exists",
+                "message": "Bạn đã gửi yêu cầu tham gia trước đó. Vui lòng chờ Trưởng nhóm phê duyệt.",
+                "group": target
+            }
+        req_id = f"req-{now_ms}"
+        req_item = {
+            "id": req_id,
+            "email": user_email,
+            "name": user_name,
+            "title": user_title,
+            "requestedAt": time.strftime("%H:%M %d/%m")
+        }
+        reqs.append(req_item)
+        target["pendingRequests"] = reqs
+        target["updatedAt"] = now_ms
+        save_server_qgroups(groups)
+        return {
+            "status": "pending_approval",
+            "message": f"Đã gửi yêu cầu tham gia tới Trưởng nhóm {target.get('ownerName', '')}! Vui lòng chờ phê duyệt.",
+            "group": target
+        }
+    
+    # Policy == 'open'
+    members.append(user_email)
+    target["members"] = members
+    target["memberCount"] = len(members)
+    target["updatedAt"] = now_ms
+    
+    msgs = target.get("messages", [])
+    msgs.append({
+        "id": f"msg-{now_ms}",
+        "senderEmail": "system",
+        "senderName": "Hệ Thống Q-Group",
+        "isSystem": True,
+        "timestamp": time.strftime("%H:%M"),
+        "text": f"👋 {user_name} ({user_email}) đã tham gia nhóm qua mã phòng."
+    })
+    target["messages"] = msgs
+    save_server_qgroups(groups)
+    return {
+        "status": "joined",
+        "message": f"Chào mừng bạn gia nhập nhóm {target.get('name', '')}!",
+        "group": target
+    }
+
+@app.post("/qgroups/{group_id}/respond-join-request")
+@app.post("/documents/qgroups/{group_id}/respond-join-request")
+async def respond_join_request(group_id: str, request: Request):
+    payload = await request.json()
+    req_id = payload.get("requestId")
+    target_email = (payload.get("targetEmail") or "").strip().lower()
+    action = payload.get("action")  # "approve" or "reject"
+    admin_name = payload.get("adminName") or "Trưởng nhóm"
+    
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+    
+    reqs = target.get("pendingRequests", [])
+    matched_req = next((r for r in reqs if r.get("id") == req_id or r.get("email", "").lower() == target_email), None)
+    if not matched_req:
+        return {"status": "error", "message": "Không tìm thấy yêu cầu tham gia"}
+    
+    target["pendingRequests"] = [r for r in reqs if r.get("id") != matched_req.get("id")]
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+    
+    if action == "approve":
+        members = target.get("members", [])
+        eff_email = matched_req.get("email", "").lower()
+        if eff_email and eff_email not in [m.lower() for m in members]:
+            members.append(eff_email)
+            target["members"] = members
+            target["memberCount"] = len(members)
+        
+        msgs = target.get("messages", [])
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"🎉 Trưởng nhóm {admin_name} đã phê duyệt cho {matched_req.get('name', 'Thành viên')} ({eff_email}) gia nhập nhóm!"
+        })
+        target["messages"] = msgs
+    
+    save_server_qgroups(groups)
+    return {"status": "success", "action": action, "group": target}
+
+@app.post("/qgroups/{group_id}/kick-member")
+@app.post("/documents/qgroups/{group_id}/kick-member")
+async def kick_qgroup_member(group_id: str, request: Request):
+    payload = await request.json()
+    target_email = (payload.get("targetEmail") or "").strip().lower()
+    target_name = payload.get("targetName") or target_email
+    admin_name = payload.get("adminName") or "Trưởng nhóm"
+    
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+    
+    owner = (target.get("ownerEmail") or "").lower()
+    if target_email == owner:
+        return {"status": "error", "message": "Không thể loại Trưởng nhóm khỏi phòng"}
+    
+    members = target.get("members", [])
+    new_members = [m for m in members if m.lower() != target_email]
+    target["members"] = new_members
+    target["memberCount"] = len(new_members)
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+    
+    msgs = target.get("messages", [])
+    msgs.append({
+        "id": f"msg-{now_ms}",
+        "senderEmail": "system",
+        "senderName": "Hệ Thống Q-Group",
+        "isSystem": True,
+        "timestamp": time.strftime("%H:%M"),
+        "text": f"⚠️ Trưởng nhóm {admin_name} đã loại {target_name} ({target_email}) khỏi nhóm."
+    })
+    target["messages"] = msgs
+    save_server_qgroups(groups)
+    return {"status": "success", "group": target}
+
+@app.post("/qgroups/{group_id}/leave")
+@app.post("/documents/qgroups/{group_id}/leave")
+async def leave_qgroup(group_id: str, request: Request):
+    payload = await request.json()
+    user_email = (payload.get("userEmail") or "").strip().lower()
+    user_name = payload.get("userName") or user_email
+    
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+    
+    members = target.get("members", [])
+    new_members = [m for m in members if m.lower() != user_email]
+    target["members"] = new_members
+    target["memberCount"] = len(new_members)
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+    
+    msgs = target.get("messages", [])
+    msgs.append({
+        "id": f"msg-{now_ms}",
+        "senderEmail": "system",
+        "senderName": "Hệ Thống Q-Group",
+        "isSystem": True,
+        "timestamp": time.strftime("%H:%M"),
+        "text": f"🚪 {user_name} ({user_email}) đã rời khỏi nhóm."
+    })
+    target["messages"] = msgs
+    save_server_qgroups(groups)
+    return {"status": "success", "group": target}
+
+@app.post("/qgroups/{group_id}/settings")
+@app.post("/documents/qgroups/{group_id}/settings")
+async def update_qgroup_settings(group_id: str, request: Request):
+    payload = await request.json()
+    name = payload.get("name")
+    department = payload.get("department")
+    description = payload.get("description")
+    join_policy = payload.get("joinPolicy")  # 'open' | 'approval_required' | 'invite_only'
+    admin_name = payload.get("adminName") or "Trưởng nhóm"
+    
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id)), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+    
+    old_policy = target.get("joinPolicy", "open")
+    if name:
+        target["name"] = name
+    if department is not None:
+        target["department"] = department
+    if description is not None:
+        target["description"] = description
+    
+    policy_changed = False
+    if join_policy and join_policy != old_policy:
+        target["joinPolicy"] = join_policy
+        policy_changed = True
+    
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+    
+    if policy_changed:
+        policy_names = {
+            "open": "Công khai (Bất kỳ ai có mã đều vào ngay)",
+            "approval_required": "Cần phê duyệt (Trưởng nhóm duyệt mới được vào)",
+            "invite_only": "Riêng tư (Chỉ khi được mời trực tiếp)"
+        }
+        policy_label = policy_names.get(join_policy, join_policy)
+        msgs = target.get("messages", [])
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"⚙️ Trưởng nhóm {admin_name} đã cập nhật chế độ tham gia: **{policy_label}**"
+        })
+        target["messages"] = msgs
+        
+    save_server_qgroups(groups)
+    return {"status": "success", "group": target}
+
 @app.get("/dashboard/summary")
 @app.get("/documents/dashboard/summary")
 def get_dashboard_summary(

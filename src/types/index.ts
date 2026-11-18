@@ -223,7 +223,7 @@ export interface QGroup {
   description: string;
   ownerEmail: string;
   ownerName: string;
-  joinPolicy: 'open' | 'approval_required';
+  joinPolicy: 'open' | 'approval_required' | 'invite_only';
   memberCount: number;
   members: string[]; // emails
   pendingRequests: QGroupPendingRequest[];

@@ -52,6 +52,11 @@ import {
   BookOpen,
   Info,
   CheckCheck,
+  UserMinus,
+  ShieldCheck,
+  Globe,
+  Lock,
+  Clock,
 } from 'lucide-react';
 import {
   QGroup,
@@ -250,6 +255,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
   const [friendEmailInput, setFriendEmailInput] = useState('');
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [groupModalTab, setGroupModalTab] = useState<'create' | 'join'>('create');
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+  const [isJoiningCode, setIsJoiningCode] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDept, setNewGroupDept] = useState('');
   const [newGroupDesc, setNewGroupDesc] = useState('');
@@ -620,17 +628,139 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   );
 
   const handleLeaveGroup = useCallback(
-    (group: QGroup) => {
+    async (group: QGroup) => {
       if (!confirm(`Rời khỏi nhóm "${group.name}"?`)) return;
+      try {
+        await apiClient.fetch(`${API_BASE}/documents/qgroups/${group.id}/leave`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userEmail: myEmail,
+            userName: myName,
+          }),
+        });
+      } catch {}
       addToBlacklist(myEmail, group.id, group.code);
       const next = qgroups.filter(
         (g) => g.id !== group.id && g.code !== group.code
       );
       applyGroups(next);
       if (selectedGroupId === group.id) setSelectedGroupId(next[0]?.id || '');
-      onShowToast('info', 'Đã rời nhóm', group.name);
+      onShowToast('info', 'Đã rời khỏi nhóm', group.name);
     },
-    [myEmail, qgroups, applyGroups, selectedGroupId, onShowToast]
+    [myEmail, myName, qgroups, applyGroups, selectedGroupId, onShowToast]
+  );
+
+  const handleKickMember = useCallback(
+    async (group: QGroup, targetEmail: string, targetName: string) => {
+      if (!confirm(`Bạn có chắc chắn muốn loại "${targetName}" (${targetEmail}) ra khỏi nhóm?`)) return;
+      try {
+        const res = await apiClient
+          .fetch(`${API_BASE}/documents/qgroups/${group.id}/kick-member`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              targetEmail,
+              targetName,
+              adminName: myName,
+            }),
+          })
+          .then((r) => r.json());
+
+        if (res.status === 'success' && res.group) {
+          const updated = qgroups.map((g) => (g.id === group.id ? res.group : g));
+          applyGroups(updated);
+          onShowToast('success', 'Đã loại thành viên', `${targetName} đã rời khỏi nhóm.`);
+        } else {
+          onShowToast('warning', 'Không thể loại thành viên', res.message || 'Lỗi thao tác');
+        }
+      } catch {
+        onShowToast('error', 'Lỗi kết nối', 'Không thể gửi yêu cầu loại thành viên.');
+      }
+    },
+    [myName, qgroups, applyGroups, onShowToast]
+  );
+
+  const handleRespondJoinRequest = useCallback(
+    async (
+      group: QGroup,
+      requestId: string,
+      targetEmail: string,
+      action: 'approve' | 'reject'
+    ) => {
+      try {
+        const res = await apiClient
+          .fetch(`${API_BASE}/documents/qgroups/${group.id}/respond-join-request`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              requestId,
+              targetEmail,
+              action,
+              adminName: myName,
+            }),
+          })
+          .then((r) => r.json());
+
+        if (res.status === 'success' && res.group) {
+          const updated = qgroups.map((g) => (g.id === group.id ? res.group : g));
+          applyGroups(updated);
+          if (action === 'approve') {
+            onShowToast('success', 'Đã phê duyệt', 'Thành viên mới đã được thêm vào nhóm.');
+          } else {
+            onShowToast('info', 'Đã từ chối', 'Đã từ chối yêu cầu tham gia.');
+          }
+        }
+      } catch {
+        onShowToast('error', 'Lỗi', 'Không thể xử lý yêu cầu tham gia.');
+      }
+    },
+    [myName, qgroups, applyGroups, onShowToast]
+  );
+
+  const handleSaveGroupSettings = useCallback(
+    async (
+      group: QGroup,
+      name: string,
+      dept: string,
+      desc: string,
+      joinPolicy: 'open' | 'approval_required' | 'invite_only'
+    ) => {
+      try {
+        const res = await apiClient
+          .fetch(`${API_BASE}/documents/qgroups/${group.id}/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name,
+              department: dept,
+              description: desc,
+              joinPolicy,
+              adminName: myName,
+            }),
+          })
+          .then((r) => r.json());
+
+        if (res.status === 'success' && res.group) {
+          const updated = qgroups.map((g) => (g.id === group.id ? res.group : g));
+          applyGroups(updated);
+          onShowToast('success', 'Đã lưu cài đặt nhóm', name);
+          setIsChannelDetailsOpen(false);
+        }
+      } catch {
+        // Local fallback
+        const updated = qgroups.map((g) =>
+          g.id === group.id
+            ? { ...g, name, department: dept, description: desc, joinPolicy }
+            : g
+        );
+        applyGroups(updated);
+        void syncGroupsToBackend(updated);
+        onShowToast('success', 'Đã lưu cài đặt nhóm', name);
+        setIsChannelDetailsOpen(false);
+      }
+    },
+    [myName, qgroups, applyGroups, onShowToast]
   );
 
   const handleToggleMute = useCallback(
@@ -818,27 +948,49 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const handleJoinByCode = async (code: string) => {
     const c = code.trim().toUpperCase();
-    if (!c) return;
-    const groups = await apiClient
-      .fetch(`${API_BASE}/documents/qgroups`)
-      .then((r) => (r.ok ? r.json() : []))
-      .catch(() => []);
-    const found = flattenGroups(groups as unknown[]).find(
-      (g) => (g.code || '').toUpperCase() === c
-    );
-    if (!found) {
-      onShowToast('warning', 'Không tìm thấy nhóm', `Mã ${c} không hợp lệ.`);
+    if (!c) {
+      onShowToast('warning', 'Chưa nhập mã', 'Vui lòng nhập mã phòng học thuật.');
       return;
     }
-    if (qgroups.some((g) => g.id === found.id)) {
-      onShowToast('info', 'Bạn đã trong nhóm này', found.name);
-      return;
+    try {
+      const res = await apiClient
+        .fetch(`${API_BASE}/documents/qgroups/${c}/join-by-code`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userEmail: myEmail,
+            userName: myName,
+            userTitle: currentUser?.academicTitle || 'ThS.',
+          }),
+        })
+        .then(async (r) => {
+          if (r.status === 404) return { status: 'not_found', message: `Không tìm thấy nhóm với mã ${c}.` };
+          return r.json();
+        });
+
+      if (res.status === 'joined') {
+        setIsCreateGroupOpen(false);
+        const joinedGroup = res.group;
+        const filtered = qgroups.filter((g) => g.id !== joinedGroup.id);
+        const updated = [joinedGroup, ...filtered];
+        applyGroups(updated);
+        setSelectedGroupId(joinedGroup.id);
+        onShowToast('success', 'Tham gia nhóm thành công', res.message || `Chào mừng bạn đến với ${joinedGroup.name}`);
+      } else if (res.status === 'already_member') {
+        setIsCreateGroupOpen(false);
+        setSelectedGroupId(res.group?.id || '');
+        onShowToast('info', 'Bạn đã là thành viên', res.message || 'Bạn đã tham gia nhóm này trước đó.');
+      } else if (res.status === 'pending_approval') {
+        setIsCreateGroupOpen(false);
+        onShowToast('info', 'Yêu cầu tham gia đã gửi', res.message);
+      } else if (res.status === 'invite_only') {
+        onShowToast('warning', 'Nhóm riêng tư', res.message);
+      } else {
+        onShowToast('warning', 'Không thể tham gia', res.message || `Mã ${c} không hợp lệ.`);
+      }
+    } catch {
+      onShowToast('error', 'Lỗi kết nối', 'Không thể gửi yêu cầu tham gia nhóm.');
     }
-    const updated = [found, ...qgroups];
-    applyGroups(updated);
-    void syncGroupsToBackend(updated);
-    setSelectedGroupId(found.id);
-    onShowToast('success', 'Đã tham gia nhóm', found.name);
   };
 
   // ============================================================================
@@ -1515,20 +1667,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           onInviteEmailChange={setInviteEmailInput}
           onInvite={() => void handleInviteToGroup(activeGroup)}
           onClose={() => setIsChannelDetailsOpen(false)}
-          onSaveSettings={(name, dept, desc) => {
-            const updated = qgroups.map((g) =>
-              g.id === activeGroup.id
-                ? { ...g, name, department: dept, description: desc }
-                : g
-            );
-            applyGroups(updated);
-            void syncGroupsToBackend(updated);
-            onShowToast('success', 'Đã lưu cài đặt nhóm', name);
-            setIsChannelDetailsOpen(false);
+          onSaveSettings={(name, dept, desc, joinPolicy) => {
+            void handleSaveGroupSettings(activeGroup, name, dept, desc, joinPolicy);
           }}
           onLeaveGroup={() => {
             setIsChannelDetailsOpen(false);
-            handleLeaveGroup(activeGroup);
+            void handleLeaveGroup(activeGroup);
+          }}
+          onKickMember={(email, name) => {
+            void handleKickMember(activeGroup, email, name);
+          }}
+          onRespondJoinRequest={(reqId, email, action) => {
+            void handleRespondJoinRequest(activeGroup, reqId, email, action);
           }}
         />
       )}
@@ -1612,88 +1762,148 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )}
 
       {isCreateGroupOpen && (
-        <Modal onClose={() => setIsCreateGroupOpen(false)} title="Tạo Hội Nhóm Mới" icon={<Users className="w-4 h-4 text-purple-600" />}>
-          <div className="space-y-3 text-xs">
-            <div>
-              <label className="font-bold text-slate-700">Tên nhóm *</label>
-              <input
-                type="text"
-                value={newGroupName}
-                onChange={(e) => setNewGroupName(e.target.value)}
-                placeholder="VD: Bộ Môn Mạng & Hệ Điều Hành"
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="font-bold text-slate-700">Khoa / Đơn vị</label>
-              <input
-                type="text"
-                value={newGroupDept}
-                onChange={(e) => setNewGroupDept(e.target.value)}
-                placeholder="VD: Khoa Công nghệ Thông tin"
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
-              />
-            </div>
-            <div>
-              <label className="font-bold text-slate-700">Mô tả mục đích nhóm</label>
-              <textarea
-                rows={2}
-                value={newGroupDesc}
-                onChange={(e) => setNewGroupDesc(e.target.value)}
-                placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình..."
-                className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 resize-none"
-              />
-            </div>
-          </div>
-
-          <div className="border-t border-slate-100 pt-3">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-              Hoặc nhập mã phòng có sẵn để tham gia
-            </span>
-            <div className="flex items-center gap-2 mt-1.5">
-              <input
-                id="join-code"
-                type="text"
-                placeholder="VD: QGRP-OS2026..."
-                className="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    void handleJoinByCode((e.target as HTMLInputElement).value);
-                    (e.target as HTMLInputElement).value = '';
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const el = document.getElementById('join-code') as HTMLInputElement;
-                  void handleJoinByCode(el.value);
-                  el.value = '';
-                }}
-                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
-              >
-                Tham gia
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-end gap-2 pt-2">
+        <Modal
+          onClose={() => setIsCreateGroupOpen(false)}
+          title="Hội Nhóm Chuyên Môn Q-Group"
+          icon={<Users className="w-4 h-4 text-purple-600" />}
+        >
+          {/* Sub-Tabs: Tạo nhóm mới vs Nhập mã tham gia */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-3 select-none">
             <button
               type="button"
-              onClick={() => setIsCreateGroupOpen(false)}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              onClick={() => setGroupModalTab('create')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                groupModalTab === 'create'
+                  ? 'bg-white text-purple-700 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
             >
-              Hủy
+              <Plus className="w-3.5 h-3.5" />
+              <span>Tạo nhóm mới</span>
             </button>
             <button
               type="button"
-              disabled={!newGroupName.trim()}
-              onClick={handleCreateGroup}
-              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs cursor-pointer"
+              onClick={() => setGroupModalTab('join')}
+              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                groupModalTab === 'join'
+                  ? 'bg-white text-purple-700 shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
             >
-              Tạo nhóm
+              <Hash className="w-3.5 h-3.5" />
+              <span>Nhập mã tham gia</span>
             </button>
           </div>
+
+          {groupModalTab === 'create' ? (
+            /* TAB TẠO NHÓM MỚI */
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700">Tên nhóm *</label>
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="VD: Bộ Môn Mạng & Hệ Điều Hành"
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700">Khoa / Đơn vị</label>
+                <input
+                  type="text"
+                  value={newGroupDept}
+                  onChange={(e) => setNewGroupDept(e.target.value)}
+                  placeholder="VD: Khoa Công nghệ Thông tin"
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-slate-700">Mô tả mục đích nhóm</label>
+                <textarea
+                  rows={2}
+                  value={newGroupDesc}
+                  onChange={(e) => setNewGroupDesc(e.target.value)}
+                  placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình..."
+                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGroupOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  disabled={!newGroupName.trim()}
+                  onClick={handleCreateGroup}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs cursor-pointer"
+                >
+                  Tạo nhóm
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* TAB NHẬP MÃ THAM GIA */
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-2xl space-y-1">
+                <span className="font-bold text-purple-900 text-[11px] flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Tham gia nhóm qua Mã phòng</span>
+                </span>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  Nhập mã phòng chuyên môn được đồng nghiệp hoặc Trưởng nhóm chia sẻ (ví dụ: <strong className="font-mono text-purple-700">QGRP-L6RUM</strong>).
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700">Mã phòng chuyên môn *</label>
+                <div className="relative mt-1">
+                  <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-purple-500" />
+                  <input
+                    type="text"
+                    value={joinCodeInput}
+                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        void handleJoinByCode(joinCodeInput);
+                      }
+                    }}
+                    placeholder="VD: QGRP-OS2026..."
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 font-mono font-bold text-purple-700 placeholder-slate-400 text-sm tracking-wider"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1 text-[11px] text-slate-400 px-1">
+                <p>• Nhóm công khai: Bạn sẽ vào thẳng nhóm trò chuyện ngay lập tức.</p>
+                <p>• Nhóm cần phê duyệt: Yêu cầu sẽ được chuyển đến Trưởng nhóm để duyệt.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateGroupOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  Đóng
+                </button>
+                <button
+                  type="button"
+                  disabled={!joinCodeInput.trim() || isJoiningCode}
+                  onClick={() => void handleJoinByCode(joinCodeInput)}
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Tham gia nhóm ngay</span>
+                </button>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>
@@ -2066,8 +2276,15 @@ const ChannelDetailsModal: React.FC<{
   onInviteEmailChange: (v: string) => void;
   onInvite: () => void;
   onClose: () => void;
-  onSaveSettings: (name: string, dept: string, desc: string) => void;
+  onSaveSettings: (
+    name: string,
+    dept: string,
+    desc: string,
+    joinPolicy: 'open' | 'approval_required' | 'invite_only'
+  ) => void;
   onLeaveGroup: () => void;
+  onKickMember?: (email: string, name: string) => void;
+  onRespondJoinRequest?: (requestId: string, email: string, action: 'approve' | 'reject') => void;
 }> = ({
   group,
   myEmail,
@@ -2079,13 +2296,19 @@ const ChannelDetailsModal: React.FC<{
   onClose,
   onSaveSettings,
   onLeaveGroup,
+  onKickMember,
+  onRespondJoinRequest,
 }) => {
-  const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail;
+  const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
   const members = group.members || [];
+  const pendingRequests = group.pendingRequests || [];
 
   const [editName, setEditName] = useState(group.name);
   const [editDept, setEditDept] = useState(group.department || '');
   const [editDesc, setEditDesc] = useState(group.description || '');
+  const [editJoinPolicy, setEditJoinPolicy] = useState<'open' | 'approval_required' | 'invite_only'>(
+    (group.joinPolicy as any) || 'open'
+  );
 
   // Extract shared files from messages
   const sharedFiles = useMemo(() => {
@@ -2098,13 +2321,19 @@ const ChannelDetailsModal: React.FC<{
     return list;
   }, [group.messages]);
 
+  const joinPolicyLabel = {
+    open: '🌐 Công khai (Ai có mã đều vào ngay)',
+    approval_required: '🛡️ Cần duyệt (Trưởng nhóm duyệt mới vào)',
+    invite_only: '🔒 Riêng tư (Chỉ khi được mời trực tiếp)',
+  }[editJoinPolicy] || '🌐 Công khai';
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -2114,11 +2343,20 @@ const ChannelDetailsModal: React.FC<{
               {initials(group.name)}
             </div>
             <div>
-              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <Hash className="w-4 h-4 text-purple-600" />
-                <span>{group.name}</span>
-              </h3>
-              <p className="text-[11px] text-purple-600 font-mono">Mã phòng: {group.code}</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                  <Hash className="w-4 h-4 text-purple-600" />
+                  <span>{group.name}</span>
+                </h3>
+                {isOwner && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                    Trưởng nhóm
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-purple-600 font-mono mt-0.5">
+                Mã phòng: <strong>{group.code}</strong> • {joinPolicyLabel}
+              </p>
             </div>
           </div>
           <button
@@ -2134,7 +2372,12 @@ const ChannelDetailsModal: React.FC<{
         <div className="flex items-center gap-2 px-5 pt-2 border-b border-slate-100 bg-white">
           {[
             { id: 'about' as const, label: 'Giới thiệu', icon: Info },
-            { id: 'members' as const, label: `Thành viên (${members.length})`, icon: Users },
+            {
+              id: 'members' as const,
+              label: `Thành viên (${members.length})`,
+              icon: Users,
+              badge: isOwner && pendingRequests.length > 0 ? pendingRequests.length : undefined,
+            },
             { id: 'files' as const, label: `Tệp (${sharedFiles.length})`, icon: FileText },
             { id: 'settings' as const, label: 'Cài đặt', icon: Settings },
           ].map((tab) => {
@@ -2144,7 +2387,7 @@ const ChannelDetailsModal: React.FC<{
                 key={tab.id}
                 type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`pb-2.5 px-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`pb-2.5 px-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer relative ${
                   activeTab === tab.id
                     ? 'border-purple-600 text-purple-700'
                     : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -2152,6 +2395,11 @@ const ChannelDetailsModal: React.FC<{
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>
+                {tab.badge && (
+                  <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
+                    {tab.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -2175,9 +2423,24 @@ const ChannelDetailsModal: React.FC<{
                   <p className="text-slate-800 font-bold mt-0.5">{group.department || 'Chung'}</p>
                 </div>
                 <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Người khởi tạo</span>
-                  <p className="text-slate-800 font-bold mt-0.5">{group.ownerName || 'TS. Hồ Anh Vũ'}</p>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Trưởng nhóm (Khởi tạo)</span>
+                  <p className="text-slate-800 font-bold mt-0.5 truncate">{group.ownerName || 'TS. Hồ Anh Vũ'}</p>
                 </div>
+              </div>
+
+              {/* Chế độ tham gia */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Chế độ tham gia</span>
+                  <p className="text-slate-800 font-bold mt-0.5">{joinPolicyLabel}</p>
+                </div>
+                {group.joinPolicy === 'invite_only' ? (
+                  <Lock className="w-5 h-5 text-rose-500 shrink-0" />
+                ) : group.joinPolicy === 'approval_required' ? (
+                  <ShieldCheck className="w-5 h-5 text-amber-500 shrink-0" />
+                ) : (
+                  <Globe className="w-5 h-5 text-teal-600 shrink-0" />
+                )}
               </div>
 
               <div className="p-3.5 rounded-2xl border border-slate-200/80 space-y-2">
@@ -2193,13 +2456,18 @@ const ChannelDetailsModal: React.FC<{
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(group.code);
-                      alert('Đã sao chép mã phòng!');
+                      alert(`Đã sao chép mã phòng: ${group.code}`);
                     }}
                     className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer"
                   >
                     Sao chép
                   </button>
                 </div>
+                {group.joinPolicy === 'invite_only' && (
+                  <p className="text-[11px] text-amber-600 italic">
+                    * Nhóm đang ở chế độ Riêng tư: mã này chỉ để tham khảo, người ngoài phải có lời mời trực tiếp mới vào được.
+                  </p>
+                )}
               </div>
 
               <button
@@ -2216,6 +2484,58 @@ const ChannelDetailsModal: React.FC<{
           {/* TAB 2: MEMBERS */}
           {activeTab === 'members' && (
             <div className="space-y-4">
+              {/* Khối yêu cầu phê duyệt tham gia (Chỉ Trưởng nhóm thấy) */}
+              {isOwner && pendingRequests.length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Yêu cầu xin gia nhập ({pendingRequests.length})</span>
+                    </span>
+                    <span className="text-[10px] text-amber-700 font-semibold">Cần duyệt</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {pendingRequests.map((req) => (
+                      <div
+                        key={req.id}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-amber-200 shadow-2xs gap-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 truncate">
+                            {req.name || req.email}
+                          </p>
+                          <p className="text-[10px] text-slate-400 truncate">
+                            {req.email} • {req.requestedAt}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onRespondJoinRequest?.(req.id, req.email, 'approve')}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-2xs"
+                            title="Phê duyệt cho vào nhóm"
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Duyệt</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onRespondJoinRequest?.(req.id, req.email, 'reject')}
+                            className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-200"
+                            title="Từ chối yêu cầu"
+                          >
+                            <X className="w-3 h-3" />
+                            <span>Từ chối</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mời thêm thành viên qua Email */}
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
                   Mời thêm thành viên qua Email
@@ -2240,33 +2560,53 @@ const ChannelDetailsModal: React.FC<{
                 </div>
               </div>
 
+              {/* Danh sách thành viên hiện tại */}
               <div className="space-y-2">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                  Danh sách thành viên hiện tại ({members.length})
+                  Danh sách thành viên ({members.length})
                 </span>
                 {members.map((email) => {
                   const isGroupOwner = email.toLowerCase() === (group.ownerEmail || '').toLowerCase();
-                  const isMe = email.toLowerCase() === myEmail;
+                  const isMe = email.toLowerCase() === myEmail.toLowerCase();
                   return (
                     <div
                       key={email}
-                      className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 border border-slate-100"
+                      className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 border border-slate-100 justify-between group"
                     >
-                      <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">
-                        {initials(email)}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+                          {initials(email)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-slate-800 truncate">
+                            {email}
+                            {isMe && <span className="text-purple-600 ml-1">(Bạn)</span>}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {isGroupOwner ? 'Trưởng nhóm' : 'Thành viên'}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-slate-800 truncate">
-                          {email}
-                          {isMe && <span className="text-purple-600 ml-1">(Bạn)</span>}
-                        </p>
-                        <p className="text-[10px] text-slate-400">Giảng viên chuyên môn</p>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isGroupOwner && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">
+                            Trưởng nhóm
+                          </span>
+                        )}
+
+                        {/* Nút Kick thành viên dành riêng cho Trưởng nhóm */}
+                        {isOwner && !isMe && !isGroupOwner && onKickMember && (
+                          <button
+                            type="button"
+                            onClick={() => onKickMember(email, email)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                            title={`Loại ${email} ra khỏi nhóm`}
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
-                      {isGroupOwner && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 shrink-0">
-                          Trưởng nhóm
-                        </span>
-                      )}
                     </div>
                   );
                 })}
@@ -2316,9 +2656,9 @@ const ChannelDetailsModal: React.FC<{
             </div>
           )}
 
-          {/* TAB 4: SETTINGS */}
+          {/* TAB 4: SETTINGS (CHẾ ĐỘ DUYỆT THÀNH VIÊN & TÙY CHỌN TRƯỞNG NHÓM) */}
           {activeTab === 'settings' && (
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               <div>
                 <label className="font-bold text-slate-700">Tên nhóm</label>
                 <input
@@ -2344,7 +2684,7 @@ const ChannelDetailsModal: React.FC<{
               <div>
                 <label className="font-bold text-slate-700">Mục đích nhóm</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
                   disabled={!isOwner}
@@ -2352,17 +2692,111 @@ const ChannelDetailsModal: React.FC<{
                 />
               </div>
 
+              {/* Chế độ duyệt thành viên (Join Policy Options) */}
+              <div className="space-y-2 pt-1 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-700">Chế độ tham gia nhóm</label>
+                  {!isOwner && (
+                    <span className="text-[10px] text-slate-400 italic">Chỉ Trưởng nhóm đổi được</span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {/* Option 1: Open */}
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                      editJoinPolicy === 'open'
+                        ? 'border-purple-500 bg-purple-50/50 ring-1 ring-purple-200'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="joinPolicy"
+                      checked={editJoinPolicy === 'open'}
+                      onChange={() => setEditJoinPolicy('open')}
+                      disabled={!isOwner}
+                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                        <Globe className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Công khai (Ai có link/mã đều vào ngay)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Bất kỳ giảng viên nào nhập đúng mã phòng đều được tự động tham gia nhóm ngay lập tức.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Option 2: Approval Required */}
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                      editJoinPolicy === 'approval_required'
+                        ? 'border-purple-500 bg-purple-50/50 ring-1 ring-purple-200'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="joinPolicy"
+                      checked={editJoinPolicy === 'approval_required'}
+                      onChange={() => setEditJoinPolicy('approval_required')}
+                      disabled={!isOwner}
+                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Cần duyệt (Phải được Trưởng nhóm phê duyệt)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Người nhập mã sẽ gửi yêu cầu gia nhập; Trưởng nhóm sẽ nhận thông báo để bấm Duyệt hoặc Từ chối.
+                      </p>
+                    </div>
+                  </label>
+
+                  {/* Option 3: Invite Only */}
+                  <label
+                    className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                      editJoinPolicy === 'invite_only'
+                        ? 'border-purple-500 bg-purple-50/50 ring-1 ring-purple-200'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="joinPolicy"
+                      checked={editJoinPolicy === 'invite_only'}
+                      onChange={() => setEditJoinPolicy('invite_only')}
+                      disabled={!isOwner}
+                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                    />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                        <Lock className="w-3.5 h-3.5 text-rose-500" />
+                        <span>Riêng tư (Chỉ khi được mời trực tiếp)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Không cho phép nhập mã tự do; chỉ những đồng nghiệp được Trưởng nhóm gửi lời mời qua email mới có thể vào.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
               {isOwner ? (
                 <button
                   type="button"
-                  onClick={() => onSaveSettings(editName, editDept, editDesc)}
-                  className="w-full py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors cursor-pointer shadow-xs mt-2"
+                  onClick={() => onSaveSettings(editName, editDept, editDesc, editJoinPolicy)}
+                  className="w-full py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors cursor-pointer shadow-xs mt-3 flex items-center justify-center gap-2"
                 >
-                  Lưu thay đổi cài đặt
+                  <Check className="w-4 h-4" />
+                  <span>Lưu thay đổi cài đặt nhóm</span>
                 </button>
               ) : (
                 <p className="text-[11px] text-slate-400 italic text-center">
-                  * Chỉ trưởng nhóm mới có quyền thay đổi thông tin cài đặt này.
+                  * Chỉ Trưởng nhóm mới có quyền thay đổi thông tin cài đặt này.
                 </p>
               )}
             </div>
