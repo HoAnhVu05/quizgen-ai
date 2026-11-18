@@ -131,36 +131,52 @@ def _update_doc_progress(
     chapters_count: Optional[int] = None,
     error_message: Optional[str] = None
 ):
-    """Cập nhật tiến trình và trạng thái xử lý của tài liệu vào CSDL"""
-    db = SessionLocal()
-    try:
-        doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-        if doc:
-            doc.progress = progress
-            doc.status = status
-            if total_pages is not None:
-                doc.total_pages = total_pages
-            if chapters_count is not None:
-                doc.chapters_count = chapters_count
-            if error_message is not None:
-                doc.error_message = error_message
-            db.commit()
-    finally:
-        db.close()
+    """Cập nhật tiến trình và trạng thái xử lý của tài liệu vào CSDL kèm cơ chế tự động thử lại khi SQLite bận"""
+    for attempt in range(5):
+        db = SessionLocal()
+        try:
+            doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+            if doc:
+                doc.progress = progress
+                doc.status = status
+                if total_pages is not None:
+                    doc.total_pages = total_pages
+                if chapters_count is not None:
+                    doc.chapters_count = chapters_count
+                if error_message is not None:
+                    doc.error_message = error_message
+                doc.updated_at = datetime.utcnow()
+                db.commit()
+            break
+        except Exception as e:
+            db.rollback()
+            if attempt < 4:
+                time.sleep(0.3 * (attempt + 1))
+            else:
+                logger.error(f"[DocumentService] Lỗi cập nhật tiến trình {document_id}: {e}")
+        finally:
+            db.close()
 
 
 def _mark_doc_error(document_id: str, error_msg: str, stage: str = "error"):
-    """Đánh dấu trạng thái lỗi và ghi nhận nguyên nhân vào CSDL và cache"""
-    db = SessionLocal()
-    try:
-        doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-        if doc:
-            doc.status = "error"
-            doc.progress = 0
-            doc.error_message = error_msg
-            db.commit()
-    finally:
-        db.close()
+    """Đánh dấu trạng thái lỗi và ghi nhận nguyên nhân vào CSDL và cache kèm cơ chế tự động thử lại"""
+    for attempt in range(5):
+        db = SessionLocal()
+        try:
+            doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+            if doc:
+                doc.status = "error"
+                doc.progress = 0
+                doc.error_message = error_msg
+                doc.updated_at = datetime.utcnow()
+                db.commit()
+            break
+        except Exception:
+            db.rollback()
+            if attempt < 4:
+                time.sleep(0.3 * (attempt + 1))
+        finally:
+            db.close()
     cache.set_upload_progress(document_id, progress=0, status="error", stage=stage)
 
 
@@ -233,48 +249,54 @@ def process_document_pipeline(
     # Pha 3: Lưu cấu trúc chương mục và các chunks vào CSDL
     cache.set_upload_progress(document_id, progress=70, status="embedding", stage="saving_metadata", total_pages=len(pages))
     _update_doc_progress(document_id, progress=70, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
-    db = SessionLocal()
-    try:
-        # Xóa các mục cũ nếu có
-        db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
-        db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
 
-        chapters_db = [
-            DocumentChapterDB(
-                id=f"ch-{document_id}-{ch['chapter_index']}",
-                document_id=document_id,
-                chapter_index=ch["chapter_index"],
-                title=ch["title"],
-                page_start=ch["page_start"],
-                page_end=ch["page_end"]
-            )
-            for ch in chapters_metadata
-        ]
-        db.add_all(chapters_db)
+    for db_attempt in range(5):
+        db = SessionLocal()
+        try:
+            # Xóa các mục cũ nếu có
+            db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
+            db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
 
-        chunks_db = [
-            DocumentChunkDB(
-                id=c["chunk_id"],
-                document_id=document_id,
-                page_number=c["page_number"],
-                chapter=c["chapter"],
-                char_count=c["char_count"],
-                text_snippet=c["text"]
-            )
-            for c in chunks
-        ]
-        db.add_all(chunks_db)
-        db.commit()
+            chapters_db = [
+                DocumentChapterDB(
+                    id=f"ch-{document_id}-{ch['chapter_index']}",
+                    document_id=document_id,
+                    chapter_index=ch["chapter_index"],
+                    title=ch["title"],
+                    page_start=ch["page_start"],
+                    page_end=ch["page_end"]
+                )
+                for ch in chapters_metadata
+            ]
+            db.add_all(chapters_db)
 
-        # Đã lưu metadata vào CSDL, tiếp tục chuyển sang Pha 4 để lập chỉ mục vector RAG
-        cache.set_upload_progress(document_id, progress=75, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
-        _update_doc_progress(document_id, progress=75, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
-    except Exception as e:
-        db.rollback()
-        _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
-        return
-    finally:
-        db.close()
+            chunks_db = [
+                DocumentChunkDB(
+                    id=c["chunk_id"],
+                    document_id=document_id,
+                    page_number=c["page_number"],
+                    chapter=c["chapter"],
+                    char_count=c["char_count"],
+                    text_snippet=c["text"]
+                )
+                for c in chunks
+            ]
+            db.add_all(chunks_db)
+            db.commit()
+
+            # Đã lưu metadata vào CSDL, tiếp tục chuyển sang Pha 4 để lập chỉ mục vector RAG
+            cache.set_upload_progress(document_id, progress=75, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
+            _update_doc_progress(document_id, progress=75, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
+            break
+        except Exception as e:
+            db.rollback()
+            if db_attempt < 4:
+                time.sleep(0.5 * (db_attempt + 1))
+            else:
+                _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
+                return
+        finally:
+            db.close()
 
     # Pha 4: Chuyển tiếp các chunks sang RAG Service để lập chỉ mục vector (ChromaDB)
     cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
