@@ -987,6 +987,160 @@ def delete_qgroup_endpoint(group_id: str):
     save_server_qgroups(cleaned)
     return {"status": "success", "message": f"Đã xóa nhóm {group_id}", "remaining": len(cleaned)}
 
+@app.post("/qgroups/{group_id}/messages/{message_id}/reaction")
+@app.post("/documents/qgroups/{group_id}/messages/{message_id}/reaction")
+async def toggle_message_reaction_endpoint(group_id: str, message_id: str, request: Request):
+    """Đồng bộ thả/hủy cảm xúc tin nhắn vĩnh viễn vào CSDL máy chủ"""
+    payload = await request.json()
+    emoji = str(payload.get("emoji") or "").strip()
+    user_email = str(payload.get("userEmail") or "").strip().lower()
+    if not emoji or not user_email:
+        return {"status": "error", "message": "emoji and userEmail are required"}
+    
+    groups = load_server_qgroups()
+    changed = False
+    updated_reactions = {}
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    reactions = m.get("reactions") or {}
+                    if not isinstance(reactions, dict):
+                        reactions = {}
+                    users = reactions.get(emoji, [])
+                    if not isinstance(users, list):
+                        users = []
+                    users_clean = [u.strip().lower() for u in users]
+                    if user_email in users_clean:
+                        users = [u for u in users if u.strip().lower() != user_email]
+                    else:
+                        users.append(user_email)
+                    
+                    if users:
+                        reactions[emoji] = users
+                    elif emoji in reactions:
+                        del reactions[emoji]
+                    m["reactions"] = reactions
+                    updated_reactions = reactions
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "reactions": updated_reactions}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.post("/qgroups/{group_id}/messages/{message_id}/recall")
+@app.post("/documents/qgroups/{group_id}/messages/{message_id}/recall")
+async def recall_message_endpoint(group_id: str, message_id: str):
+    """Thu hồi tin nhắn vĩnh viễn trên máy chủ"""
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    m["isRecalled"] = True
+                    m["text"] = "Tin nhắn đã được thu hồi"
+                    m["attachment"] = None
+                    m["sharedPost"] = None
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "message": "Đã thu hồi tin nhắn"}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.delete("/qgroups/{group_id}/messages/{message_id}")
+@app.delete("/documents/qgroups/{group_id}/messages/{message_id}")
+def delete_message_endpoint(group_id: str, message_id: str):
+    """Xóa tin nhắn vĩnh viễn khỏi máy chủ"""
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            before = len(g.get("messages", []))
+            g["messages"] = [m for m in g.get("messages", []) if str(m.get("id")) != str(message_id)]
+            if len(g["messages"]) != before:
+                changed = True
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "message": "Đã xóa tin nhắn"}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.patch("/qgroups/{group_id}/messages/{message_id}")
+@app.patch("/documents/qgroups/{group_id}/messages/{message_id}")
+async def edit_message_endpoint(group_id: str, message_id: str, request: Request):
+    """Cập nhật nội dung tin nhắn đã chỉnh sửa vào CSDL máy chủ"""
+    payload = await request.json()
+    new_text = str(payload.get("text") or "").strip()
+    if not new_text:
+        return {"status": "error", "message": "Nội dung tin nhắn không được rỗng"}
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    m["text"] = new_text
+                    m["isEdited"] = True
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "message": "Đã cập nhật tin nhắn"}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.post("/qgroups/{group_id}/messages/{message_id}/pin")
+@app.post("/documents/qgroups/{group_id}/messages/{message_id}/pin")
+def pin_message_endpoint(group_id: str, message_id: str):
+    """Ghim hoặc bỏ ghim tin nhắn trên máy chủ"""
+    groups = load_server_qgroups()
+    changed = False
+    is_pinned = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    m["isPinned"] = not m.get("isPinned", False)
+                    is_pinned = m["isPinned"]
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "isPinned": is_pinned}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.post("/friends/unfriend")
+@app.post("/documents/friends/unfriend")
+async def unfriend_endpoint(request: Request):
+    """Hủy kết bạn giữa 2 tài khoản, dọn dẹp lời mời và phòng trò chuyện 1-1"""
+    payload = await request.json()
+    my_email = str(payload.get("myEmail") or "").strip().lower()
+    target_email = str(payload.get("targetEmail") or "").strip().lower()
+    if not my_email or not target_email:
+        return {"status": "error", "message": "myEmail và targetEmail là bắt buộc"}
+    
+    # 1. Xóa trong friend_requests.json
+    reqs = load_friend_requests()
+    reqs = [r for r in reqs if not (
+        {r.get("senderEmail", "").strip().lower(), r.get("targetEmail", "").strip().lower()} == {my_email, target_email}
+    )]
+    save_friend_requests(reqs)
+
+    # 2. Xóa phòng chat 1-1 trong qgroups.json
+    groups = load_server_qgroups()
+    groups = [g for g in groups if not (
+        (g.get("isDirect") or g.get("type") == "direct") and
+        {my_email, target_email}.issubset({str(m).strip().lower() for m in g.get("members", [])})
+    )]
+    save_server_qgroups(groups)
+    return {"status": "success", "message": "Đã hủy kết bạn thành công."}
+
 @app.post("/qgroups/{group_id}/join-by-code")
 @app.post("/documents/qgroups/{group_id}/join-by-code")
 async def join_qgroup_by_code(group_id: str, request: Request):

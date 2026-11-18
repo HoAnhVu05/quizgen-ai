@@ -250,6 +250,7 @@ export interface QGroup {
   pendingRequests: QGroupPendingRequest[];
   messages: QGroupMessage[];
   pinnedMessageId?: string;
+  type?: 'direct' | 'channel' | string;
   isDirect?: boolean;
   directPartnerEmail?: string;
   directPartnerName?: string;
