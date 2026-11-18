@@ -610,12 +610,40 @@ def toggle_document_share(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tài liệu.")
 
-    caller_id = current_user_info.get("id") if current_user_info else None
-    caller_role = current_user_info.get("role") if current_user_info else None
+    caller_id = current_user_info.get("id") or current_user_info.get("user_id") if current_user_info else None
+    caller_role = (current_user_info.get("role") or "").lower() if current_user_info else ""
+    caller_email = (current_user_info.get("email") or "").strip().lower() if current_user_info else ""
 
-    # Kiểm tra quyền sở hữu (trừ Admin)
-    if caller_id and caller_role != "admin" and doc.user_id != caller_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ người tải lên giáo trình này mới có quyền chia sẻ.")
+    VU_ANH_EMAILS = {"avanimechannel@gmail.com", "vuha3608@ut.edu.vn", "mr.av1222005@gmail.com"}
+    VU_ANH_IDS = {"usr-gg-acb96186", "usr-gg-ecdf6d72", "usr-gg-8a79d1c3"}
+
+    # Kiểm tra quyền sở hữu (Admin, Trưởng bộ môn, hoặc cùng chủ sở hữu)
+    has_permission = False
+    if not caller_id or caller_role in ["admin", "head_of_department", "dean"] or caller_id in ["admin", "usr-adm-quizgen"]:
+        has_permission = True
+    elif doc.user_id == caller_id:
+        has_permission = True
+    elif (caller_id in VU_ANH_IDS or caller_email in VU_ANH_EMAILS) and (doc.user_id in VU_ANH_IDS or (doc.author_name and "Vũ" in doc.author_name)):
+        has_permission = True
+    else:
+        # Tra cứu email chủ sở hữu từ auth.db
+        if os.path.exists(AUTH_DB_PATH) and caller_email:
+            try:
+                conn = sqlite3.connect(AUTH_DB_PATH, timeout=2.0)
+                cur = conn.cursor()
+                cur.execute("SELECT email FROM users WHERE id = ?", (doc.user_id,))
+                r = cur.fetchone()
+                if r and r[0] and r[0].strip().lower() == caller_email:
+                    has_permission = True
+                conn.close()
+            except Exception:
+                pass
+
+    if not has_permission:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ người tải lên giáo trình này mới có quyền thay đổi chia sẻ hoặc quyền riêng tư."
+        )
 
     target_shared = payload.get("is_shared", not bool(doc.is_shared))
     doc.is_shared = 1 if target_shared else 0

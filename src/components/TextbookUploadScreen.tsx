@@ -908,9 +908,16 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
     try {
       const targetState = !book.isShared;
+      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (currentUser?.id) headers['X-User-Id'] = currentUser.id;
+      if (currentUser?.email) headers['X-User-Email'] = currentUser.email;
+      if (currentUser?.role) headers['X-User-Role'] = currentUser.role;
+
       const res = await apiClient.fetch(`${API_BASE}/documents/documents/${book.id}/share`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           is_shared: targetState,
           sharing_scope: targetState ? 'department' : 'private',
@@ -960,8 +967,16 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     } catch {}
 
     try {
+      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (currentUser?.id) headers['X-User-Id'] = currentUser.id;
+      if (currentUser?.email) headers['X-User-Email'] = currentUser.email;
+      if (currentUser?.role) headers['X-User-Role'] = currentUser.role;
+
       const res = await apiClient.fetch(`${API_BASE}/documents/documents/${id}`, {
         method: 'DELETE',
+        headers,
       });
       if (!res.ok && res.status !== 404) {
         throw new Error(await parseErrorMessage(res));
