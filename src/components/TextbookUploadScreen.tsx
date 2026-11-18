@@ -807,13 +807,13 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
           xhr.upload.onprogress = (event) => {
             if (event.lengthComputable && event.total > 0) {
-              const filePercent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+              const filePercent = Math.min(100, Math.round((event.loaded / event.total) * 100));
               const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
               const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
               const speedMBs = (event.loaded / (1024 * 1024) / elapsedSec).toFixed(1);
 
               const overallPercent = totalFiles > 1
-                ? Math.min(99, Math.round(((idx + event.loaded / event.total) / totalFiles) * 100))
+                ? Math.min(100, Math.round(((idx + event.loaded / event.total) / totalFiles) * 100))
                 : filePercent;
 
               setUploadProgressState({
@@ -822,9 +822,9 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                 progress: overallPercent,
                 stage: totalFiles > 1
                   ? `Tệp ${idx + 1}/${totalFiles}: ${loadedMB}/${totalMB} MB (${speedMBs} MB/s)`
-                  : (filePercent < 99
+                  : (filePercent < 100
                     ? `Đang truyền tệp: ${loadedMB}/${totalMB} MB (${speedMBs} MB/s)`
-                    : `Đã truyền xong 100%, máy chủ đang tiếp nhận...`),
+                    : `Đã truyền xong 100%! Đang kết nối máy chủ tiếp nhận...`),
               });
             }
           };
@@ -833,11 +833,18 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
             if (xhr.status >= 200 && xhr.status < 300) {
               try {
                 const resData = JSON.parse(xhr.responseText);
-                if (resData?.id) {
-                  localStorage.setItem('quizgen_selected_book_id', resData.id);
-                  localStorage.setItem('quizgen_selected_book_name', resData.name || file.name);
+                const doc = resData?.document || resData;
+                if (doc?.id) {
+                  localStorage.setItem('quizgen_selected_book_id', doc.id);
+                  localStorage.setItem('quizgen_selected_book_name', doc.name || file.name);
                 }
               } catch {}
+              setUploadProgressState({
+                fileName: totalFiles > 1 ? `[${idx + 1}/${totalFiles}] ${file.name}` : file.name,
+                fileSize: `${totalMB} MB`,
+                progress: 100,
+                stage: 'Máy chủ đã tiếp nhận xong (100%)! Đang đồng bộ danh sách...',
+              });
               resolve(null);
             } else {
               let errorMsg = `Không thể nạp tệp "${file.name}".`;
