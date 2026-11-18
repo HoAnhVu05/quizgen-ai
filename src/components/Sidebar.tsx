@@ -20,6 +20,7 @@ import {
   Check,
   RefreshCw,
   ShoppingBag,
+  LifeBuoy,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -113,6 +114,14 @@ const NAV_ITEM_STYLES: Record<ScreenId, NavItemStyle> = {
     activeIconBox: 'bg-[#da1c2d] text-white shadow-xs',
     inactiveIconBox: 'bg-rose-50 text-[#da1c2d] border border-rose-200 group-hover:bg-rose-100',
     activeText: 'text-[#da1c2d]',
+  },
+  support: {
+    stepTagClass: 'text-emerald-600',
+    activeContainer: 'bg-emerald-50/90 text-emerald-900 font-bold border border-emerald-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-emerald-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-emerald-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-emerald-50 text-emerald-600 border border-emerald-200/60 group-hover:bg-emerald-100/70',
+    activeText: 'text-emerald-900',
   },
 };
 
@@ -250,6 +259,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         stepTag: 'Bước 4',
         label: 'Đóng gói & Xuất Đề Thi',
         icon: Database,
+      },
+      {
+        id: 'support',
+        label: 'Hỗ trợ & Cẩm nang FAQ',
+        icon: LifeBuoy,
       },
     ];
   }, [activeRole, pendingReviewCount]);

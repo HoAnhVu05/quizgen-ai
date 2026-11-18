@@ -122,7 +122,8 @@ def health_check():
             "ai-service",
             "exam-service",
             "admin-service",
-            "payment-service"
+            "payment-service",
+            "support-service"
         ]
     }
 
@@ -198,3 +199,10 @@ async def admin_proxy(request: Request, path: str = ""):
 async def payment_proxy(request: Request, path: str = ""):
     target = f"/{path}" if path else "/plans"
     return await proxy_request(settings.PAYMENT_SERVICE_URL, target, request)
+
+@app.api_route("/api/v1/support", methods=METHODS)
+@app.api_route("/api/v1/support/{path:path}", methods=METHODS)
+async def support_proxy(request: Request, path: str = ""):
+    target = f"/{path}".rstrip("/") if not path else f"/{path}"
+    return await proxy_request(settings.SUPPORT_SERVICE_URL, target or "/tickets", request)
+
