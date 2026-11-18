@@ -1340,13 +1340,14 @@ async def respond_qgroup_invitation(inv_id: str, request: Request):
                 target_group["members"] = members
                 target_group["memberCount"] = len(members)
                 msgs = target_group.get("messages", [])
+                inviter_name = target_inv.get("inviterName") or "Trưởng nhóm"
                 msgs.append({
                     "id": f"msg-{int(time.time()*1000)}",
                     "senderEmail": "system",
                     "senderName": "Hệ Thống Q-Group",
                     "isSystem": True,
                     "timestamp": time.strftime("%H:%M"),
-                    "text": f"🎉 {user_name} ({eff_email}) đã chấp nhận lời mời và chính thức gia nhập nhóm làm việc!"
+                    "text": f"🎉 {user_name} ({eff_email}) đã chấp nhận lời mời của {inviter_name} và chính thức tham gia kênh #{target_group.get('name', 'kênh')}!"
                 })
                 target_group["messages"] = msgs
                 save_server_qgroups(groups)

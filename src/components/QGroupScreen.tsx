@@ -352,7 +352,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   // Slack Header Modals & Toolbars
   const [isChannelDetailsOpen, setIsChannelDetailsOpen] = useState(false);
-  const [channelDetailsTab, setChannelDetailsTab] = useState<'about' | 'members' | 'files' | 'settings'>('about');
+  const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
+  const [channelDetailsTab, setChannelDetailsTab] = useState<'about' | 'members' | 'files'>('about');
   const [isSummarizeModalOpen, setIsSummarizeModalOpen] = useState(false);
   const [isHuddleOpen, setIsHuddleOpen] = useState(false);
   const [isStarred, setIsStarred] = useState(false);
@@ -1065,7 +1066,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     [qgroups]
   );
 
-  // ── Thêm thành viên vào kênh đang mở ───────────────────────────────────────
+  // ── Thêm thành viên trực tiếp vào kênh đang mở (kèm tin nhắn thông báo) ────
   const handleAddUserToActiveChannel = useCallback(
     async (emailToAdd: string, displayName?: string) => {
       if (!activeGroup) return;
@@ -1086,11 +1087,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       setIsAddingMember(true);
       const updatedMembers = [...(activeGroup.members || []), clean];
       const memberName = displayName || lookedUpUser?.fullName || clean;
+      const nowMs = Date.now();
+      const timeStr = new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const announcementMsg: QGroupMessage = {
+        id: `msg-${nowMs}`,
+        senderEmail: 'system',
+        senderName: 'Hệ Thống Q-Group',
+        isSystem: true,
+        timestamp: timeStr,
+        text: `🎉 ${myName} đã thêm ${memberName} (${clean}) vào kênh #${activeGroup.name}.`,
+        readBy: [myEmail, clean],
+      };
+      const updatedMessages = [...(activeGroup.messages || []), announcementMsg];
       const updatedGroup = {
         ...activeGroup,
         members: updatedMembers,
         memberCount: updatedMembers.length,
-        updatedAt: Date.now(),
+        messages: updatedMessages,
+        updatedAt: nowMs,
       };
 
       const nextGroups = qgroups.map((g) =>
@@ -1122,6 +1139,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               body: JSON.stringify({
                 members: updatedMembers,
                 memberCount: updatedMembers.length,
+                messages: updatedMessages,
                 group: updatedGroup,
               }),
             }
@@ -1129,7 +1147,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         } catch {}
       }
 
-      // Luôn đồng bộ danh sách nhóm toàn diện lên server backend
+      // Luôn đồng bộ danh sách nhóm toàn diện lên server backend (bảo toàn tin nhắn thông báo)
       void syncGroupsToBackend(nextGroups);
 
       setIsAddingMember(false);
@@ -1144,7 +1162,60 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       );
       void fetchQGroups();
     },
-    [activeGroup, qgroups, lookedUpUser, myName, applyGroups, fetchQGroups, onShowToast]
+    [activeGroup, qgroups, lookedUpUser, myName, myEmail, applyGroups, fetchQGroups, syncGroupsToBackend, onShowToast]
+  );
+
+  // ── Gửi lời mời chính thức vào kênh (Chờ đồng nghiệp bấm chấp nhận) ──────────
+  const handleSendGroupInvitation = useCallback(
+    async (targetEmail: string, targetName?: string) => {
+      if (!activeGroup) return;
+      const clean = targetEmail.trim().toLowerCase();
+      const currentMembers = (activeGroup.members || []).map((m) =>
+        String(m).toLowerCase()
+      );
+      if (currentMembers.includes(clean)) {
+        onShowToast(
+          'info',
+          'Đã là thành viên',
+          `${clean} đã có mặt trong kênh #${activeGroup.name}`
+        );
+        return;
+      }
+      const displayName = targetName || clean;
+      const inv = {
+        id: `inv-${Date.now()}`,
+        groupId: activeGroup.id,
+        groupCode: activeGroup.code,
+        groupName: activeGroup.name,
+        inviterEmail: myEmail,
+        inviterName: myName,
+        targetEmail: clean,
+        targetName: displayName,
+        status: 'pending',
+        invitedAt: new Date().toISOString(),
+      };
+      try {
+        await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(inv),
+        });
+        onShowToast(
+          'success',
+          'Đã gửi lời mời tham gia',
+          `Đã gửi lời mời tới ${displayName} (${clean}). Đồng nghiệp sẽ nhận được thông báo để chấp nhận.`
+        );
+        setInviteEmailInput('');
+        setDirectAddMemberEmail('');
+        setLookedUpUser(null);
+        setLookupStatus('idle');
+        setIsDirectAddMemberOpen(false);
+        void fetchGroupInvitations();
+      } catch {
+        onShowToast('error', 'Lỗi kết nối', 'Không thể gửi lời mời nhóm.');
+      }
+    },
+    [activeGroup, myEmail, myName, onShowToast, fetchGroupInvitations]
   );
 
   // ── Reaction Handlers ─────────────────────────────────────────────────────
@@ -1650,6 +1721,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const handleAcceptGroupInv = async (inv: QGroupInvitation) => {
     try {
+      removeFromBlacklist(myEmail, inv.groupId, inv.groupCode);
       await apiClient.fetch(
         `${API_BASE}/documents/qgroups/invitations/${inv.id}/respond`,
         {
@@ -2408,13 +2480,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             type="button"
                             onClick={() => {
                               setIsHeaderMenuOpen(false);
-                              setChannelDetailsTab('settings');
-                              setIsChannelDetailsOpen(true);
+                              setIsChannelSettingsOpen(true);
                             }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-medium group cursor-pointer"
+                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
                           >
-                            <Settings className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
-                            <span>Cài đặt kênh (Edit settings)</span>
+                            <span className="flex items-center gap-2">
+                              <Settings className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                              <span>Cài đặt kênh (Edit settings)</span>
+                            </span>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                           </button>
                         )}
                       </div>
@@ -3212,19 +3286,32 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
+                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
                     <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <span>Tài khoản đã kích hoạt hệ thống</span>
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => void handleAddUserToActiveChannel(lookedUpUser.email, lookedUpUser.fullName)}
-                      disabled={isAddingMember}
-                      className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors"
-                    >
-                      {isAddingMember ? 'Đang thêm...' : 'Thêm vào kênh'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handleSendGroupInvitation(lookedUpUser.email, lookedUpUser.fullName)}
+                        className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                        title="Gửi lời mời vào nhóm: Đồng nghiệp nhận thông báo và bấm chấp nhận để vào"
+                      >
+                        <Send className="w-3 h-3" />
+                        <span>Gửi lời mời</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleAddUserToActiveChannel(lookedUpUser.email, lookedUpUser.fullName)}
+                        disabled={isAddingMember}
+                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs border border-slate-300 cursor-pointer transition-colors flex items-center gap-1.5"
+                        title="Thêm trực tiếp vào nhóm ngay lập tức (Chỉ Trưởng nhóm)"
+                      >
+                        <UserPlus className="w-3 h-3" />
+                        <span>Thêm ngay</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3242,13 +3329,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 </div>
               )}
 
-              {/* MỤC BẠN BÈ & ĐỒNG NGHIỆP: THÊM NHANH 1 CHẠM KHÔNG CẦN NHẬP LẠI EMAIL */}
+              {/* MỤC BẠN BÈ & ĐỒNG NGHIỆP: GỬI LỜI MỜI HOẶC THÊM TRỰC TIẾP */}
               <div className="space-y-2 pt-1">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
                     Bạn bè & Đồng nghiệp ({filteredFriends.length})
                   </span>
-                  <span className="text-[10px] text-slate-400">Thêm nhanh 1 chạm</span>
+                  <span className="text-[10px] text-slate-400">Gửi lời mời hoặc thêm trực tiếp</span>
                 </div>
 
                 <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -3260,6 +3347,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     filteredFriends.map((f) => {
                       const isAlreadyInChannel = (activeGroup.members || []).some(
                         (m) => String(m).trim().toLowerCase() === f.email.trim().toLowerCase()
+                      );
+                      const hasSentInvite = groupInvitations.some(
+                        (inv) =>
+                          inv.groupId === activeGroup.id &&
+                          inv.targetEmail.toLowerCase() === f.email.toLowerCase() &&
+                          inv.status === 'pending'
                       );
                       return (
                         <div
@@ -3288,16 +3381,33 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               <Check className="w-3 h-3 text-emerald-600" />
                               <span>Đã tham gia</span>
                             </span>
+                          ) : hasSentInvite ? (
+                            <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-amber-200">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              <span>Đã gửi lời mời</span>
+                            </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => void handleAddUserToActiveChannel(f.email, f.name)}
-                              disabled={isAddingMember}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                              <span>Thêm vào kênh</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => void handleSendGroupInvitation(f.email, f.name)}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Gửi lời mời: Đồng nghiệp nhận thông báo và bấm Chấp nhận để vào"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>Gửi lời mời</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleAddUserToActiveChannel(f.email, f.name)}
+                                disabled={isAddingMember}
+                                className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Thêm ngay vào nhóm (Dành cho Trưởng nhóm)"
+                              >
+                                <UserPlus className="w-3 h-3" />
+                                <span>Thêm ngay</span>
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
@@ -3322,7 +3432,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )}
 
       {/* ====================================================================
-          MODAL: CHANNEL DETAILS & SETTINGS (SLACK STYLE MULTI-TAB)
+          MODAL: CHI TIẾT KÊNH (SLACK STYLE INFORMATIONAL MULTI-TAB)
       ==================================================================== */}
       {isChannelDetailsOpen && activeGroup && (
         <ChannelDetailsModal
@@ -3334,22 +3444,47 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           onInviteEmailChange={setInviteEmailInput}
           onInvite={() => void handleInviteToGroup(activeGroup)}
           onClose={() => setIsChannelDetailsOpen(false)}
-          onSaveSettings={(name, dept, desc, joinPolicy) => {
-            void handleSaveGroupSettings(activeGroup, name, dept, desc, joinPolicy);
-          }}
           onLeaveGroup={() => {
             setIsChannelDetailsOpen(false);
             void handleLeaveGroup(activeGroup);
-          }}
-          onDisband={() => {
-            setIsChannelDetailsOpen(false);
-            void handleDisbandGroup(activeGroup);
           }}
           onKickMember={(email, name) => {
             void handleKickMember(activeGroup, email, name);
           }}
           onRespondJoinRequest={(reqId, email, action) => {
             void handleRespondJoinRequest(activeGroup, reqId, email, action);
+          }}
+        />
+      )}
+
+      {/* ====================================================================
+          MODAL: CÀI ĐẶT KÊNH (SLACK / TEAMS DEDICATED CHANNEL SETTINGS)
+      ==================================================================== */}
+      {isChannelSettingsOpen && activeGroup && (
+        <ChannelSettingsModal
+          group={activeGroup}
+          myEmail={myEmail}
+          onClose={() => setIsChannelSettingsOpen(false)}
+          onSaveSettings={(name, dept, desc, joinPolicy) => {
+            void handleSaveGroupSettings(activeGroup, name, dept, desc, joinPolicy);
+            setIsChannelSettingsOpen(false);
+          }}
+          onTransferOwner={() => {
+            setIsChannelSettingsOpen(false);
+            const otherMembers = (activeGroup.members || []).filter(
+              (m) => m.toLowerCase() !== myEmail.toLowerCase()
+            );
+            if (otherMembers.length === 0) {
+              onShowToast('info', 'Chưa có thành viên khác', 'Nhóm cần có ít nhất 1 thành viên khác để nhượng quyền.');
+              return;
+            }
+            setTransferGroup(activeGroup);
+            setSelectedNewOwner(otherMembers[0] || '');
+            setIsTransferOwnerModalOpen(true);
+          }}
+          onDisband={() => {
+            setIsChannelSettingsOpen(false);
+            void handleDisbandGroup(activeGroup);
           }}
         />
       )}
@@ -4159,25 +4294,18 @@ const InvitationsPanel: React.FC<{
 };
 
 // ============================================================================
-// MODAL: SLACK CHANNEL DETAILS (MULTI-TAB: ABOUT, MEMBERS, FILES, SETTINGS)
+// MODAL: SLACK CHANNEL DETAILS (INFORMATIONAL: ABOUT, MEMBERS, FILES)
 // ============================================================================
 const ChannelDetailsModal: React.FC<{
   group: QGroup;
   myEmail: string;
-  activeTab: 'about' | 'members' | 'files' | 'settings';
-  onTabChange: (t: 'about' | 'members' | 'files' | 'settings') => void;
+  activeTab: 'about' | 'members' | 'files';
+  onTabChange: (t: 'about' | 'members' | 'files') => void;
   inviteEmail: string;
   onInviteEmailChange: (v: string) => void;
   onInvite: () => void;
   onClose: () => void;
-  onSaveSettings: (
-    name: string,
-    dept: string,
-    desc: string,
-    joinPolicy: 'open' | 'approval_required' | 'invite_only'
-  ) => void;
   onLeaveGroup: () => void;
-  onDisband?: () => void;
   onKickMember?: (email: string, name: string) => void;
   onRespondJoinRequest?: (requestId: string, email: string, action: 'approve' | 'reject') => void;
 }> = ({
@@ -4189,22 +4317,13 @@ const ChannelDetailsModal: React.FC<{
   onInviteEmailChange,
   onInvite,
   onClose,
-  onSaveSettings,
   onLeaveGroup,
-  onDisband,
   onKickMember,
   onRespondJoinRequest,
 }) => {
   const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
   const members = group.members || [];
   const pendingRequests = group.pendingRequests || [];
-
-  const [editName, setEditName] = useState(group.name);
-  const [editDept, setEditDept] = useState(group.department || '');
-  const [editDesc, setEditDesc] = useState(group.description || '');
-  const [editJoinPolicy, setEditJoinPolicy] = useState<'open' | 'approval_required' | 'invite_only'>(
-    (group.joinPolicy as any) || 'open'
-  );
 
   // Extract shared files from messages
   const sharedFiles = useMemo(() => {
@@ -4284,7 +4403,7 @@ const ChannelDetailsModal: React.FC<{
     open: 'Công khai (Mọi giảng viên đều có thể tham gia)',
     approval_required: 'Cần phê duyệt (Yêu cầu Trưởng nhóm duyệt trước)',
     invite_only: 'Riêng tư (Chỉ khi được mời trực tiếp)',
-  }[editJoinPolicy] || 'Công khai';
+  }[group.joinPolicy as 'open' | 'approval_required' | 'invite_only'] || 'Công khai';
 
   return (
     <div
@@ -4304,7 +4423,7 @@ const ChannelDetailsModal: React.FC<{
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1">
-                  <span>#{group.name}</span>
+                  <span>Chi tiết kênh #{group.name}</span>
                 </h3>
                 {isOwner && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">
@@ -4337,7 +4456,6 @@ const ChannelDetailsModal: React.FC<{
               badge: isOwner && pendingRequests.length > 0 ? pendingRequests.length : undefined,
             },
             { id: 'files' as const, label: `Tệp & Học liệu (${sharedFiles.length})`, icon: FileText },
-            { id: 'settings' as const, label: 'Cài đặt', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -4490,7 +4608,7 @@ const ChannelDetailsModal: React.FC<{
                 </div>
               )}
 
-              {/* Mời thêm thành viên qua Email (Kiểm tra đăng ký hệ thống) */}
+              {/* Mời thêm thành viên qua Email */}
               <div className="space-y-2">
                 <label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
                   Mời giảng viên qua Email
@@ -4517,7 +4635,7 @@ const ChannelDetailsModal: React.FC<{
                     disabled={!inviteEmail.trim() || modalLookupStatus === 'not_found'}
                     className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold cursor-pointer transition-colors shrink-0"
                   >
-                    Mời
+                    Gửi lời mời
                   </button>
                 </div>
 
@@ -4546,7 +4664,7 @@ const ChannelDetailsModal: React.FC<{
                       onClick={onInvite}
                       className="px-2.5 py-1 rounded bg-[#008689] hover:bg-[#007073] text-white font-semibold text-[10px] shrink-0"
                     >
-                      Thêm
+                      Mời
                     </button>
                   </div>
                 )}
@@ -4660,176 +4778,279 @@ const ChannelDetailsModal: React.FC<{
               )}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
-          {/* TAB 4: SETTINGS (CHẾ ĐỘ DUYỆT THÀNH VIÊN & TÙY CHỌN TRƯỞNG NHÓM) */}
-          {activeTab === 'settings' && (
-            <div className="space-y-3.5">
+// ============================================================================
+// MODAL: DEDICATED CHANNEL SETTINGS (SLACK / TEAMS DEDICATED CONFIGURATION)
+// ============================================================================
+const ChannelSettingsModal: React.FC<{
+  group: QGroup;
+  myEmail: string;
+  onClose: () => void;
+  onSaveSettings: (
+    name: string,
+    dept: string,
+    desc: string,
+    joinPolicy: 'open' | 'approval_required' | 'invite_only'
+  ) => void;
+  onTransferOwner: () => void;
+  onDisband: () => void;
+}> = ({
+  group,
+  myEmail,
+  onClose,
+  onSaveSettings,
+  onTransferOwner,
+  onDisband,
+}) => {
+  const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
+  const [editName, setEditName] = useState(group.name);
+  const [editDept, setEditDept] = useState(group.department || '');
+  const [editDesc, setEditDesc] = useState(group.description || '');
+  const [editJoinPolicy, setEditJoinPolicy] = useState<'open' | 'approval_required' | 'invite_only'>(
+    (group.joinPolicy as any) || 'open'
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-teal-100 text-teal-800 flex items-center justify-center font-bold text-sm">
+              <Settings className="w-5 h-5 text-teal-700" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Cài đặt kênh #{group.name}
+                </h3>
+                {isOwner && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Trưởng nhóm
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Cấu hình thông tin, quyền phê duyệt và quản trị nhóm học thuật
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer border border-slate-200 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+          {!isOwner && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 flex items-start gap-2.5 text-[11px]">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <label className="font-semibold text-slate-700">Tên kênh</label>
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  disabled={!isOwner}
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs disabled:opacity-60"
-                />
+                <p className="font-bold">Chế độ xem thông tin cài đặt</p>
+                <p className="text-amber-700 mt-0.5">
+                  Chỉ Trưởng nhóm (<strong>{group.ownerName || group.ownerEmail}</strong>) mới có quyền chỉnh sửa cấu hình kênh này.
+                </p>
               </div>
+            </div>
+          )}
 
-              <div>
-                <label className="font-semibold text-slate-700">Khoa / Bộ môn</label>
-                <input
-                  type="text"
-                  value={editDept}
-                  onChange={(e) => setEditDept(e.target.value)}
-                  disabled={!isOwner}
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs disabled:opacity-60"
-                />
-              </div>
+          <div className="space-y-3.5">
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Tên kênh học thuật</label>
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                disabled={!isOwner}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-teal-600 text-xs disabled:opacity-60 font-medium"
+              />
+            </div>
 
-              <div>
-                <label className="font-semibold text-slate-700">Mục đích hoạt động</label>
-                <textarea
-                  rows={2}
-                  value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  disabled={!isOwner}
-                  className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 resize-none text-xs disabled:opacity-60"
-                />
-              </div>
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Khoa / Bộ môn phụ trách</label>
+              <input
+                type="text"
+                value={editDept}
+                onChange={(e) => setEditDept(e.target.value)}
+                disabled={!isOwner}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-teal-600 text-xs disabled:opacity-60"
+              />
+            </div>
 
-              {/* Chế độ duyệt thành viên (Standard Clean Radio Cards) */}
-              <div className="space-y-2 pt-1 border-t border-slate-200">
-                <div className="flex items-center justify-between">
-                  <label className="font-semibold text-slate-700">Chế độ tham gia</label>
-                  {!isOwner && (
-                    <span className="text-[10px] text-slate-500 italic">Chỉ Trưởng nhóm đổi được</span>
-                  )}
-                </div>
+            <div>
+              <label className="font-semibold text-slate-700 block mb-1">Mục đích & Nội dung hoạt động</label>
+              <textarea
+                rows={2}
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                disabled={!isOwner}
+                className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-teal-600 resize-none text-xs disabled:opacity-60 leading-relaxed"
+              />
+            </div>
 
-                <div className="space-y-2">
-                  {/* Option 1: Open */}
-                  <label
-                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                      editJoinPolicy === 'open'
-                        ? 'border-slate-900 bg-slate-50/80 ring-1 ring-slate-900'
-                        : 'border-slate-200 hover:bg-slate-50'
-                    } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="joinPolicy"
-                      checked={editJoinPolicy === 'open'}
-                      onChange={() => setEditJoinPolicy('open')}
-                      disabled={!isOwner}
-                      className="mt-0.5 text-slate-900 focus:ring-slate-900"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                        <Globe className="w-3.5 h-3.5 text-slate-700" />
-                        <span>Công khai (Tất cả giảng viên có mã đều có thể vào)</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Giảng viên nhập đúng mã phòng sẽ được tự động tham gia nhóm ngay lập tức.
-                      </p>
+            {/* Chế độ tham gia */}
+            <div className="space-y-2 pt-2 border-t border-slate-200">
+              <label className="font-semibold text-slate-700 block">Chế độ tham gia & Xét duyệt thành viên</label>
+              <div className="space-y-2">
+                {/* Open */}
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    editJoinPolicy === 'open'
+                      ? 'border-[#008689] bg-teal-50/40 ring-1 ring-[#008689]'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  } ${!isOwner ? 'pointer-events-none opacity-70' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="modalJoinPolicy"
+                    checked={editJoinPolicy === 'open'}
+                    onChange={() => setEditJoinPolicy('open')}
+                    disabled={!isOwner}
+                    className="mt-0.5 text-teal-700 focus:ring-teal-700"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                      <Globe className="w-3.5 h-3.5 text-slate-700" />
+                      <span>Công khai (Tự do tham gia khi có mã phòng)</span>
                     </div>
-                  </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Giảng viên nhập đúng mã phòng sẽ được tự động tham gia nhóm ngay lập tức.
+                    </p>
+                  </div>
+                </label>
 
-                  {/* Option 2: Approval Required */}
-                  <label
-                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                      editJoinPolicy === 'approval_required'
-                        ? 'border-slate-900 bg-slate-50/80 ring-1 ring-slate-900'
-                        : 'border-slate-200 hover:bg-slate-50'
-                    } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="joinPolicy"
-                      checked={editJoinPolicy === 'approval_required'}
-                      onChange={() => setEditJoinPolicy('approval_required')}
-                      disabled={!isOwner}
-                      className="mt-0.5 text-slate-900 focus:ring-slate-900"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                        <ShieldCheck className="w-3.5 h-3.5 text-slate-700" />
-                        <span>Cần phê duyệt (Yêu cầu Trưởng nhóm phê duyệt)</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Giảng viên nhập mã sẽ gửi yêu cầu gia nhập; Trưởng nhóm sẽ nhận thông báo để phê duyệt hoặc từ chối.
-                      </p>
+                {/* Approval */}
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    editJoinPolicy === 'approval_required'
+                      ? 'border-[#008689] bg-teal-50/40 ring-1 ring-[#008689]'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  } ${!isOwner ? 'pointer-events-none opacity-70' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="modalJoinPolicy"
+                    checked={editJoinPolicy === 'approval_required'}
+                    onChange={() => setEditJoinPolicy('approval_required')}
+                    disabled={!isOwner}
+                    className="mt-0.5 text-teal-700 focus:ring-teal-700"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                      <ShieldCheck className="w-3.5 h-3.5 text-slate-700" />
+                      <span>Cần phê duyệt (Trưởng nhóm duyệt mới vào)</span>
                     </div>
-                  </label>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Giảng viên nhập mã sẽ gửi yêu cầu gia nhập; Trưởng nhóm sẽ nhận thông báo để phê duyệt hoặc từ chối.
+                    </p>
+                  </div>
+                </label>
 
-                  {/* Option 3: Invite Only */}
-                  <label
-                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                      editJoinPolicy === 'invite_only'
-                        ? 'border-slate-900 bg-slate-50/80 ring-1 ring-slate-900'
-                        : 'border-slate-200 hover:bg-slate-50'
-                    } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
-                  >
-                    <input
-                      type="radio"
-                      name="joinPolicy"
-                      checked={editJoinPolicy === 'invite_only'}
-                      onChange={() => setEditJoinPolicy('invite_only')}
-                      disabled={!isOwner}
-                      className="mt-0.5 text-slate-900 focus:ring-slate-900"
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
-                        <Lock className="w-3.5 h-3.5 text-slate-700" />
-                        <span>Riêng tư (Chỉ khi được mời trực tiếp)</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Không cho phép nhập mã tự do; chỉ những đồng nghiệp được Trưởng nhóm gửi lời mời qua email mới có thể truy cập.
-                      </p>
+                {/* Invite only */}
+                <label
+                  className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                    editJoinPolicy === 'invite_only'
+                      ? 'border-[#008689] bg-teal-50/40 ring-1 ring-[#008689]'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  } ${!isOwner ? 'pointer-events-none opacity-70' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name="modalJoinPolicy"
+                    checked={editJoinPolicy === 'invite_only'}
+                    onChange={() => setEditJoinPolicy('invite_only')}
+                    disabled={!isOwner}
+                    className="mt-0.5 text-teal-700 focus:ring-teal-700"
+                  />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                      <Lock className="w-3.5 h-3.5 text-slate-700" />
+                      <span>Riêng tư (Chỉ khi được mời trực tiếp)</span>
                     </div>
-                  </label>
-                </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Không cho phép nhập mã tự do; chỉ những đồng nghiệp được Trưởng nhóm gửi lời mời qua email mới có thể truy cập.
+                    </p>
+                  </div>
+                </label>
               </div>
+            </div>
 
-              {isOwner ? (
-                <>
+            {/* Vùng quản trị nâng cao dành riêng cho Trưởng nhóm */}
+            {isOwner && (
+              <div className="pt-3 border-t border-slate-200 space-y-3">
+                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wide block">
+                  Tùy chọn Quản trị & Điều hành Nhóm
+                </span>
+
+                <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-amber-900 text-xs">Nhượng quyền Trưởng nhóm</p>
+                    <p className="text-[11px] text-amber-700 mt-0.5">
+                      Chuyển quyền quản trị nhóm cho một giảng viên khác trong kênh.
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => onSaveSettings(editName, editDept, editDesc, editJoinPolicy)}
-                    className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs mt-3 flex items-center justify-center gap-2"
+                    onClick={onTransferOwner}
+                    className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shrink-0 cursor-pointer transition-colors"
                   >
-                    <Check className="w-4 h-4" />
-                    <span>Lưu thay đổi cài đặt</span>
+                    Nhượng quyền
                   </button>
+                </div>
 
-                  {onDisband && (
-                    <div className="mt-4 p-3 rounded-xl bg-rose-50/40 border border-rose-200/80 space-y-2">
-                      <div className="flex items-center gap-1.5 text-rose-800 font-semibold text-[11px] uppercase tracking-wide">
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                        <span>Vùng nguy hiểm (Dành cho Trưởng nhóm)</span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 leading-relaxed">
-                        Giải tán nhóm sẽ xóa vĩnh viễn toàn bộ thành viên và tất cả lịch sử tin nhắn trong nhóm khỏi hệ thống.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onDisband();
-                        }}
-                        className="w-full py-2 px-3 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Giải tán nhóm này vĩnh viễn</span>
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-[11px] text-slate-400 italic text-center">
-                  * Chỉ Trưởng nhóm mới có quyền thay đổi thông tin cài đặt này.
-                </p>
-              )}
-            </div>
+                <div className="p-3 bg-rose-50/60 border border-rose-200 rounded-xl flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-rose-900 text-xs">Giải tán nhóm học thuật</p>
+                    <p className="text-[11px] text-rose-700 mt-0.5">
+                      Xóa vĩnh viễn nhóm và toàn bộ lịch sử tin nhắn khỏi hệ thống.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onDisband}
+                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shrink-0 cursor-pointer transition-colors"
+                  >
+                    Giải tán
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
+          >
+            Đóng
+          </button>
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => onSaveSettings(editName, editDept, editDesc, editJoinPolicy)}
+              className="px-4 py-2 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <Check className="w-4 h-4" />
+              <span>Lưu cài đặt kênh</span>
+            </button>
           )}
         </div>
       </div>
