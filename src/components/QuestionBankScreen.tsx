@@ -474,114 +474,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
     const printElement = document.getElementById('printable-exam-paper');
     if (!printElement) {
-      window.print();
+      onShowToast('error', 'Lỗi bản in', 'Không tìm thấy khung nội dung tờ đề thi.');
       return;
     }
 
-    // Xóa iframe in cũ nếu có
-    const oldFrame = document.getElementById('quizgen-exam-print-frame');
-    if (oldFrame) oldFrame.remove();
+    // Gắn class in chuyên dụng cho body để ẩn triệt để 100% giao diện lặt vặt (sidebar, header, buttons, quanta AI)
+    document.body.classList.add('quizgen-printing-exam');
 
-    // Tạo iframe ẩn độc lập để chỉ in toàn bộ nội dung tờ đề A4
-    const printFrame = document.createElement('iframe');
-    printFrame.id = 'quizgen-exam-print-frame';
-    printFrame.style.position = 'fixed';
-    printFrame.style.right = '0';
-    printFrame.style.bottom = '0';
-    printFrame.style.width = '0';
-    printFrame.style.height = '0';
-    printFrame.style.border = '0';
-    printFrame.style.zIndex = '-9999';
-    document.body.appendChild(printFrame);
+    let cleaned = false;
+    const cleanUp = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.body.classList.remove('quizgen-printing-exam');
+      window.removeEventListener('afterprint', cleanUp);
+    };
 
-    const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
-    if (!frameDoc) {
-      window.print();
-      return;
-    }
+    window.addEventListener('afterprint', cleanUp);
 
-    // Thu thập stylesheet hiện hành của trang
-    const styleTags = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((el) => el.outerHTML)
-      .join('\n');
-
-    frameDoc.open();
-    frameDoc.write(`
-      <!DOCTYPE html>
-      <html lang="vi">
-        <head>
-          <meta charset="utf-8" />
-          <title>${examTitle || 'Đề thi'} - Mã đề ${activeExamCode}</title>
-          ${styleTags}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 15mm 15mm 15mm 15mm;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body {
-              background: #ffffff !important;
-              color: #0f172a !important;
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              line-height: 1.5 !important;
-            }
-            .no-print {
-              display: none !important;
-            }
-            .exam-paper-container {
-              width: 100% !important;
-              max-width: 100% !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-            }
-            .exam-header-box {
-              border: 2px solid #0f172a !important;
-              padding: 12px 16px !important;
-              border-radius: 6px !important;
-              margin-bottom: 20px !important;
-            }
-            .exam-question-item {
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-              margin-bottom: 14px !important;
-            }
-            .exam-footer-note {
-              margin-top: 24px !important;
-              padding-top: 12px !important;
-              border-top: 1px solid #cbd5e1 !important;
-              text-align: center !important;
-              font-size: 11px !important;
-              font-weight: bold !important;
-              color: #64748b !important;
-              text-transform: uppercase !important;
-              break-inside: avoid !important;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="exam-paper-container">
-            ${printElement.innerHTML}
-          </div>
-        </body>
-      </html>
-    `);
-    frameDoc.close();
-
-    // Mở hộp thoại in và tự dọn dẹp
+    // Kích hoạt lệnh in trực tiếp của trình duyệt (Hiển thị 100% tờ đề chuẩn A4 + Phiếu làm bài OMR ở cuối)
     setTimeout(() => {
-      printFrame.contentWindow?.focus();
-      printFrame.contentWindow?.print();
-      setTimeout(() => {
-        printFrame.remove();
-      }, 2000);
-    }, 300);
+      window.print();
+      // Fallback gỡ bỏ class sau khi đóng hộp thoại in
+      setTimeout(cleanUp, 1500);
+    }, 200);
   };
 
   const buildFallbackBlob = (format: 'docx' | 'pdf' | 'qti') => {
@@ -1116,6 +1031,164 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
                   <div className="pt-4 border-t border-slate-200 text-center text-xs font-bold text-slate-500 uppercase exam-footer-note">
                     — HẾT (Sinh viên không được sử dụng tài liệu) —
+                  </div>
+
+                  {/* ─── PHẦN 2: TỜ PHIẾU LÀM BÀI TRẮC NGHIỆM (PHIẾU OMR) Ở CUỐI ─── */}
+                  <div className="page-break-always pt-6 space-y-4">
+                    {/* Visual Divider trên giao diện (ẩn khi in) */}
+                    <div className="no-print my-6 flex items-center justify-between border-t-2 border-dashed border-teal-300 pt-3">
+                      <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-teal-600" />
+                        Trang kế tiếp: Tờ Phiếu Trả Lời Trắc Nghiệm (In kèm tự động ở cuối đề)
+                      </span>
+                      <span className="text-[10px] bg-teal-50 text-teal-700 px-2 py-0.5 rounded border border-teal-200 font-mono">
+                        Mã đề {activeExamCode} • {activeVariantQuestions.length} câu
+                      </span>
+                    </div>
+
+                    <div className="border-2 border-slate-900 rounded-lg p-5 bg-white space-y-3.5 exam-omr-sheet-box">
+                      {/* Header phiếu UTH */}
+                      <div className="grid grid-cols-2 gap-3 border-b-2 border-slate-900 pb-3 text-center">
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] font-bold uppercase text-slate-700">
+                            {universityName || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM'}
+                          </p>
+                          <p className="text-xs font-black uppercase text-slate-900">
+                            {facultyName || 'KHOA CÔNG NGHỆ THÔNG TIN'}
+                          </p>
+                          <p className="text-[9.5px] text-slate-500 italic">HỘI ĐỒNG KHẢO THÍ &amp; ĐẢM BẢO CHẤT LƯỢNG</p>
+                        </div>
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] font-bold uppercase text-slate-700">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+                          <p className="text-[10px] font-bold text-slate-900">Độc lập - Tự do - Hạnh phúc</p>
+                          <div className="w-16 h-0.5 bg-slate-900 mx-auto mt-1" />
+                        </div>
+                      </div>
+
+                      {/* Tiêu đề phiếu */}
+                      <div className="text-center space-y-1">
+                        <h2 className="text-base sm:text-lg font-black uppercase text-slate-900 tracking-tight">
+                          PHIẾU TRẢ LỜI TRẮC NGHIỆM
+                        </h2>
+                        <p className="text-xs font-bold text-slate-700 uppercase">
+                          (PHIẾU LÀM BÀI DÀNH CHO THÍ SINH — CHUẨN MÁY CHẤM OMR)
+                        </p>
+                        <p className="text-[11px] text-slate-600">
+                          Học phần: <strong className="text-slate-900">{subjectName || 'Học phần'}</strong> — Kỳ thi: <strong className="text-slate-900">{examTitle}</strong>
+                        </p>
+                      </div>
+
+                      {/* Khung thông tin Thí sinh & Mã đề thi */}
+                      <div className="grid grid-cols-12 gap-2 text-xs border-2 border-slate-900 rounded p-3 bg-slate-50/50">
+                        <div className="col-span-8 space-y-2 border-r-2 border-slate-900 pr-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900 whitespace-nowrap">1. Họ và tên thí sinh:</span>
+                            <span className="flex-1 border-b border-dotted border-slate-600 h-4" />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 whitespace-nowrap">2. Ngày sinh:</span>
+                              <span className="flex-1 border-b border-dotted border-slate-600 h-4" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 whitespace-nowrap">3. Lớp SV:</span>
+                              <span className="flex-1 border-b border-dotted border-slate-600 h-4" />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 whitespace-nowrap">4. Số báo danh / MSSV:</span>
+                              <span className="flex-1 border-b border-dotted border-slate-600 h-4" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-slate-900 whitespace-nowrap">5. Phòng thi:</span>
+                              <span className="flex-1 border-b border-dotted border-slate-600 h-4" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900 whitespace-nowrap">6. Chữ ký thí sinh:</span>
+                            <span className="flex-1 border-b border-dotted border-slate-600 h-4" />
+                          </div>
+                        </div>
+
+                        <div className="col-span-4 flex flex-col justify-between pl-2 space-y-2">
+                          <div className="border-2 border-slate-900 rounded p-1.5 text-center bg-white">
+                            <span className="text-[10px] font-black uppercase text-slate-800 block">MÃ ĐỀ THI</span>
+                            <div className="text-lg font-black text-slate-900 font-mono tracking-widest border-2 border-dashed border-slate-800 py-1 my-1 bg-slate-50">
+                              {activeExamCode}
+                            </div>
+                            <span className="text-[9px] text-slate-500 italic block">(Thí sinh ghi đúng mã đề)</span>
+                          </div>
+
+                          <div className="border border-slate-800 rounded p-1 text-center bg-white">
+                            <div className="grid grid-cols-2 divide-x divide-slate-300 text-[10px]">
+                              <div>
+                                <span className="font-bold block">CB Coi thi 1</span>
+                                <span className="h-6 block" />
+                              </div>
+                              <div>
+                                <span className="font-bold block">CB Coi thi 2</span>
+                                <span className="h-6 block" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Hướng dẫn tô trắc nghiệm */}
+                      <div className="bg-slate-100 border border-slate-300 rounded p-2 text-[10.5px] text-slate-800 leading-snug">
+                        <strong>HƯỚNG DẪN TÔ TRẮC NGHIỆM:</strong> Dùng bút chì 2B tô đen kín hình tròn chứa đáp án: 
+                        <span className="inline-flex items-center gap-1 mx-1.5 font-bold"><span className="w-3.5 h-3.5 rounded-full bg-slate-900 text-white text-[8px] flex items-center justify-center">A</span> [ĐÚNG]</span>; 
+                        Tuyệt đối KHÔNG gạch chéo [X], KHÔNG đánh dấu tích [✓], KHÔNG tẩy xóa làm rách phiếu thi.
+                      </div>
+
+                      {/* Lưới ô tô đáp án OMR 4 cột cân đối */}
+                      <div className="border-2 border-slate-900 rounded-lg p-3 bg-white space-y-2">
+                        <div className="text-center font-bold text-xs uppercase text-slate-800 pb-1.5 border-b border-slate-200">
+                          PHẦN TRẢ LỜI CÁC CÂU HỎI TRẮC NGHIỆM (TỔNG SỐ {activeVariantQuestions.length} CÂU)
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-3 gap-y-1.5 pt-1">
+                          {activeVariantQuestions.map((_, i) => (
+                            <div key={i} className="flex items-center justify-between px-2 py-1 rounded border border-slate-200 bg-slate-50/70 text-xs">
+                              <span className="font-black text-slate-800 w-6 font-mono text-[11px]">{i + 1}.</span>
+                              <div className="flex items-center gap-1">
+                                {['A', 'B', 'C', 'D'].map((lbl) => (
+                                  <span
+                                    key={lbl}
+                                    className="w-4.5 h-4.5 rounded-full border border-slate-700 text-[9.5px] font-bold flex items-center justify-center text-slate-800 bg-white shadow-2xs"
+                                  >
+                                    {lbl}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Khung Điểm thi & Chữ ký Giám khảo */}
+                      <div className="grid grid-cols-3 border-2 border-slate-900 rounded text-center divide-x-2 divide-slate-900 text-xs mt-2 bg-white">
+                        <div className="p-2 space-y-1">
+                          <span className="font-bold text-[11px] block text-slate-800">ĐIỂM BẰNG SỐ</span>
+                          <div className="h-8 border border-dashed border-slate-300 rounded flex items-center justify-center font-bold text-sm text-slate-400">
+                            ...
+                          </div>
+                        </div>
+                        <div className="p-2 space-y-1">
+                          <span className="font-bold text-[11px] block text-slate-800">ĐIỂM BẰNG CHỮ</span>
+                          <div className="h-8 border border-dashed border-slate-300 rounded flex items-center justify-center font-bold text-xs text-slate-400">
+                            ...
+                          </div>
+                        </div>
+                        <div className="p-2 space-y-1">
+                          <span className="font-bold text-[11px] block text-slate-800">CHỮ KÝ CÁN BỘ CHẤM THI</span>
+                          <div className="h-8 flex items-center justify-center text-[10px] text-slate-400 italic">
+                            (Ký và ghi rõ họ tên)
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
