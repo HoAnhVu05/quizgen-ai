@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.error
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
-from fastapi import FastAPI, HTTPException, status, Depends, Header
+from fastapi import FastAPI, HTTPException, status, Depends, Header, Query
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
