@@ -349,21 +349,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     <header
       className={`${
         showAdminHeader ? 'h-[72px]' : 'h-16'
-      } bg-white border-b border-[#E5EDF5] px-3 sm:px-6 flex items-center justify-between z-30 shrink-0 select-none gap-3 shadow-2xs transition-all`}
+      } bg-white border-b border-[#E5EDF5] px-2.5 sm:px-5 lg:px-6 flex items-center justify-between z-30 shrink-0 select-none gap-2 sm:gap-3 shadow-2xs transition-all w-full max-w-full overflow-x-hidden`}
     >
       {/* Left: Mobile Toggle + Screen Title & Breadcrumb */}
-      <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 shrink-0">
+      <div className="flex items-center space-x-2 sm:space-x-3 min-w-0 shrink">
         {onToggleMobileMenu && (
           <button
             onClick={onToggleMobileMenu}
-            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 md:hidden transition-colors"
+            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 md:hidden transition-colors shrink-0"
             title="Mở menu điều hướng"
           >
             <Menu className="w-5 h-5" />
           </button>
         )}
         <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
+          className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0 border transition-colors ${
             showAdminHeader
               ? 'bg-[#E4F7F7] text-[#008F95] border-[#E4F7F7]'
               : screenMeta.iconStyle
@@ -372,14 +372,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           <ScreenIcon className="w-4 h-4" />
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <h2 className={`text-xs sm:text-sm font-bold truncate leading-snug ${showAdminHeader ? 'text-[#142B45]' : 'text-slate-800'}`}>
-              <span className="hidden sm:inline">{screenMeta.label}</span>
-              <span className="sm:hidden">{screenMeta.shortLabel}</span>
+              <span className="hidden xl:inline">{screenMeta.label}</span>
+              <span className="xl:hidden">{screenMeta.shortLabel}</span>
             </h2>
             {activeThemeId !== 'default' && (
               <span
-                className="hidden md:inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs animate-in fade-in duration-300"
+                className="hidden xl:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs animate-in fade-in duration-300 shrink-0"
                 style={{
                   backgroundColor: `${currentTheme.colors.primary}15`,
                   borderColor: `${currentTheme.colors.primary}40`,
@@ -391,7 +391,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             )}
           </div>
           {showAdminHeader && (
-            <p className="text-[11px] text-[#91A2B8] font-medium hidden sm:block leading-none mt-0.5">
+            <p className="text-[11px] text-[#91A2B8] font-medium hidden lg:block leading-none mt-0.5">
               QuizGen AI - Admin Portal
             </p>
           )}
@@ -400,14 +400,15 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
       {/* Middle: Spotlight Trigger Button on Header */}
       {!showAdminHeader && (
-        <div className="hidden md:flex items-center mx-2 lg:mx-4">
+        <div className="flex items-center mx-1 lg:mx-3 shrink-0">
+          {/* Ô tìm kiếm đầy đủ trên màn hình rộng */}
           <button
             type="button"
             onClick={() => {
               setIsSearchOpen(true);
               setTimeout(() => searchInputRef.current?.focus(), 80);
             }}
-            className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer w-48 lg:w-64 justify-between"
+            className="hidden xl:flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-xl bg-slate-100/90 hover:bg-slate-200/70 border border-slate-200/80 text-xs text-slate-500 hover:text-slate-800 transition-all shadow-2xs cursor-pointer w-44 lg:w-56 justify-between"
             title="Tìm kiếm chức năng hệ thống (Ctrl + K)"
           >
             <div className="flex items-center gap-2 min-w-0">
@@ -417,6 +418,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <kbd className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-white border border-slate-200 text-slate-400 rounded shadow-2xs shrink-0">
               Ctrl K
             </kbd>
+          </button>
+
+          {/* Nút tìm kiếm gọn icon cho tablet & màn hình hẹp */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsSearchOpen(true);
+              setTimeout(() => searchInputRef.current?.focus(), 80);
+            }}
+            className="xl:hidden w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-600 flex items-center justify-center transition-colors border border-slate-200/80 cursor-pointer shadow-2xs"
+            title="Tìm kiếm chức năng hệ thống (Ctrl + K)"
+          >
+            <Search className="w-4 h-4 text-slate-500" />
           </button>
         </div>
       )}
@@ -568,7 +582,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       )}
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto">
         {showAdminHeader ? (
           /* ── ADMIN HEADER ACTIONS ── */
           <>
@@ -579,7 +593,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 onNavigate?.('admin_portal');
                 onAdminTabChange?.('services');
               }}
-              className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#008689] hover:bg-[#007073] active:bg-[#005f62] text-white text-xs font-semibold shadow-xs transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+              className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-[#008689] hover:bg-[#007073] active:bg-[#005f62] text-white text-xs font-semibold shadow-xs transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
               title="Kiểm tra trạng thái sức khỏe các dịch vụ hệ thống"
             >
               <Activity className="w-4 h-4 text-white shrink-0" />
@@ -593,7 +607,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <button
                 type="button"
                 onClick={() => onNavigate('admin_portal')}
-                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-white hover:bg-slate-900 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
+                className="hidden sm:inline-block px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-white hover:bg-slate-900 transition-colors whitespace-nowrap shadow-2xs cursor-pointer"
                 title="Quay lại Cổng Quản trị Admin"
               >
                 Cổng Admin
@@ -607,7 +621,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <button
               type="button"
               onClick={onOpenProfileModal}
-              className="w-9 h-9 rounded-full bg-white border border-slate-200/90 hover:border-[#008689] hover:bg-teal-50/40 text-slate-600 hover:text-[#008689] transition-all duration-200 shadow-2xs flex items-center justify-center cursor-pointer shrink-0 hover:-translate-y-0.5 active:translate-y-0"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white border border-slate-200/90 hover:border-[#008689] hover:bg-teal-50/40 text-slate-600 hover:text-[#008689] transition-all duration-200 shadow-2xs flex items-center justify-center cursor-pointer shrink-0 hover:-translate-y-0.5 active:translate-y-0"
               title="Hồ sơ tài khoản Quản trị viên"
             >
               <User className="w-4 h-4 shrink-0" />
@@ -617,19 +631,19 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             <button
               type="button"
               onClick={onLogout}
-              className="w-9 h-9 rounded-full bg-white border border-slate-200/90 hover:border-rose-300 hover:bg-rose-50 text-slate-600 hover:text-rose-600 transition-all duration-200 shadow-2xs flex items-center justify-center cursor-pointer shrink-0 hover:-translate-y-0.5 active:translate-y-0"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white border border-slate-200/90 hover:border-rose-300 hover:bg-rose-50 text-slate-600 hover:text-rose-600 transition-all duration-200 shadow-2xs flex items-center justify-center cursor-pointer shrink-0 hover:-translate-y-0.5 active:translate-y-0"
               title="Đăng xuất khỏi hệ thống"
             >
               <LogOut className="w-4 h-4 shrink-0" />
             </button>
           </>
         ) : (
-          /* ── LECTURER & HOD HEADER ACTIONS (GIỮ NGUYÊN) ── */
+          /* ── LECTURER & HOD HEADER ACTIONS ── */
           <>
             <button
               type="button"
               onClick={onOpenProfileModal}
-              className={`flex items-center gap-2.5 p-1 sm:px-3 sm:py-1.5 rounded-xl border transition-all text-left shadow-2xs group ${
+              className={`flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl border transition-all text-left shadow-2xs group ${
                 activeThemeId === 'spring'
                   ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/60'
                   : activeThemeId === 'summer'
@@ -645,7 +659,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               title="Nhấp để xem & cập nhật hồ sơ tài khoản"
             >
               <div
-                className={`w-8 h-8 rounded-lg font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
                   activeThemeId === 'spring'
                     ? 'bg-gradient-to-tr from-[#B82025] to-[#E7B947] text-white'
                     : activeThemeId === 'summer'
@@ -661,7 +675,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               >
                 {userInitial}
               </div>
-              <div className="hidden sm:block min-w-0 max-w-[150px] lg:max-w-[200px]">
+              <div className="hidden md:block min-w-0 max-w-[110px] xl:max-w-[160px]">
                 <div
                   className={`text-xs font-bold truncate leading-tight transition-colors ${
                     activeThemeId === 'spring'
@@ -679,11 +693,11 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 >
                   {userDisplayName}
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5 hidden 2xl:block">
                   {currentUser?.department || 'Khoa Công nghệ thông tin'}
                 </div>
               </div>
-              <UserCog className={`w-4 h-4 shrink-0 ml-0.5 transition-colors ${
+              <UserCog className={`w-3.5 h-3.5 shrink-0 ml-0.5 hidden sm:block transition-colors ${
                 activeThemeId === 'spring'
                   ? 'text-[#E7B947] group-hover:text-[#B82025]'
                   : activeThemeId === 'summer'
@@ -699,12 +713,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             </button>
 
             {/* Subscription Plan Badge & Upgrade Action */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               {subscriptionInfo?.plan_code === 'PRO_MONTH' ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <div 
                     title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên'}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-bold shadow-2xs cursor-pointer transition-colors ${
+                    className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold shadow-2xs cursor-pointer transition-colors ${
                       activeThemeId === 'spring'
                         ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947] hover:bg-amber-100/90'
                         : activeThemeId === 'summer'
@@ -719,13 +733,14 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                     }`}
                     onClick={onOpenPricingModal}
                   >
-                    <Crown className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Gói PRO (Tháng)</span>
+                    <Crown className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="hidden sm:inline">Gói PRO (Tháng)</span>
+                    <span className="sm:hidden font-extrabold">PRO</span>
                   </div>
                   {onOpenPricingModal && (
                     <button
                       onClick={onOpenPricingModal}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                      className={`hidden xl:flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
                         activeThemeId === 'spring'
                           ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
                           : activeThemeId === 'summer'
@@ -748,7 +763,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               ) : subscriptionInfo?.plan_code === 'PRO_YEAR' ? (
                 <div 
                   title={subscriptionInfo.expires_at ? `Gói PRO Giảng Viên VIP (Hạn dùng: ${subscriptionInfo.expires_at.slice(0, 10)})` : 'Gói PRO Giảng Viên 1 Năm'}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-white text-[11px] font-black shadow-xs cursor-pointer transition-colors ${
+                  className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-white text-[10px] sm:text-[11px] font-black shadow-xs cursor-pointer transition-colors ${
                     activeThemeId === 'spring'
                       ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] border border-[#E7B947] hover:brightness-110'
                       : activeThemeId === 'summer'
@@ -763,26 +778,29 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   }`}
                   onClick={onOpenPricingModal}
                 >
-                  <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200" />
-                  <span>Gói PRO (1 Năm VIP)</span>
+                  <Crown className="w-3.5 h-3.5 text-yellow-200 fill-yellow-200 shrink-0" />
+                  <span className="hidden sm:inline">Gói PRO (1 Năm VIP)</span>
+                  <span className="sm:hidden font-extrabold">VIP</span>
                 </div>
               ) : subscriptionInfo?.plan_code === 'ENTERPRISE' ? (
                 <div 
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-purple-100/80 transition-colors"
+                  className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 text-[10px] sm:text-[11px] font-bold shadow-2xs cursor-pointer hover:bg-purple-100/80 transition-colors"
                   onClick={onOpenPricingModal}
                 >
-                  <Crown className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Gói Bộ Môn Toàn Năng</span>
+                  <Crown className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                  <span className="hidden sm:inline">Gói Bộ Môn Toàn Năng</span>
+                  <span className="sm:hidden font-extrabold">Bộ Môn</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-                    Gói Miễn Phí
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                    <span className="hidden sm:inline">Gói Miễn Phí</span>
+                    <span className="sm:hidden">FREE</span>
                   </span>
                   {onOpenPricingModal && (
                     <button
                       onClick={onOpenPricingModal}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
+                      className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl font-bold text-[11px] shadow-2xs transition-all hover:scale-[1.02] cursor-pointer ${
                         activeThemeId === 'spring'
                           ? 'bg-gradient-to-r from-[#B82025] to-[#8F171C] text-[#FFF8E9] border border-[#E7B947]'
                           : activeThemeId === 'summer'
@@ -804,12 +822,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               )}
             </div>
 
-            {/* Nút Bật / Tắt hiệu ứng mùa lễ hội (Bố trí gọn gàng trên Header) */}
+            {/* Nút Bật / Tắt hiệu ứng mùa lễ hội (Chỉ hiện trên màn hình lớn để tránh tràn Header) */}
             {activeThemeId !== 'default' && (
               <button
                 type="button"
                 onClick={toggleParticles}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-2xs ${
+                className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all shadow-2xs ${
                   showParticles
                     ? activeThemeId === 'spring'
                       ? 'bg-[#FFF8E9] border-[#E7B947] text-[#8F171C] hover:bg-amber-100/80'
@@ -841,12 +859,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                         ? 'text-[#FFCD00]'
                         : 'text-[#008689]'
                     }`} />
-                    <span className="hidden lg:inline">Hiệu ứng: Bật</span>
+                    <span className="hidden 2xl:inline">Hiệu ứng: Bật</span>
                   </>
                 ) : (
                   <>
                     <EyeOff className="w-3.5 h-3.5 text-slate-400" />
-                    <span className="hidden lg:inline">Hiệu ứng: Tắt</span>
+                    <span className="hidden 2xl:inline">Hiệu ứng: Tắt</span>
                   </>
                 )}
               </button>

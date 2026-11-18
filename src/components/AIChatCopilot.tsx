@@ -72,6 +72,127 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // ─── Vị trí Draggable của Nút Quanta AI FAB ───────────────────────────────
+  const [fabPosition, setFabPosition] = useState<{ x: number; y: number } | null>(() => {
+    try {
+      const saved = localStorage.getItem('quizgen_quanta_fab_pos');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+
+  const [isCurrentlyDragging, setIsCurrentlyDragging] = useState(false);
+  const fabElementRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    isDragging: boolean;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    hasMoved: boolean;
+  }>({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+    hasMoved: false,
+  });
+
+  // Tự động kiểm tra giới hạn mép màn hình khi cửa sổ resize
+  useEffect(() => {
+    const handleWindowResize = () => {
+      setFabPosition((prev) => {
+        if (!prev) return null;
+        const maxX = Math.max(16, window.innerWidth - 76);
+        const maxY = Math.max(16, window.innerHeight - 76);
+        const clampedX = Math.min(Math.max(16, prev.x), maxX);
+        const clampedY = Math.min(Math.max(16, prev.y), maxY);
+        if (clampedX !== prev.x || clampedY !== prev.y) {
+          const clamped = { x: clampedX, y: clampedY };
+          try {
+            localStorage.setItem('quizgen_quanta_fab_pos', JSON.stringify(clamped));
+          } catch {}
+          return clamped;
+        }
+        return prev;
+      });
+    };
+
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    // Chỉ xử lý phím chuột trái hoặc chạm ngón tay
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    const rect = fabElementRef.current?.getBoundingClientRect();
+    const currentX = rect ? rect.left : (fabPosition?.x ?? (window.innerWidth - 80));
+    const currentY = rect ? rect.top : (fabPosition?.y ?? (window.innerHeight - 80));
+
+    dragRef.current = {
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: currentX,
+      originY: currentY,
+      hasMoved: false,
+    };
+
+    const handlePointerMove = (moveEv: PointerEvent) => {
+      if (!dragRef.current.isDragging) return;
+      const dx = moveEv.clientX - dragRef.current.startX;
+      const dy = moveEv.clientY - dragRef.current.startY;
+
+      if (!dragRef.current.hasMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        dragRef.current.hasMoved = true;
+        setIsCurrentlyDragging(true);
+      }
+
+      if (dragRef.current.hasMoved) {
+        const maxX = Math.max(16, window.innerWidth - 76);
+        const maxY = Math.max(16, window.innerHeight - 76);
+        const newX = Math.min(Math.max(16, dragRef.current.originX + dx), maxX);
+        const newY = Math.min(Math.max(16, dragRef.current.originY + dy), maxY);
+        setFabPosition({ x: newX, y: newY });
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (!dragRef.current.isDragging) return;
+
+      const moved = dragRef.current.hasMoved;
+      dragRef.current.isDragging = false;
+      setIsCurrentlyDragging(false);
+
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+
+      if (moved) {
+        // Đã kéo thả di dời -> Lưu vị trí vào localStorage
+        const rect = fabElementRef.current?.getBoundingClientRect();
+        if (rect) {
+          const finalPos = { x: Math.round(rect.left), y: Math.round(rect.top) };
+          try {
+            localStorage.setItem('quizgen_quanta_fab_pos', JSON.stringify(finalPos));
+          } catch {}
+        }
+      } else {
+        // Nhấp chuột thông thường -> Mở khung chat
+        setIsOpen(true);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
   // ─── Danh sách Giáo trình Người dùng Tải lên ─────────────────────────────
   const [uploadedBooks, setUploadedBooks] = useState<any[]>(() => {
     try {
@@ -246,12 +367,37 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
   return (
     <>
-      {/* ─── Floating Action Button (FAB) ─────────────────────────────────── */}
+      {/* ─── Floating Action Button (FAB) (Draggable kéo thả tự do) ─────── */}
       {!isOpen && (
-        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex items-center gap-3">
+        <div
+          ref={fabElementRef}
+          onPointerDown={handlePointerDown}
+          style={
+            fabPosition
+              ? {
+                  position: 'fixed',
+                  left: `${fabPosition.x}px`,
+                  top: `${fabPosition.y}px`,
+                  right: 'auto',
+                  bottom: 'auto',
+                  touchAction: 'none',
+                }
+              : {
+                  touchAction: 'none',
+                }
+          }
+          className={`${
+            fabPosition ? '' : 'fixed bottom-4 right-4 sm:bottom-6 sm:right-6'
+          } z-40 flex items-center gap-2 select-none group transition-[shadow,transform] duration-150 ${
+            isCurrentlyDragging ? 'cursor-grabbing scale-105' : 'cursor-grab'
+          }`}
+          title="Nhấp để mở Quanta AI — hoặc kéo thả để di chuyển đến vị trí thuận tiện"
+        >
           {/* Subtle floating badge tooltip */}
           <div
-            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md select-none animate-bounce ${
+            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none ${
+              isCurrentlyDragging ? 'opacity-80' : 'animate-bounce'
+            } ${
               activeThemeId === 'spring'
                 ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
                 : 'bg-white/95 text-slate-700 border border-slate-200'
@@ -262,17 +408,21 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           </div>
 
           <button
-            onClick={() => setIsOpen(true)}
+            type="button"
             aria-label="Mở Trợ lý Khảo thí AI"
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center relative group ${
+            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative group ${
+              isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105' : 'hover:scale-105 active:scale-95'
+            } ${
               activeThemeId === 'spring'
                 ? 'bg-gradient-to-tr from-[#087E79] to-[#00a3a8] ring-2 ring-[#E7B947] ring-offset-2 tet-gold-glow'
                 : 'bg-gradient-to-tr from-[#008689] to-[#00b4b8]'
             }`}
           >
-            <div className="absolute inset-0 rounded-full bg-[#008689] opacity-25 animate-ping" />
-            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10" />
-            <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-emerald-400 border-2 border-white rounded-full" />
+            {!isCurrentlyDragging && (
+              <div className="absolute inset-0 rounded-full bg-[#008689] opacity-25 animate-ping pointer-events-none" />
+            )}
+            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10 pointer-events-none" />
+            <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-emerald-400 border-2 border-white rounded-full pointer-events-none" />
           </button>
         </div>
       )}

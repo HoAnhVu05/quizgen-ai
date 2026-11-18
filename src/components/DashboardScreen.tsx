@@ -588,7 +588,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
         ];
 
   return (
-    <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-5 lg:p-6 space-y-4 sm:space-y-6 w-full max-w-full">
       {/* Clean Welcome Banner / Festive Seasonal Hero Banner (Theo đúng ảnh mẫu) */}
       <div
         className={`rounded-2xl border p-4 sm:p-6 shadow-xs flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 relative overflow-hidden transition-all duration-300 ${
