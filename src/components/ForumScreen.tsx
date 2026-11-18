@@ -300,7 +300,9 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
         const res = await apiClient.fetch(`${API_BASE}/documents/qgroups`);
         if (res.ok) {
           const data = await res.json();
-          if (data?.groups && Array.isArray(data.groups)) {
+          if (Array.isArray(data) && data.length > 0) {
+            available = data;
+          } else if (data?.groups && Array.isArray(data.groups) && data.groups.length > 0) {
             available = data.groups;
           }
         }
