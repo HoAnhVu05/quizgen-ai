@@ -499,9 +499,9 @@ def root_list_documents(db: Session = Depends(get_db)):
 
 @app.get("/documents")
 def list_documents(
-    user_id: Optional[str] = Query(None, description="Lọc theo mã giảng viên sở hữu"),
-    email: Optional[str] = Query(None, description="Email giảng viên sở hữu tài liệu"),
-    scope: Optional[str] = Query("my", description="Phạm vi: 'my' (cá nhân), 'shared' (ngân hàng dùng chung), 'all' (tất cả)"),
+    user_id: Optional[str] = None,
+    email: Optional[str] = None,
+    scope: Optional[str] = "my",
     current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
     db: Session = Depends(get_db)
 ):
@@ -511,21 +511,25 @@ def list_documents(
     - scope = 'shared': Ngân hàng giáo trình dùng chung toàn trường / Khoa (is_shared == 1).
     - scope = 'all': Admin xem toàn bộ, hoặc trả về giáo trình cá nhân + giáo trình dùng chung.
     """
-    effective_user_id = user_id or (current_user_info.get("id") if current_user_info else None)
+    clean_user_id = user_id.strip() if isinstance(user_id, str) and user_id.strip() else None
+    clean_email = email.strip().lower() if isinstance(email, str) and email.strip() else None
+    clean_scope = scope.strip().lower() if isinstance(scope, str) and scope.strip() else "my"
+
+    effective_user_id = clean_user_id or (current_user_info.get("id") if current_user_info else None)
     is_admin = current_user_info.get("role") == "admin" if current_user_info else False
 
     query = db.query(DocumentDB)
 
-    if scope == "shared":
+    if clean_scope == "shared":
         query = query.filter(DocumentDB.is_shared == 1)
-    elif scope == "my":
+    elif clean_scope == "my":
         if is_admin:
-            if user_id:
-                query = query.filter(DocumentDB.user_id == user_id)
+            if clean_user_id:
+                query = query.filter(DocumentDB.user_id == clean_user_id)
         else:
             target_uids = [effective_user_id] if effective_user_id else []
             # Tra cứu thêm user_id từ auth.db theo email nếu có để không bị mất tài liệu
-            lookup_email = email or (current_user_info.get("email") if current_user_info else None)
+            lookup_email = clean_email or (current_user_info.get("email") if current_user_info else None)
             if lookup_email and os.path.exists(AUTH_DB_PATH):
                 try:
                     conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
@@ -538,18 +542,15 @@ def list_documents(
                 except Exception:
                     pass
 
-            if effective_user_id in ["usr-lec-001", "usr-lec-003", "lec-001"]:
-                target_uids.extend(["usr-lec-001", "usr-lec-003", "lec-001"])
-
-            target_uids = [u for u in set(target_uids) if u]
+            target_uids = [u for u in set(target_uids) if u and isinstance(u, str)]
             if target_uids:
                 query = query.filter(DocumentDB.user_id.in_(target_uids))
-            elif user_id:
-                query = query.filter(DocumentDB.user_id == user_id)
-    elif scope == "all":
+            elif clean_user_id:
+                query = query.filter(DocumentDB.user_id == clean_user_id)
+    elif clean_scope == "all":
         if not is_admin:
             target_uids = [effective_user_id] if effective_user_id else []
-            lookup_email = email or (current_user_info.get("email") if current_user_info else None)
+            lookup_email = clean_email or (current_user_info.get("email") if current_user_info else None)
             if lookup_email and os.path.exists(AUTH_DB_PATH):
                 try:
                     conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
@@ -562,14 +563,11 @@ def list_documents(
                 except Exception:
                     pass
 
-            if effective_user_id in ["usr-lec-001", "usr-lec-003", "lec-001"]:
-                target_uids.extend(["usr-lec-001", "usr-lec-003", "lec-001"])
-
-            target_uids = [u for u in set(target_uids) if u]
+            target_uids = [u for u in set(target_uids) if u and isinstance(u, str)]
             if target_uids:
                 query = query.filter(or_(DocumentDB.user_id.in_(target_uids), DocumentDB.is_shared == 1))
-        elif user_id:
-            query = query.filter(DocumentDB.user_id == user_id)
+        elif clean_user_id:
+            query = query.filter(DocumentDB.user_id == clean_user_id)
 
     docs = query.order_by(DocumentDB.created_at.desc()).all()
     return [
