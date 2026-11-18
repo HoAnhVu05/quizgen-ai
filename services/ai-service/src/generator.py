@@ -124,7 +124,7 @@ class QuestionGenerator:
 
     @staticmethod
     def _parse_json_safely(raw_text: str) -> Dict[str, Any]:
-        """Giải mã JSON từ LLM an toàn, xử lý các ký tự backslash trong công thức LaTeX (\omega, \pi, \frac...)"""
+        """Giải mã JSON từ LLM an toàn tuyệt đối, xử lý mọi công thức LaTeX (\lambda, \frac, \begin...) và dấu phẩy thừa"""
         if not raw_text:
             return {}
         cleaned = raw_text.strip()
@@ -136,26 +136,44 @@ class QuestionGenerator:
             cleaned = cleaned[:-3]
         cleaned = cleaned.strip()
 
-        # 1. Thử phân tích cú pháp tiêu chuẩn
+        # 1. Thử giải mã tiêu chuẩn
         try:
             return json.loads(cleaned, strict=False)
         except Exception:
             pass
 
-        # 2. Xử lý escape các ký tự backslash của LaTeX chưa được nhân đôi
-        # Thay thế mọi dấu \ không nằm trước các ký tự escape hợp lệ của JSON: ", \, /, b, f, n, r, t, u
-        repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', cleaned)
+        # 2. Sử dụng thư viện json_repair chuyên dụng phục hồi JSON chứa LaTeX từ LLM
         try:
+            import json_repair
+            repaired_obj = json_repair.loads(cleaned)
+            if isinstance(repaired_obj, dict):
+                return repaired_obj
+            elif isinstance(repaired_obj, list):
+                return {"questions": repaired_obj}
+        except Exception:
+            pass
+
+        # 3. Fallback: Escape các ký tự backslash của LaTeX chưa được nhân đôi
+        try:
+            repaired = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', cleaned)
             return json.loads(repaired, strict=False)
         except Exception:
             pass
 
-        # 3. Tự động thay thế \ bằng \\ nếu \ đứng đơn độc
-        repaired2 = re.sub(r'(?<!\\)\\(?!\\)', r'\\\\', cleaned)
+        # 4. Fallback: Trích xuất khối JSON bao bởi { ... }
         try:
-            return json.loads(repaired2, strict=False)
-        except Exception as e:
-            raise ValueError(f"Không thể giải mã JSON chứa công thức LaTeX: {e}")
+            m = re.search(r"(\{.*\})", cleaned, re.DOTALL)
+            if m:
+                import json_repair
+                obj = json_repair.loads(m.group(1))
+                if isinstance(obj, dict):
+                    return obj
+                elif isinstance(obj, list):
+                    return {"questions": obj}
+        except Exception:
+            pass
+
+        raise ValueError("Không thể giải mã cấu trúc JSON câu hỏi từ phản hồi của mô hình AI.")
 
     async def generate_questions_from_context(
         self,
@@ -228,7 +246,7 @@ YÊU CẦU MA TRẬN ĐỀ THI:
 
 LƯU Ý QUAN TRỌNG:
 1. Toàn bộ câu hỏi, phương án và giải thích PHẢI BÁM SÁT 100% ngữ cảnh học liệu ở trên.
-2. Với các câu hỏi Toán, Vật lý, Kỹ thuật có công thức, BẮT BUỘC dùng định dạng LaTeX ($...$).
+2. Với các câu hỏi Toán, Vật lý, Kỹ thuật có công thức, BẮT BUỘC dùng định dạng LaTeX ($...$). Trong JSON, hãy escape các dấu gạch chéo ngược (ví dụ: \\frac, \\sum, \\alpha) để đảm bảo chuỗi JSON hợp lệ.
 3. Nếu có hình ảnh đính kèm, hãy ưu tiên thiết kế câu hỏi khai thác thông tin từ hình (gán has_image: true, image_url và image_caption tương ứng).
 4. Trả về đúng định dạng JSON có khóa "questions".
 """
