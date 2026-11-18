@@ -757,12 +757,15 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       return;
     }
 
+    const totalBytes = file.size;
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+
     setIsUploading(true);
     setUploadProgressState({
       fileName: file.name,
-      fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      progress: 5,
-      stage: 'Đang tải lên máy chủ...',
+      fileSize: `${totalMB} MB`,
+      progress: 0,
+      stage: `Chuẩn bị tải lên... 0/${totalMB} MB`,
     });
 
     try {
@@ -779,36 +782,82 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         headers['X-User-Id'] = currentUser.id;
       }
 
-      const res = await apiClient.fetch(`${API_BASE}/documents/upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
+      const uploadedDoc = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            const percent = Math.min(99, Math.round((event.loaded / event.total) * 100));
+            const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+            const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+            const speedMBs = (event.loaded / (1024 * 1024) / elapsedSec).toFixed(1);
+
+            setUploadProgressState({
+              fileName: file.name,
+              fileSize: `${totalMB} MB`,
+              progress: percent,
+              stage: percent < 99
+                ? `Đang truyền tệp: ${loadedMB}/${totalMB} MB (${speedMBs} MB/s)`
+                : `Đã truyền xong 100%, máy chủ đang tiếp nhận...`,
+            });
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const resData = JSON.parse(xhr.responseText);
+              resolve(resData);
+            } catch (e) {
+              resolve({});
+            }
+          } else {
+            let errorMsg = 'Không thể nạp giáo trình lên máy chủ.';
+            try {
+              const errData = JSON.parse(xhr.responseText);
+              if (errData?.detail) errorMsg = errData.detail;
+            } catch {}
+            reject(new Error(errorMsg));
+          }
+        };
+
+        xhr.onerror = () => {
+          reject(new Error('Lỗi kết nối mạng khi tải giáo trình lên máy chủ. Vui lòng kiểm tra đường truyền.'));
+        };
+
+        xhr.ontimeout = () => {
+          reject(new Error('Quá thời gian chờ (Timeout) khi tải tệp giáo trình lên máy chủ.'));
+        };
+
+        xhr.open('POST', `${API_BASE}/documents/upload`);
+        Object.entries(headers).forEach(([k, v]) => {
+          xhr.setRequestHeader(k, v);
+        });
+        xhr.send(formData);
       });
 
-      if (!res.ok) {
-        let errorMsg = 'Không thể nạp giáo trình lên máy chủ.';
-        try {
-          const errData = await res.json();
-          if (errData?.detail) errorMsg = errData.detail;
-        } catch {}
-        throw new Error(errorMsg);
-      }
-
-      const uploadedDoc = await res.json();
-      setUploadProgressState((prev) => (prev ? { ...prev, progress: 30, stage: 'Đang trích xuất văn bản & mục lục...' } : null));
+      setUploadProgressState({
+        fileName: file.name,
+        fileSize: `${totalMB} MB`,
+        progress: 100,
+        stage: 'Đã tải lên xong! Máy chủ đang bóc tách giáo trình...',
+      });
 
       try {
-        localStorage.setItem('quizgen_selected_book_id', uploadedDoc.id);
-        localStorage.setItem('quizgen_selected_book_name', uploadedDoc.name);
+        if (uploadedDoc?.id) {
+          localStorage.setItem('quizgen_selected_book_id', uploadedDoc.id);
+          localStorage.setItem('quizgen_selected_book_name', uploadedDoc.name || file.name);
+        }
       } catch {}
 
       await fetchDocuments(true);
-      onShowToast('success', 'Nạp Giáo Trình Thành Công', `Giáo trình ${file.name} đã được nạp thành công và sẵn sàng để sinh đề.`);
+      onShowToast('success', 'Nạp Giáo Trình Thành Công', `Giáo trình ${file.name} đã được tải lên thành công và sẵn sàng để sinh đề.`);
     } catch (err: any) {
       onShowToast('error', 'Nạp Giáo Trình Thất Bại', err.message || 'Lỗi không xác định.');
     } finally {
       setIsUploading(false);
-      setTimeout(() => setUploadProgressState(null), 1200);
+      setTimeout(() => setUploadProgressState(null), 1500);
     }
   };
 

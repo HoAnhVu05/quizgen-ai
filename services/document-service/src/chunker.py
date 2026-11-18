@@ -166,9 +166,9 @@ class TextChunker:
         cls,
         pages: List[Dict[str, Any]],
         document_id: str,
-        max_chunk_chars: int = 1000,
-        min_chunk_chars: int = 100,
-        overlap: int = 150
+        max_chunk_chars: int = 1500,
+        min_chunk_chars: int = 150,
+        overlap: int = 200
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Bóc tách text thành danh sách chunks ngữ nghĩa liền mạch liên trang và tổng hợp metadata các chương/mục thực tế.
