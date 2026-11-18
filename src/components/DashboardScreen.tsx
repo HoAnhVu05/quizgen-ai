@@ -375,7 +375,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
   const libraryShortcutBooks = useMemo(() => {
     if (serverSharedBooks.length > 0) {
-      return serverSharedBooks.map((b) => ({
+      // Chỉ hiển thị tối đa 4 giáo trình tiêu biểu/gần nhất trên màn hình tổng quan
+      return serverSharedBooks.slice(0, 4).map((b) => ({
         id: b.id,
         name: b.name,
         subject: b.subject || 'Khoa Chuyên Ngành',
@@ -908,12 +909,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               onClick={handleOpenLibrary}
               className="px-3.5 py-1.5 rounded-xl border border-teal-200 bg-teal-50/70 hover:bg-teal-100 text-[#008689] font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
             >
-              <span>Mở Thư Viện Toàn Bộ</span>
+              <span>Vào Thư Viện Tra Cứu ({serverSharedBooks.length || '54'} giáo trình)</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Shortcut Cards */}
+          {/* Shortcut Cards (Chỉ hiển thị 4 giáo trình tiêu biểu) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {libraryShortcutBooks.map((book: any, idx: number) => (
               <div
@@ -956,6 +957,21 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               </div>
             ))}
           </div>
+
+          {serverSharedBooks.length > 4 && (
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500 border-t border-slate-100">
+              <span className="text-[11px] text-slate-400">
+                Hiển thị 4 giáo trình tiêu biểu. Kho đang lưu trữ <strong>{serverSharedBooks.length}</strong> giáo trình chuẩn.
+              </span>
+              <button
+                onClick={handleOpenLibrary}
+                className="text-[#008689] hover:underline font-bold text-xs flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+              >
+                <span>Xem thêm {serverSharedBooks.length - 4} giáo trình khác trong Kho</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
       )}
 
