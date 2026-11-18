@@ -198,8 +198,9 @@ class RAGVectorStore:
         if not prepared:
             return 0
 
-        batch_size = 256
-        for i in range(0, len(prepared), batch_size):
+        batch_size = 128
+        total_chunks = len(prepared)
+        for i in range(0, total_chunks, batch_size):
             batch_slice = prepared[i:i + batch_size]
             b_ids = [c["chunk_id"] for c in batch_slice]
             b_docs = [c["text"] for c in batch_slice]
@@ -226,6 +227,19 @@ class RAGVectorStore:
                     documents=b_docs,
                     metadatas=b_metas
                 )
+
+            # Cập nhật vi tiến độ (Micro-Progress) liên tục để thanh tiến trình nhảy số mượt mà
+            current_done = min(total_chunks, i + len(batch_slice))
+            progress_val = min(98, int(75 + (current_done / total_chunks) * 23))
+            try:
+                cache.set_upload_progress(
+                    document_id,
+                    progress=progress_val,
+                    status="embedding",
+                    stage=f"indexing_vectors_{current_done}_{total_chunks}"
+                )
+            except Exception:
+                pass
 
         cache.clear_document_cache(document_id)
         return len(prepared)

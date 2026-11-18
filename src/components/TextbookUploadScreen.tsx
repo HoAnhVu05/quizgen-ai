@@ -2119,23 +2119,34 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                             <div className="flex items-center justify-between text-[10px]">
                               <span className="text-[#008689] font-bold flex items-center gap-1">
                                 <Cpu className="w-3 h-3 animate-spin" />
-                                Đang xử lý nội dung...
+                                Đang lập chỉ mục vector...
                               </span>
-                              <span className="font-mono text-[#008689]">{book.progress}%</span>
+                              <span className="font-mono text-[#008689] font-bold">{book.progress}%</span>
                             </div>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                               <div
-                                className="bg-[#008689] h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${book.progress}%` }}
+                                className="bg-gradient-to-r from-teal-500 to-cyan-500 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.min(100, Math.max(5, book.progress))}%` }}
                               />
                             </div>
                           </div>
                         )}
                         {book.status === 'extracting' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            <Clock className="w-3 h-3 animate-spin text-amber-600" />
-                            Đang bóc tách văn bản...
-                          </span>
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-amber-700 font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3 animate-spin text-amber-600" />
+                                Đang bóc tách văn bản...
+                              </span>
+                              <span className="font-mono text-amber-700 font-bold">{book.progress || 25}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className="bg-amber-500 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.min(100, Math.max(5, book.progress || 25))}%` }}
+                              />
+                            </div>
+                          </div>
                         )}
                         {book.status === 'error' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">

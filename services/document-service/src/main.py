@@ -501,6 +501,60 @@ def get_document_progress(document_id: str, db: Session = Depends(get_db)):
     }
 
 
+@app.post("/documents/{document_id}/retry")
+@app.post("/documents/retry/{document_id}")
+async def retry_document_pipeline(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    doc = db.query(DocumentDB).filter_by(id=document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=400, detail="Tệp vật lý không còn lưu trên máy chủ.")
+
+    doc.status = "extracting"
+    doc.progress = 15
+    doc.error_message = None
+    db.commit()
+
+    cache.set_upload_progress(document_id, progress=15, status="extracting", stage="queued")
+    ext = doc.name.rsplit(".", 1)[-1].lower() if "." in doc.name else "pdf"
+    background_tasks.add_task(
+        process_document_pipeline,
+        document_id=doc.id,
+        file_path=doc.file_path,
+        filename=doc.name,
+        ext=ext,
+        user_id=doc.user_id
+    )
+    return {
+        "status": "success",
+        "message": f"Đã kích hoạt tái xử lý giáo trình '{doc.name}' thành công.",
+        "document_id": doc.id
+    }
+
+
+@app.post("/documents/{document_id}/cancel")
+def cancel_document_pipeline(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    doc = db.query(DocumentDB).filter_by(id=document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
+    doc.status = "error"
+    doc.error_message = "Tác vụ đã được dừng bởi Quản trị viên."
+    db.commit()
+    cache.set_upload_progress(document_id, progress=0, status="error", stage="canceled")
+    return {
+        "status": "success",
+        "message": f"Đã hủy tác vụ của giáo trình '{doc.name}'.",
+        "document_id": doc.id
+    }
+
+
 @app.get("/")
 def root_list_documents(db: Session = Depends(get_db)):
     """Tương thích chuyển hướng root sang danh sách tài liệu"""
