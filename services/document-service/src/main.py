@@ -1357,16 +1357,29 @@ def get_dashboard_summary(
 
 @app.get("/qgroups/invitations")
 @app.get("/documents/qgroups/invitations")
-def get_qgroup_invitations(email: Optional[str] = None):
+def get_qgroup_invitations(email: Optional[str] = None, type: Optional[str] = None, role: Optional[str] = None):
     invs = load_server_invitations()
+    query_type = type or role or "received"
     if email:
         clean_email = email.strip().lower()
-        invs = [
-            i for i in invs
-            if i.get("targetEmail", "").strip().lower() == clean_email or
-               i.get("targetEmail", "").strip().lower().replace("@gmai.com", "@gmail.com") == clean_email or
-               clean_email.replace("@gmai.com", "@gmail.com") in i.get("targetEmail", "").strip().lower()
-        ]
+        if query_type == "sent":
+            invs = [
+                i for i in invs
+                if i.get("inviterEmail", "").strip().lower() == clean_email
+            ]
+        elif query_type == "all":
+            invs = [
+                i for i in invs
+                if i.get("targetEmail", "").strip().lower() == clean_email or
+                   i.get("inviterEmail", "").strip().lower() == clean_email
+            ]
+        else:
+            invs = [
+                i for i in invs
+                if i.get("targetEmail", "").strip().lower() == clean_email or
+                   i.get("targetEmail", "").strip().lower().replace("@gmai.com", "@gmail.com") == clean_email or
+                   clean_email.replace("@gmai.com", "@gmail.com") in i.get("targetEmail", "").strip().lower()
+            ]
     return invs
 
 @app.post("/qgroups/invitations")

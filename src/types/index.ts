@@ -263,12 +263,13 @@ export interface QGroupInvitation {
   groupId: string;
   groupName: string;
   groupCode: string;
-  department: string;
+  department?: string;
   inviterName: string;
   inviterEmail: string;
   targetEmail: string;
+  targetName?: string;
   invitedAt: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'pending' | 'accepted' | 'declined' | 'rejected';
 }
 
 export interface FriendRequest {
