@@ -179,6 +179,31 @@ const addToBlacklist = (email: string, ...ids: string[]) => {
   } catch {}
 };
 
+const removeFromBlacklist = (email: string, ...ids: string[]) => {
+  const bl = getBlacklist(email);
+  let changed = false;
+  ids.forEach((id) => {
+    if (id && bl.has(id)) {
+      bl.delete(id);
+      changed = true;
+    }
+  });
+  if (changed) {
+    try {
+      localStorage.setItem(getBlacklistKey(email), JSON.stringify([...bl]));
+    } catch {}
+  }
+};
+
+const isGroupMemberOrOwner = (g: QGroup, email: string): boolean => {
+  if (!email || !g) return false;
+  const clean = email.trim().toLowerCase();
+  const owner = (g.ownerEmail || '').trim().toLowerCase();
+  const partner = (g.directPartnerEmail || '').trim().toLowerCase();
+  const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
+  return owner === clean || partner === clean || members.includes(clean);
+};
+
 const flattenGroups = (arr: unknown[]): QGroup[] => {
   const out: QGroup[] = [];
   for (const it of arr) {
@@ -555,9 +580,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const applyGroups = useCallback(
     (groups: QGroup[]) => {
       const bl = getBlacklist(myEmail);
-      const valid = groups.filter(
-        (g) => !bl.has(g.id) && !bl.has(g.code)
-      );
+      const valid = groups.filter((g) => {
+        // Nếu người dùng đang là thành viên hoặc chủ nhóm -> luôn hợp lệ, tự động gỡ khỏi blacklist nếu từng xóa
+        if (isGroupMemberOrOwner(g, myEmail)) {
+          removeFromBlacklist(myEmail, g.id, g.code);
+          return true;
+        }
+        return !bl.has(g.id) && !bl.has(g.code);
+      });
       setQgroups(valid);
       try {
         const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
@@ -663,18 +693,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       if (!Array.isArray(remote)) return;
 
       const bl = getBlacklist(myEmail);
-      const remoteClean = flattenGroups(remote).filter(
-        (g) => !bl.has(g.id) && !bl.has(g.code)
-      );
+      const remoteClean = flattenGroups(remote).filter((g) => {
+        if (isGroupMemberOrOwner(g, myEmail)) {
+          removeFromBlacklist(myEmail, g.id, g.code);
+          return true;
+        }
+        return !bl.has(g.id) && !bl.has(g.code);
+      });
 
       let merged = [...remoteClean];
       try {
         const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
         const localSaved = localStorage.getItem(storageKey);
         if (localSaved) {
-          const localGroups = flattenGroups(JSON.parse(localSaved) as unknown[]).filter(
-            (g) => !bl.has(g.id) && !bl.has(g.code)
-          );
+          const localGroups = flattenGroups(JSON.parse(localSaved) as unknown[]).filter((g) => {
+            if (isGroupMemberOrOwner(g, myEmail)) {
+              removeFromBlacklist(myEmail, g.id, g.code);
+              return true;
+            }
+            return !bl.has(g.id) && !bl.has(g.code);
+          });
           const remoteKeys = new Set(remoteClean.map((g) => (g.code || g.id).trim()));
           const onlyLocal = localGroups.filter(
             (lg) => !(lg.code || lg.id) || !remoteKeys.has((lg.code || lg.id).trim())
@@ -687,7 +725,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       const deduped: QGroup[] = [];
       for (const g of merged) {
         const key = (g.code || g.id || '').trim();
-        if (!key || bl.has(key)) continue;
+        const isActiveMember = isGroupMemberOrOwner(g, myEmail);
+        if (!key || (!isActiveMember && bl.has(key))) continue;
         if (seen.has(key)) continue;
         seen.add(key);
 
@@ -1069,6 +1108,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               email: clean,
               name: memberName,
               inviterName: myName,
+              group: updatedGroup,
             }),
           }
         );
@@ -1082,11 +1122,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               body: JSON.stringify({
                 members: updatedMembers,
                 memberCount: updatedMembers.length,
+                group: updatedGroup,
               }),
             }
           );
         } catch {}
       }
+
+      // Luôn đồng bộ danh sách nhóm toàn diện lên server backend
+      void syncGroupsToBackend(nextGroups);
 
       setIsAddingMember(false);
       setIsDirectAddMemberOpen(false);

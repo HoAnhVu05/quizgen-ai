@@ -678,34 +678,26 @@ def deduplicate_qgroups(groups: list) -> list:
     return unique
 
 def load_server_qgroups() -> list:
-    global _CACHED_QGROUPS
-    if _CACHED_QGROUPS is not None:
-        return _CACHED_QGROUPS
     if not QGROUPS_FILE.exists():
         save_server_qgroups(DEFAULT_QGROUPS)
-        _CACHED_QGROUPS = DEFAULT_QGROUPS
-        return _CACHED_QGROUPS
+        return DEFAULT_QGROUPS
     try:
         with open(QGROUPS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
             if isinstance(data, list) and len(data) > 0:
-                _CACHED_QGROUPS = deduplicate_qgroups(data)
-                return _CACHED_QGROUPS
+                return deduplicate_qgroups(data)
     except Exception:
         pass
-    _CACHED_QGROUPS = DEFAULT_QGROUPS
-    return _CACHED_QGROUPS
+    return DEFAULT_QGROUPS
 
 def save_server_qgroups(groups: list):
-    global _CACHED_QGROUPS
     cleaned = deduplicate_qgroups(groups)
-    _CACHED_QGROUPS = cleaned
     try:
         QGROUPS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(QGROUPS_FILE, "w", encoding="utf-8") as f:
             json.dump(cleaned, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error(f"Error saving qgroups: {e}")
+        logger.error(f"Error saving qgroups to server storage: {e}")
 
 def load_server_invitations() -> list:
     global _CACHED_INVITATIONS
@@ -944,9 +936,14 @@ async def add_qgroup_member(group_id: str, request: Request):
     new_email = (payload.get("email") or payload.get("userEmail") or payload.get("targetEmail") or "").strip().lower()
     member_name = payload.get("name") or payload.get("userName") or payload.get("fullName") or new_email
     inviter_name = payload.get("inviterName") or "Đồng nghiệp"
+    client_group = payload.get("group")
 
     groups = load_server_qgroups()
     target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id)), None)
+    if not target and client_group and isinstance(client_group, dict):
+        target = client_group
+        groups.insert(0, target)
+
     if not target:
         raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
 
@@ -977,6 +974,10 @@ async def patch_qgroup(group_id: str, request: Request):
     payload = await request.json()
     groups = load_server_qgroups()
     target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id)), None)
+    if not target and payload.get("group") and isinstance(payload.get("group"), dict):
+        target = payload.get("group")
+        groups.insert(0, target)
+
     if not target:
         raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
 
