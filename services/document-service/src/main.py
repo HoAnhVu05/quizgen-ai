@@ -974,6 +974,76 @@ async def kick_qgroup_member(group_id: str, request: Request):
     save_server_qgroups(groups)
     return {"status": "success", "group": target}
 
+@app.post("/qgroups/{group_id}/transfer-owner")
+@app.post("/documents/qgroups/{group_id}/transfer-owner")
+async def transfer_qgroup_owner(group_id: str, request: Request):
+    """Chuyển giao quyền Trưởng nhóm cho thành viên khác (kèm tùy chọn rời nhóm)"""
+    payload = await request.json()
+    current_owner_email = (payload.get("currentOwnerEmail") or "").strip().lower()
+    new_owner_email = (payload.get("newOwnerEmail") or "").strip().lower()
+    new_owner_name = payload.get("newOwnerName") or new_owner_email
+    current_owner_name = payload.get("currentOwnerName") or "Trưởng nhóm"
+    also_leave = bool(payload.get("alsoLeave", False))
+
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code", "")).upper() == str(group_id).upper()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+
+    if target.get("ownerEmail", "").strip().lower() != current_owner_email:
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng nhóm hiện tại mới có quyền nhượng quyền")
+
+    target["ownerEmail"] = new_owner_email
+    target["ownerName"] = new_owner_name
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+
+    msgs = target.get("messages", [])
+    if also_leave:
+        members = target.get("members", [])
+        new_members = [m for m in members if m.lower() != current_owner_email]
+        target["members"] = new_members
+        target["memberCount"] = len(new_members)
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"👑 {current_owner_name} đã nhượng quyền Trưởng nhóm cho {new_owner_name} ({new_owner_email}) và rời khỏi nhóm."
+        })
+    else:
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"👑 {current_owner_name} đã nhượng quyền Trưởng nhóm cho {new_owner_name} ({new_owner_email})."
+        })
+    target["messages"] = msgs
+    save_server_qgroups(groups)
+    return {"status": "success", "group": target}
+
+@app.post("/qgroups/{group_id}/disband")
+@app.post("/documents/qgroups/{group_id}/disband")
+async def disband_qgroup(group_id: str, request: Request):
+    """Giải tán nhóm hoàn toàn (chỉ Trưởng nhóm mới có quyền)"""
+    payload = await request.json()
+    owner_email = (payload.get("ownerEmail") or "").strip().lower()
+
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code", "")).upper() == str(group_id).upper()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+
+    if target.get("ownerEmail", "").strip().lower() != owner_email:
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng nhóm mới có quyền giải tán nhóm")
+
+    cleaned = [g for g in groups if str(g.get("id")) != str(group_id) and str(g.get("code", "")).upper() != str(group_id).upper()]
+    save_server_qgroups(cleaned)
+    return {"status": "success", "message": f"Đã giải tán nhóm {target.get('name')}"}
+
 @app.post("/qgroups/{group_id}/leave")
 @app.post("/documents/qgroups/{group_id}/leave")
 async def leave_qgroup(group_id: str, request: Request):
@@ -1005,6 +1075,76 @@ async def leave_qgroup(group_id: str, request: Request):
     target["messages"] = msgs
     save_server_qgroups(groups)
     return {"status": "success", "group": target}
+
+@app.post("/qgroups/{group_id}/transfer-owner")
+@app.post("/documents/qgroups/{group_id}/transfer-owner")
+async def transfer_qgroup_owner(group_id: str, request: Request):
+    """Chuyển giao quyền Trưởng nhóm cho thành viên khác (kèm tùy chọn rời nhóm)"""
+    payload = await request.json()
+    current_owner_email = (payload.get("currentOwnerEmail") or "").strip().lower()
+    new_owner_email = (payload.get("newOwnerEmail") or "").strip().lower()
+    new_owner_name = payload.get("newOwnerName") or new_owner_email
+    current_owner_name = payload.get("currentOwnerName") or "Trưởng nhóm"
+    also_leave = bool(payload.get("alsoLeave", False))
+
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code", "")).upper() == str(group_id).upper()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+
+    if target.get("ownerEmail", "").strip().lower() != current_owner_email:
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng nhóm hiện tại mới có quyền nhượng quyền")
+
+    target["ownerEmail"] = new_owner_email
+    target["ownerName"] = new_owner_name
+    now_ms = int(time.time() * 1000)
+    target["updatedAt"] = now_ms
+
+    msgs = target.get("messages", [])
+    if also_leave:
+        members = target.get("members", [])
+        new_members = [m for m in members if m.lower() != current_owner_email]
+        target["members"] = new_members
+        target["memberCount"] = len(new_members)
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"👑 {current_owner_name} đã nhượng quyền Trưởng nhóm cho {new_owner_name} ({new_owner_email}) và rời khỏi nhóm."
+        })
+    else:
+        msgs.append({
+            "id": f"msg-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Q-Group",
+            "isSystem": True,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"👑 {current_owner_name} đã nhượng quyền Trưởng nhóm cho {new_owner_name} ({new_owner_email})."
+        })
+    target["messages"] = msgs
+    save_server_qgroups(groups)
+    return {"status": "success", "group": target}
+
+@app.post("/qgroups/{group_id}/disband")
+@app.post("/documents/qgroups/{group_id}/disband")
+async def disband_qgroup(group_id: str, request: Request):
+    """Giải tán nhóm hoàn toàn (chỉ Trưởng nhóm mới có quyền)"""
+    payload = await request.json()
+    owner_email = (payload.get("ownerEmail") or "").strip().lower()
+
+    groups = load_server_qgroups()
+    target = next((g for g in groups if str(g.get("id")) == str(group_id) or str(g.get("code", "")).upper() == str(group_id).upper()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhóm")
+
+    if target.get("ownerEmail", "").strip().lower() != owner_email:
+        raise HTTPException(status_code=403, detail="Chỉ Trưởng nhóm mới có quyền giải tán nhóm")
+
+    cleaned = [g for g in groups if str(g.get("id")) != str(group_id) and str(g.get("code", "")).upper() != str(group_id).upper()]
+    save_server_qgroups(cleaned)
+    return {"status": "success", "message": f"Đã giải tán nhóm {target.get('name')}"}
 
 @app.post("/qgroups/{group_id}/settings")
 @app.post("/documents/qgroups/{group_id}/settings")
@@ -1195,13 +1335,27 @@ def save_friend_requests(requests: list):
 
 @app.get("/friend-requests")
 @app.get("/documents/friend-requests")
-def get_friend_requests(email: Optional[str] = None):
-    """Lấy danh sách lời mời kết bạn theo email người nhận"""
+def get_friend_requests(email: Optional[str] = None, type: Optional[str] = None):
+    """Lấy danh sách lời mời kết bạn theo email người nhận hoặc người gửi"""
     reqs = load_friend_requests()
     if email:
         clean = email.strip().lower()
-        reqs = [r for r in reqs if r.get("targetEmail", "").strip().lower() == clean]
+        if type == "sent":
+            reqs = [r for r in reqs if r.get("senderEmail", "").strip().lower() == clean]
+        elif type == "all":
+            reqs = [r for r in reqs if r.get("targetEmail", "").strip().lower() == clean or r.get("senderEmail", "").strip().lower() == clean]
+        else:
+            reqs = [r for r in reqs if r.get("targetEmail", "").strip().lower() == clean]
     return reqs
+
+@app.delete("/friend-requests/{req_id}")
+@app.delete("/documents/friend-requests/{req_id}")
+def cancel_friend_request(req_id: str):
+    """Hủy/thu hồi lời mời kết bạn"""
+    reqs = load_friend_requests()
+    cleaned = [r for r in reqs if str(r.get("id")) != str(req_id)]
+    save_friend_requests(cleaned)
+    return {"status": "success", "message": f"Đã thu hồi lời mời kết bạn {req_id}"}
 
 @app.post("/friend-requests")
 @app.post("/documents/friend-requests")
@@ -1249,23 +1403,23 @@ async def respond_friend_request(req_id: str, request: Request):
         groups = load_server_qgroups()
         # Kiểm tra DM đã tồn tại chưa
         existing_dm = next((g for g in groups if g.get("isDirect") and
-            set(g.get("members", [])) == {sender_email, user_email}), None)
+            set([str(m).strip().lower() for m in g.get("members", [])]) == {sender_email.strip().lower(), user_email.strip().lower()}), None)
         if not existing_dm:
             new_dm = {
                 "id": dm_id,
                 "code": dm_code,
-                "name": sender_name,  # Hiển thị tên đối phương
+                "name": f"{sender_name} & {user_name}",
                 "department": "Bạn bè • Tin nhắn riêng",
                 "description": f"Cuộc trò chuyện giữa {user_name} và {sender_name}",
-                "ownerEmail": user_email,
-                "ownerName": user_name,
+                "ownerEmail": sender_email,
+                "ownerName": sender_name,
                 "joinPolicy": "open",
                 "memberCount": 2,
-                "members": [user_email, sender_email],
+                "members": [sender_email, user_email],
                 "pendingRequests": [],
                 "isDirect": True,
-                "directPartnerEmail": sender_email,
-                "directPartnerName": sender_name,
+                "directPartnerEmail": user_email,
+                "directPartnerName": user_name,
                 "updatedAt": int(time.time() * 1000),
                 "messages": [{
                     "id": f"msg-{int(time.time()*1000)}",

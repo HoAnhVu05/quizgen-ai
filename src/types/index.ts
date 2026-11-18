@@ -257,6 +257,7 @@ export interface FriendRequest {
   senderTitle?: string;
   senderAvatarColor?: string;
   targetEmail: string;
+  recipientEmail?: string;
   requestedAt: string;
   status: 'pending' | 'accepted' | 'declined';
 }
