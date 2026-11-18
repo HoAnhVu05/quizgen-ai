@@ -684,7 +684,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       if (err.name === 'AbortError') {
         msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 5 phút). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
       } else if (isNetworkErr) {
-        msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng Bộ sinh AI Dự phòng" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
+        msg = 'Không thể kết nối đến máy chủ AI Gateway. Vui lòng kiểm tra trạng thái mạng hoặc liên hệ quản trị viên.';
       } else {
         msg = err.message || 'Lỗi không xác định khi gọi AI Service.';
       }

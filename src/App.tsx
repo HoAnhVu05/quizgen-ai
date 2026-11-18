@@ -206,7 +206,7 @@ const AppContent: React.FC = () => {
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
   // ─── Khởi động: Đọc quizgen_token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
   useEffect(() => {
@@ -256,27 +256,16 @@ const AppContent: React.FC = () => {
             return;
           }
 
-          const normalizedEmail = String(data.email || '').toLowerCase();
-          let savedGoogleProfile: { fullName?: string; academicTitle?: string; department?: string } | null = null;
-          try {
-            const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
-            savedGoogleProfile = profiles[normalizedEmail] || null;
-          } catch {}
-
-          const resolvedAcademicTitle =
-            savedGoogleProfile !== null && savedGoogleProfile.academicTitle !== undefined
-              ? savedGoogleProfile.academicTitle
-              : data.academic_title !== undefined
-              ? data.academic_title
-              : (data.academicTitle ?? '');
+          // Lấy dữ liệu hồ sơ chuẩn trực tiếp từ cơ sở dữ liệu auth.db của hệ thống
+          const resolvedAcademicTitle = data.academic_title || data.academicTitle || '';
 
           const profile: UserProfile = {
             id: data.id || `usr-${Date.now()}`,
-            fullName: savedGoogleProfile?.fullName || data.full_name || data.fullName || 'Giảng viên',
+            fullName: data.full_name || data.fullName || 'Giảng viên',
             email: data.email,
             academicTitle: resolvedAcademicTitle,
-            department: savedGoogleProfile?.department || data.department || data.faculty || 'Khoa Công nghệ Thông tin',
-            faculty: savedGoogleProfile?.department || data.department || data.faculty || 'Khoa Công nghệ Thông tin',
+            department: data.department || data.faculty || 'Khoa Công nghệ Thông tin',
+            faculty: data.department || data.faculty || 'Khoa Công nghệ Thông tin',
             university: data.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
             role: (data.role as UserRole) || 'lecturer',
             roleLabel:
@@ -292,19 +281,7 @@ const AppContent: React.FC = () => {
           setIsAuthenticated(true);
           localStorage.setItem('quizgen_user', JSON.stringify(profile));
         } else if (res.status === 401) {
-          // Chỉ thu hồi phiên nếu không còn thông tin người dùng trong bộ nhớ cục bộ
-          const savedUserStr = localStorage.getItem('quizgen_user');
-          if (savedUserStr) {
-            try {
-              const savedUser = JSON.parse(savedUserStr);
-              if (savedUser && savedUser.id) {
-                console.warn('[AUTH] Phiên backend cần gia hạn, tiếp tục duy trì đăng nhập từ bộ nhớ cục bộ');
-                setCurrentUser(savedUser);
-                setIsAuthenticated(true);
-                return;
-              }
-            } catch {}
-          }
+          // Phiên hết hạn -> Dọn dẹp token
           localStorage.removeItem('quizgen_token');
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_user');
@@ -312,8 +289,7 @@ const AppContent: React.FC = () => {
           setIsAuthenticated(false);
         }
       } catch (err) {
-        // Fallback duy trì session offline nếu còn dữ liệu trong localStorage
-        console.warn('[AUTH] Không thể kết nối /auth/me, duy trì phiên từ bộ nhớ cục bộ');
+        console.warn('[AUTH] Kiểm tra phiên qua /auth/me thất bại:', err);
       }
     };
 

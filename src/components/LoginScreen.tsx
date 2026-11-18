@@ -1164,14 +1164,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
     try {
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
+      const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token') || '';
       await fetch(`${API_BASE}/auth/profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           email: finalizedUser.email,
           full_name: finalName,
           academic_title: finalTitle,
           department: finalDept,
+          university: finalizedUser.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
         }),
       });
     } catch {}
@@ -1849,13 +1854,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
                 <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200">
                   <code className="text-xs font-mono text-[#008689] font-semibold truncate">
-                    {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'}
+                    {typeof window !== 'undefined' ? window.location.origin : ''}
                   </code>
                   <button
                     type="button"
                     onClick={() => {
                       const originStr =
-                        typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+                        typeof window !== 'undefined' ? window.location.origin : '';
                       void navigator.clipboard?.writeText(originStr);
                       setCopiedOrigin(true);
                       window.setTimeout(() => setCopiedOrigin(false), 1800);

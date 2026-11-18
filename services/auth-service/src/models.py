@@ -151,10 +151,11 @@ class LecturerCreate(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
+    email: Optional[str] = None
     full_name: str
-    academic_title: Optional[str] = "TS."
-    university: str
-    department: str
+    academic_title: Optional[str] = "ThS."
+    university: Optional[str] = "Trường Đại học Giao thông Vận tải TP.HCM (UTH)"
+    department: Optional[str] = "Khoa Công nghệ Thông tin"
     role: Optional[str] = "lecturer"
 
 

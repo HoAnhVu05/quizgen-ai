@@ -680,14 +680,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         const listShared = Array.isArray(payloadShared) ? payloadShared.map(normalizeTextbook) : [];
         setLibraryTextbooks(listShared);
       }
-    } catch {
-      const savedLocal: TextbookFile[] = JSON.parse(
-        localStorage.getItem(userStorageKey) || '[]'
-      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-      const unique = savedLocal.filter(
-        (doc, idx, arr) => idx === arr.findIndex((d) => d.id === doc.id)
-      );
-      setTextbooks(unique);
+    } catch (err) {
+      console.warn('[DOCUMENTS] Lỗi khi tải danh sách giáo trình từ máy chủ:', err);
     } finally {
       if (!silent) {
         setIsLoadingDocuments(false);

@@ -348,8 +348,9 @@ def update_profile(
     db: Session = Depends(get_db)
 ):
     """
-    Cập nhật thông tin người dùng (Dành cho tài khoản mới cần hoàn thiện hồ sơ):
-    Điền Họ tên, Học hàm/Học vị, Trường, Khoa, Vai trò.
+    Cập nhật thông tin người dùng trực tiếp vào auth.db:
+    Họ tên, Học hàm/Học vị, Trường, Khoa, Vai trò.
+    Hỗ trợ xác thực qua Bearer Token hoặc đối chiếu email tài khoản.
     """
     raw_token = token
     if not raw_token and authorization:
@@ -359,38 +360,50 @@ def update_profile(
         else:
             raw_token = auth_str
 
-    if not raw_token:
-        raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization: Bearer <token>")
+    user = None
+    if raw_token:
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        if cache.is_token_revoked(token_hash):
+            raise HTTPException(status_code=401, detail="Phiên làm việc đã kết thúc (Token đã bị thu hồi).")
+        try:
+            payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+            token_email = (payload.get("sub") or payload.get("email") or "").strip().lower()
+            if token_email:
+                user = db.query(UserDB).filter(func.lower(UserDB.email) == token_email).first()
+        except Exception:
+            pass
 
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    if cache.is_token_revoked(token_hash):
-        raise HTTPException(status_code=401, detail="Phiên làm việc đã kết thúc (Token đã bị thu hồi).")
+    # Nếu token chưa decode được hoặc phiên OAuth client-side, dùng email trong profile_in
+    if not user and profile_in.email:
+        clean_email = profile_in.email.strip().lower()
+        user = db.query(UserDB).filter(func.lower(UserDB.email) == clean_email).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization hợp lệ hoặc email tài khoản đã đăng ký trên hệ thống.")
 
     try:
-        payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub") or payload.get("email")
-        user = db.query(UserDB).filter(UserDB.email == email).first()
-        if not user:
-            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
-
-        user.full_name = profile_in.full_name.strip()
+        if profile_in.full_name:
+            user.full_name = profile_in.full_name.strip()
         if profile_in.academic_title:
             user.academic_title = profile_in.academic_title.strip()
-        user.university = profile_in.university.strip()
-        user.department = profile_in.department.strip()
+        if profile_in.university:
+            user.university = profile_in.university.strip()
+        if profile_in.department:
+            user.department = profile_in.department.strip()
         if profile_in.role:
             user.role = profile_in.role.strip()
         user.updated_at = datetime.utcnow()
 
         db.commit()
         db.refresh(user)
+        logger.info(f"[AUTH PROFILE UPDATED] User {user.email} -> {user.academic_title} {user.full_name}")
         return serialize_user(user)
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        print(f"[AUTH PROFILE UPDATE ERROR] {e}")
-        raise HTTPException(status_code=500, detail=f"Lỗi cập nhật hồ sơ: {str(e)}")
+        logger.error(f"[AUTH PROFILE UPDATE ERROR] {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi cập nhật hồ sơ vào cơ sở dữ liệu: {str(e)}")
 
 
 @app.post("/refresh", response_model=TokenResponse)

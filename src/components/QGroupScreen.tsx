@@ -798,25 +798,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         return false;
       });
 
-      let merged = [...remoteClean];
-      try {
-        const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
-        const localSaved = localStorage.getItem(storageKey);
-        if (localSaved) {
-          const localGroups = flattenGroups(JSON.parse(localSaved) as unknown[]).filter((g) => {
-            if (isGroupMemberOrOwner(g, myEmail)) {
-              removeFromBlacklist(myEmail, g.id, g.code);
-              return true;
-            }
-            return false;
-          });
-          const remoteKeys = new Set(remoteClean.map((g) => (g.code || g.id).trim()));
-          const onlyLocal = localGroups.filter(
-            (lg) => !(lg.code || lg.id) || !remoteKeys.has((lg.code || lg.id).trim())
-          );
-          if (onlyLocal.length > 0) merged = [...remoteClean, ...onlyLocal];
-        }
-      } catch {}
+      const merged = [...remoteClean];
 
       const seen = new Set<string>();
       const deduped: QGroup[] = [];
