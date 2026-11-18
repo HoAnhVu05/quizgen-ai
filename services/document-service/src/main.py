@@ -378,10 +378,14 @@ async def upload_document(
 
     # [SCRUM-99] Tính toán SHA-256 để chống trùng lặp dữ liệu (Deduplication)
     file_hash = hashlib.sha256(content).hexdigest()
-    existing_doc = db.query(DocumentDB).filter_by(user_id=user_id, file_hash=file_hash, status="ready").first()
+    existing_doc = db.query(DocumentDB).filter(
+        DocumentDB.user_id == user_id,
+        DocumentDB.file_hash == file_hash,
+        DocumentDB.status != "error"
+    ).first()
     if existing_doc:
         return {
-            "message": "Tài liệu đã tồn tại và đã được phân tích trước đó (SHA-256 Deduplication). Tái sử dụng dữ liệu thành công.",
+            "message": "Tài liệu này đã tồn tại trong tài khoản của bạn (đang sẵn sàng hoặc đang được xử lý).",
             "document": {
                 "id": existing_doc.id,
                 "userId": user_id,
@@ -389,8 +393,8 @@ async def upload_document(
                 "size": existing_doc.file_size,
                 "totalPages": existing_doc.total_pages,
                 "chaptersCount": existing_doc.chapters_count,
-                "status": "ready",
-                "progress": 100,
+                "status": existing_doc.status,
+                "progress": existing_doc.progress,
                 "fileHash": file_hash,
                 "isDuplicate": True,
                 "uploadedAt": "Tái sử dụng (Deduplicated)"
