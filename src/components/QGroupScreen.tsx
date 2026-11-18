@@ -62,6 +62,11 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowRight,
+  Reply,
+  Pin,
+  Pencil,
+  Undo2,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   QGroup,
@@ -396,6 +401,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // Collapsible Sections cho Sidebar Slack/Teams
   const [isChannelsOpen, setIsChannelsOpen] = useState(true);
   const [isDmsOpen, setIsDmsOpen] = useState(true);
+
+  // Slack Header Menu & Outside Member Inviting
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const [isDirectAddMemberOpen, setIsDirectAddMemberOpen] = useState(false);
+  const [directAddMemberEmail, setDirectAddMemberEmail] = useState('');
+  const [lookedUpUser, setLookedUpUser] = useState<{
+    id?: string;
+    email: string;
+    fullName: string;
+    academicTitle?: string;
+    department?: string;
+    university?: string;
+    role?: string;
+  } | null>(null);
+  const [lookupStatus, setLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+  const [isAddingMember, setIsAddingMember] = useState(false);
+
+  // Message Actions: Reply, Inline Edit, Reaction, Recall
+  const [replyingToMessage, setReplyingToMessage] = useState<QGroupMessage | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
 
   // Kiểm tra quan hệ bạn bè / đồng nghiệp theo profile đang mở
   const isTargetFriend = useMemo(() => {
@@ -771,6 +797,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       avatarColor: 'bg-slate-700',
       text: chatInput.trim(),
       attachment: selectedAttachment || undefined,
+      replyTo: replyingToMessage
+        ? {
+            id: replyingToMessage.id,
+            senderName: replyingToMessage.senderName,
+            text: (replyingToMessage.text || 'Tệp đính kèm').slice(0, 80),
+          }
+        : undefined,
       timestamp: new Date().toLocaleTimeString('vi-VN', {
         hour: '2-digit',
         minute: '2-digit',
@@ -786,6 +819,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     applyGroups(updated);
     setChatInput('');
     setSelectedAttachment(null);
+    setReplyingToMessage(null);
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
 
     const targetId = activeGroup.id || activeGroup.code;
@@ -800,6 +834,301 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )
       .catch(() => {});
   };
+
+  // ── Tra cứu tài khoản đăng ký theo Email (Slack Lookup) ───────────────────
+  const handleLookupUser = useCallback(
+    async (email: string) => {
+      const clean = email.trim().toLowerCase();
+      if (!clean || !clean.includes('@') || clean.length < 5) {
+        setLookupStatus('idle');
+        setLookedUpUser(null);
+        return;
+      }
+
+      setLookupStatus('searching');
+      try {
+        const res = await apiClient.fetch(
+          `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.exists && data.user) {
+            setLookedUpUser(data.user);
+            setLookupStatus('found');
+            return;
+          }
+        }
+      } catch {
+        // Fallback local check
+      }
+
+      // Danh sách tài khoản mẫu/hệ thống đã đăng ký (Demo accounts)
+      const localRegistered: Record<
+        string,
+        { fullName: string; academicTitle: string; department: string }
+      > = {
+        'mr.av1222005@gmail.com': {
+          fullName: 'ThS. Mr. AVvvv',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'avanimechannel@gmail.com': {
+          fullName: 'TS. Hồ Anh Vũ',
+          academicTitle: 'TS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'nguyentann0804@gmail.com': {
+          fullName: 'ThS. Nguyễn Văn Tân',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'quizgen.ai.team@gmail.com': {
+          fullName: 'Ban Quản trị QuizGen AI',
+          academicTitle: 'Admin',
+          department: 'Hệ thống Khảo thí UTH',
+        },
+        'hod.cntt@uth.edu.vn': {
+          fullName: 'PGS. TS. Trưởng Khoa CNTT',
+          academicTitle: 'PGS. TS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'gv.kinhte@uth.edu.vn': {
+          fullName: 'TS. Giảng viên Kinh tế',
+          academicTitle: 'TS.',
+          department: 'Khoa Kinh tế Vận tải',
+        },
+      };
+
+      if (localRegistered[clean]) {
+        const info = localRegistered[clean];
+        setLookedUpUser({
+          email: clean,
+          fullName: info.fullName,
+          academicTitle: info.academicTitle,
+          department: info.department,
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+          role: 'lecturer',
+        });
+        setLookupStatus('found');
+        return;
+      }
+
+      // Kiểm tra nếu người này đã có trong bất kỳ group nào trước đó
+      const foundInGroups = qgroups.find((g) => {
+        const members = (g.members || []).map((m) => String(m).toLowerCase());
+        return members.includes(clean) || g.ownerEmail?.toLowerCase() === clean;
+      });
+
+      if (foundInGroups) {
+        setLookedUpUser({
+          email: clean,
+          fullName: clean.split('@')[0],
+          academicTitle: 'Giảng viên',
+          department: foundInGroups.department || 'Khoa Chuyên Ngành',
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+          role: 'lecturer',
+        });
+        setLookupStatus('found');
+        return;
+      }
+
+      setLookedUpUser(null);
+      setLookupStatus('not_found');
+    },
+    [qgroups]
+  );
+
+  // ── Thêm thành viên vào kênh đang mở ───────────────────────────────────────
+  const handleAddUserToActiveChannel = useCallback(
+    async (emailToAdd: string) => {
+      if (!activeGroup) return;
+      const clean = emailToAdd.trim().toLowerCase();
+      const currentMembers = (activeGroup.members || []).map((m) =>
+        String(m).toLowerCase()
+      );
+
+      if (currentMembers.includes(clean)) {
+        onShowToast(
+          'info',
+          'Đã là thành viên',
+          `${clean} đã có mặt trong kênh #${activeGroup.name}`
+        );
+        return;
+      }
+
+      setIsAddingMember(true);
+      const updatedMembers = [...(activeGroup.members || []), clean];
+      const updatedGroup = {
+        ...activeGroup,
+        members: updatedMembers,
+        memberCount: updatedMembers.length,
+        updatedAt: Date.now(),
+      };
+
+      const nextGroups = qgroups.map((g) =>
+        g.id === activeGroup.id ? updatedGroup : g
+      );
+      applyGroups(nextGroups);
+
+      try {
+        await apiClient.fetch(
+          `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              members: updatedMembers,
+              memberCount: updatedMembers.length,
+            }),
+          }
+        );
+      } catch {}
+
+      setIsAddingMember(false);
+      setIsDirectAddMemberOpen(false);
+      setDirectAddMemberEmail('');
+      setLookedUpUser(null);
+      setLookupStatus('idle');
+      onShowToast(
+        'success',
+        'Đã thêm thành viên',
+        `Đã thêm ${clean} vào kênh #${activeGroup.name}`
+      );
+    },
+    [activeGroup, qgroups, applyGroups, onShowToast]
+  );
+
+  // ── Reaction Handlers ─────────────────────────────────────────────────────
+  const handleToggleReaction = useCallback(
+    (msgId: string, emoji: string) => {
+      if (!activeGroup) return;
+      const updated = qgroups.map((g) => {
+        if (g.id !== activeGroup.id) return g;
+        const msgs = (g.messages || []).map((m) => {
+          if (m.id !== msgId) return m;
+          const currentReactions = { ...(m.reactions || {}) };
+          const userList = currentReactions[emoji] || [];
+          if (userList.includes(myEmail)) {
+            currentReactions[emoji] = userList.filter((u) => u !== myEmail);
+            if (currentReactions[emoji].length === 0) {
+              delete currentReactions[emoji];
+            }
+          } else {
+            currentReactions[emoji] = [...userList, myEmail];
+          }
+          return { ...m, reactions: currentReactions };
+        });
+        return { ...g, messages: msgs };
+      });
+      applyGroups(updated);
+    },
+    [activeGroup, qgroups, myEmail, applyGroups]
+  );
+
+  // ── Start Reply ───────────────────────────────────────────────────────────
+  const handleStartReply = useCallback((msg: QGroupMessage) => {
+    setReplyingToMessage(msg);
+    textareaRef.current?.focus();
+  }, []);
+
+  // ── Inline Edit Message ───────────────────────────────────────────────────
+  const handleStartEditMessage = useCallback((msg: QGroupMessage) => {
+    setEditingMessageId(msg.id);
+    setEditText(msg.text || '');
+  }, []);
+
+  const handleSaveEditMessage = useCallback(
+    (msgId: string) => {
+      if (!activeGroup || !editText.trim()) return;
+      const updated = qgroups.map((g) => {
+        if (g.id !== activeGroup.id) return g;
+        const msgs = (g.messages || []).map((m) => {
+          if (m.id !== msgId) return m;
+          return { ...m, text: editText.trim(), isEdited: true };
+        });
+        return { ...g, messages: msgs };
+      });
+      applyGroups(updated);
+      setEditingMessageId(null);
+      setEditText('');
+      onShowToast(
+        'success',
+        'Đã cập nhật',
+        'Nội dung tin nhắn đã được chỉnh sửa.'
+      );
+    },
+    [activeGroup, qgroups, editText, applyGroups, onShowToast]
+  );
+
+  // ── Recall / Thu hồi tin nhắn ─────────────────────────────────────────────
+  const handleRecallMessage = useCallback(
+    (msgId: string) => {
+      if (!activeGroup) return;
+      const updated = qgroups.map((g) => {
+        if (g.id !== activeGroup.id) return g;
+        const msgs = (g.messages || []).map((m) => {
+          if (m.id !== msgId) return m;
+          return {
+            ...m,
+            text: '',
+            isRecalled: true,
+            attachment: undefined,
+            sharedPost: undefined,
+          };
+        });
+        return { ...g, messages: msgs };
+      });
+      applyGroups(updated);
+      onShowToast('info', 'Đã thu hồi', 'Tin nhắn của Thầy/Cô đã được thu hồi.');
+    },
+    [activeGroup, qgroups, applyGroups, onShowToast]
+  );
+
+  // ── Delete / Xóa tin nhắn ─────────────────────────────────────────────────
+  const handleDeleteMessage = useCallback(
+    (msgId: string) => {
+      if (!activeGroup) return;
+      if (!confirm('Xóa tin nhắn này vĩnh viễn khỏi cuộc trò chuyện?')) return;
+      const updated = qgroups.map((g) => {
+        if (g.id !== activeGroup.id) return g;
+        const msgs = (g.messages || []).filter((m) => m.id !== msgId);
+        return { ...g, messages: msgs };
+      });
+      applyGroups(updated);
+      onShowToast(
+        'info',
+        'Đã xóa tin nhắn',
+        'Tin nhắn đã được xóa khỏi cuộc trò chuyện.'
+      );
+    },
+    [activeGroup, qgroups, applyGroups, onShowToast]
+  );
+
+  // ── Pin / Ghim tin nhắn ───────────────────────────────────────────────────
+  const handleTogglePinMessage = useCallback(
+    (msgId: string) => {
+      if (!activeGroup) return;
+      let nowPinned = false;
+      const updated = qgroups.map((g) => {
+        if (g.id !== activeGroup.id) return g;
+        const msgs = (g.messages || []).map((m) => {
+          if (m.id !== msgId) return m;
+          nowPinned = !m.isPinned;
+          return { ...m, isPinned: nowPinned };
+        });
+        return { ...g, messages: msgs };
+      });
+      applyGroups(updated);
+      onShowToast(
+        'info',
+        nowPinned ? 'Đã ghim tin nhắn' : 'Đã bỏ ghim',
+        nowPinned
+          ? 'Tin nhắn đã được ghim lên đầu cuộc trò chuyện'
+          : 'Đã bỏ ghim tin nhắn'
+      );
+    },
+    [activeGroup, qgroups, applyGroups, onShowToast]
+  );
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
@@ -1794,56 +2123,169 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               </div>
 
               {/* Slack Header Action Buttons */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {/* 1. Huddle Button (Slack Clean Audio Call) */}
+              <div className="flex items-center gap-1.5 shrink-0 relative">
+                {/* 1. NÚT THÊM THÀNH VIÊN HIỂN THỊ NỔI BẬT Ở NGOÀI (SLACK DIRECT ADD MEMBER) */}
+                {!activeGroup.isDirect && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDirectAddMemberEmail('');
+                      setLookedUpUser(null);
+                      setLookupStatus('idle');
+                      setIsDirectAddMemberOpen(true);
+                    }}
+                    className="px-2.5 sm:px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-bold text-xs flex items-center gap-1.5 border border-teal-200 transition-colors shadow-2xs cursor-pointer"
+                    title="Thêm thành viên trực tiếp vào kênh"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-[#008689] shrink-0" />
+                    <span className="hidden sm:inline">Thêm thành viên</span>
+                    <span className="sm:hidden font-extrabold">+ Mời</span>
+                  </button>
+                )}
+
+                {/* 2. Huddle Button (Slack Clean Audio Call) */}
                 <button
                   type="button"
                   onClick={() => setIsHuddleOpen(true)}
                   className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
                   title="Bắt đầu thảo luận nhanh (Huddle)"
                 >
-                  <Headphones className="w-3.5 h-3.5 text-slate-600" />
+                  <Headphones className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   <span className="hidden sm:inline">Huddle</span>
-                </button>
-
-                {/* 2. Summarize by AI (Quanta AI Summarizer) */}
-                <button
-                  type="button"
-                  onClick={() => setIsSummarizeModalOpen(true)}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
-                  title="Tóm tắt kênh bằng Quanta AI"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                  <span className="hidden md:inline">Tóm tắt AI</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
                 </button>
 
                 {/* 3. Notifications */}
                 <button
                   type="button"
                   onClick={() => handleToggleMute(activeGroup)}
-                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200/60"
                   title={activeGroup.muted ? 'Bật thông báo' : 'Tắt thông báo'}
                 >
                   {activeGroup.muted ? <BellOff className="w-4 h-4 text-amber-500" /> : <Bell className="w-4 h-4" />}
                 </button>
 
-                {/* 4. Details / Settings Gear */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (activeGroup.isDirect) {
-                      setProfileEmail(activeInfo.partnerEmail || null);
-                      setProfileName(activeInfo.displayName);
-                    } else {
-                      setChannelDetailsTab('about');
-                      setIsChannelDetailsOpen(true);
-                    }
-                  }}
-                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-                  title={activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết & Cài đặt kênh'}
-                >
-                  {activeGroup.isDirect ? <User className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
-                </button>
+                {/* 4. SLACK RĂNG CƯA / THREE DOTS MENU (SỔ RA KHI CẦN - CHUẨN SLACK IMAGE 1) */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsHeaderMenuOpen((prev) => !prev)}
+                    className={`p-2 rounded-lg transition-colors cursor-pointer border ${
+                      isHeaderMenuOpen
+                        ? 'bg-slate-200 text-slate-900 border-slate-300'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200/60'
+                    }`}
+                    title="Tùy chọn kênh (Slack style)"
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </button>
+
+                  {/* Slack Popup Dropdown Menu */}
+                  {isHeaderMenuOpen && (
+                    <div
+                      className="absolute right-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 text-xs animate-fade-in divide-y divide-slate-100 select-none"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderMenuOpen(false);
+                            if (activeGroup.isDirect) {
+                              setProfileEmail(activeInfo.partnerEmail || null);
+                              setProfileName(activeInfo.displayName);
+                            } else {
+                              setChannelDetailsTab('about');
+                              setIsChannelDetailsOpen(true);
+                            }
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Info className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                            <span>{activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết kênh (Channel details)'}</span>
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderMenuOpen(false);
+                            navigator.clipboard.writeText(activeGroup.code);
+                            onShowToast('info', 'Đã sao chép mã phòng', activeGroup.code);
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                            <span>Sao chép mã phòng (Copy)</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-400">{activeGroup.code}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderMenuOpen(false);
+                            setIsStarred(!isStarred);
+                            onShowToast('info', isStarred ? 'Bỏ đánh dấu sao' : 'Đã đánh dấu sao kênh', activeInfo.displayName);
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-medium group cursor-pointer"
+                        >
+                          <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-amber-400 text-amber-500' : 'text-slate-400 group-hover:text-slate-700'}`} />
+                          <span>{isStarred ? 'Bỏ đánh dấu sao' : 'Đánh dấu sao kênh (Star)'}</span>
+                        </button>
+                      </div>
+
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderMenuOpen(false);
+                            setIsSummarizeModalOpen(true);
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Tóm tắt kênh bằng AI (Summarize)</span>
+                          </span>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                        </button>
+
+                        {!activeGroup.isDirect && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsHeaderMenuOpen(false);
+                              setChannelDetailsTab('settings');
+                              setIsChannelDetailsOpen(true);
+                            }}
+                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-medium group cursor-pointer"
+                          >
+                            <Settings className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                            <span>Cài đặt kênh (Edit settings)</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsHeaderMenuOpen(false);
+                            handleLeaveGroup(activeGroup);
+                          }}
+                          className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-semibold cursor-pointer"
+                        >
+                          <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                          <span>Rời khỏi kênh (Leave channel)</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1904,6 +2346,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               {/* Message Items (Slack Linear Row Layout) */}
               {(activeGroup.messages || []).map((msg) => {
                 const isMe = msg.senderEmail?.toLowerCase() === myEmail;
+                const isOwner = (activeGroup.ownerEmail || '').toLowerCase() === myEmail;
                 if (msg.isSystem) {
                   return (
                     <div key={msg.id} className="flex justify-center my-2">
@@ -1959,20 +2402,83 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             Bạn
                           </span>
                         )}
-                        <span className="text-[11px] text-slate-400 font-medium">
-                          {msg.timestamp}
+                        <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                          <span>{msg.timestamp}</span>
+                          {msg.isEdited && (
+                            <span className="text-[10px] text-slate-400 font-normal italic">
+                              (đã chỉnh sửa)
+                            </span>
+                          )}
+                          {msg.isPinned && (
+                            <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 font-bold bg-amber-50 px-1 py-0.2 rounded border border-amber-200">
+                              <Pin className="w-2.5 h-2.5" /> Ghim
+                            </span>
+                          )}
                         </span>
                       </div>
 
-                      {/* Text Message (Ẩn text thô nếu là bài chia sẻ diễn đàn dạng legacy để card hiển thị chuyên nghiệp) */}
-                      {msg.text && !msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
-                        <div className="text-[13px] text-slate-800 leading-relaxed mt-1 whitespace-pre-wrap font-normal">
-                          {msg.text}
+                      {/* Reply Quote Banner (nếu đang trả lời 1 tin nhắn trước đó) */}
+                      {msg.replyTo && !msg.isRecalled && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 my-1 pl-2 border-l-2 border-teal-500 bg-slate-50/70 py-0.5 rounded-r">
+                          <Reply className="w-3 h-3 text-teal-600 shrink-0" />
+                          <span className="font-semibold text-slate-700">{msg.replyTo.senderName}:</span>
+                          <span className="truncate italic text-slate-600">&ldquo;{msg.replyTo.text}&rdquo;</span>
                         </div>
                       )}
 
+                      {/* Trạng thái tin nhắn đã thu hồi */}
+                      {msg.isRecalled ? (
+                        <div className="text-[12px] text-slate-400 italic py-1 flex items-center gap-1.5 select-none">
+                          <Undo2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>Tin nhắn đã được thu hồi</span>
+                        </div>
+                      ) : editingMessageId === msg.id ? (
+                        /* Chế độ Chỉnh sửa Tin nhắn trực tiếp (Inline Edit) */
+                        <div className="mt-1 space-y-2">
+                          <textarea
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSaveEditMessage(msg.id);
+                              } else if (e.key === 'Escape') {
+                                setEditingMessageId(null);
+                              }
+                            }}
+                            className="w-full p-2.5 rounded-lg border border-teal-500 bg-white text-xs text-slate-800 outline-none focus:ring-1 focus:ring-teal-500 shadow-2xs leading-relaxed"
+                            rows={2}
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEditMessage(msg.id)}
+                              className="px-3 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-semibold cursor-pointer text-[11px] transition-colors"
+                            >
+                              Lưu thay đổi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingMessageId(null)}
+                              className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold cursor-pointer text-[11px] transition-colors"
+                            >
+                              Hủy (Esc)
+                            </button>
+                            <span className="text-[10px] text-slate-400 ml-auto">Nhấn Enter để lưu</span>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Text Message thông thường */
+                        msg.text && !msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
+                          <div className="text-[13px] text-slate-800 leading-relaxed mt-1 whitespace-pre-wrap font-normal">
+                            {msg.text}
+                          </div>
+                        )
+                      )}
+
                       {/* ─── LINKED ACADEMIC FORUM POST CARD (Thẻ hình chữ nhật liên kết trực tiếp bài viết Diễn Đàn) ─── */}
-                      {(msg.sharedPost || (msg.text && msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]'))) && (() => {
+                      {!msg.isRecalled && (msg.sharedPost || (msg.text && msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]'))) && (() => {
                         const post = msg.sharedPost;
                         const legacy = !post && msg.text ? parseLegacyForumShare(msg.text) : null;
                         const tag = post?.tag || legacy?.tag || 'HọcThuật';
@@ -2067,7 +2573,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       })()}
 
                       {/* Direct Attachment (Chỉ hiển thị nếu không phải tin nhắn chia sẻ bài viết để tránh duplicate) */}
-                      {msg.attachment && !msg.sharedPost && !msg.text?.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
+                      {!msg.isRecalled && msg.attachment && !msg.sharedPost && !msg.text?.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
                         <div className="mt-2 p-3 rounded-xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs max-w-md">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-lg bg-slate-100 text-teal-700 flex items-center justify-center shrink-0 border border-slate-200">
@@ -2096,36 +2602,126 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           </div>
                         </div>
                       )}
+
+                      {/* Emoji Reaction Badges (Hiển thị các reaction đã thả) */}
+                      {!msg.isRecalled && msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {Object.entries(msg.reactions).map(([emoji, users]) => {
+                            if (!users || users.length === 0) return null;
+                            const hasReacted = users.includes(myEmail);
+                            return (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => handleToggleReaction(msg.id, emoji)}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all cursor-pointer ${
+                                  hasReacted
+                                    ? 'bg-teal-50 border-teal-300 text-teal-800 font-bold'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                }`}
+                                title={users.join(', ')}
+                              >
+                                <span>{emoji}</span>
+                                <span className="text-[10px]">{users.length}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Slack Floating Hover Action Bar */}
-                    <div className="absolute right-2 -top-2.5 hidden group-hover:flex items-center bg-white border border-slate-200 rounded-lg shadow-md px-1 py-0.5 gap-0.5 z-10 animate-fade-in">
-                      {['👍', '❤️', '👏', '🎉'].map((emoji) => (
+                    {/* Slack Floating Hover Action Bar (Chuẩn Slack: Cảm xúc, Trả lời, Sao chép, Ghim, Sửa, Thu hồi, Xóa) */}
+                    {!msg.isRecalled && (
+                      <div className="absolute right-2 -top-3 hidden group-hover:flex items-center bg-white border border-slate-200/90 rounded-xl shadow-lg px-1.5 py-1 gap-1 z-20 animate-fade-in">
+                        {/* Emojis */}
+                        <div className="flex items-center gap-0.5 pr-1 border-r border-slate-200">
+                          {['👍', '❤️', '👏', '🎉', '💡'].map((emoji) => (
+                            <button
+                              key={emoji}
+                              type="button"
+                              onClick={() => handleToggleReaction(msg.id, emoji)}
+                              className="w-6 h-6 rounded-md hover:bg-slate-100 flex items-center justify-center text-xs transition-transform hover:scale-125 cursor-pointer"
+                              title={`Bày tỏ cảm xúc ${emoji}`}
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Reply in thread */}
                         <button
-                          key={emoji}
                           type="button"
-                          onClick={() => onShowToast('info', 'Thả biểu cảm', `${emoji} vào tin nhắn`)}
-                          className="w-6 h-6 rounded hover:bg-slate-100 flex items-center justify-center text-xs transition-transform hover:scale-125 cursor-pointer"
-                          title={`Bày tỏ cảm xúc ${emoji}`}
+                          onClick={() => handleStartReply(msg)}
+                          className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs cursor-pointer"
+                          title="Trả lời tin nhắn"
                         >
-                          {emoji}
+                          <Reply className="w-3.5 h-3.5" />
                         </button>
-                      ))}
-                      <div className="w-px h-3 bg-slate-200 mx-0.5" />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (msg.text) {
-                            navigator.clipboard.writeText(msg.text);
-                            onShowToast('info', 'Đã sao chép tin nhắn', msg.text.slice(0, 30));
-                          }
-                        }}
-                        className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 flex items-center justify-center text-xs cursor-pointer"
-                        title="Sao chép văn bản"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </button>
-                    </div>
+
+                        {/* Copy text */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (msg.text) {
+                              navigator.clipboard.writeText(msg.text);
+                              onShowToast('info', 'Đã sao chép tin nhắn', msg.text.slice(0, 30));
+                            }
+                          }}
+                          className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs cursor-pointer"
+                          title="Sao chép văn bản"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Pin message */}
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePinMessage(msg.id)}
+                          className={`w-6 h-6 rounded hover:bg-slate-100 flex items-center justify-center text-xs cursor-pointer ${
+                            msg.isPinned ? 'text-amber-500' : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                          title={msg.isPinned ? 'Bỏ ghim tin nhắn' : 'Ghim tin nhắn'}
+                        >
+                          <Pin className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Edit message (Chỉ tin nhắn của mình) */}
+                        {isMe && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartEditMessage(msg)}
+                            className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs cursor-pointer"
+                            title="Chỉnh sửa tin nhắn"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Thu hồi tin nhắn (Chỉ tin nhắn của mình) */}
+                        {isMe && (
+                          <button
+                            type="button"
+                            onClick={() => handleRecallMessage(msg.id)}
+                            className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center text-xs cursor-pointer"
+                            title="Thu hồi tin nhắn"
+                          >
+                            <Undo2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Xóa tin nhắn (Dành cho admin / chủ phòng / người gửi) */}
+                        {(isMe || isOwner) && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteMessage(msg.id)}
+                            className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center text-xs cursor-pointer"
+                            title="Xóa tin nhắn"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2136,6 +2732,25 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 SLACK RICH TEXT COMPOSER
             ================================================================ */}
             <div className="p-3 sm:px-4 sm:py-3 border-t border-slate-200 bg-white space-y-2">
+              {/* Replying Banner (nếu đang trả lời 1 tin nhắn) */}
+              {replyingToMessage && (
+                <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-teal-50/80 border border-teal-200 text-xs animate-fade-in">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Reply className="w-3.5 h-3.5 text-teal-700 shrink-0" />
+                    <span className="font-bold text-slate-800">Đang trả lời {replyingToMessage.senderName}:</span>
+                    <span className="text-slate-600 truncate italic">&ldquo;{replyingToMessage.text || 'Tệp đính kèm'}&rdquo;</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReplyingToMessage(null)}
+                    className="p-1 rounded-md hover:bg-teal-100 text-slate-400 hover:text-slate-700 cursor-pointer"
+                    title="Hủy trả lời"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Attachment Preview (if any) */}
               {selectedAttachment && (
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
@@ -2347,6 +2962,144 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* Backdrop to close header dropdown menu when clicking outside */}
+      {isHeaderMenuOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-transparent"
+          onClick={() => setIsHeaderMenuOpen(false)}
+        />
+      )}
+
+      {/* ====================================================================
+          MODAL: THÊM THÀNH VIÊN VÀO KÊNH (SLACK DIRECT ADD MEMBER)
+      ==================================================================== */}
+      {isDirectAddMemberOpen && activeGroup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
+          onClick={() => setIsDirectAddMemberOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-1.5">
+                  <UserPlus className="w-4 h-4 text-[#008689]" />
+                  <span>Thêm thành viên vào #{activeGroup.name}</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Nhập email để hệ thống xác thực tài khoản giảng viên
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDirectAddMemberOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-slate-700">
+                  Địa chỉ Email giảng viên / đồng nghiệp:
+                </label>
+                <div className="relative">
+                  <input
+                    type="email"
+                    value={directAddMemberEmail}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDirectAddMemberEmail(val);
+                      void handleLookupUser(val);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && lookupStatus === 'found' && lookedUpUser) {
+                        void handleAddUserToActiveChannel(lookedUpUser.email);
+                      }
+                    }}
+                    placeholder="ví dụ: gv.khoa@uth.edu.vn hoặc gmail..."
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
+                    autoFocus
+                  />
+                  {lookupStatus === 'searching' && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <span className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* THẺ TÀI KHOẢN (NẾU NGƯỜI ĐÓ ĐÃ ĐĂNG KÝ TÀI KHOẢN) */}
+              {lookupStatus === 'found' && lookedUpUser && (
+                <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                      {initials(lookedUpUser.fullName)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-xs text-slate-900 truncate">{lookedUpUser.fullName}</span>
+                        {lookedUpUser.academicTitle && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
+                            {lookedUpUser.academicTitle}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 truncate">{lookedUpUser.email}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{lookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
+                    <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>Tài khoản đã kích hoạt hệ thống</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleAddUserToActiveChannel(lookedUpUser.email)}
+                      disabled={isAddingMember}
+                      className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors"
+                    >
+                      {isAddingMember ? 'Đang thêm...' : 'Thêm vào kênh'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* CẢNH BÁO TÀI KHOẢN CHƯA ĐĂNG KÝ / KHÔNG TỒN TẠI */}
+              {lookupStatus === 'not_found' && directAddMemberEmail.trim().length >= 5 && (
+                <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex items-start gap-3 animate-fade-in">
+                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                  <div className="min-w-0 text-xs text-rose-800 space-y-1">
+                    <p className="font-bold">Người dùng không tồn tại trên hệ thống</p>
+                    <p className="text-[11px] text-rose-600 leading-relaxed">
+                      Địa chỉ email <strong>{directAddMemberEmail}</strong> chưa được dùng để đăng ký tài khoản QuizGen AI. Thầy/Cô vui lòng kiểm tra lại địa chỉ email hoặc mời đồng nghiệp đăng ký trước khi thêm vào kênh.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setIsDirectAddMemberOpen(false)}
+                className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ====================================================================
           MODAL: CHANNEL DETAILS & SETTINGS (SLACK STYLE MULTI-TAB)
@@ -3244,6 +3997,69 @@ const ChannelDetailsModal: React.FC<{
     return list;
   }, [group.messages]);
 
+  const [modalLookupStatus, setModalLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+  const [modalLookedUpUser, setModalLookedUpUser] = useState<any>(null);
+
+  useEffect(() => {
+    const clean = inviteEmail.trim().toLowerCase();
+    if (!clean || !clean.includes('@') || clean.length < 5) {
+      setModalLookupStatus('idle');
+      setModalLookedUpUser(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setModalLookupStatus('searching');
+      try {
+        const res = await apiClient.fetch(
+          `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.exists && data.user) {
+            setModalLookedUpUser(data.user);
+            setModalLookupStatus('found');
+            return;
+          }
+        }
+      } catch {}
+
+      const localRegistered: Record<
+        string,
+        { fullName: string; academicTitle: string; department: string }
+      > = {
+        'mr.av1222005@gmail.com': {
+          fullName: 'ThS. Mr. AVvvv',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'avanimechannel@gmail.com': {
+          fullName: 'TS. Hồ Anh Vũ',
+          academicTitle: 'TS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'nguyentann0804@gmail.com': {
+          fullName: 'ThS. Nguyễn Văn Tân',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'quizgen.ai.team@gmail.com': {
+          fullName: 'Ban Quản trị QuizGen AI',
+          academicTitle: 'Admin',
+          department: 'Hệ thống Khảo thí UTH',
+        },
+      };
+      if (localRegistered[clean]) {
+        setModalLookedUpUser({ email: clean, ...localRegistered[clean] });
+        setModalLookupStatus('found');
+        return;
+      }
+      setModalLookedUpUser(null);
+      setModalLookupStatus('not_found');
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [inviteEmail]);
+
   const joinPolicyLabel = {
     open: 'Công khai (Mọi giảng viên đều có thể tham gia)',
     approval_required: 'Cần phê duyệt (Yêu cầu Trưởng nhóm duyệt trước)',
@@ -3454,29 +4270,79 @@ const ChannelDetailsModal: React.FC<{
                 </div>
               )}
 
-              {/* Mời thêm thành viên qua Email */}
-              <div className="space-y-1.5">
+              {/* Mời thêm thành viên qua Email (Kiểm tra đăng ký hệ thống) */}
+              <div className="space-y-2">
                 <label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
                   Mời giảng viên qua Email
                 </label>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => onInviteEmailChange(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && onInvite()}
-                    placeholder="Nhập email đồng nghiệp..."
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs"
-                  />
+                  <div className="relative flex-1">
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => onInviteEmailChange(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && onInvite()}
+                      placeholder="Nhập email đồng nghiệp..."
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs"
+                    />
+                    {modalLookupStatus === 'searching' && (
+                      <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                        <span className="w-3 h-3 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={onInvite}
-                    disabled={!inviteEmail.trim()}
-                    className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold cursor-pointer transition-colors"
+                    disabled={!inviteEmail.trim() || modalLookupStatus === 'not_found'}
+                    className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold cursor-pointer transition-colors shrink-0"
                   >
                     Mời
                   </button>
                 </div>
+
+                {/* Thẻ tài khoản hợp lệ */}
+                {modalLookupStatus === 'found' && modalLookedUpUser && (
+                  <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/50 flex items-center justify-between gap-2 animate-fade-in">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-md bg-slate-800 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                        {initials(modalLookedUpUser.fullName)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 truncate text-[11px]">
+                          {modalLookedUpUser.fullName}
+                          {modalLookedUpUser.academicTitle && (
+                            <span className="ml-1 text-[9px] font-normal text-slate-500">({modalLookedUpUser.academicTitle})</span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          <span>Đã đăng ký tài khoản</span>
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onInvite}
+                      className="px-2.5 py-1 rounded bg-[#008689] hover:bg-[#007073] text-white font-semibold text-[10px] shrink-0"
+                    >
+                      Thêm
+                    </button>
+                  </div>
+                )}
+
+                {/* Cảnh báo người dùng chưa đăng ký */}
+                {modalLookupStatus === 'not_found' && inviteEmail.trim().length >= 5 && (
+                  <div className="p-2.5 rounded-lg border border-rose-200 bg-rose-50/60 flex items-start gap-2 text-[11px] text-rose-700 animate-fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-rose-900">Người dùng không tồn tại trên hệ thống</p>
+                      <p className="text-[10px] text-rose-600 leading-tight mt-0.5">
+                        Email này chưa được dùng để đăng ký tài khoản QuizGen AI.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Danh sách thành viên hiện tại */}

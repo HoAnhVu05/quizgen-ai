@@ -192,6 +192,13 @@ export interface QGroupMessage {
   timestamp: string;
   isSystem?: boolean;
   isPinned?: boolean;
+  isEdited?: boolean;
+  isRecalled?: boolean;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+  };
   readBy?: string[];
   reactions?: Record<string, string[]>;
   attachment?: {

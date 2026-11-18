@@ -861,3 +861,29 @@ def reset_password_endpoint(req_data: ResetPasswordRequest, db: Session = Depend
         "status": "success",
         "message": "Mật khẩu mới đã được cập nhật thành công vào hệ thống."
     }
+
+@app.get("/users/lookup")
+@app.get("/auth/users/lookup")
+def lookup_user_by_email(email: str = Query(...), db: Session = Depends(get_db)):
+    """Tra cứu người dùng theo email để xác minh tài khoản đã đăng ký và hiển thị thẻ thông tin"""
+    clean_email = email.strip().lower()
+    user = db.execute(select(UserDB).filter_by(email=clean_email)).scalar_one_or_none()
+    if user:
+        return {
+            "exists": True,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "fullName": user.full_name or "Giảng viên UTH",
+                "academicTitle": user.academic_title or "TS.",
+                "department": user.department or "Khoa Công nghệ Thông tin",
+                "university": user.university or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+                "role": user.role,
+                "is_active": user.is_active
+            }
+        }
+    return {
+        "exists": False,
+        "message": "Người dùng không tồn tại trên hệ thống hoặc email chưa được dùng để đăng ký tài khoản."
+    }
+
