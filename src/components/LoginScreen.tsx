@@ -908,31 +908,35 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           authProvider: 'google',
         };
 
-        // Đồng bộ ngầm về backend auth-service để lưu user vào auth.db (không làm gián đoạn UI nếu backend lỗi)
-        fetch(`${API_BASE}/auth/google`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            google_access_token: googleAccessToken,
-            client_id: clientIdUsed,
-            email: userEmail,
-            full_name: realFullName,
-            academic_title: realAcademicTitle,
-            avatar_url: gUser.picture || '',
-            university: realUniversity,
-            department: realDepartment,
-            role: realRole,
-          }),
-        }).then(async (syncRes) => {
+        // Đồng bộ ngay lập tức về backend auth-service để lưu user vào auth.db và lấy Access Token JWT thật
+        try {
+          const syncRes = await fetch(`${API_BASE}/auth/google`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              google_access_token: googleAccessToken,
+              client_id: clientIdUsed,
+              email: userEmail,
+              full_name: realFullName,
+              academic_title: realAcademicTitle,
+              avatar_url: gUser.picture || '',
+              university: realUniversity,
+              department: realDepartment,
+              role: realRole,
+            }),
+          });
           if (syncRes.ok) {
             const syncData = await syncRes.json();
             if (syncData.access_token) {
               apiClient.setTokens(syncData.access_token, syncData.refresh_token || mockRefresh);
               localStorage.setItem('quizgen_token', syncData.access_token);
               localStorage.setItem('quizgen_auth_token', syncData.access_token);
+              if (syncData.user?.id) {
+                authenticatedUser.id = syncData.user.id;
+              }
             }
           }
-        }).catch(() => {});
+        } catch {}
       }
 
       if (authenticatedUser) {

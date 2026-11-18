@@ -185,6 +185,22 @@ class ApiClient {
       headers.set('Authorization', `Bearer ${token}`);
     }
 
+    try {
+      const userStr = localStorage.getItem('quizgen_user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u?.email && !headers.has('X-User-Email')) {
+          headers.set('X-User-Email', u.email);
+        }
+        if (u?.id && !headers.has('X-User-Id')) {
+          headers.set('X-User-Id', u.id);
+        }
+        if (u?.role && !headers.has('X-User-Role')) {
+          headers.set('X-User-Role', u.role);
+        }
+      }
+    } catch {}
+
     const modifiedInit: RequestInit = {
       ...init,
       headers,

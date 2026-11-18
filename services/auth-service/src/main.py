@@ -19,7 +19,7 @@ except ImportError:
 
 import bcrypt
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, or_, func
 
 from .database import engine, Base, get_db
 from .models import (
@@ -573,7 +573,7 @@ def get_me(
     x_user_email: Optional[str] = Header(None, alias="X-User-Email"),
     db: Session = Depends(get_db)
 ):
-    """Lấy thông tin người dùng hiện tại dựa trên JWT Token hoặc headers Gateway"""
+    """Lấy thông tin người dùng hiện tại dựa trên JWT Token hoặc headers Gateway từ auth.db thật"""
     raw_token = token
     if not raw_token and authorization:
         auth_str = authorization.strip()
@@ -582,72 +582,45 @@ def get_me(
         else:
             raw_token = auth_str
 
-    # 1. Hỗ trợ Gateway headers nếu có
-    if x_user_email and x_user_email.strip():
-        user = db.execute(select(UserDB).filter_by(email=x_user_email.strip().lower())).scalar_one_or_none()
-        if user:
-            check_user_lock_or_raise(user, db)
-            return serialize_user(user)
+    user = None
 
-    # 2. Hỗ trợ mock token cho môi trường phát triển & demo
-    if raw_token and raw_token.strip().startswith("mock-jwt-"):
-        parts_m = raw_token.strip().split("-")
-        r_part = "lecturer"
-        for p in parts_m:
-            if p in ["admin", "head_of_department", "lecturer"]:
-                r_part = p
-                break
-        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else ("hod.cntt@uth.edu.vn" if r_part == "head_of_department" else "nguyentann0804@gmail.com")
-        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
-        if user:
-            check_user_lock_or_raise(user, db)
-            return serialize_user(user)
-        return {
-            "id": "usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001"),
-            "email": email,
-            "full_name": "Ban Quản trị QuizGen AI" if r_part == "admin" else ("Trưởng bộ môn UTH" if r_part == "head_of_department" else "Thầy / Cô Nguyễn Văn Tân"),
-            "academic_title": "Admin" if r_part == "admin" else ("PGS. TS." if r_part == "head_of_department" else "TS."),
-            "university": "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
-            "department": "Ban Quản trị Hệ thống QuizGen AI" if r_part == "admin" else "Khoa Công nghệ Thông tin",
-            "role": r_part,
-            "is_active": True,
-            "profile_completed": True,
-            "created_at": datetime.utcnow()
-        }
+    # 1. Thử giải mã JWT Token chuẩn
+    if raw_token and not raw_token.startswith("mock-jwt-"):
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        if cache.is_token_revoked(token_hash):
+            raise HTTPException(status_code=401, detail="Phiên làm việc đã kết thúc (Token đã bị thu hồi).")
+        try:
+            payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+            email: str = payload.get("sub") or payload.get("email")
+            uid: str = payload.get("id") or payload.get("user_id")
+            if email:
+                user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == email.strip().lower())).scalar_one_or_none()
+            if not user and uid:
+                user = db.execute(select(UserDB).filter_by(id=uid)).scalar_one_or_none()
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(status_code=401, detail="Token đã hết hạn. Vui lòng đăng nhập lại.")
+        except Exception:
+            pass
 
-    if not raw_token:
-        # Fallback môi trường dev
-        env = os.getenv("ENVIRONMENT", "development").lower()
-        if env in ["development", "dev", "local"]:
-            fallback = db.execute(select(UserDB).filter_by(email="nguyentann0804@gmail.com")).scalar_one_or_none()
-            if fallback:
-                check_user_lock_or_raise(fallback, db)
-                return serialize_user(fallback)
-        raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization: Bearer <token>")
+    # 2. Hỗ trợ mock token có chứa ID hoặc email của người dùng thật
+    if not user and raw_token and raw_token.startswith("mock-jwt-"):
+        parts = raw_token.split("-")
+        if len(parts) >= 3:
+            candidate_id = "-".join(parts[2:-1]) if len(parts) > 3 else parts[2]
+            user = db.execute(select(UserDB).filter(or_(UserDB.id == candidate_id, func.lower(UserDB.email) == candidate_id.lower()))).scalar_one_or_none()
 
-    token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-    if cache.is_token_revoked(token_hash):
-        raise HTTPException(status_code=401, detail="Phiên làm việc đã kết thúc (Token đã bị thu hồi).")
+    # 3. Hỗ trợ tra cứu qua Gateway Header nếu được chỉ định rõ
+    if not user and x_user_email and x_user_email.strip():
+        user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == x_user_email.strip().lower())).scalar_one_or_none()
 
-    try:
-        payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub") or payload.get("email")
-        if not email:
-            raise HTTPException(status_code=401, detail="Token không hợp lệ.")
-        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=401, detail="Không tìm thấy người dùng.")
+    if not user and x_user_id and x_user_id.strip():
+        user = db.execute(select(UserDB).filter_by(id=x_user_id.strip())).scalar_one_or_none()
 
-        # Kiểm tra trạng thái khóa tài khoản
-        check_user_lock_or_raise(user, db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Phiên làm việc không hợp lệ hoặc không tìm thấy tài khoản người dùng.")
 
-        return serialize_user(user)
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token đã hết hạn. Vui lòng gọi /refresh để lấy token mới.")
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=401, detail="Xác thực không hợp lệ.")
+    check_user_lock_or_raise(user, db)
+    return serialize_user(user)
 
 
 @app.get("/universities", response_model=List[UniversityResponse])
