@@ -333,7 +333,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     const authorDisplayName = `${sharingPost.authorTitle ? sharingPost.authorTitle + ' ' : ''}${sharingPost.authorName}`;
     const previewText = sharingPost.content.length > 140 ? `${sharingPost.content.slice(0, 140)}...` : sharingPost.content;
 
-    const messageText = `📢 [CHIA SẺ TỪ DIỄN ĐÀN HỌC THUẬT]\n📌 Chủ đề: #${sharingPost.tag}\n👤 Tác giả: ${authorDisplayName}\n📝 Trích đoạn: "${previewText}"${shareNote.trim() ? `\n💬 Lời nhắn: ${shareNote.trim()}` : ''}\n👉 Mở Diễn Đàn Học Thuật để xem toàn văn và thảo luận.`;
+    const messageText = `[DIỄN ĐÀN HỌC THUẬT UTH]\nChủ đề: #${sharingPost.tag}\nTác giả: ${authorDisplayName}\nTrích đoạn: "${previewText}"${shareNote.trim() ? `\nLời nhắn: ${shareNote.trim()}` : ''}\n(Truy cập Diễn Đàn Học Thuật để xem toàn văn và tài liệu đính kèm)`;
 
     const myName = currentUser?.fullName || 'TS. Hồ Anh Vũ';
     const myEmail = currentUser?.email || 'user@uth.edu.vn';
@@ -475,28 +475,28 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-5 bg-[#f7f9fb] text-slate-800 w-full max-w-full overflow-x-hidden relative"
     >
       
-      {/* 1. Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
+      {/* 1. Header Banner (Enterprise Academic Standard) */}
+      <div className="bg-slate-900 rounded-2xl p-6 text-white border border-slate-800 shadow-sm relative overflow-hidden">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1.5 max-w-2xl">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-white/20 text-indigo-200 border border-white/30 shadow-xs">
-              <MessageSquare className="w-3.5 h-3.5 text-indigo-300" />
-              Diễn Đàn Học Thuật &amp; Trao Đổi Khảo Thí
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-white/10 text-slate-300 border border-white/20">
+              <Building2 className="w-3.5 h-3.5 text-teal-400" />
+              Diễn Đàn Khoa Học &amp; Trao Đổi Khảo Thí UTH
             </span>
-            <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-              Diễn Đàn Giảng Viên
+            <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+              Diễn Đàn Học Thuật Giảng Viên
             </h1>
-            <p className="text-xs sm:text-sm text-white/80 leading-relaxed">
-              Không gian học thuật kết nối các Thầy/Cô: thảo luận ma trận đề thi Bloom, chia sẻ bài giảng, sơ đồ minh họa, tệp giáo trình và video bài học.
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">
+              Không gian kết nối chuyên môn: thảo luận ma trận đề thi Bloom, chia sẻ bài giảng, sơ đồ minh họa, tệp giáo trình và video bài học chuẩn.
             </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => onNavigate('upload')}
-              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold border border-white/20 transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <FileText className="w-3.5 h-3.5 text-indigo-300" />
+              <FileText className="w-3.5 h-3.5 text-teal-400" />
               <span>Vào Thư Viện Giáo Trình</span>
             </button>
           </div>
@@ -504,15 +504,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       </div>
 
       {/* 2. Create Post Card */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-2xs space-y-4">
+      <div className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs space-y-4">
         <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-700 font-black text-sm flex items-center justify-center shrink-0">
-            {(currentUser?.fullName || 'TS').slice(0, 2).toUpperCase()}
+          <div className="w-9 h-9 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center shrink-0">
+            {(currentUser?.fullName || 'GV').slice(0, 2).toUpperCase()}
           </div>
           <div>
-            <div className="text-xs font-extrabold text-slate-900 flex items-center gap-2">
+            <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
               <span>{currentUser?.academicTitle ? `${currentUser.academicTitle} ` : ''}{currentUser?.fullName || 'TS. Hồ Anh Vũ'}</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
                 Đang trực tuyến
               </span>
             </div>
@@ -526,16 +526,16 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           <textarea
             value={postContent}
             onChange={(e) => setPostContent(e.target.value)}
-            placeholder="Kính chào Thầy/Cô, Thầy/Cô muốn chia sẻ kinh nghiệm giảng dạy, ma trận đề thi Bloom, hay đăng tải tài liệu/sơ đồ nào?..."
+            placeholder="Chia sẻ kinh nghiệm giảng dạy, ma trận đề thi Bloom, sơ đồ học phần hoặc đóng góp học liệu..."
             rows={3}
-            className="w-full p-4 text-xs bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-indigo-600 text-slate-800 placeholder-slate-400 resize-none leading-relaxed"
+            className="w-full p-3.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-slate-500 text-slate-800 placeholder-slate-400 resize-none leading-relaxed"
           />
 
           {/* Attachment Preview Trays */}
           {showAttachImage && (
-            <div className="p-3 bg-indigo-50/50 rounded-2xl border border-indigo-200/80 flex items-center justify-between gap-3 text-xs">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2.5 overflow-hidden">
-                <ImageIcon className="w-4 h-4 text-indigo-600 shrink-0" />
+                <ImageIcon className="w-4 h-4 text-slate-700 shrink-0" />
                 {imageUrlInput.startsWith('data:') ? (
                   <span className="font-semibold text-slate-800 truncate">Ảnh đã tải lên từ máy tính</span>
                 ) : (
@@ -544,7 +544,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                     value={imageUrlInput}
                     onChange={(e) => setImageUrlInput(e.target.value)}
                     placeholder="Dán đường dẫn ảnh (URL)..."
-                    className="bg-white px-3 py-1.5 rounded-xl border border-indigo-200 text-xs w-72 focus:outline-none"
+                    className="bg-white px-3 py-1.5 rounded-lg border border-slate-300 text-xs w-72 focus:outline-none"
                   />
                 )}
               </div>
@@ -562,11 +562,11 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           )}
 
           {showAttachFile && (
-            <div className="p-3 bg-amber-50/50 rounded-2xl border border-amber-200/80 flex items-center justify-between gap-3 text-xs">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2.5 overflow-hidden">
-                <FileText className="w-4 h-4 text-amber-600 shrink-0" />
+                <FileText className="w-4 h-4 text-slate-700 shrink-0" />
                 <span className="font-semibold text-slate-800 truncate">{attachedFileName || 'Tệp giáo trình / Đề thi'}</span>
-                {attachedFileSize && <span className="text-[11px] text-slate-400 font-mono">({attachedFileSize})</span>}
+                {attachedFileSize && <span className="text-[11px] text-slate-500 font-mono">({attachedFileSize})</span>}
               </div>
               <button
                 type="button"
@@ -583,15 +583,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           )}
 
           {showAttachVideo && (
-            <div className="p-3 bg-red-50/50 rounded-2xl border border-red-200/80 flex items-center justify-between gap-3 text-xs">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2.5 flex-1">
-                <Video className="w-4 h-4 text-red-600 shrink-0" />
+                <Video className="w-4 h-4 text-slate-700 shrink-0" />
                 <input
                   type="text"
                   value={videoUrlInput}
                   onChange={(e) => setVideoUrlInput(e.target.value)}
-                  placeholder="Dán liên kết Video YouTube hoặc Google Drive bài giảng..."
-                  className="bg-white px-3 py-1.5 rounded-xl border border-red-200 text-xs flex-1 focus:outline-none"
+                  placeholder="Dán liên kết Video YouTube bài giảng..."
+                  className="bg-white px-3 py-1.5 rounded-lg border border-slate-300 text-xs flex-1 focus:outline-none"
                 />
               </div>
               <button
@@ -610,14 +610,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           {/* Action Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <label className="p-2 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold">
-                <ImageIcon className="w-4 h-4 text-indigo-600" />
+              <label className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold">
+                <ImageIcon className="w-4 h-4 text-slate-600" />
                 <span className="hidden sm:inline">Ảnh / Sơ đồ</span>
                 <input type="file" accept="image/*" onChange={handleImageFileUpload} className="hidden" />
               </label>
 
-              <label className="p-2 rounded-xl text-slate-500 hover:text-amber-600 hover:bg-amber-50 border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold">
-                <FileText className="w-4 h-4 text-amber-600" />
+              <label className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold">
+                <FileText className="w-4 h-4 text-slate-600" />
                 <span className="hidden sm:inline">Tệp / Giáo trình</span>
                 <input type="file" accept=".pdf,.docx,.zip,.xlsx" onChange={handleFileUpload} className="hidden" />
               </label>
@@ -625,20 +625,20 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAttachVideo((prev) => !prev)}
-                className="p-2 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
+                className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 border border-slate-200 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
               >
-                <Video className="w-4 h-4 text-red-600" />
+                <Video className="w-4 h-4 text-slate-600" />
                 <span className="hidden sm:inline">Video Bài Giảng</span>
               </button>
 
               <div className="h-5 w-px bg-slate-200 mx-1" />
 
               <div className="flex items-center gap-1">
-                <span className="text-[11px] font-bold text-slate-400">Chủ đề:</span>
+                <span className="text-[11px] font-semibold text-slate-500">Chủ đề:</span>
                 <select
                   value={postTag}
                   onChange={(e) => setPostTag(e.target.value)}
-                  className="text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:bg-white"
+                  className="text-xs font-semibold text-slate-800 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:bg-white"
                 >
                   <option value="Hệ Điều Hành">#Hệ Điều Hành</option>
                   <option value="Kinh Tế Vi Mô">#Kinh Tế Vi Mô</option>
@@ -650,15 +650,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
               </div>
 
               <div className="flex items-center gap-1">
-                <span className="text-[11px] font-bold text-slate-400">Quyền xem:</span>
+                <span className="text-[11px] font-semibold text-slate-500">Quyền xem:</span>
                 <select
                   value={postPrivacy}
                   onChange={(e) => setPostPrivacy(e.target.value as any)}
-                  className="text-xs font-bold text-slate-700 bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:bg-white"
+                  className="text-xs font-semibold text-slate-800 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:bg-white"
                 >
-                  <option value="public">🌐 Toàn trường</option>
-                  <option value="department">🏛️ Nội bộ Khoa</option>
-                  <option value="private">🔒 Riêng tư</option>
+                  <option value="public">Toàn trường (Công khai)</option>
+                  <option value="department">Nội bộ Khoa</option>
+                  <option value="private">Riêng tư</option>
                 </select>
               </div>
             </div>
@@ -666,7 +666,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
             <button
               type="submit"
               disabled={!postContent.trim()}
-              className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Send className="w-3.5 h-3.5" />
               <span>Đăng Bài Lên Diễn Đàn</span>
@@ -676,16 +676,16 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       </div>
 
       {/* 3. Search and Category Filter Strip */}
-      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
+      <div className="bg-white p-3 sm:p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           {TAGS.map((t) => (
             <button
               key={t}
               onClick={() => setSelectedTagFilter(t)}
-              className={`px-3 py-1 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                 selectedTagFilter === t
-                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  ? 'bg-slate-900 text-white shadow-2xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -701,7 +701,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Tìm bài viết, tác giả..."
-            className="w-full pl-8 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-600 text-slate-800 placeholder-slate-400"
+            className="w-full pl-8 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-slate-500 text-slate-800 placeholder-slate-400"
           />
         </div>
       </div>
@@ -709,7 +709,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       {/* 4. Posts Feed */}
       <div className="space-y-4">
         {filteredPosts.length === 0 ? (
-          <div className="bg-white rounded-3xl p-10 text-center border border-slate-200 text-slate-400 space-y-2">
+          <div className="bg-white rounded-xl p-10 text-center border border-slate-200 text-slate-400 space-y-2">
             <MessageSquare className="w-8 h-8 text-slate-300 mx-auto" />
             <p className="text-xs font-semibold">Chưa tìm thấy bài viết nào phù hợp.</p>
           </div>
@@ -717,18 +717,18 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           filteredPosts.map((post) => (
             <div
               key={post.id}
-              className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/90 shadow-2xs hover:border-indigo-200 transition-all space-y-4"
+              className="bg-white rounded-xl p-5 sm:p-6 border border-slate-200 shadow-2xs hover:border-slate-300 transition-all space-y-4"
             >
               {/* Post Header */}
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-indigo-700 text-white font-black text-sm flex items-center justify-center shadow-xs">
+                  <div className="w-9 h-9 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center shadow-xs">
                     {post.authorName.slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <div className="font-extrabold text-slate-900 text-xs sm:text-sm flex items-center gap-2">
+                    <div className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-2">
                       <span>{post.authorTitle ? `${post.authorTitle} ` : ''}{post.authorName}</span>
-                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                         {post.authorRole}
                       </span>
                     </div>
@@ -743,18 +743,18 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
                 <div className="flex items-center gap-2 shrink-0 relative">
                   {post.privacy === 'department' && (
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                       <Building2 className="w-3 h-3" />
                       Nội bộ khoa
                     </span>
                   )}
                   {post.privacy === 'private' && (
-                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                    <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
                       <Lock className="w-3 h-3" />
                       Riêng tư
                     </span>
                   )}
-                  <span className="px-3 py-1 rounded-full text-[11px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  <span className="px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                     #{post.tag}
                   </span>
 
@@ -766,7 +766,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                         e.stopPropagation();
                         setActiveMenuPostId((prev) => (prev === post.id ? null : post.id));
                       }}
-                      className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                       title="Tùy chọn bài viết"
                     >
                       <MoreVertical className="w-4 h-4" />
@@ -776,14 +776,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                     {activeMenuPostId === post.id && (
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150 text-xs"
+                        className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-30 animate-in fade-in zoom-in-95 duration-150 text-xs"
                       >
                         <button
                           type="button"
                           onClick={() => handleStartEditPost(post)}
                           className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium transition-colors cursor-pointer"
                         >
-                          <Pencil className="w-4 h-4 text-indigo-600 shrink-0" />
+                          <Pencil className="w-4 h-4 text-slate-600 shrink-0" />
                           <span>Chỉnh sửa bài viết</span>
                         </button>
 
@@ -792,14 +792,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           onClick={() => handleOpenShareModal(post)}
                           className="w-full px-3.5 py-2 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium transition-colors cursor-pointer"
                         >
-                          <Share2 className="w-4 h-4 text-teal-600 shrink-0" />
+                          <Share2 className="w-4 h-4 text-teal-700 shrink-0" />
                           <span>Chia sẻ vào Chat / Nhóm</span>
                         </button>
 
                         <div className="h-px bg-slate-100 my-1" />
 
                         {/* Privacy Submenu */}
-                        <div className="px-3.5 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        <div className="px-3.5 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                           Quyền riêng tư
                         </div>
                         <button
@@ -807,7 +807,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           onClick={() => handleChangePrivacy(post.id, 'public')}
                           className={`w-full px-3.5 py-1.5 text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
                             (!post.privacy || post.privacy === 'public')
-                              ? 'text-indigo-600 font-bold bg-indigo-50/50'
+                              ? 'text-slate-900 font-bold bg-slate-100'
                               : 'text-slate-600 hover:bg-slate-50'
                           }`}
                         >
@@ -822,7 +822,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           onClick={() => handleChangePrivacy(post.id, 'department')}
                           className={`w-full px-3.5 py-1.5 text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
                             post.privacy === 'department'
-                              ? 'text-indigo-600 font-bold bg-indigo-50/50'
+                              ? 'text-slate-900 font-bold bg-slate-100'
                               : 'text-slate-600 hover:bg-slate-50'
                           }`}
                         >
@@ -837,7 +837,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           onClick={() => handleChangePrivacy(post.id, 'private')}
                           className={`w-full px-3.5 py-1.5 text-left flex items-center justify-between text-xs transition-colors cursor-pointer ${
                             post.privacy === 'private'
-                              ? 'text-indigo-600 font-bold bg-indigo-50/50'
+                              ? 'text-slate-900 font-bold bg-slate-100'
                               : 'text-slate-600 hover:bg-slate-50'
                           }`}
                         >
@@ -866,7 +866,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                         <button
                           type="button"
                           onClick={() => handleDeletePost(post.id)}
-                          className="w-full px-3.5 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 font-bold transition-colors cursor-pointer"
+                          className="w-full px-3.5 py-2 text-left text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 font-semibold transition-colors cursor-pointer"
                         >
                           <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
                           <span>Xóa bài viết</span>
@@ -966,7 +966,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
                   <button
                     onClick={() => handleOpenShareModal(post)}
-                    className="flex items-center gap-1.5 font-bold text-slate-500 hover:text-indigo-600 transition-colors cursor-pointer"
+                    className="flex items-center gap-1.5 font-semibold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer"
                     title="Chia sẻ vào tin nhắn với bạn bè hoặc nhóm Q-Group"
                   >
                     <Share2 className="w-3.5 h-3.5" />
@@ -975,7 +975,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                 </div>
 
                 <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-indigo-500" />
+                  <UserCheck className="w-3.5 h-3.5 text-teal-600" />
                   <span>Xác thực Giảng viên</span>
                 </div>
               </div>
@@ -985,9 +985,9 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                 <div className="pt-3 border-t border-slate-100 space-y-3">
                   {/* Comments List */}
                   {post.comments.map((cm) => (
-                    <div key={cm.id} className="bg-slate-50 rounded-2xl p-3 sm:p-3.5 space-y-1 text-xs">
+                    <div key={cm.id} className="bg-slate-50 rounded-lg p-3 sm:p-3.5 space-y-1 text-xs border border-slate-100">
                       <div className="flex items-center justify-between">
-                        <strong className="text-slate-900 font-extrabold text-[11px]">
+                        <strong className="text-slate-900 font-bold text-[11px]">
                           {cm.authorTitle ? `${cm.authorTitle} ` : ''}{cm.authorName}
                         </strong>
                         <span className="text-[10px] text-slate-400 font-mono">{cm.timestamp}</span>
@@ -1013,12 +1013,12 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                         }
                       }}
                       placeholder="Viết phản hồi hoặc đóng góp ý kiến cho bài viết..."
-                      className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-600 text-slate-800 placeholder-slate-400"
+                      className="flex-1 px-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-slate-800 text-slate-800 placeholder-slate-400"
                     />
                     <button
                       onClick={() => handleAddComment(post.id)}
                       disabled={activeCommentPostId !== post.id || !commentDraft.trim()}
-                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                      className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
                     >
                       <Send className="w-3 h-3" />
                       <span className="hidden sm:inline">Gửi</span>
@@ -1039,22 +1039,22 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-in zoom-in-95 duration-150"
+            className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-in zoom-in-95 duration-150"
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center">
                   <Pencil className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Chỉnh Sửa Bài Viết</h3>
-                  <p className="text-[11px] text-slate-400">Cập nhật nội dung và thiết lập quyền riêng tư</p>
+                  <h3 className="text-sm font-bold text-slate-900">Chỉnh Sửa Bài Viết</h3>
+                  <p className="text-[11px] text-slate-500">Cập nhật nội dung và thiết lập quyền riêng tư</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingPost(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1062,23 +1062,23 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Nội dung bài viết:</label>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">Nội dung bài viết:</label>
                 <textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   rows={4}
-                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:bg-white focus:border-indigo-600 text-slate-800 leading-relaxed resize-none"
+                  className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:bg-white focus:border-slate-800 text-slate-800 leading-relaxed resize-none"
                   placeholder="Nhập nội dung bài viết..."
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Chủ đề (#tag):</label>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Chủ đề (#tag):</label>
                   <select
                     value={editTag}
                     onChange={(e) => setEditTag(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-semibold focus:outline-none focus:bg-white focus:border-indigo-600"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-semibold focus:outline-none focus:bg-white focus:border-slate-800"
                   >
                     <option value="Hệ Điều Hành">#Hệ Điều Hành</option>
                     <option value="Kinh Tế Vi Mô">#Kinh Tế Vi Mô</option>
@@ -1090,15 +1090,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Quyền riêng tư:</label>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">Quyền riêng tư:</label>
                   <select
                     value={editPrivacy}
                     onChange={(e) => setEditPrivacy(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-semibold focus:outline-none focus:bg-white focus:border-indigo-600"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-semibold focus:outline-none focus:bg-white focus:border-slate-800"
                   >
-                    <option value="public">🌐 Toàn trường (Công khai)</option>
-                    <option value="department">🏛️ Nội bộ Khoa</option>
-                    <option value="private">🔒 Riêng tư (Chỉ nhóm)</option>
+                    <option value="public">Toàn trường (Công khai)</option>
+                    <option value="department">Nội bộ Khoa</option>
+                    <option value="private">Riêng tư (Chỉ nhóm)</option>
                   </select>
                 </div>
               </div>
@@ -1108,14 +1108,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setEditingPost(null)}
-                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold transition-all cursor-pointer"
+                className="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 text-xs font-semibold transition-all cursor-pointer"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
                 onClick={handleSaveEditPost}
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <Check className="w-3.5 h-3.5" />
                 <span>Lưu Thay Đổi</span>
@@ -1133,22 +1133,22 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-in zoom-in-95 duration-150"
+            className="w-full max-w-lg bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden space-y-4 p-6 animate-in zoom-in-95 duration-150"
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 text-teal-700 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center">
                   <Share2 className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Chia Sẻ Vào Cuộc Trò Chuyện</h3>
-                  <p className="text-[11px] text-slate-400">Gửi bài viết đến Hội nhóm Q-Group hoặc Đồng nghiệp</p>
+                  <h3 className="text-sm font-bold text-slate-900">Chia Sẻ Vào Cuộc Trò Chuyện</h3>
+                  <p className="text-[11px] text-slate-500">Gửi bài viết đến Hội nhóm Q-Group hoặc Đồng nghiệp</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setSharingPost(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>

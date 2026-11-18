@@ -401,7 +401,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       );
       setQgroups(valid);
       try {
-        localStorage.setItem('quizgen_qgroups', JSON.stringify(valid));
+        const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
+        localStorage.setItem(storageKey, JSON.stringify(valid));
       } catch {}
     },
     [myEmail]
@@ -426,7 +427,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         });
         if (changed) {
           try {
-            localStorage.setItem('quizgen_qgroups', JSON.stringify(next));
+            const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
+            localStorage.setItem(storageKey, JSON.stringify(next));
           } catch {}
         }
         return changed ? next : prev;
@@ -508,7 +510,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
       let merged = [...remoteClean];
       try {
-        const localSaved = localStorage.getItem('quizgen_qgroups');
+        const storageKey = myEmail ? `quizgen_qgroups_${myEmail}` : 'quizgen_qgroups';
+        const localSaved = localStorage.getItem(storageKey);
         if (localSaved) {
           const localGroups = flattenGroups(JSON.parse(localSaved) as unknown[]).filter(
             (g) => !bl.has(g.id) && !bl.has(g.code)
@@ -630,6 +633,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const sortedGroups = useMemo(() => {
     return [...qgroups]
       .filter((g) => {
+        // Bảo mật Tin nhắn riêng 1-1: Chỉ hiển thị cho 2 người tham gia
+        if (g.isDirect) {
+          const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
+          const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
+          const membersList = (g.members || []).map((m) => String(m).trim().toLowerCase());
+          const isParticipant =
+            myEmail === cleanOwner ||
+            myEmail === cleanPartner ||
+            membersList.includes(myEmail);
+          if (!isParticipant) return false;
+        }
+
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
           return (
@@ -693,7 +708,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       senderEmail: myEmail,
       senderName: myName,
       senderTitle: currentUser?.academicTitle || 'GV',
-      avatarColor: 'bg-purple-600',
+      avatarColor: 'bg-slate-700',
       text: chatInput.trim(),
       attachment: selectedAttachment || undefined,
       timestamp: new Date().toLocaleTimeString('vi-VN', {
@@ -1230,98 +1245,103 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       {/* ====================================================================
           LEFT SIDEBAR: CONVERSATION LIST (SLACK WORKSPACE STYLE)
       ==================================================================== */}
-      <div className="w-80 lg:w-96 bg-white border-r border-slate-200 flex flex-col shrink-0 h-full">
+      <div className="w-80 lg:w-96 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 h-full">
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 space-y-3">
+        <div className="p-3.5 border-b border-slate-200/80 space-y-2.5 bg-white">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-1.5">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5">
                 <span>UTH Academic Workspace</span>
                 {totalInvitations > 0 && (
                   <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                 )}
               </h2>
-              <p className="text-[11px] text-slate-400 font-medium">Khoa CNTT • Kênh Học Thuật Q-Group</p>
+              <p className="text-[11px] text-slate-500 font-medium">Khoa CNTT • Kênh Học Thuật Chuyên Môn</p>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsAddFriendOpen(true);
                 }}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-purple-100 hover:text-purple-700 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
-                title="Thêm bạn mới"
+                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                title="Thêm đồng nghiệp mới"
               >
-                <UserPlus className="w-4 h-4" />
+                <UserPlus className="w-3.5 h-3.5" />
               </button>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  setGroupModalTab('create');
                   setIsCreateGroupOpen(true);
                 }}
-                className="w-8 h-8 rounded-xl bg-purple-600 hover:bg-purple-700 text-white flex items-center justify-center transition-colors shadow-xs cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center transition-colors shadow-xs cursor-pointer"
                 title="Tạo kênh mới hoặc Nhập mã"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {/* Search */}
           <div className="relative">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Tìm kiếm kênh hoặc đồng nghiệp..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-100 hover:bg-slate-200/70 focus:bg-white border border-transparent focus:border-purple-300 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none transition-all"
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-100 hover:bg-slate-200/70 focus:bg-white border border-transparent focus:border-slate-400 rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none transition-all"
             />
           </div>
 
-          {/* Filter tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-            {(
-              [
-                { id: 'all', label: 'Tất cả' },
-                { id: 'unread', label: 'Chưa đọc' },
-                { id: 'groups', label: 'Kênh nhóm' },
-                { id: 'friends', label: 'Đồng nghiệp' },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFilterTab(tab.id);
-                }}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                  filterTab === tab.id
-                    ? 'bg-purple-100 text-purple-700'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200/60'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          {/* Filter tabs (Slack Clean Minimal Buttons) */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterTab('all');
+              }}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                filterTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Tất cả
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterTab('unread');
+              }}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                filterTab === 'unread'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Chưa đọc
+            </button>
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 setFilterTab('invitations');
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
                 filterTab === 'invitations'
-                  ? 'bg-purple-100 text-purple-700 ring-1 ring-purple-300'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/60'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               <span>Lời mời</span>
               {totalInvitations > 0 && (
-                <span className="px-1.5 rounded-full text-[10px] font-black bg-rose-500 text-white animate-pulse">
+                <span className="px-1.5 rounded-full text-[10px] font-bold bg-rose-500 text-white">
                   {totalInvitations}
                 </span>
               )}
@@ -1343,77 +1363,214 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             onBack={() => setFilterTab('all')}
           />
         ) : (
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+          <div className="flex-1 overflow-y-auto py-2">
             {/* Lời mời kết bạn nổi bật cho tài khoản nhận */}
             {friendRequests.length > 0 && (
               <div
                 onClick={() => setFilterTab('invitations')}
-                className="m-2.5 p-3 rounded-2xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-teal-500/10 border-2 border-purple-400/80 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-purple-100/60 transition-all shadow-xs"
+                className="mx-2 mb-2 p-2.5 rounded-lg bg-slate-900 text-white flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-800 transition-all shadow-xs"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
-                    <UserPlus className="w-4 h-4" />
-                  </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <UserPlus className="w-4 h-4 text-teal-400 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-xs font-black text-purple-900 truncate flex items-center gap-1.5">
+                    <p className="text-xs font-semibold truncate flex items-center gap-1.5">
                       <span>{friendRequests.length} lời mời kết bạn mới</span>
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
                     </p>
-                    <p className="text-[10px] text-purple-700 truncate">
-                      Từ: <strong>{friendRequests[0]?.senderName || friendRequests[0]?.senderEmail}</strong>
+                    <p className="text-[10px] text-slate-300 truncate">
+                      Từ: {friendRequests[0]?.senderName || friendRequests[0]?.senderEmail}
                     </p>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-xl bg-purple-600 text-white text-[11px] font-bold shrink-0 shadow-xs">
-                  Xem ngay
+                <span className="px-2 py-0.5 rounded bg-white/20 text-white text-[10px] font-semibold shrink-0">
+                  Xem
                 </span>
               </div>
             )}
+
             {sortedGroups.length === 0 ? (
               <div className="p-8 text-center text-slate-400 space-y-2">
-                <MessageCircle className="w-10 h-10 mx-auto text-slate-300" />
-                <p className="text-xs font-bold text-slate-600">Không có kênh hay tin nhắn nào</p>
-                <p className="text-[11px]">Bấm dấu + để bắt đầu kết nối đồng nghiệp hoặc tạo kênh chuyên môn.</p>
+                <MessageCircle className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-xs font-semibold text-slate-600">Không có kênh hay tin nhắn nào</p>
+                <p className="text-[11px]">Bấm dấu + để tạo kênh chuyên môn hoặc kết nối đồng nghiệp.</p>
+              </div>
+            ) : filterTab === 'unread' ? (
+              <div className="space-y-0.5">
+                <div className="px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Tin nhắn chưa đọc ({sortedGroups.length})
+                </div>
+                {sortedGroups.map((group) => (
+                  <ConversationItem
+                    key={group.id}
+                    group={group}
+                    isSelected={group.id === selectedGroupId}
+                    myEmail={myEmail}
+                    isMenuOpen={menuGroupId === group.id}
+                    onSelect={() => {
+                      setSelectedGroupId(group.id);
+                      markGroupAsRead(group.id);
+                      setMenuGroupId(null);
+                    }}
+                    onMenuToggle={(e) => {
+                      e.stopPropagation();
+                      setMenuGroupId((prev) => (prev === group.id ? null : group.id));
+                    }}
+                    onViewProfile={() => {
+                      const info = resolveChatDisplayInfo(group, myEmail);
+                      setProfileEmail(info.partnerEmail || null);
+                      setProfileName(info.displayName);
+                      setMenuGroupId(null);
+                    }}
+                    onViewDetails={() => {
+                      setChannelDetailsTab('about');
+                      setIsChannelDetailsOpen(true);
+                      setMenuGroupId(null);
+                    }}
+                    onMute={() => handleToggleMute(group)}
+                    onDelete={() => handleDeleteChat(group)}
+                    onLeave={() => handleLeaveGroup(group)}
+                    onDisband={() => handleDisbandGroup(group)}
+                    onCopyCode={() => {
+                      navigator.clipboard.writeText(group.code);
+                      onShowToast('info', 'Đã sao chép mã phòng', group.code);
+                      setMenuGroupId(null);
+                    }}
+                  />
+                ))}
               </div>
             ) : (
-              sortedGroups.map((group) => (
-                <ConversationItem
-                  key={group.id}
-                  group={group}
-                  isSelected={group.id === selectedGroupId}
-                  myEmail={myEmail}
-                  isMenuOpen={menuGroupId === group.id}
-                  onSelect={() => {
-                    setSelectedGroupId(group.id);
-                    markGroupAsRead(group.id);
-                    setMenuGroupId(null);
-                  }}
-                  onMenuToggle={(e) => {
-                    e.stopPropagation();
-                    setMenuGroupId((prev) => (prev === group.id ? null : group.id));
-                  }}
-                  onViewProfile={() => {
-                    const info = resolveChatDisplayInfo(group, myEmail);
-                    setProfileEmail(info.partnerEmail || null);
-                    setProfileName(info.displayName);
-                    setMenuGroupId(null);
-                  }}
-                  onViewDetails={() => {
-                    setChannelDetailsTab('about');
-                    setIsChannelDetailsOpen(true);
-                    setMenuGroupId(null);
-                  }}
-                  onMute={() => handleToggleMute(group)}
-                  onDelete={() => handleDeleteChat(group)}
-                  onLeave={() => handleLeaveGroup(group)}
-                  onDisband={() => handleDisbandGroup(group)}
-                  onCopyCode={() => {
-                    navigator.clipboard.writeText(group.code);
-                    onShowToast('info', 'Đã sao chép mã phòng', group.code);
-                    setMenuGroupId(null);
-                  }}
-                />
-              ))
+              <div className="space-y-3">
+                {/* SECTION 1: KÊNH CHUYÊN MÔN (SLACK CHANNELS) */}
+                <div>
+                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800">
+                    <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Hash className="w-3.5 h-3.5" />
+                      <span>Kênh chuyên môn ({sortedGroups.filter((g) => !g.isDirect).length})</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGroupModalTab('create');
+                        setIsCreateGroupOpen(true);
+                      }}
+                      className="w-5 h-5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
+                      title="Tạo kênh mới hoặc Nhập mã"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-0.5 mt-0.5">
+                    {sortedGroups
+                      .filter((g) => !g.isDirect)
+                      .map((group) => (
+                        <ConversationItem
+                          key={group.id}
+                          group={group}
+                          isSelected={group.id === selectedGroupId}
+                          myEmail={myEmail}
+                          isMenuOpen={menuGroupId === group.id}
+                          onSelect={() => {
+                            setSelectedGroupId(group.id);
+                            markGroupAsRead(group.id);
+                            setMenuGroupId(null);
+                          }}
+                          onMenuToggle={(e) => {
+                            e.stopPropagation();
+                            setMenuGroupId((prev) => (prev === group.id ? null : group.id));
+                          }}
+                          onViewProfile={() => {
+                            const info = resolveChatDisplayInfo(group, myEmail);
+                            setProfileEmail(info.partnerEmail || null);
+                            setProfileName(info.displayName);
+                            setMenuGroupId(null);
+                          }}
+                          onViewDetails={() => {
+                            setChannelDetailsTab('about');
+                            setIsChannelDetailsOpen(true);
+                            setMenuGroupId(null);
+                          }}
+                          onMute={() => handleToggleMute(group)}
+                          onDelete={() => handleDeleteChat(group)}
+                          onLeave={() => handleLeaveGroup(group)}
+                          onDisband={() => handleDisbandGroup(group)}
+                          onCopyCode={() => {
+                            navigator.clipboard.writeText(group.code);
+                            onShowToast('info', 'Đã sao chép mã phòng', group.code);
+                            setMenuGroupId(null);
+                          }}
+                        />
+                      ))}
+                    {sortedGroups.filter((g) => !g.isDirect).length === 0 && (
+                      <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có kênh học thuật nào</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* SECTION 2: TIN NHẮN TRỰC TIẾP (SLACK DIRECT MESSAGES) */}
+                <div className="pt-2 border-t border-slate-200/60">
+                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800">
+                    <span className="text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5" />
+                      <span>Tin nhắn trực tiếp ({sortedGroups.filter((g) => Boolean(g.isDirect)).length})</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsAddFriendOpen(true)}
+                      className="w-5 h-5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
+                      title="Thêm đồng nghiệp mới"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-0.5 mt-0.5">
+                    {sortedGroups
+                      .filter((g) => Boolean(g.isDirect))
+                      .map((group) => (
+                        <ConversationItem
+                          key={group.id}
+                          group={group}
+                          isSelected={group.id === selectedGroupId}
+                          myEmail={myEmail}
+                          isMenuOpen={menuGroupId === group.id}
+                          onSelect={() => {
+                            setSelectedGroupId(group.id);
+                            markGroupAsRead(group.id);
+                            setMenuGroupId(null);
+                          }}
+                          onMenuToggle={(e) => {
+                            e.stopPropagation();
+                            setMenuGroupId((prev) => (prev === group.id ? null : group.id));
+                          }}
+                          onViewProfile={() => {
+                            const info = resolveChatDisplayInfo(group, myEmail);
+                            setProfileEmail(info.partnerEmail || null);
+                            setProfileName(info.displayName);
+                            setMenuGroupId(null);
+                          }}
+                          onViewDetails={() => {
+                            setChannelDetailsTab('about');
+                            setIsChannelDetailsOpen(true);
+                            setMenuGroupId(null);
+                          }}
+                          onMute={() => handleToggleMute(group)}
+                          onDelete={() => handleDeleteChat(group)}
+                          onLeave={() => handleLeaveGroup(group)}
+                          onDisband={() => handleDisbandGroup(group)}
+                          onCopyCode={() => {
+                            navigator.clipboard.writeText(group.code);
+                            onShowToast('info', 'Đã sao chép mã phòng', group.code);
+                            setMenuGroupId(null);
+                          }}
+                        />
+                      ))}
+                    {sortedGroups.filter((g) => Boolean(g.isDirect)).length === 0 && (
+                      <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có tin nhắn 1-1 nào</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -1437,13 +1594,16 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       setIsChannelDetailsOpen(true);
                     }
                   }}
-                  className={`w-10 h-10 rounded-xl text-white font-black text-xs flex items-center justify-center shadow-xs cursor-pointer hover:opacity-90 transition-all ${
-                    activeGroup.isDirect
-                      ? 'bg-gradient-to-tr from-indigo-500 to-blue-600'
-                      : 'bg-gradient-to-tr from-purple-600 to-indigo-600'
-                  }`}
+                  className="w-9 h-9 rounded-lg bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center cursor-pointer hover:bg-slate-300 transition-colors"
                 >
-                  {activeGroup.isDirect ? activeInfo.avatarInitials : <Hash className="w-5 h-5" />}
+                  {activeGroup.isDirect ? (
+                    <div className="relative">
+                      <span>{activeInfo.avatarInitials}</span>
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
+                    </div>
+                  ) : (
+                    <Hash className="w-5 h-5 text-slate-700" />
+                  )}
                 </div>
 
                 <div className="min-w-0">
@@ -1457,12 +1617,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           setIsChannelDetailsOpen(true);
                         }
                       }}
-                      className="text-sm font-extrabold text-slate-900 truncate cursor-pointer hover:underline flex items-center gap-1.5"
+                      className="text-sm font-bold text-slate-900 truncate cursor-pointer hover:underline flex items-center gap-1.5"
                     >
                       {!activeGroup.isDirect ? (
-                        <Hash className="w-4 h-4 text-purple-600 shrink-0" />
+                        <Hash className="w-4 h-4 text-slate-500 shrink-0" />
                       ) : (
-                        <span className="text-purple-600 font-bold shrink-0">@</span>
+                        <span className="text-slate-500 font-bold shrink-0">@</span>
                       )}
                       <span>{activeInfo.displayName}</span>
                     </h3>
@@ -1488,15 +1648,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         navigator.clipboard.writeText(activeGroup.code);
                         onShowToast('info', 'Đã sao chép mã phòng', activeGroup.code);
                       }}
-                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-purple-100 text-[10px] font-mono font-bold text-slate-700 flex items-center gap-1 transition-colors shrink-0"
+                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-[10px] font-mono font-semibold text-slate-700 flex items-center gap-1 transition-colors shrink-0 border border-slate-200"
                       title="Sao chép mã phòng"
                     >
                       {activeGroup.code}
-                      <Copy className="w-2.5 h-2.5" />
+                      <Copy className="w-2.5 h-2.5 text-slate-500" />
                     </button>
                   </div>
 
-                  <p className="text-[11px] text-slate-400 flex items-center gap-2">
+                  <p className="text-[11px] text-slate-500 flex items-center gap-2">
                     {activeGroup.isDirect ? (
                       <span className="flex items-center gap-1 text-emerald-600 font-medium">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
@@ -1510,9 +1670,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             setChannelDetailsTab('members');
                             setIsChannelDetailsOpen(true);
                           }}
-                          className="hover:underline cursor-pointer hover:text-purple-600 font-medium"
+                          className="hover:underline cursor-pointer hover:text-slate-900 font-medium flex items-center gap-1"
                         >
-                          👥 {activeGroup.memberCount ?? (activeGroup.members || []).length} thành viên
+                          <Users className="w-3.5 h-3.5 text-slate-400" />
+                          <span>{activeGroup.memberCount ?? (activeGroup.members || []).length} thành viên</span>
                         </span>
                         {activeGroup.department && <span>• {activeGroup.department}</span>}
                       </>
@@ -1523,22 +1684,22 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
               {/* Slack Header Action Buttons */}
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* 1. Huddle Button (Bắt đầu cuộc gọi thảo luận Slack) */}
+                {/* 1. Huddle Button (Slack Clean Audio Call) */}
                 <button
                   type="button"
                   onClick={() => setIsHuddleOpen(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-purple-200/60"
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
                   title="Bắt đầu thảo luận nhanh (Huddle)"
                 >
-                  <Headphones className="w-3.5 h-3.5" />
+                  <Headphones className="w-3.5 h-3.5 text-slate-600" />
                   <span className="hidden sm:inline">Huddle</span>
                 </button>
 
-                {/* 2. Summarize by AI (Slack AI Summarizer) */}
+                {/* 2. Summarize by AI (Quanta AI Summarizer) */}
                 <button
                   type="button"
                   onClick={() => setIsSummarizeModalOpen(true)}
-                  className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-teal-50 to-indigo-50 hover:from-teal-100 hover:to-indigo-100 text-teal-800 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-teal-200/60 shadow-2xs"
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200"
                   title="Tóm tắt kênh bằng Quanta AI"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-teal-600" />
@@ -1549,7 +1710,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => handleToggleMute(activeGroup)}
-                  className="p-2 rounded-xl text-slate-500 hover:text-purple-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
                   title={activeGroup.muted ? 'Bật thông báo' : 'Tắt thông báo'}
                 >
                   {activeGroup.muted ? <BellOff className="w-4 h-4 text-amber-500" /> : <Bell className="w-4 h-4" />}
@@ -1567,7 +1728,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       setIsChannelDetailsOpen(true);
                     }
                   }}
-                  className="p-2 rounded-xl text-slate-500 hover:text-purple-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
                   title={activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết & Cài đặt kênh'}
                 >
                   {activeGroup.isDirect ? <User className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
@@ -1579,20 +1740,20 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2 bg-[#fcfdfe]">
               {/* Channel Welcome Card */}
               {activeGroup.isDirect ? (
-                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 text-left space-y-3 max-w-xl mb-4 shadow-2xs">
+                <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 text-left space-y-3 max-w-xl mb-4 shadow-2xs">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white flex items-center justify-center font-black text-lg shadow-xs">
+                    <div className="w-10 h-10 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold text-sm">
                       {activeInfo.avatarInitials}
                     </div>
                     <div>
-                      <h4 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
+                      <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                         <span>@{activeInfo.displayName}</span>
                         <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
                       </h4>
                       <p className="text-xs text-slate-400 font-mono">{activeInfo.partnerEmail}</p>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200">
                     Đây là không gian trao đổi chuyên môn trực tiếp riêng tư giữa bạn và <strong>@{activeInfo.displayName}</strong> ({activeInfo.displayRoleOrMembers}). Toàn bộ tài liệu giáo trình và câu hỏi thi chia sẻ tại đây được đồng bộ hai chiều.
                   </p>
                   <div className="flex items-center gap-2">
@@ -1602,7 +1763,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         setProfileEmail(activeInfo.partnerEmail || null);
                         setProfileName(activeInfo.displayName);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer flex items-center gap-1.5 transition-colors border border-slate-200"
                     >
                       <User className="w-3.5 h-3.5" />
                       <span>Xem trang cá nhân</span>
@@ -1610,11 +1771,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 text-left space-y-2.5 max-w-xl mb-4 shadow-2xs">
-                  <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-sm">
-                    <Hash className="w-5 h-5" />
+                <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 text-left space-y-2.5 max-w-xl mb-4 shadow-2xs">
+                  <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center font-bold text-sm border border-slate-200">
+                    <Hash className="w-5 h-5 text-slate-600" />
                   </div>
-                  <h4 className="text-sm sm:text-base font-extrabold text-slate-900">
+                  <h4 className="text-sm sm:text-base font-bold text-slate-900">
                     Chào mừng bạn đến với kênh #{activeInfo.displayName}!
                   </h4>
                   <p className="text-xs text-slate-600 leading-relaxed">
@@ -1622,7 +1783,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       'Không gian trao đổi chuyên môn, chia sẻ giáo trình và đóng góp ma trận câu hỏi thi giữa các giảng viên trong bộ môn.'}
                   </p>
                   <div className="flex items-center gap-3 pt-1 text-[11px] text-slate-500">
-                    <span>Mã phòng: <strong className="font-mono text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">{activeGroup.code}</strong></span>
+                    <span>Mã phòng: <strong className="font-mono text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{activeGroup.code}</strong></span>
                     <span>•</span>
                     <span>Chủ trì: <strong>{activeGroup.ownerName || 'TS. Hồ Anh Vũ'}</strong></span>
                   </div>
@@ -1636,7 +1797,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   return (
                     <div key={msg.id} className="flex justify-center my-2">
                       <span className="px-3.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-medium flex items-center gap-1.5 border border-slate-200">
-                        <Shield className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                        <Shield className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                         <span>{msg.text}</span>
                         <span className="text-[10px] text-slate-400 font-mono ml-1">{msg.timestamp}</span>
                       </span>
@@ -1647,7 +1808,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 return (
                   <div
                     key={msg.id}
-                    className="flex items-start gap-3 px-3 py-2 -mx-2 rounded-xl hover:bg-slate-100/70 transition-colors group relative select-text"
+                    className="flex items-start gap-3 px-3 py-2 -mx-2 rounded-lg hover:bg-slate-100/70 transition-colors group relative select-text"
                   >
                     <div
                       onClick={() => {
@@ -1656,10 +1817,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           setProfileName(msg.senderName);
                         }
                       }}
-                      className={`w-9 h-9 rounded-lg text-white text-xs font-black flex items-center justify-center shrink-0 shadow-2xs mt-0.5 cursor-pointer hover:opacity-90 transition-opacity ${
-                        isMe
-                          ? 'bg-gradient-to-tr from-purple-600 to-indigo-600'
-                          : 'bg-gradient-to-tr from-indigo-500 to-teal-600'
+                      className={`w-8 h-8 rounded-md text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 cursor-pointer hover:opacity-90 transition-opacity ${
+                        isMe ? 'bg-slate-800' : 'bg-teal-700'
                       }`}
                       title={isMe ? 'Bạn' : `Xem trang cá nhân của ${msg.senderName}`}
                     >
@@ -1675,17 +1834,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setProfileName(msg.senderName);
                             }
                           }}
-                          className="font-extrabold text-[13px] text-slate-900 hover:underline cursor-pointer"
+                          className="font-bold text-[13px] text-slate-900 hover:underline cursor-pointer"
                         >
                           {msg.senderName || msg.senderEmail}
                         </span>
                         {msg.senderTitle && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200/60">
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
                             {msg.senderTitle}
                           </span>
                         )}
                         {isMe && (
-                          <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1 rounded">
+                          <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-1 rounded">
                             Bạn
                           </span>
                         )}
@@ -1701,16 +1860,16 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       )}
 
                       {msg.attachment && (
-                        <div className="mt-2 p-3 rounded-2xl bg-white border border-teal-200 text-left space-y-2 shadow-2xs max-w-md">
+                        <div className="mt-2 p-3 rounded-xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs max-w-md">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-100">
+                            <div className="w-8 h-8 rounded-lg bg-slate-100 text-teal-700 flex items-center justify-center shrink-0 border border-slate-200">
                               <BookOpen className="w-4 h-4" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-bold text-slate-900 truncate">
                                 {msg.attachment.name}
                               </p>
-                              <p className="text-[10px] text-teal-600 font-medium">
+                              <p className="text-[10px] text-slate-500 font-medium">
                                 {msg.attachment.totalPages} trang • {msg.attachment.size} • Giáo trình học thuật
                               </p>
                             </div>
@@ -1721,7 +1880,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               onClick={() => {
                                 onShowToast('success', 'Đã nạp giáo trình', `Đã chuyển ${msg.attachment?.name} vào không gian sinh đề`);
                               }}
-                              className="flex-1 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                              className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
                             >
                               <Sparkles className="w-3.5 h-3.5" />
                               <span>Dùng Sinh Đề Ngay</span>
@@ -1771,16 +1930,16 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             <div className="p-3 sm:px-4 sm:py-3 border-t border-slate-200 bg-white space-y-2">
               {/* Attachment Preview (if any) */}
               {selectedAttachment && (
-                <div className="flex items-center justify-between p-2 rounded-xl bg-teal-50 border border-teal-200 text-xs">
+                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
                     <BookOpen className="w-4 h-4 text-teal-600 shrink-0" />
-                    <span className="font-bold text-teal-800 truncate">{selectedAttachment.name}</span>
-                    <span className="text-[10px] text-teal-600">({selectedAttachment.size})</span>
+                    <span className="font-semibold text-slate-800 truncate">{selectedAttachment.name}</span>
+                    <span className="text-[10px] text-slate-500">({selectedAttachment.size})</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setSelectedAttachment(null)}
-                    className="p-1 rounded hover:bg-teal-100 text-teal-600 cursor-pointer"
+                    className="p-1 rounded hover:bg-slate-200 text-slate-500 cursor-pointer"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -1788,10 +1947,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               )}
 
               {/* Formatting Toolbar (Slack Style) */}
-              <div className="flex items-center justify-between gap-1 border border-slate-200 rounded-2xl p-1 bg-slate-50 focus-within:border-purple-400 focus-within:bg-white transition-all shadow-2xs">
+              <div className="flex items-center justify-between gap-1 border border-slate-300 rounded-xl p-1 bg-slate-50/50 focus-within:border-slate-500 focus-within:bg-white transition-all shadow-2xs">
                 <div className="flex-1 flex flex-col">
                   {/* Top Buttons: B, I, Code, List, Quote */}
-                  <div className="flex items-center gap-1 px-2 pt-1 border-b border-slate-200/60 pb-1 text-slate-600">
+                  <div className="flex items-center gap-1 px-2 pt-1 border-b border-slate-200 pb-1 text-slate-600">
                     <button
                       type="button"
                       onClick={() => insertFormatting('**', '**')}
@@ -1844,7 +2003,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           setIsEmojiPickerOpen(!isEmojiPickerOpen);
                           setIsAttachPopoverOpen(false);
                         }}
-                        className="p-1 rounded hover:bg-purple-100 hover:text-purple-700 text-slate-600 cursor-pointer"
+                        className="p-1 rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
                         title="Chèn biểu tượng cảm xúc"
                       >
                         <Smile className="w-3.5 h-3.5" />
@@ -1853,7 +2012,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       {isEmojiPickerOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          className="absolute left-0 bottom-8 z-30 bg-white border border-slate-200 rounded-2xl shadow-xl p-2 flex items-center gap-1.5 text-base animate-fade-in"
+                          className="absolute left-0 bottom-8 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-1.5 text-base animate-fade-in"
                         >
                           {['👍', '❤️', '👏', '💡', '🔥', '📚', '🎓', '✍️', '🎉', '✅'].map((emoji) => (
                             <button
@@ -1863,7 +2022,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 setChatInput((prev) => prev + emoji);
                                 setIsEmojiPickerOpen(false);
                               }}
-                              className="w-8 h-8 rounded-xl hover:bg-slate-100 flex items-center justify-center transition-all hover:scale-110 cursor-pointer"
+                              className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-all hover:scale-110 cursor-pointer"
                             >
                               {emoji}
                             </button>
@@ -1881,21 +2040,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           setIsAttachPopoverOpen(!isAttachPopoverOpen);
                           setIsEmojiPickerOpen(false);
                         }}
-                        className="p-1 rounded hover:bg-teal-100 hover:text-teal-700 text-slate-600 cursor-pointer flex items-center gap-1 text-[11px] font-bold"
+                        className="p-1 rounded hover:bg-slate-200 text-slate-600 cursor-pointer flex items-center gap-1 text-[11px] font-semibold"
                         title="Đính kèm giáo trình từ Thư viện"
                       >
-                        <Paperclip className="w-3.5 h-3.5 text-teal-600" />
-                        <span className="hidden sm:inline text-teal-700">Đính kèm giáo trình</span>
+                        <Paperclip className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="hidden sm:inline text-slate-700">Đính kèm giáo trình</span>
                       </button>
 
                       {isAttachPopoverOpen && (
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          className="absolute left-0 bottom-8 z-30 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-3 space-y-2 animate-fade-in text-xs"
+                          className="absolute left-0 bottom-8 z-30 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-3 space-y-2 animate-fade-in text-xs"
                         >
                           <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                            <span className="font-extrabold text-slate-800 flex items-center gap-1">
-                              <BookOpen className="w-3.5 h-3.5 text-teal-600" />
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <BookOpen className="w-3.5 h-3.5 text-teal-700" />
                               Kho Giáo Trình Sẵn Có
                             </span>
                             <button
@@ -1922,10 +2081,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                   setIsAttachPopoverOpen(false);
                                   onShowToast('info', 'Đã chọn tệp đính kèm', tb.name);
                                 }}
-                                className="p-2 rounded-xl border border-slate-200/80 hover:border-teal-400 hover:bg-teal-50/50 cursor-pointer transition-all space-y-0.5"
+                                className="p-2 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 cursor-pointer transition-all space-y-0.5"
                               >
-                                <p className="font-bold text-slate-800 truncate">{tb.name}</p>
-                                <p className="text-[10px] text-slate-400">
+                                <p className="font-semibold text-slate-800 truncate">{tb.name}</p>
+                                <p className="text-[10px] text-slate-500">
                                   {tb.totalPages} trang • {tb.size}
                                 </p>
                               </div>
@@ -1962,10 +2121,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   type="button"
                   onClick={() => handleSend()}
                   disabled={!chatInput.trim() && !selectedAttachment}
-                  className="w-9 h-9 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-30 text-white flex items-center justify-center transition-all shadow-xs shrink-0 self-end mb-1 mr-1 cursor-pointer"
+                  className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-white flex items-center justify-center transition-all shadow-xs shrink-0 self-end mb-1 mr-1 cursor-pointer"
                   title="Gửi tin nhắn (Enter)"
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
@@ -2024,8 +2183,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           icon={<UserCheck className="w-4 h-4 text-amber-600" />}
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 space-y-1">
-              <p className="font-bold flex items-center gap-1.5">
+            <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-amber-900 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>Bạn đang là Trưởng nhóm của "#{transferGroup.name}"</span>
               </p>
@@ -2035,21 +2194,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="font-bold text-slate-700">Chọn giảng viên kế nhiệm:</label>
-              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-2xl p-2 bg-slate-50">
+              <label className="font-semibold text-slate-700">Chọn giảng viên kế nhiệm:</label>
+              <div className="max-h-48 overflow-y-auto space-y-1.5 border border-slate-200 rounded-xl p-2 bg-slate-50">
                 {(transferGroup.members || [])
                   .filter((m) => m.toLowerCase() !== myEmail.toLowerCase())
                   .map((email) => (
                     <label
                       key={email}
-                      className={`flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all ${
+                      className={`flex items-center justify-between p-2.5 rounded-lg border cursor-pointer transition-all ${
                         selectedNewOwner.toLowerCase() === email.toLowerCase()
-                          ? 'border-purple-500 bg-purple-50 text-purple-900 font-bold ring-1 ring-purple-300'
+                          ? 'border-slate-900 bg-white text-slate-900 font-semibold ring-1 ring-slate-900'
                           : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-indigo-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                        <div className="w-6 h-6 rounded-md bg-slate-700 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
                           {initials(email)}
                         </div>
                         <span className="truncate">{email}</span>
@@ -2059,21 +2218,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         name="newOwner"
                         checked={selectedNewOwner.toLowerCase() === email.toLowerCase()}
                         onChange={() => setSelectedNewOwner(email)}
-                        className="text-purple-600"
+                        className="text-slate-900"
                       />
                     </label>
                   ))}
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between pt-3 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => {
                   setIsTransferOwnerModalOpen(false);
                   void handleDisbandGroup(transferGroup);
                 }}
-                className="text-rose-600 hover:text-rose-700 font-bold text-xs hover:underline cursor-pointer"
+                className="text-rose-600 hover:text-rose-700 font-semibold text-xs hover:underline cursor-pointer"
               >
                 Giải tán nhóm vĩnh viễn
               </button>
@@ -2082,7 +2241,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsTransferOwnerModalOpen(false)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  className="px-3.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer"
                 >
                   Hủy
                 </button>
@@ -2090,7 +2249,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   type="button"
                   disabled={!selectedNewOwner || isTransferringOwner}
                   onClick={handleTransferOwnerAndLeave}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+                  className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
                   {isTransferringOwner ? 'Đang nhượng quyền...' : 'Nhượng quyền & Rời'}
                 </button>
@@ -2139,20 +2298,20 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       />
 
       {isAddFriendOpen && (
-        <Modal onClose={() => setIsAddFriendOpen(false)} title="Thêm Bạn Bè Mới" icon={<UserPlus className="w-4 h-4 text-purple-600" />}>
+        <Modal onClose={() => setIsAddFriendOpen(false)} title="Thêm Đồng Nghiệp Mới" icon={<UserPlus className="w-4 h-4 text-slate-700" />}>
           <p className="text-xs text-slate-500 leading-relaxed">
-            Nhập email đồng nghiệp để gửi lời mời kết bạn. Khi đối phương chấp nhận, phòng chat
-            riêng 1-1 sẽ tự động mở.
+            Nhập email đồng nghiệp để gửi lời mời kết nối học thuật. Khi đối phương chấp nhận, phòng trò chuyện
+            1-1 sẽ tự động mở.
           </p>
           <div className="space-y-1">
-            <label className="text-[11px] font-bold text-slate-700">Email đồng nghiệp</label>
+            <label className="text-[11px] font-semibold text-slate-700">Email giảng viên / đồng nghiệp</label>
             <input
               type="email"
               value={friendEmailInput}
               onChange={(e) => setFriendEmailInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void handleSendFriendRequest()}
-              placeholder="VD: lecturer@quizgen.ai..."
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-purple-500"
+              placeholder="VD: lecturer@uth.edu.vn..."
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-slate-600"
               autoFocus
             />
           </div>
@@ -2160,7 +2319,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             <button
               type="button"
               onClick={() => setIsAddFriendOpen(false)}
-              className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
             >
               Hủy
             </button>
@@ -2168,7 +2327,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               type="button"
               onClick={() => void handleSendFriendRequest()}
               disabled={!friendEmailInput.trim()}
-              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
+              className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
             >
               <Send className="w-3.5 h-3.5" />
               Gửi lời mời
@@ -2180,30 +2339,30 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       {isCreateGroupOpen && (
         <Modal
           onClose={() => setIsCreateGroupOpen(false)}
-          title="Hội Nhóm Chuyên Môn Q-Group"
-          icon={<Users className="w-4 h-4 text-purple-600" />}
+          title="Kênh Chuyên Môn Học Thuật"
+          icon={<Users className="w-4 h-4 text-slate-700" />}
         >
           {/* Sub-Tabs: Tạo nhóm mới vs Nhập mã tham gia */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl mb-3 select-none">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg mb-3 select-none">
             <button
               type="button"
               onClick={() => setGroupModalTab('create')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 groupModalTab === 'create'
-                  ? 'bg-white text-purple-700 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Tạo nhóm mới</span>
+              <span>Tạo kênh mới</span>
             </button>
             <button
               type="button"
               onClick={() => setGroupModalTab('join')}
-              className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 groupModalTab === 'join'
-                  ? 'bg-white text-purple-700 shadow-2xs'
-                  : 'text-slate-500 hover:text-slate-800'
+                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Hash className="w-3.5 h-3.5" />
@@ -2215,41 +2374,41 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             /* TAB TẠO NHÓM MỚI */
             <div className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700">Tên nhóm *</label>
+                <label className="font-semibold text-slate-700">Tên kênh học thuật *</label>
                 <input
                   type="text"
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
                   placeholder="VD: Bộ Môn Mạng & Hệ Điều Hành"
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600"
                 />
               </div>
               <div>
-                <label className="font-bold text-slate-700">Khoa / Đơn vị</label>
+                <label className="font-semibold text-slate-700">Khoa / Bộ môn</label>
                 <input
                   type="text"
                   value={newGroupDept}
                   onChange={(e) => setNewGroupDept(e.target.value)}
                   placeholder="VD: Khoa Công nghệ Thông tin"
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600"
                 />
               </div>
               <div>
-                <label className="font-bold text-slate-700">Mô tả mục đích nhóm</label>
+                <label className="font-semibold text-slate-700">Mô tả mục đích kênh</label>
                 <textarea
                   rows={2}
                   value={newGroupDesc}
                   onChange={(e) => setNewGroupDesc(e.target.value)}
-                  placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình..."
-                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 resize-none"
+                  placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình và ma trận khảo thí..."
+                  className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 resize-none text-xs"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsCreateGroupOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
                 >
                   Hủy
                 </button>
@@ -2257,29 +2416,29 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   type="button"
                   disabled={!newGroupName.trim()}
                   onClick={handleCreateGroup}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs cursor-pointer"
+                  className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors"
                 >
-                  Tạo nhóm
+                  Tạo kênh
                 </button>
               </div>
             </div>
           ) : (
             /* TAB NHẬP MÃ THAM GIA */
-            <div className="space-y-3.5 text-xs">
-              <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-2xl space-y-1">
-                <span className="font-bold text-purple-900 text-[11px] flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-purple-600" />
+            <div className="space-y-3 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="font-semibold text-slate-800 text-[11px] flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-slate-600" />
                   <span>Tham gia nhóm qua Mã phòng</span>
                 </span>
                 <p className="text-slate-600 text-[11px] leading-relaxed">
-                  Nhập mã phòng chuyên môn được đồng nghiệp hoặc Trưởng nhóm chia sẻ (ví dụ: <strong className="font-mono text-purple-700">QGRP-L6RUM</strong>).
+                  Nhập mã phòng chuyên môn được đồng nghiệp hoặc Trưởng nhóm chia sẻ (ví dụ: <strong className="font-mono text-slate-800">QGRP-L6RUM</strong>).
                 </p>
               </div>
 
               <div>
-                <label className="font-bold text-slate-700">Mã phòng chuyên môn *</label>
+                <label className="font-semibold text-slate-700">Mã phòng chuyên môn *</label>
                 <div className="relative mt-1">
-                  <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-purple-500" />
+                  <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
                   <input
                     type="text"
                     value={joinCodeInput}
@@ -2290,21 +2449,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       }
                     }}
                     placeholder="VD: QGRP-OS2026..."
-                    className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 font-mono font-bold text-purple-700 placeholder-slate-400 text-sm tracking-wider"
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 font-mono font-bold text-slate-800 placeholder-slate-400 text-xs tracking-wider"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1 text-[11px] text-slate-400 px-1">
-                <p>• Nhóm công khai: Bạn sẽ vào thẳng nhóm trò chuyện ngay lập tức.</p>
-                <p>• Nhóm cần phê duyệt: Yêu cầu sẽ được chuyển đến Trưởng nhóm để duyệt.</p>
+              <div className="space-y-1 text-[11px] text-slate-500 px-1">
+                <p>• Kênh công khai: Bạn sẽ vào thẳng nhóm trò chuyện ngay lập tức.</p>
+                <p>• Kênh cần phê duyệt: Yêu cầu sẽ được chuyển đến Trưởng nhóm để duyệt.</p>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsCreateGroupOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
                 >
                   Đóng
                 </button>
@@ -2312,10 +2471,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   type="button"
                   disabled={!joinCodeInput.trim() || isJoiningCode}
                   onClick={() => void handleJoinByCode(joinCodeInput)}
-                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold text-xs shadow-xs cursor-pointer flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
                   <Check className="w-3.5 h-3.5" />
-                  <span>Tham gia nhóm ngay</span>
+                  <span>Tham gia kênh ngay</span>
                 </button>
               </div>
             </div>
@@ -2341,18 +2500,18 @@ const Modal: React.FC<{
     onClick={onClose}
   >
     <div
-      className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-4"
+      className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-5 space-y-4"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-        <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
           {icon}
           <span>{title}</span>
         </h3>
         <button
           type="button"
           onClick={onClose}
-          className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+          className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -2362,7 +2521,7 @@ const Modal: React.FC<{
   </div>
 );
 
-// ── ConversationItem ──────────────────────────────────────────────────────────
+// ── ConversationItem (True Enterprise Slack & Teams Standard) ─────────────
 const ConversationItem: React.FC<{
   group: QGroup;
   isSelected: boolean;
@@ -2407,126 +2566,129 @@ const ConversationItem: React.FC<{
   const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
   const info = resolveChatDisplayInfo(group, myEmail);
 
+  if (isGroup) {
+    return (
+      <div
+        onClick={onSelect}
+        className={`group relative flex items-center justify-between px-3 py-1.5 mx-1.5 rounded-lg cursor-pointer transition-all select-none ${
+          isSelected
+            ? 'bg-slate-200/90 text-slate-900 font-bold'
+            : isUnread
+            ? 'text-slate-900 font-bold bg-slate-50 hover:bg-slate-100'
+            : 'text-slate-600 font-medium hover:bg-slate-100 hover:text-slate-900'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1 pr-6">
+          <Hash
+            className={`w-4 h-4 shrink-0 transition-colors ${
+              isSelected ? 'text-slate-900' : 'text-slate-400 group-hover:text-slate-600'
+            }`}
+          />
+          <span className="text-xs truncate">{group.name}</span>
+          {isOwner && (
+            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 shrink-0">
+              Trưởng nhóm
+            </span>
+          )}
+          {group.muted && <BellOff className="w-3 h-3 text-slate-400 shrink-0" />}
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0">
+          {isUnread && (
+            <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0" />
+          )}
+          <button
+            type="button"
+            onClick={onMenuToggle}
+            className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded hover:bg-slate-300/60 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
+            title="Tùy chọn kênh"
+          >
+            <MoreVertical className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* Slack Channel Context Menu */}
+        {isMenuOpen && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-6 top-7 z-40 w-56 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-xs animate-fade-in"
+          >
+            <MenuBtn icon={<Info className="w-3.5 h-3.5 text-slate-600" />} label="Chi tiết kênh" onClick={onViewDetails} />
+            <MenuBtn icon={<Copy className="w-3.5 h-3.5 text-slate-500" />} label="Sao chép mã nhóm" onClick={onCopyCode} />
+            <MenuBtn
+              icon={group.muted ? <Bell className="w-3.5 h-3.5 text-slate-600" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
+              label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
+              onClick={onMute}
+            />
+            <div className="border-t border-slate-100 my-1" />
+            {isOwner ? (
+              <>
+                <MenuBtn icon={<UserCheck className="w-3.5 h-3.5 text-slate-700" />} label="Nhượng quyền Trưởng nhóm" onClick={onLeave} />
+                {onDisband && (
+                  <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-600" />} label="Giải tán nhóm" onClick={onDisband} danger />
+                )}
+              </>
+            ) : (
+              <MenuBtn icon={<LogOut className="w-3.5 h-3.5 text-rose-500" />} label="Rời khỏi nhóm" onClick={onLeave} danger />
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // DIRECT MESSAGE (1-1 Slack Row)
   return (
     <div
       onClick={onSelect}
-      className={`relative p-3 sm:px-3.5 flex items-center gap-3 cursor-pointer transition-all ${
+      className={`group relative flex items-center justify-between px-3 py-1.5 mx-1.5 rounded-lg cursor-pointer transition-all select-none ${
         isSelected
-          ? 'bg-purple-50/80 border-l-4 border-l-purple-600'
+          ? 'bg-slate-200/90 text-slate-900 font-bold'
           : isUnread
-          ? 'bg-slate-50/90 hover:bg-slate-100'
-          : 'hover:bg-slate-50'
+          ? 'text-slate-900 font-bold bg-slate-50 hover:bg-slate-100'
+          : 'text-slate-600 font-medium hover:bg-slate-100 hover:text-slate-900'
       }`}
     >
-      <div className="relative shrink-0">
-        <div
-          className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-xs text-white shadow-xs ${
-            group.isDirect
-              ? 'bg-gradient-to-tr from-indigo-500 to-blue-600'
-              : 'bg-gradient-to-tr from-purple-600 to-indigo-600'
-          }`}
-        >
-          {group.isDirect ? info.avatarInitials : <Hash className="w-5 h-5 text-white/90" />}
+      <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-6">
+        <div className="relative shrink-0">
+          <div className="w-5 h-5 rounded-md bg-slate-700 text-white font-bold text-[9px] flex items-center justify-center">
+            {info.avatarInitials}
+          </div>
+          <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white" />
         </div>
-        {group.isDirect && (
-          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs truncate">{info.displayName}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 shrink-0">
+        {isUnread && (
+          <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0" />
         )}
+        <button
+          type="button"
+          onClick={onMenuToggle}
+          className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded hover:bg-slate-300/60 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
+          title="Tùy chọn tin nhắn"
+        >
+          <MoreVertical className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      <div className="flex-1 min-w-0 pr-7">
-        <div className="flex items-center justify-between gap-1">
-          <h4
-            className={`text-xs truncate flex items-center gap-1.5 ${
-              isUnread ? 'font-black text-slate-900' : 'font-bold text-slate-800'
-            }`}
-          >
-            {group.isDirect ? (
-              <span>{info.displayName}</span>
-            ) : (
-              <span>#{info.displayName}</span>
-            )}
-            {isOwner && !group.isDirect && (
-              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
-                Trưởng nhóm
-              </span>
-            )}
-          </h4>
-          {lastMsg && (
-            <span className="text-[10px] text-slate-400 shrink-0 font-medium">
-              {group.updatedAt ? formatTime(group.updatedAt) : lastMsg.timestamp}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center justify-between gap-1 mt-0.5">
-          <p
-            className={`text-[11px] truncate flex-1 ${
-              isUnread ? 'font-bold text-purple-900' : 'text-slate-500'
-            }`}
-          >
-            {lastMsg ? (
-              lastMsg.isSystem ? (
-                <span className="italic">{lastMsg.text}</span>
-              ) : (
-                <>
-                  {lastMsg.senderEmail?.toLowerCase() === myEmail ? 'Bạn: ' : ''}
-                  {lastMsg.text || '[Tài liệu đính kèm]'}
-                </>
-              )
-            ) : (
-              'Bắt đầu cuộc trò chuyện...'
-            )}
-          </p>
-          {isUnread && <span className="w-2.5 h-2.5 rounded-full bg-purple-600 shrink-0" />}
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={onMenuToggle}
-        className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
-      >
-        <MoreVertical className="w-4 h-4" />
-      </button>
-
-      {/* Context Menu (Không trùng lặp popup) */}
+      {/* Context Menu for DM */}
       {isMenuOpen && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="absolute right-8 top-10 z-40 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl py-1.5 text-xs animate-fade-in"
+          className="absolute right-6 top-7 z-40 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-xs animate-fade-in"
         >
-          {isGroup ? (
-            <>
-              <MenuBtn icon={<Users className="w-3.5 h-3.5 text-purple-600" />} label="Chi tiết & Thành viên" onClick={onViewDetails} />
-              <MenuBtn icon={<Copy className="w-3.5 h-3.5 text-slate-500" />} label="Sao chép mã nhóm" onClick={onCopyCode} />
-              <MenuBtn
-                icon={group.muted ? <Bell className="w-3.5 h-3.5 text-amber-500" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
-                label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
-                onClick={onMute}
-              />
-              <div className="border-t border-slate-100 my-1" />
-              {isOwner ? (
-                <>
-                  <MenuBtn icon={<UserCheck className="w-3.5 h-3.5 text-amber-600" />} label="Nhượng quyền Trưởng nhóm" onClick={onLeave} />
-                  {onDisband && (
-                    <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-600" />} label="Giải tán nhóm" onClick={onDisband} danger />
-                  )}
-                </>
-              ) : (
-                <MenuBtn icon={<LogOut className="w-3.5 h-3.5 text-rose-500" />} label="Rời khỏi nhóm" onClick={onLeave} danger />
-              )}
-            </>
-          ) : (
-            <>
-              <MenuBtn icon={<User className="w-3.5 h-3.5 text-purple-600" />} label="Xem trang cá nhân" onClick={onViewProfile} />
-              <MenuBtn
-                icon={group.muted ? <Bell className="w-3.5 h-3.5 text-amber-500" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
-                label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
-                onClick={onMute}
-              />
-              <div className="border-t border-slate-100 my-1" />
-              <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />} label="Xóa đoạn chat" onClick={onDelete} danger />
-            </>
-          )}
+          <MenuBtn icon={<User className="w-3.5 h-3.5 text-slate-600" />} label="Xem trang cá nhân" onClick={onViewProfile} />
+          <MenuBtn
+            icon={group.muted ? <Bell className="w-3.5 h-3.5 text-slate-600" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
+            label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
+            onClick={onMute}
+          />
+          <div className="border-t border-slate-100 my-1" />
+          <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />} label="Xóa đoạn chat" onClick={onDelete} danger />
         </div>
       )}
     </div>
@@ -2579,34 +2741,34 @@ const InvitationsPanel: React.FC<{
 
   return (
     <div className="flex-1 overflow-y-auto p-3.5 space-y-3">
-      <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-        <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-          <Inbox className="w-4 h-4 text-purple-600" />
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+          <Inbox className="w-4 h-4 text-slate-700" />
           <span>Trung Tâm Lời Mời</span>
         </span>
         <button
           type="button"
           onClick={onBack}
-          className="text-xs text-purple-600 font-bold hover:underline cursor-pointer"
+          className="text-xs text-slate-700 hover:text-slate-900 font-semibold hover:underline cursor-pointer"
         >
           ← Về kênh chat
         </button>
       </div>
 
       {/* Sub-tabs: Đã nhận vs Đã gửi */}
-      <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl select-none">
+      <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg select-none">
         <button
           type="button"
           onClick={() => setSubTab('received')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             subTab === 'received'
-              ? 'bg-white text-purple-700 shadow-2xs'
+              ? 'bg-white text-slate-900 shadow-2xs font-bold'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <span>Lời mời đã nhận</span>
           {totalReceived > 0 && (
-            <span className="px-1.5 rounded-full text-[10px] font-black bg-rose-500 text-white">
+            <span className="px-1.5 rounded-full text-[10px] font-bold bg-rose-500 text-white">
               {totalReceived}
             </span>
           )}
@@ -2614,15 +2776,15 @@ const InvitationsPanel: React.FC<{
         <button
           type="button"
           onClick={() => setSubTab('sent')}
-          className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+          className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
             subTab === 'sent'
-              ? 'bg-white text-purple-700 shadow-2xs'
+              ? 'bg-white text-slate-900 shadow-2xs font-bold'
               : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <span>Lời mời đã gửi</span>
           {totalSent > 0 && (
-            <span className="px-1.5 rounded-full text-[10px] font-bold bg-purple-200 text-purple-800">
+            <span className="px-1.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-700">
               {totalSent}
             </span>
           )}
@@ -2633,17 +2795,17 @@ const InvitationsPanel: React.FC<{
         <div className="space-y-3">
           {friendRequests.length > 0 && (
             <div className="space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
-                <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                <UserCheck className="w-3.5 h-3.5 text-slate-600" />
                 Lời mời kết bạn ({friendRequests.length})
               </span>
               {friendRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="p-3 bg-white rounded-2xl border border-purple-200/90 shadow-xs space-y-2.5"
+                  className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2.5"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
                       {initials(req.senderName || req.senderEmail)}
                     </div>
                     <div className="min-w-0 flex-1">
@@ -2652,7 +2814,7 @@ const InvitationsPanel: React.FC<{
                           {req.senderName || req.senderEmail}
                         </h4>
                         {req.senderTitle && (
-                          <span className="px-1.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 shrink-0">
+                          <span className="px-1.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 shrink-0 border border-slate-200">
                             {req.senderTitle}
                           </span>
                         )}
@@ -2666,7 +2828,7 @@ const InvitationsPanel: React.FC<{
                     <button
                       type="button"
                       onClick={() => onAcceptFriend(req)}
-                      className="flex-1 py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      className="flex-1 py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
                     >
                       <Check className="w-3.5 h-3.5" />
                       Đồng ý
@@ -2674,7 +2836,7 @@ const InvitationsPanel: React.FC<{
                     <button
                       type="button"
                       onClick={() => onRejectFriend(req)}
-                      className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs flex items-center justify-center gap-1 border border-slate-200/60 cursor-pointer"
+                      className="py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1 border border-slate-200 cursor-pointer transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                       Từ chối
@@ -2687,22 +2849,22 @@ const InvitationsPanel: React.FC<{
 
           {groupInvitations.length > 0 && (
             <div className="space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
-                <Users className="w-3.5 h-3.5 text-purple-600" />
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-slate-600" />
                 Lời mời tham gia nhóm ({groupInvitations.length})
               </span>
               {groupInvitations.map((inv) => (
                 <div
                   key={inv.id}
-                  className="p-3 bg-white rounded-2xl border border-purple-200/90 shadow-xs space-y-2.5"
+                  className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2.5"
                 >
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
                       {initials(inv.groupName)}
                     </div>
                     <div className="min-w-0 flex-1">
                       <h4 className="text-xs font-bold text-slate-900 truncate">{inv.groupName}</h4>
-                      <p className="text-[10px] text-purple-600 font-mono">Mã: {inv.groupCode}</p>
+                      <p className="text-[10px] text-slate-600 font-mono">Mã: {inv.groupCode}</p>
                       <p className="text-[10px] text-slate-400 truncate">
                         Mời bởi: {inv.inviterName || inv.inviterEmail}
                       </p>
@@ -2712,7 +2874,7 @@ const InvitationsPanel: React.FC<{
                     <button
                       type="button"
                       onClick={() => onAcceptGroup(inv)}
-                      className="flex-1 py-1.5 px-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      className="flex-1 py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer transition-colors"
                     >
                       <Check className="w-3.5 h-3.5" />
                       Tham gia
@@ -2720,7 +2882,7 @@ const InvitationsPanel: React.FC<{
                     <button
                       type="button"
                       onClick={() => onRejectGroup(inv)}
-                      className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-xs flex items-center justify-center gap-1 border border-slate-200/60 cursor-pointer"
+                      className="py-1.5 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center justify-center gap-1 border border-slate-200 cursor-pointer transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                       Từ chối
@@ -2732,11 +2894,9 @@ const InvitationsPanel: React.FC<{
           )}
 
           {totalReceived === 0 && (
-            <div className="p-8 text-center text-slate-400 space-y-3">
-              <div className="w-12 h-12 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center mx-auto">
-                <Check className="w-6 h-6" />
-              </div>
-              <h4 className="text-xs font-bold text-slate-700">Không có lời mời nào đã nhận</h4>
+            <div className="p-8 text-center text-slate-400 space-y-2">
+              <Check className="w-8 h-8 text-slate-300 mx-auto" />
+              <h4 className="text-xs font-semibold text-slate-700">Không có lời mời nào đã nhận</h4>
               <p className="text-[11px] text-slate-400">Bạn đã xử lý hết tất cả lời mời.</p>
             </div>
           )}
@@ -2746,25 +2906,25 @@ const InvitationsPanel: React.FC<{
         <div className="space-y-3">
           {sentFriendRequests.length > 0 ? (
             <div className="space-y-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1">
-                <Send className="w-3.5 h-3.5 text-purple-600" />
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                <Send className="w-3.5 h-3.5 text-slate-600" />
                 Lời mời kết bạn đã gửi ({sentFriendRequests.length})
               </span>
               {sentFriendRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2"
+                  className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 text-white font-black text-xs flex items-center justify-center shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-slate-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
                         {initials(req.targetEmail || req.recipientEmail || '')}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-900 truncate">
+                        <p className="text-xs font-semibold text-slate-900 truncate">
                           {req.targetEmail || req.recipientEmail}
                         </p>
-                        <p className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
+                        <p className="text-[10px] text-amber-700 font-medium flex items-center gap-1">
                           <Clock className="w-3 h-3" /> Đang chờ đồng nghiệp chấp nhận
                         </p>
                       </div>
@@ -2774,7 +2934,7 @@ const InvitationsPanel: React.FC<{
                       <button
                         type="button"
                         onClick={() => onCancelFriend(req.id)}
-                        className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-[11px] transition-colors cursor-pointer border border-slate-200 shrink-0"
+                        className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] transition-colors cursor-pointer border border-slate-200 shrink-0"
                         title="Thu hồi lời mời kết bạn"
                       >
                         Thu hồi
@@ -2786,8 +2946,8 @@ const InvitationsPanel: React.FC<{
             </div>
           ) : (
             <div className="p-8 text-center text-slate-400 space-y-2">
-              <Send className="w-10 h-10 mx-auto text-slate-300" />
-              <p className="text-xs font-bold text-slate-700">Chưa gửi lời mời kết bạn nào</p>
+              <Send className="w-8 h-8 mx-auto text-slate-300" />
+              <p className="text-xs font-semibold text-slate-700">Chưa gửi lời mời kết bạn nào</p>
               <p className="text-[11px]">Bấm biểu tượng thêm bạn ở thanh công cụ để mời đồng nghiệp kết nối.</p>
             </div>
           )}
@@ -2857,10 +3017,10 @@ const ChannelDetailsModal: React.FC<{
   }, [group.messages]);
 
   const joinPolicyLabel = {
-    open: '🌐 Công khai (Ai có mã đều vào ngay)',
-    approval_required: '🛡️ Cần duyệt (Trưởng nhóm duyệt mới vào)',
-    invite_only: '🔒 Riêng tư (Chỉ khi được mời trực tiếp)',
-  }[editJoinPolicy] || '🌐 Công khai';
+    open: 'Công khai (Mọi giảng viên đều có thể tham gia)',
+    approval_required: 'Cần phê duyệt (Yêu cầu Trưởng nhóm duyệt trước)',
+    invite_only: 'Riêng tư (Chỉ khi được mời trực tiếp)',
+  }[editJoinPolicy] || 'Công khai';
 
   return (
     <div
@@ -2868,43 +3028,42 @@ const ChannelDetailsModal: React.FC<{
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in"
+        className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-xs">
-              {initials(group.name)}
+        {/* Header (Clean Slack Header) */}
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-sm">
+              <Hash className="w-5 h-5 text-slate-700" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                  <Hash className="w-4 h-4 text-purple-600" />
-                  <span>{group.name}</span>
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1">
+                  <span>#{group.name}</span>
                 </h3>
                 {isOwner && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">
                     Trưởng nhóm
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-purple-600 font-mono mt-0.5">
-                Mã phòng: <strong>{group.code}</strong> • {joinPolicyLabel}
+              <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                Mã: <strong className="text-slate-800">{group.code}</strong> • {joinPolicyLabel}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer border border-slate-200/60"
+            className="w-7 h-7 rounded-lg bg-white hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer border border-slate-200 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Slack Multi-Tabs */}
-        <div className="flex items-center gap-2 px-5 pt-2 border-b border-slate-100 bg-white">
+        {/* Slack Minimal Underline Tabs */}
+        <div className="flex items-center gap-4 px-5 pt-1 border-b border-slate-200 bg-white">
           {[
             { id: 'about' as const, label: 'Giới thiệu', icon: Info },
             {
@@ -2913,7 +3072,7 @@ const ChannelDetailsModal: React.FC<{
               icon: Users,
               badge: isOwner && pendingRequests.length > 0 ? pendingRequests.length : undefined,
             },
-            { id: 'files' as const, label: `Tệp (${sharedFiles.length})`, icon: FileText },
+            { id: 'files' as const, label: `Tệp & Học liệu (${sharedFiles.length})`, icon: FileText },
             { id: 'settings' as const, label: 'Cài đặt', icon: Settings },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -2922,9 +3081,9 @@ const ChannelDetailsModal: React.FC<{
                 key={tab.id}
                 type="button"
                 onClick={() => onTabChange(tab.id)}
-                className={`pb-2.5 px-2 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                className={`pb-2.5 pt-2 text-xs font-semibold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer relative ${
                   activeTab === tab.id
-                    ? 'border-purple-600 text-purple-700'
+                    ? 'border-slate-900 text-slate-900 font-bold'
                     : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >
@@ -2944,63 +3103,62 @@ const ChannelDetailsModal: React.FC<{
         <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
           {/* TAB 1: ABOUT */}
           {activeTab === 'about' && (
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1">
-                <span className="font-bold text-slate-500 uppercase text-[10px] tracking-wide">Mục đích nhóm</span>
-                <p className="text-slate-800 leading-relaxed font-medium">
-                  {group.description || 'Không có mô tả.'}
+            <div className="space-y-3.5">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="font-semibold text-slate-500 uppercase text-[10px] tracking-wide">Mục đích kênh</span>
+                <p className="text-slate-800 leading-relaxed font-normal">
+                  {group.description || 'Không gian làm việc chung: trao đổi câu hỏi, chia sẻ giáo trình và thống nhất ma trận đề thi.'}
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Khoa / Đơn vị</span>
-                  <p className="text-slate-800 font-bold mt-0.5">{group.department || 'Chung'}</p>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase">Khoa / Bộ môn</span>
+                  <p className="text-slate-900 font-bold mt-0.5">{group.department || 'Chung'}</p>
                 </div>
-                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Trưởng nhóm (Khởi tạo)</span>
-                  <p className="text-slate-800 font-bold mt-0.5 truncate">{group.ownerName || 'TS. Hồ Anh Vũ'}</p>
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase">Trưởng nhóm</span>
+                  <p className="text-slate-900 font-bold mt-0.5 truncate">{group.ownerName || 'TS. Hồ Anh Vũ'}</p>
                 </div>
               </div>
 
               {/* Chế độ tham gia */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-bold text-slate-400 uppercase">Chế độ tham gia</span>
-                  <p className="text-slate-800 font-bold mt-0.5">{joinPolicyLabel}</p>
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase">Chế độ tham gia</span>
+                  <p className="text-slate-900 font-semibold mt-0.5">{joinPolicyLabel}</p>
                 </div>
                 {group.joinPolicy === 'invite_only' ? (
-                  <Lock className="w-5 h-5 text-rose-500 shrink-0" />
+                  <Lock className="w-4 h-4 text-slate-600 shrink-0" />
                 ) : group.joinPolicy === 'approval_required' ? (
-                  <ShieldCheck className="w-5 h-5 text-amber-500 shrink-0" />
+                  <ShieldCheck className="w-4 h-4 text-slate-600 shrink-0" />
                 ) : (
-                  <Globe className="w-5 h-5 text-teal-600 shrink-0" />
+                  <Globe className="w-4 h-4 text-slate-600 shrink-0" />
                 )}
               </div>
 
-              <div className="p-3.5 rounded-2xl border border-slate-200/80 space-y-2">
-                <span className="font-bold text-slate-700">Mã liên kết phòng học thuật</span>
+              <div className="p-3.5 rounded-xl border border-slate-200 space-y-2">
+                <span className="font-semibold text-slate-700">Mã liên kết phòng học thuật</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
                     readOnly
                     value={group.code}
-                    className="flex-1 px-3 py-2 bg-slate-100 rounded-xl font-mono text-purple-700 font-bold outline-none"
+                    className="flex-1 px-3 py-2 bg-slate-100 rounded-lg font-mono text-slate-800 font-bold outline-none border border-slate-200"
                   />
                   <button
                     type="button"
                     onClick={() => {
                       navigator.clipboard.writeText(group.code);
-                      alert(`Đã sao chép mã phòng: ${group.code}`);
                     }}
-                    className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer"
+                    className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold cursor-pointer transition-colors"
                   >
                     Sao chép
                   </button>
                 </div>
                 {group.joinPolicy === 'invite_only' && (
-                  <p className="text-[11px] text-amber-600 italic">
-                    * Nhóm đang ở chế độ Riêng tư: mã này chỉ để tham khảo, người ngoài phải có lời mời trực tiếp mới vào được.
+                  <p className="text-[11px] text-amber-700">
+                    * Nhóm đang ở chế độ Riêng tư: người ngoài cần có thư mời trực tiếp qua email để tham gia.
                   </p>
                 )}
               </div>
@@ -3008,10 +3166,10 @@ const ChannelDetailsModal: React.FC<{
               <button
                 type="button"
                 onClick={onLeaveGroup}
-                className="w-full py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border border-rose-200/60"
+                className="w-full py-2.5 rounded-lg border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Rời khỏi nhóm này</span>
+                <span>Rời khỏi kênh này</span>
               </button>
             </div>
           )}
@@ -3021,26 +3179,26 @@ const ChannelDetailsModal: React.FC<{
             <div className="space-y-4">
               {/* Khối yêu cầu phê duyệt tham gia (Chỉ Trưởng nhóm thấy) */}
               {isOwner && pendingRequests.length > 0 && (
-                <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200/80 space-y-2.5">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-300 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5" />
+                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-slate-600" />
                       <span>Yêu cầu xin gia nhập ({pendingRequests.length})</span>
                     </span>
-                    <span className="text-[10px] text-amber-700 font-semibold">Cần duyệt</span>
+                    <span className="text-[10px] text-slate-600 font-semibold">Chờ duyệt</span>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {pendingRequests.map((req) => (
                       <div
                         key={req.id}
-                        className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-amber-200 shadow-2xs gap-2"
+                        className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 gap-2"
                       >
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 truncate">
+                          <p className="font-semibold text-slate-900 truncate">
                             {req.name || req.email}
                           </p>
-                          <p className="text-[10px] text-slate-400 truncate">
+                          <p className="text-[10px] text-slate-500 truncate">
                             {req.email} • {req.requestedAt}
                           </p>
                         </div>
@@ -3048,8 +3206,7 @@ const ChannelDetailsModal: React.FC<{
                           <button
                             type="button"
                             onClick={() => onRespondJoinRequest?.(req.id, req.email, 'approve')}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-2xs"
-                            title="Phê duyệt cho vào nhóm"
+                            className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center gap-1 cursor-pointer"
                           >
                             <Check className="w-3 h-3" />
                             <span>Duyệt</span>
@@ -3057,8 +3214,7 @@ const ChannelDetailsModal: React.FC<{
                           <button
                             type="button"
                             onClick={() => onRespondJoinRequest?.(req.id, req.email, 'reject')}
-                            className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-200"
-                            title="Từ chối yêu cầu"
+                            className="px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] flex items-center gap-1 cursor-pointer border border-slate-200"
                           >
                             <X className="w-3 h-3" />
                             <span>Từ chối</span>
@@ -3072,8 +3228,8 @@ const ChannelDetailsModal: React.FC<{
 
               {/* Mời thêm thành viên qua Email */}
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
-                  Mời thêm thành viên qua Email
+                <label className="text-[11px] font-semibold text-slate-700 uppercase tracking-wide">
+                  Mời giảng viên qua Email
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -3082,13 +3238,13 @@ const ChannelDetailsModal: React.FC<{
                     onChange={(e) => onInviteEmailChange(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && onInvite()}
                     placeholder="Nhập email đồng nghiệp..."
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500"
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs"
                   />
                   <button
                     type="button"
                     onClick={onInvite}
                     disabled={!inviteEmail.trim()}
-                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold cursor-pointer"
+                    className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold cursor-pointer transition-colors"
                   >
                     Mời
                   </button>
@@ -3096,8 +3252,8 @@ const ChannelDetailsModal: React.FC<{
               </div>
 
               {/* Danh sách thành viên hiện tại */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                   Danh sách thành viên ({members.length})
                 </span>
                 {members.map((email) => {
@@ -3106,18 +3262,18 @@ const ChannelDetailsModal: React.FC<{
                   return (
                     <div
                       key={email}
-                      className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-slate-50 border border-slate-100 justify-between group"
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 border border-slate-200 justify-between group"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-md bg-slate-700 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
                           {initials(email)}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-800 truncate">
+                          <p className="font-semibold text-slate-800 truncate">
                             {email}
-                            {isMe && <span className="text-purple-600 ml-1">(Bạn)</span>}
+                            {isMe && <span className="text-slate-500 font-normal ml-1">(Bạn)</span>}
                           </p>
-                          <p className="text-[10px] text-slate-400">
+                          <p className="text-[10px] text-slate-500">
                             {isGroupOwner ? 'Trưởng nhóm' : 'Thành viên'}
                           </p>
                         </div>
@@ -3125,7 +3281,7 @@ const ChannelDetailsModal: React.FC<{
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         {isGroupOwner && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
                             Trưởng nhóm
                           </span>
                         )}
@@ -3135,7 +3291,7 @@ const ChannelDetailsModal: React.FC<{
                           <button
                             type="button"
                             onClick={() => onKickMember(email, email)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                             title={`Loại ${email} ra khỏi nhóm`}
                           >
                             <UserMinus className="w-4 h-4" />
@@ -3152,28 +3308,28 @@ const ChannelDetailsModal: React.FC<{
           {/* TAB 3: FILES */}
           {activeTab === 'files' && (
             <div className="space-y-3">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                 Học liệu & Giáo trình đã chia sẻ ({sharedFiles.length})
               </span>
               {sharedFiles.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 space-y-2">
-                  <FileText className="w-10 h-10 mx-auto text-slate-300" />
-                  <p className="font-bold text-slate-600">Chưa có tệp nào được gửi</p>
-                  <p className="text-[11px]">Dùng nút ghim 📎 ở thanh chat để đính kèm giáo trình chia sẻ cho nhóm.</p>
+                  <FileText className="w-8 h-8 mx-auto text-slate-300" />
+                  <p className="font-semibold text-slate-600">Chưa có tệp nào được gửi</p>
+                  <p className="text-[11px]">Dùng biểu tượng ghim ở thanh soạn thảo để đính kèm giáo trình chia sẻ cho nhóm.</p>
                 </div>
               ) : (
                 sharedFiles.map((file, idx) => (
                   <div
                     key={idx}
-                    className="p-3 rounded-2xl border border-slate-200/80 bg-slate-50/50 flex items-center justify-between gap-3"
+                    className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-4 h-4" />
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                        <BookOpen className="w-4 h-4 text-teal-700" />
                       </div>
                       <div className="min-w-0">
                         <p className="font-bold text-slate-800 truncate">{file.name}</p>
-                        <p className="text-[10px] text-slate-400">
+                        <p className="text-[10px] text-slate-500">
                           {file.totalPages} trang • Gửi bởi {file.senderName} ({file.sentAt})
                         </p>
                       </div>
@@ -3181,7 +3337,7 @@ const ChannelDetailsModal: React.FC<{
                     <button
                       type="button"
                       onClick={() => alert(`Đã kích hoạt giáo trình ${file.name} để sinh đề trắc nghiệm!`)}
-                      className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] shrink-0 cursor-pointer"
+                      className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] shrink-0 cursor-pointer"
                     >
                       Sinh Đề
                     </button>
@@ -3195,53 +3351,53 @@ const ChannelDetailsModal: React.FC<{
           {activeTab === 'settings' && (
             <div className="space-y-3.5">
               <div>
-                <label className="font-bold text-slate-700">Tên nhóm</label>
+                <label className="font-semibold text-slate-700">Tên kênh</label>
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
                   disabled={!isOwner}
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 disabled:opacity-60"
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs disabled:opacity-60"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700">Khoa / Đơn vị</label>
+                <label className="font-semibold text-slate-700">Khoa / Bộ môn</label>
                 <input
                   type="text"
                   value={editDept}
                   onChange={(e) => setEditDept(e.target.value)}
                   disabled={!isOwner}
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 disabled:opacity-60"
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 text-xs disabled:opacity-60"
                 />
               </div>
 
               <div>
-                <label className="font-bold text-slate-700">Mục đích nhóm</label>
+                <label className="font-semibold text-slate-700">Mục đích hoạt động</label>
                 <textarea
                   rows={2}
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
                   disabled={!isOwner}
-                  className="w-full mt-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-purple-500 resize-none disabled:opacity-60"
+                  className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 resize-none text-xs disabled:opacity-60"
                 />
               </div>
 
-              {/* Chế độ duyệt thành viên (Join Policy Options) */}
-              <div className="space-y-2 pt-1 border-t border-slate-100">
+              {/* Chế độ duyệt thành viên (Standard Clean Radio Cards) */}
+              <div className="space-y-2 pt-1 border-t border-slate-200">
                 <div className="flex items-center justify-between">
-                  <label className="font-bold text-slate-700">Chế độ tham gia nhóm</label>
+                  <label className="font-semibold text-slate-700">Chế độ tham gia</label>
                   {!isOwner && (
-                    <span className="text-[10px] text-slate-400 italic">Chỉ Trưởng nhóm đổi được</span>
+                    <span className="text-[10px] text-slate-500 italic">Chỉ Trưởng nhóm đổi được</span>
                   )}
                 </div>
 
                 <div className="space-y-2">
                   {/* Option 1: Open */}
                   <label
-                    className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       editJoinPolicy === 'open'
-                        ? 'border-purple-500 bg-purple-50/50 ring-1 ring-purple-200'
+                        ? 'border-slate-900 bg-slate-50/80 ring-1 ring-slate-900'
                         : 'border-slate-200 hover:bg-slate-50'
                     } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
                   >
@@ -3251,24 +3407,24 @@ const ChannelDetailsModal: React.FC<{
                       checked={editJoinPolicy === 'open'}
                       onChange={() => setEditJoinPolicy('open')}
                       disabled={!isOwner}
-                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                      className="mt-0.5 text-slate-900 focus:ring-slate-900"
                     />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                        <Globe className="w-3.5 h-3.5 text-teal-600" />
-                        <span>Công khai (Ai có link/mã đều vào ngay)</span>
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                        <Globe className="w-3.5 h-3.5 text-slate-700" />
+                        <span>Công khai (Tất cả giảng viên có mã đều có thể vào)</span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Bất kỳ giảng viên nào nhập đúng mã phòng đều được tự động tham gia nhóm ngay lập tức.
+                        Giảng viên nhập đúng mã phòng sẽ được tự động tham gia nhóm ngay lập tức.
                       </p>
                     </div>
                   </label>
 
                   {/* Option 2: Approval Required */}
                   <label
-                    className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       editJoinPolicy === 'approval_required'
-                        ? 'border-purple-500 bg-purple-50/50 ring-1 ring-purple-200'
+                        ? 'border-slate-900 bg-slate-50/80 ring-1 ring-slate-900'
                         : 'border-slate-200 hover:bg-slate-50'
                     } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
                   >
@@ -3278,24 +3434,24 @@ const ChannelDetailsModal: React.FC<{
                       checked={editJoinPolicy === 'approval_required'}
                       onChange={() => setEditJoinPolicy('approval_required')}
                       disabled={!isOwner}
-                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                      className="mt-0.5 text-slate-900 focus:ring-slate-900"
                     />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                        <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
-                        <span>Cần duyệt (Phải được Trưởng nhóm phê duyệt)</span>
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-700" />
+                        <span>Cần phê duyệt (Yêu cầu Trưởng nhóm phê duyệt)</span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Người nhập mã sẽ gửi yêu cầu gia nhập; Trưởng nhóm sẽ nhận thông báo để bấm Duyệt hoặc Từ chối.
+                        Giảng viên nhập mã sẽ gửi yêu cầu gia nhập; Trưởng nhóm sẽ nhận thông báo để phê duyệt hoặc từ chối.
                       </p>
                     </div>
                   </label>
 
                   {/* Option 3: Invite Only */}
                   <label
-                    className={`flex items-start gap-3 p-3 rounded-2xl border cursor-pointer transition-all ${
+                    className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                       editJoinPolicy === 'invite_only'
-                        ? 'border-purple-500 bg-purple-50/50 ring-1 ring-purple-200'
+                        ? 'border-slate-900 bg-slate-50/80 ring-1 ring-slate-900'
                         : 'border-slate-200 hover:bg-slate-50'
                     } ${!isOwner ? 'pointer-events-none opacity-80' : ''}`}
                   >
@@ -3305,15 +3461,15 @@ const ChannelDetailsModal: React.FC<{
                       checked={editJoinPolicy === 'invite_only'}
                       onChange={() => setEditJoinPolicy('invite_only')}
                       disabled={!isOwner}
-                      className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                      className="mt-0.5 text-slate-900 focus:ring-slate-900"
                     />
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                        <Lock className="w-3.5 h-3.5 text-rose-500" />
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-900">
+                        <Lock className="w-3.5 h-3.5 text-slate-700" />
                         <span>Riêng tư (Chỉ khi được mời trực tiếp)</span>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Không cho phép nhập mã tự do; chỉ những đồng nghiệp được Trưởng nhóm gửi lời mời qua email mới có thể vào.
+                        Không cho phép nhập mã tự do; chỉ những đồng nghiệp được Trưởng nhóm gửi lời mời qua email mới có thể truy cập.
                       </p>
                     </div>
                   </label>
@@ -3325,20 +3481,20 @@ const ChannelDetailsModal: React.FC<{
                   <button
                     type="button"
                     onClick={() => onSaveSettings(editName, editDept, editDesc, editJoinPolicy)}
-                    className="w-full py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors cursor-pointer shadow-xs mt-3 flex items-center justify-center gap-2"
+                    className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition-colors cursor-pointer shadow-xs mt-3 flex items-center justify-center gap-2"
                   >
                     <Check className="w-4 h-4" />
-                    <span>Lưu thay đổi cài đặt nhóm</span>
+                    <span>Lưu thay đổi cài đặt</span>
                   </button>
 
                   {onDisband && (
-                    <div className="mt-5 p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 space-y-2">
-                      <div className="flex items-center gap-2 text-rose-800 font-extrabold text-[11px] uppercase tracking-wide">
+                    <div className="mt-4 p-3 rounded-xl bg-rose-50/40 border border-rose-200/80 space-y-2">
+                      <div className="flex items-center gap-1.5 text-rose-800 font-semibold text-[11px] uppercase tracking-wide">
                         <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                         <span>Vùng nguy hiểm (Dành cho Trưởng nhóm)</span>
                       </div>
                       <p className="text-[11px] text-slate-600 leading-relaxed">
-                        Giải tán nhóm sẽ xóa vĩnh viễn toàn bộ thành viên và tất cả lịch sử tin nhắn trong nhóm khỏi hệ thống. Hành động này không thể hoàn tác.
+                        Giải tán nhóm sẽ xóa vĩnh viễn toàn bộ thành viên và tất cả lịch sử tin nhắn trong nhóm khỏi hệ thống.
                       </p>
                       <button
                         type="button"
@@ -3346,7 +3502,7 @@ const ChannelDetailsModal: React.FC<{
                           onClose();
                           onDisband();
                         }}
-                        className="w-full py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                        className="w-full py-2 px-3 rounded-lg border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>Giải tán nhóm này vĩnh viễn</span>
@@ -3382,40 +3538,38 @@ const AiSummarizeModal: React.FC<{
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-3xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden p-6 space-y-4 animate-fade-in"
+        className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden p-6 space-y-4 animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-600 text-white flex items-center justify-center">
-              <Sparkles className="w-4 h-4" />
+        <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 text-teal-700 flex items-center justify-center border border-slate-200">
+              <Sparkles className="w-4 h-4 text-teal-700" />
             </div>
             <div>
-              <h3 className="text-sm font-extrabold text-slate-900">Quanta AI Summarizer</h3>
-              <p className="text-[10px] text-slate-400">Tóm tắt tiến độ thảo luận kênh #{group.name}</p>
+              <h3 className="text-sm font-bold text-slate-900">Tóm tắt nội dung trao đổi chuyên môn</h3>
+              <p className="text-[10px] text-slate-500">Kênh #{group.name}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
+            className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
         <div className="space-y-3 text-xs leading-relaxed text-slate-700">
-          <div className="p-3.5 rounded-2xl bg-teal-50/70 border border-teal-200/80 space-y-2">
-            <h4 className="font-extrabold text-teal-900 flex items-center gap-1.5">
-              <span>📌</span> Tổng quan kênh trao đổi:
-            </h4>
-            <p className="text-slate-700">
-              Kênh hiện có <strong>{group.memberCount || 2} thành viên</strong> đang tham gia. Đã ghi nhận tổng cộng <strong>{msgs.length} lượt tin nhắn</strong> và trao đổi học liệu chuyên môn.
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
+            <h4 className="font-semibold text-slate-900">Tổng quan kênh trao đổi:</h4>
+            <p className="text-slate-600">
+              Kênh hiện có <strong>{group.memberCount || 2} thành viên</strong> đang tham gia. Đã ghi nhận tổng cộng <strong>{msgs.length} lượt trao đổi</strong> và tài liệu học thuật.
             </p>
           </div>
 
           <div className="space-y-1.5">
-            <h4 className="font-extrabold text-slate-900">💡 Các điểm trọng tâm đã thảo luận:</h4>
+            <h4 className="font-semibold text-slate-900">Các nội dung trọng tâm đã thảo luận:</h4>
             <ul className="list-disc pl-5 space-y-1 text-slate-600">
               <li>Thống nhất sử dụng chung tài liệu học phần và các giáo trình cốt lõi để đối soát ngân hàng câu hỏi Bloom.</li>
               <li>Các giảng viên đã kết nối và phân bổ nội dung biên soạn ma trận đề thi trắc nghiệm.</li>
@@ -3428,7 +3582,7 @@ const AiSummarizeModal: React.FC<{
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs cursor-pointer shadow-xs"
+            className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs cursor-pointer shadow-xs transition-colors"
           >
             Đã hiểu
           </button>
@@ -3454,30 +3608,28 @@ const HuddleCallModal: React.FC<{
       onClick={onClose}
     >
       <div
-        className="bg-slate-900 text-white rounded-3xl max-w-sm w-full border border-slate-700 shadow-2xl p-6 space-y-5 text-center animate-fade-in"
+        className="bg-slate-900 text-white rounded-2xl max-w-sm w-full border border-slate-800 shadow-2xl p-6 space-y-5 text-center animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs border border-emerald-500/30">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold text-xs border border-emerald-500/30">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
             Huddle đang diễn ra
           </div>
-          <h3 className="text-base font-extrabold text-white mt-2">#{group.name}</h3>
-          <p className="text-xs text-slate-400">Phiên thảo luận âm thanh nhanh của bộ môn</p>
+          <h3 className="text-base font-bold text-white mt-2">#{group.name}</h3>
+          <p className="text-xs text-slate-400">Phiên thảo luận nhanh giữa các giảng viên</p>
         </div>
 
         {/* Visualizer & Avatars */}
         <div className="flex items-center justify-center gap-3 py-4">
           <div className="relative">
-            <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center font-black text-lg ring-4 ring-purple-500/50 animate-pulse">
+            <div className="w-14 h-14 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center font-bold text-base text-white">
               {initials(currentUser?.fullName || 'GV')}
             </div>
-            <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-[10px]">
-              🎙️
-            </span>
+            <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
           </div>
 
-          <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
+          <div className="w-12 h-12 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-semibold text-slate-400">
             +{(group.memberCount || 2) - 1}
           </div>
         </div>
@@ -3487,18 +3639,18 @@ const HuddleCallModal: React.FC<{
           <button
             type="button"
             onClick={() => setIsMuted(!isMuted)}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors cursor-pointer ${
-              isMuted ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-slate-800 hover:bg-slate-700 text-white'
+            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+              isMuted ? 'bg-rose-600 hover:bg-rose-700 text-white' : 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-700'
             }`}
             title={isMuted ? 'Bật mic' : 'Tắt mic'}
           >
-            {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+            {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
 
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg"
+            className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs flex items-center gap-2 cursor-pointer transition-colors"
           >
             <LogOut className="w-4 h-4" />
             <span>Rời Huddle</span>
