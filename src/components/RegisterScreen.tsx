@@ -81,7 +81,7 @@ const FACULTY_OPTIONS = [
 ];
 
 const ROLES_OPTIONS: Array<{ id: UserRole; title: string; subtitle: string; icon: any }> = [
-  { id: 'lecturer', title: 'Giảng viên', subtitle: 'Soạn đề & RAG', icon: GraduationCap },
+  { id: 'lecturer', title: 'Giảng viên', subtitle: 'Soạn đề & Giáo trình', icon: GraduationCap },
   { id: 'head_of_department', title: 'Trưởng bộ môn', subtitle: 'Thẩm định đề thi', icon: Award },
   { id: 'admin', title: 'Quản trị Khảo thi', subtitle: 'Quản trị hệ thống', icon: ShieldCheck },
 ];

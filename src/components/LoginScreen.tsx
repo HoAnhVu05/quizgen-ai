@@ -152,7 +152,7 @@ const ROLES: RoleConfig[] = [
     id: 'lecturer',
     title: 'Giảng viên',
     badge: 'Soạn thảo & Sinh đề AI',
-    description: 'Tải giáo trình, cấu hình ma trận Bloom và sinh câu hỏi trắc nghiệm RAG',
+    description: 'Tải giáo trình, cấu hình ma trận Bloom và sinh câu hỏi trắc nghiệm chuẩn giáo trình',
     icon: GraduationCap,
     accentColor: 'from-[#008689] to-[#1d999d]',
     glowColor: 'rgba(0, 134, 137, 0.14)',

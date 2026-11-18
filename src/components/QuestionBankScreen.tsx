@@ -1324,7 +1324,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
               </div>
               <span className="text-emerald-700 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                100% Có trích dẫn RAG
+                100% Có trích dẫn giáo trình
               </span>
             </div>
 

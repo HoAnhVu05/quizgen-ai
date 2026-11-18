@@ -1381,7 +1381,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
 
           <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span>Độ phủ trích dẫn học thuật (RAG)</span>
+            <span>Độ phủ trích dẫn giáo trình</span>
             <span className="font-bold text-[#008689]">100% có nguồn trang</span>
           </div>
         </div>

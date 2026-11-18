@@ -139,6 +139,12 @@ async def document_proxy(request: Request, path: str = ""):
     target = f"/{path}".rstrip("/") if not path else f"/{path}"
     return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/documents", request)
 
+@app.api_route("/api/v1/forum", methods=METHODS)
+@app.api_route("/api/v1/forum/{path:path}", methods=METHODS)
+async def forum_proxy(request: Request, path: str = ""):
+    target = f"/forum/{path}".rstrip("/") if not path else f"/forum/{path}"
+    return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/forum/posts", request)
+
 @app.api_route("/api/v1/rag", methods=METHODS)
 @app.api_route("/api/v1/rag/{path:path}", methods=METHODS)
 async def rag_proxy(request: Request, path: str = ""):
