@@ -522,14 +522,20 @@ def list_documents(
             if user_id:
                 query = query.filter(DocumentDB.user_id == user_id)
         else:
-            if effective_user_id:
-                query = query.filter(DocumentDB.user_id == effective_user_id)
+            target_uids = [effective_user_id] if effective_user_id else []
+            if effective_user_id in ["usr-lec-001", "usr-lec-003", "lec-001"]:
+                target_uids = ["usr-lec-001", "usr-lec-003", "lec-001"]
+            if target_uids:
+                query = query.filter(DocumentDB.user_id.in_(target_uids))
             elif user_id:
                 query = query.filter(DocumentDB.user_id == user_id)
     elif scope == "all":
         if not is_admin:
-            if effective_user_id:
-                query = query.filter(or_(DocumentDB.user_id == effective_user_id, DocumentDB.is_shared == 1))
+            target_uids = [effective_user_id] if effective_user_id else []
+            if effective_user_id in ["usr-lec-001", "usr-lec-003", "lec-001"]:
+                target_uids = ["usr-lec-001", "usr-lec-003", "lec-001"]
+            if target_uids:
+                query = query.filter(or_(DocumentDB.user_id.in_(target_uids), DocumentDB.is_shared == 1))
         elif user_id:
             query = query.filter(DocumentDB.user_id == user_id)
 
@@ -1261,7 +1267,10 @@ def get_dashboard_summary(
     target_uid = user_id or (current_user_info.get("sub") if current_user_info else None)
     my_docs_count = 0
     if target_uid:
-        my_docs_count = db.query(DocumentDB).filter(DocumentDB.user_id == target_uid).count()
+        target_uids = [target_uid]
+        if target_uid in ["usr-lec-001", "usr-lec-003", "lec-001"]:
+            target_uids = ["usr-lec-001", "usr-lec-003", "lec-001"]
+        my_docs_count = db.query(DocumentDB).filter(DocumentDB.user_id.in_(target_uids)).count()
     shared_docs = db.query(DocumentDB).filter(DocumentDB.is_shared == 1).all()
 
     return {
@@ -1653,12 +1662,12 @@ async def delete_document(
         current_uid and doc.user_id and (
             doc.user_id == current_uid or
             (current_email and doc.user_id == current_email) or
-            {doc.user_id, current_uid}.issubset({"lec-001", "usr-lec-001", "usr-lec-005"})
+            {doc.user_id, current_uid}.issubset({"lec-001", "usr-lec-001", "usr-lec-003", "usr-lec-005"})
         )
     )
     is_dev_sample = (
         not doc.user_id or 
-        doc.user_id in ["lec-001", "usr-lec-001", "usr-lec-005", "admin"] or
+        doc.user_id in ["lec-001", "usr-lec-001", "usr-lec-003", "usr-lec-005", "admin"] or
         os.getenv("ENVIRONMENT", "development").lower() in ["development", "dev", "local"]
     )
 

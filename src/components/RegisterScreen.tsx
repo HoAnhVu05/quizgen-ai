@@ -259,7 +259,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
     };
 
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
       // 1. Gửi đăng ký tới Backend Auth Service qua Mock Gateway hoặc Service thực tế
       try {

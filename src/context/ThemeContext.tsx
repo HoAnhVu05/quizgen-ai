@@ -106,14 +106,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // ─── 2. FETCH LATEST THEME FROM BACKEND ON MOUNT & PERIODIC HEARTBEAT ─────
   const fetchCurrentThemeFromBackend = useCallback(async () => {
     try {
-      // Try through Gateway or direct to port 8006
-      let res: any = null;
-      try {
-        res = await fetch('http://localhost:8006/theme/current');
-      } catch {
-        res = await fetch(`${API_BASE}/theme/current`);
-      }
-
+      const res = await apiClient.fetch(`${API_BASE}/theme/current`);
       if (res && res.ok) {
         const data = await res.json();
         if (data && data.activeTheme && data.activeTheme in SYSTEM_THEMES) {
@@ -164,20 +157,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     let success = true;
     try {
       const payload = { theme_id: themeId, actor_email: cleanActor };
-      let res: any = null;
-      try {
-        res = await fetch('http://localhost:8006/theme/current', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      } catch {
-        res = await fetch(`${API_BASE}/theme/current`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-      }
+      const res = await apiClient.fetch(`${API_BASE}/theme/current`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
       if (res && res.ok) {
         const data = await res.json();

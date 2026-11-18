@@ -34,8 +34,10 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
             if p in ["admin", "head_of_department", "lecturer"]:
                 r_part = p
                 break
-        uid = "usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001")
-        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else "nguyentann0804@gmail.com"
+        client_uid = request.headers.get("x-user-id") or request.headers.get("X-User-Id")
+        client_email = request.headers.get("x-user-email") or request.headers.get("X-User-Email")
+        uid = client_uid or ("usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001"))
+        email = client_email or ("quizgen.ai.team@gmail.com" if r_part == "admin" else "nguyentann0804@gmail.com")
         headers["x-user-id"] = uid
         headers["x-user-role"] = r_part
         headers["x-user-email"] = email

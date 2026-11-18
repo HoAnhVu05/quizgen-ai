@@ -200,7 +200,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [activeMainTab, setActiveMainTab] = useState<'generate' | 'history'>('generate');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [previewHistoryRecord, setPreviewHistoryRecord] = useState<GenerationHistoryRecord | null>(null);
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
   const [generationHistory, setGenerationHistory] = useState<GenerationHistoryRecord[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_generation_history');

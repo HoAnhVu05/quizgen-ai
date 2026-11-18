@@ -379,7 +379,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       let authenticatedUser: UserProfile | null = null;
       let backendFailed = false;
 
@@ -791,7 +791,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     setGooglePopupBlocked(false);
     setGoogleLoading(true);
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       const roleObj = ROLES.find((r) => r.id === targetRole) || ROLES[0];
       let authenticatedUser: UserProfile | null = null;
       let backendOffline = false;
@@ -1122,7 +1122,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     } catch {}
 
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       await fetch(`${API_BASE}/auth/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

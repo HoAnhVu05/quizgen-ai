@@ -295,7 +295,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     setIsLoading(true);
 
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       const historyPayload = messages.slice(-6).map((m) => ({
         role: m.role,
         content: m.content,
