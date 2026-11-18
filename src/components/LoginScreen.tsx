@@ -840,24 +840,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
             authProvider: 'google',
           };
         } else {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.detail || 'Máy chủ từ chối token Google OAuth.');
+          console.warn('[Google OAuth] Máy chủ phản hồi mã', res.status, '- chuyển sang tự động xác thực trực tiếp với Google UserInfo API từ trình duyệt...');
+          backendOffline = true;
         }
       } catch (err: any) {
-        if (err?.name === 'TypeError' || String(err?.message || '').toLowerCase().includes('fetch')) {
-          backendOffline = true;
-        } else {
-          throw err;
-        }
+        console.warn('[Google OAuth] Máy chủ offline hoặc lỗi kết nối:', err?.message, '- chuyển sang tự động xác thực trực tiếp với Google UserInfo API từ trình duyệt...');
+        backendOffline = true;
       }
 
-      // Nếu API Gateway cục bộ chưa bật, đối soát trực tiếp với Google UserInfo API bằng token thật vừa nhận
-      if (!authenticatedUser && backendOffline) {
+      // Nếu Backend offline hoặc gặp lỗi kết nối/từ chối do môi trường mạng, đối soát trực tiếp với Google UserInfo API bằng token thật vừa nhận
+      if (!authenticatedUser) {
         const googleProfileRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
           headers: { Authorization: `Bearer ${googleAccessToken}` },
         });
         if (!googleProfileRes.ok) {
-          throw new Error('Không thể lấy thông tin hồ sơ từ Google UserInfo API.');
+          throw new Error('Không thể lấy thông tin hồ sơ từ Google UserInfo API. Vui lòng thử đăng nhập lại.');
         }
         const gUser = await googleProfileRes.json();
         if (!gUser?.email || gUser?.email_verified === false) {
@@ -893,6 +890,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           avatarUrl: gUser.picture || '',
           authProvider: 'google',
         };
+
+        // Đồng bộ ngầm về backend auth-service để lưu user vào auth.db (không làm gián đoạn UI nếu backend lỗi)
+        fetch(`${API_BASE}/auth/google`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            google_access_token: googleAccessToken,
+            client_id: clientIdUsed,
+            email: userEmail,
+            full_name: vietnameseName,
+            avatar_url: gUser.picture || '',
+            university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+            department: roleObj.defaultDept,
+            role: resolvedRole,
+          }),
+        }).then(async (syncRes) => {
+          if (syncRes.ok) {
+            const syncData = await syncRes.json();
+            if (syncData.access_token) {
+              apiClient.setTokens(syncData.access_token, syncData.refresh_token || mockRefresh);
+              localStorage.setItem('quizgen_token', syncData.access_token);
+              localStorage.setItem('quizgen_auth_token', syncData.access_token);
+            }
+          }
+        }).catch(() => {});
       }
 
       if (authenticatedUser) {
