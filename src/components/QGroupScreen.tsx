@@ -3597,7 +3597,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           onClick={() => setIsDirectAddMemberOpen(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl max-w-xl sm:max-w-xl lg:max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -3735,36 +3735,67 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <span>Tài khoản đã kích hoạt hệ thống</span>
                     </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleQueueDirectAddMember(lookedUpUser)}
-                        className="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 cursor-pointer transition-colors flex items-center gap-1"
-                        title="Thêm vào danh sách chọn để thêm nhiều người cùng lúc"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Chọn ({directAddSelectedMembers.length + 1})</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleSendGroupInvitation(lookedUpUser.email, lookedUpUser.fullName)}
-                        className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                        title="Gửi lời mời vào nhóm: Đồng nghiệp nhận thông báo và bấm chấp nhận để vào"
-                      >
-                        <Send className="w-3 h-3" />
-                        <span>Gửi lời mời</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleAddUserToActiveChannel(lookedUpUser.email, lookedUpUser.fullName)}
-                        disabled={isAddingMember}
-                        className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs border border-slate-300 cursor-pointer transition-colors flex items-center gap-1.5"
-                        title="Thêm trực tiếp vào nhóm ngay lập tức (Chỉ Trưởng nhóm)"
-                      >
-                        <UserPlus className="w-3 h-3" />
-                        <span>Thêm ngay</span>
-                      </button>
-                    </div>
+                    {(() => {
+                      const isUserSelected = directAddSelectedMembers.some((m) => m.email.toLowerCase() === lookedUpUser.email.toLowerCase());
+                      const friendship = getFriendshipState(lookedUpUser.email);
+                      const isFriend = friendship.type === 'friend';
+                      const isAlreadyInChannel = (activeGroup.members || []).some(
+                        (m) => String(m).trim().toLowerCase() === lookedUpUser.email.trim().toLowerCase()
+                      );
+                      return (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {!isAlreadyInChannel && (
+                            isUserSelected ? (
+                              <button
+                                type="button"
+                                onClick={() => setDirectAddSelectedMembers((prev) => prev.filter((x) => x.email.toLowerCase() !== lookedUpUser.email.toLowerCase()))}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                                title="Đã chọn (Bấm để hủy chọn)"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Đã chọn</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleQueueDirectAddMember(lookedUpUser)}
+                                className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
+                                title="Chọn để thêm hàng loạt"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            )
+                          )}
+                          {isAlreadyInChannel ? (
+                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              <span>Đã tham gia</span>
+                            </span>
+                          ) : isFriend ? (
+                            <button
+                              type="button"
+                              onClick={() => void handleAddUserToActiveChannel(lookedUpUser.email, lookedUpUser.fullName)}
+                              disabled={isAddingMember}
+                              className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 cursor-pointer transition-colors flex items-center gap-1.5"
+                              title="Thêm ngay vào nhóm (đã là bạn bè)"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>Thêm ngay</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => void handleSendGroupInvitation(lookedUpUser.email, lookedUpUser.fullName)}
+                              className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                              title="Gửi lời mời tham gia kênh"
+                            >
+                              <Send className="w-3 h-3" />
+                              <span>Mời</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -3807,16 +3838,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           inv.targetEmail.toLowerCase() === f.email.toLowerCase() &&
                           inv.status === 'pending'
                       );
+                      const isSelected = directAddSelectedMembers.some(
+                        (m) => m.email.toLowerCase() === f.email.toLowerCase()
+                      );
+                      const friendship = getFriendshipState(f.email);
+                      const isFriend = friendship.type === 'friend';
+
                       return (
                         <div
                           key={f.email}
-                          className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 flex items-center justify-between gap-2.5 transition-colors"
+                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 transition-colors ${
+                            isSelected
+                              ? 'bg-teal-50/60 border-teal-300'
+                              : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200/80'
+                          }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
                               {initials(f.name)}
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
                                 {f.title && (
@@ -3824,53 +3865,82 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                     {f.title}
                                   </span>
                                 )}
+                                {isFriend && (
+                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                                    Bạn bè
+                                  </span>
+                                )}
                               </div>
-                              <p className="text-[11px] text-slate-400 truncate">{f.email}</p>
+                              <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
+                              {f.dept && (
+                                <p className="text-[10px] text-slate-400 truncate">{f.dept}</p>
+                              )}
                             </div>
                           </div>
 
-                          {isAlreadyInChannel ? (
-                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span>Đã tham gia</span>
-                            </span>
-                          ) : hasSentInvite ? (
-                            <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-amber-200">
-                              <Clock className="w-3 h-3 text-amber-600" />
-                              <span>Đã gửi lời mời</span>
-                            </span>
-                          ) : (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleQueueDirectAddMember(f)}
-                                className="px-2 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Chọn vào danh sách để thêm nhiều người cùng lúc"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>Chọn</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleSendGroupInvitation(f.email, f.name)}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Gửi lời mời: Đồng nghiệp nhận thông báo và bấm Chấp nhận để vào"
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>Gửi lời mời</span>
-                              </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {/* Nút Chọn / Đã chọn (Dấu cộng nhỏ -> Đã chọn khi click) */}
+                            {!isAlreadyInChannel && (
+                              isSelected ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setDirectAddSelectedMembers((prev) =>
+                                      prev.filter((x) => x.email.toLowerCase() !== f.email.toLowerCase())
+                                    )
+                                  }
+                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                                  title="Đã chọn (Bấm để hủy chọn)"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Đã chọn</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQueueDirectAddMember(f)}
+                                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
+                                  title="Chọn để thêm hàng loạt"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              )
+                            )}
+
+                            {/* Nút hành động trực tiếp: Đã tham gia | Đã mời | Thêm ngay (nếu đã là bạn bè) | Mời (nếu chưa kết bạn) */}
+                            {isAlreadyInChannel ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <span>Đã tham gia</span>
+                              </span>
+                            ) : hasSentInvite ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-amber-200">
+                                <Clock className="w-3 h-3 text-amber-600" />
+                                <span>Đã gửi lời mời</span>
+                              </span>
+                            ) : isFriend ? (
                               <button
                                 type="button"
                                 onClick={() => void handleAddUserToActiveChannel(f.email, f.name)}
                                 disabled={isAddingMember}
-                                className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Thêm ngay vào nhóm (Dành cho Trưởng nhóm)"
+                                className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Thêm ngay vào nhóm (đã là bạn bè)"
                               >
-                                <UserPlus className="w-3 h-3" />
+                                <UserPlus className="w-3.5 h-3.5" />
                                 <span>Thêm ngay</span>
                               </button>
-                            </div>
-                          )}
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handleSendGroupInvitation(f.email, f.name)}
+                                className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Gửi lời mời: Đồng nghiệp nhận thông báo và bấm Chấp nhận để vào"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>Mời</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })
@@ -4136,7 +4206,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           onClick={handleCloseAddFriendModal}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl max-w-xl sm:max-w-xl lg:max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -4306,27 +4376,41 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             <span>Chấp nhận kết bạn</span>
                           </button>
                         )}
-                        {cardState.type === 'none' && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleQueueFriendInvite(friendLookedUpUser)}
-                              className="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 cursor-pointer transition-colors flex items-center gap-1"
-                              title="Thêm vào danh sách chọn để gửi lời mời nhiều người cùng lúc"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Chọn ({selectedFriendsToInvite.length + 1})</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleSendFriendRequest(friendLookedUpUser.email)}
-                              className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                              <span>Gửi lời mời kết bạn</span>
-                            </button>
-                          </>
-                        )}
+                        {cardState.type === 'none' && (() => {
+                          const isSelected = selectedFriendsToInvite.some((m) => m.email.toLowerCase() === friendLookedUpUser.email.toLowerCase());
+                          return (
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {isSelected ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedFriendsToInvite((prev) => prev.filter((x) => x.email.toLowerCase() !== friendLookedUpUser.email.toLowerCase()))}
+                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                                  title="Đã chọn (Bấm để hủy chọn)"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Đã chọn</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQueueFriendInvite(friendLookedUpUser)}
+                                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
+                                  title="Chọn để gửi lời mời hàng loạt"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => void handleSendFriendRequest(friendLookedUpUser.email)}
+                                className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                              >
+                                <UserPlus className="w-3.5 h-3.5" />
+                                <span>Kết bạn</span>
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -4363,16 +4447,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   ) : (
                     filteredColleaguesForFriend.map((f) => {
                       const state = getFriendshipState(f.email);
+                      const isSelected = selectedFriendsToInvite.some((m) => m.email.toLowerCase() === f.email.toLowerCase());
                       return (
                         <div
                           key={f.email}
-                          className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 flex items-center justify-between gap-2.5 transition-colors"
+                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${
+                            isSelected
+                              ? 'bg-teal-50/60 border-teal-300'
+                              : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200/80'
+                          }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
                               {initials(f.name)}
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
                                 {f.title && (
@@ -4381,7 +4470,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <p className="text-[11px] text-slate-400 truncate">{f.email}</p>
+                              <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
                               {f.dept && (
                                 <p className="text-[10px] text-slate-400 truncate">{f.dept}</p>
                               )}
@@ -4416,19 +4505,30 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           )}
                           {state.type === 'none' && (
                             <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleQueueFriendInvite(f)}
-                                className="px-2 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Chọn vào danh sách gửi lời mời hàng loạt"
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>Chọn</span>
-                              </button>
+                              {isSelected ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedFriendsToInvite((prev) => prev.filter((x) => x.email.toLowerCase() !== f.email.toLowerCase()))}
+                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                                  title="Đã chọn (Bấm để hủy chọn)"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Đã chọn</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQueueFriendInvite(f)}
+                                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
+                                  title="Chọn vào danh sách gửi lời mời hàng loạt"
+                                >
+                                  <Plus className="w-4 h-4" />
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => void handleSendFriendRequest(f.email)}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                                className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
                                 title="Gửi lời mời kết nối học thuật 1-1"
                               >
                                 <UserPlus className="w-3.5 h-3.5" />
@@ -4490,7 +4590,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           }}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            className="bg-white rounded-2xl shadow-2xl max-w-xl sm:max-w-xl lg:max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -4706,20 +4806,35 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           </div>
                         </div>
 
-                        <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
-                          <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>Tài khoản đã kích hoạt hệ thống</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleAddMemberToNewGroup(createGroupLookedUpUser)}
-                            className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>Thêm vào kênh ({createGroupSelectedMembers.length + 1})</span>
-                          </button>
-                        </div>
+                          <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
+                            <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>Tài khoản đã kích hoạt hệ thống</span>
+                            </span>
+                            {(() => {
+                              const isSelected = createGroupSelectedMembers.some((m) => m.email.toLowerCase() === createGroupLookedUpUser.email.toLowerCase());
+                              return isSelected ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setCreateGroupSelectedMembers((prev) => prev.filter((x) => x.email.toLowerCase() !== createGroupLookedUpUser.email.toLowerCase()))}
+                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
+                                  title="Đã chọn (Bấm để hủy chọn)"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Đã chọn</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddMemberToNewGroup(createGroupLookedUpUser)}
+                                  className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Thêm vào kênh ({createGroupSelectedMembers.length + 1})</span>
+                                </button>
+                              );
+                            })()}
+                          </div>
                       </div>
                     )}
 
@@ -4751,37 +4866,56 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             Không còn đồng nghiệp nào khác chưa chọn
                           </p>
                         ) : (
-                          filteredColleaguesForNewGroup.map((f) => (
-                            <div
-                              key={f.email}
-                              className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 flex items-center justify-between gap-2.5 transition-colors"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                  {initials(f.name)}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
-                                    {f.title && (
-                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
-                                        {f.title}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[11px] text-slate-400 truncate">{f.email}</p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleAddMemberToNewGroup({ email: f.email, fullName: f.name, academicTitle: f.title, department: f.dept })}
-                                className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                          filteredColleaguesForNewGroup.map((f) => {
+                            const isSelected = createGroupSelectedMembers.some((m) => m.email.toLowerCase() === f.email.toLowerCase());
+                            return (
+                              <div
+                                key={f.email}
+                                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${
+                                  isSelected
+                                    ? 'bg-teal-50/60 border-teal-300'
+                                    : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200/80'
+                                }`}
                               >
-                                <Plus className="w-3 h-3" />
-                                <span>Chọn</span>
-                              </button>
-                            </div>
-                          ))
+                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                  <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                    {initials(f.name)}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
+                                      {f.title && (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
+                                          {f.title}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
+                                  </div>
+                                </div>
+                                {isSelected ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCreateGroupSelectedMembers((prev) => prev.filter((x) => x.email.toLowerCase() !== f.email.toLowerCase()))}
+                                    className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors shrink-0"
+                                    title="Đã chọn (Bấm để hủy chọn)"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Đã chọn</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddMemberToNewGroup({ email: f.email, fullName: f.name, academicTitle: f.title, department: f.dept })}
+                                    className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer shrink-0"
+                                    title="Chọn thành viên"
+                                  >
+                                    <Plus className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>
