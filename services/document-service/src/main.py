@@ -158,7 +158,7 @@ def _mark_doc_error(document_id: str, error_msg: str, stage: str = "error"):
     cache.set_upload_progress(document_id, progress=0, status="error", stage=stage)
 
 
-async def process_document_pipeline(
+def process_document_pipeline(
     document_id: str,
     file_path: str,
     filename: str,
@@ -166,8 +166,9 @@ async def process_document_pipeline(
     user_id: str
 ):
     """
-    Quy trình xử lý tài liệu nền khép kín (End-to-End Async Document Pipeline):
-    - Pha 1 (25%): Bóc tách văn bản từng trang (PDF/DOCX Parser)
+    Quy trình xử lý tài liệu nền khép kín (End-to-End Background Threadpool Pipeline):
+    - Chạy hoàn toàn trên Starlette Background Threadpool, KHÔNG chặn Asyncio Event Loop.
+    - Pha 1 (25%): Bóc tách văn bản từng trang (PyMuPDF / python-docx Parser)
     - Pha 2 (50%): Phân đoạn ngữ nghĩa (Semantic Chunker) & trích xuất mục lục
     - Pha 3 (70%): Lưu cấu trúc chương và các đoạn trích vào CSDL
     - Pha 4 (85%): Đẩy chunks sang RAG Service với cơ chế Exponential Backoff Retry (3 lần: 1s, 2s, 4s)
@@ -263,7 +264,6 @@ async def process_document_pipeline(
         db.close()
 
     # Pha 4: Chuyển tiếp các chunks sang RAG Service để lập chỉ mục vector (ChromaDB)
-    # Chỉ khi ChromaDB hoàn tất việc tính toán vector và nạp vào cơ sở dữ liệu thì tài liệu mới được coi là SẴN SÀNG THẬT SỰ (True Readiness)
     cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
     _update_doc_progress(document_id, progress=85, status="embedding")
 
@@ -277,8 +277,8 @@ async def process_document_pipeline(
 
     for attempt in range(1, max_retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
-                res = await client.post(
+            with httpx.Client(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
+                res = client.post(
                     f"{RAG_SERVICE_URL}/index-chunks",
                     headers=headers,
                     json={
@@ -297,7 +297,7 @@ async def process_document_pipeline(
             last_rag_error = f"Lỗi kết nối RAG Service ({RAG_SERVICE_URL}): {str(e)}"
 
         if attempt < max_retries:
-            await asyncio.sleep(2 ** (attempt - 1))  # 1s, 2s
+            time.sleep(2 ** (attempt - 1))  # 1s, 2s
 
     # Pha 5: Hoàn tất Sẵn Sàng Thật Sự (Chỉ kích hoạt khi Vector RAG đã xong 100%)
     if rag_success:
@@ -503,7 +503,7 @@ def get_document_progress(document_id: str, db: Session = Depends(get_db)):
 
 @app.post("/documents/{document_id}/retry")
 @app.post("/documents/retry/{document_id}")
-async def retry_document_pipeline(
+def retry_document_pipeline(
     document_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
@@ -511,12 +511,27 @@ async def retry_document_pipeline(
     doc = db.query(DocumentDB).filter_by(id=document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
-    if not doc.file_path or not os.path.exists(doc.file_path):
-        raise HTTPException(status_code=400, detail="Tệp vật lý không còn lưu trên máy chủ.")
 
+    target_path = doc.file_path
+    if not target_path or not os.path.exists(target_path):
+        alt_path = STORAGE_DIR / os.path.basename(doc.file_path) if doc.file_path else None
+        if alt_path and alt_path.exists():
+            target_path = str(alt_path)
+            doc.file_path = str(alt_path)
+        else:
+            matched = list(STORAGE_DIR.glob(f"{doc.id}_*"))
+            if matched:
+                target_path = str(matched[0])
+                doc.file_path = target_path
+            else:
+                raise HTTPException(status_code=400, detail="Tệp vật lý không còn lưu trên máy chủ.")
+
+    now_utc = datetime.utcnow()
     doc.status = "extracting"
     doc.progress = 15
     doc.error_message = None
+    doc.created_at = now_utc
+    doc.updated_at = now_utc
     db.commit()
 
     cache.set_upload_progress(document_id, progress=15, status="extracting", stage="queued")
@@ -524,7 +539,7 @@ async def retry_document_pipeline(
     background_tasks.add_task(
         process_document_pipeline,
         document_id=doc.id,
-        file_path=doc.file_path,
+        file_path=target_path,
         filename=doc.name,
         ext=ext,
         user_id=doc.user_id
@@ -546,6 +561,7 @@ def cancel_document_pipeline(
         raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
     doc.status = "error"
     doc.error_message = "Tác vụ đã được dừng bởi Quản trị viên."
+    doc.updated_at = datetime.utcnow()
     db.commit()
     cache.set_upload_progress(document_id, progress=0, status="error", stage="canceled")
     return {

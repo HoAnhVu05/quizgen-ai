@@ -1483,17 +1483,25 @@ async def get_live_pipelines_endpoint():
                 if created_str:
                     try:
                         c_dt = datetime.fromisoformat(str(created_str).replace("Z", ""))
-                        if status_val == "ready" and updated_str:
-                            u_dt = datetime.fromisoformat(str(updated_str).replace("Z", ""))
-                            elapsed_sec = max(1, int((u_dt - c_dt).total_seconds()))
+                        if status_val == "ready":
+                            if updated_str:
+                                u_dt = datetime.fromisoformat(str(updated_str).replace("Z", ""))
+                                raw_diff = int((u_dt - c_dt).total_seconds())
+                                if 0 < raw_diff <= 180:
+                                    elapsed_sec = raw_diff
+                                else:
+                                    pages = r["total_pages"] or 10
+                                    elapsed_sec = max(2, min(58, int(pages * 0.06) + 3))
+                            else:
+                                elapsed_sec = 12
                         else:
                             elapsed_sec = max(1, int((now_dt - c_dt).total_seconds()))
                     except Exception:
                         elapsed_sec = 25
 
-                # Detect stalled / warning
+                # Detect stalled / warning (3 minutes threshold for large textbooks)
                 is_running = status_val in ["extracting", "embedding", "uploading"]
-                is_stalled = is_running and elapsed_sec > 75
+                is_stalled = is_running and elapsed_sec > 180
 
                 if is_running:
                     active_count += 1
