@@ -735,20 +735,50 @@ def save_server_invitations(invitations: list):
 
 @app.get("/qgroups")
 @app.get("/documents/qgroups")
-def get_qgroups():
-    return load_server_qgroups()
+def get_qgroups(email: Optional[str] = Query(None), request: Request = None):
+    groups = load_server_qgroups()
+    user_email = email
+    if not user_email and request:
+        user_email = request.headers.get("x-user-email")
+    if user_email:
+        clean = user_email.strip().lower()
+        return [
+            g for g in groups
+            if clean == (g.get("ownerEmail") or "").strip().lower()
+            or clean == (g.get("directPartnerEmail") or "").strip().lower()
+            or clean in [str(m).strip().lower() for m in g.get("members", [])]
+        ]
+    return groups
 
 @app.post("/qgroups")
 @app.post("/documents/qgroups")
 async def save_qgroups_endpoint(request: Request):
     payload = await request.json()
     if isinstance(payload, list):
-        save_server_qgroups(payload)
-        return {"status": "success", "count": len(payload), "data": payload}
+        current = load_server_qgroups()
+        current_map = {(g.get("id") or g.get("code")): g for g in current if (g.get("id") or g.get("code"))}
+        for g in payload:
+            gid = g.get("id") or g.get("code")
+            if gid:
+                current_map[gid] = g
+            else:
+                current.append(g)
+        new_list = list(current_map.values())
+        save_server_qgroups(new_list)
+        return {"status": "success", "count": len(new_list), "data": new_list}
     elif isinstance(payload, dict):
         if "groups" in payload and isinstance(payload["groups"], list):
-            save_server_qgroups(payload["groups"])
-            return {"status": "success", "count": len(payload["groups"]), "data": payload["groups"]}
+            current = load_server_qgroups()
+            current_map = {(g.get("id") or g.get("code")): g for g in current if (g.get("id") or g.get("code"))}
+            for g in payload["groups"]:
+                gid = g.get("id") or g.get("code")
+                if gid:
+                    current_map[gid] = g
+                else:
+                    current.append(g)
+            new_list = list(current_map.values())
+            save_server_qgroups(new_list)
+            return {"status": "success", "count": len(new_list), "data": new_list}
         else:
             current = load_server_qgroups()
             idx = next((i for i, g in enumerate(current) if g.get("id") == payload.get("id") or g.get("code") == payload.get("code")), -1)

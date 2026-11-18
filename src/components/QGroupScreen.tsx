@@ -328,6 +328,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   // ── States ───────────────────────────────────────────────────────────────
   const [qgroups, setQgroups] = useState<QGroup[]>([]);
+  const [systemUsersList, setSystemUsersList] = useState<
+    Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
+  >([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [chatInput, setChatInput] = useState('');
@@ -529,11 +532,29 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       }
     });
 
-    // Các tài khoản mẫu hệ thống & đồng nghiệp bộ môn
+    // 1. Đồng bộ người dùng thực tế từ auth.db (qua admin-service API)
+    systemUsersList.forEach((u) => {
+      if (u.email && u.email.toLowerCase() !== myEmail.toLowerCase()) {
+        const cleanEmail = u.email.toLowerCase();
+        if (!map.has(cleanEmail)) {
+          map.set(cleanEmail, {
+            email: u.email,
+            name: `${u.academicTitle ? u.academicTitle + ' ' : ''}${u.fullName}`,
+            title: u.academicTitle || 'ThS.',
+            dept: u.department || 'Khoa Công nghệ Thông tin',
+          });
+        }
+      }
+    });
+
+    // 2. Các tài khoản mẫu hệ thống & đồng nghiệp dự phòng
     const systemLecturers = [
-      { email: 'mr.av1222005@gmail.com', name: 'ThS. Mr. AVvvv', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
-      { email: 'avanimechannel@gmail.com', name: 'TS. Hồ Anh Vũ', title: 'TS.', dept: 'Khoa Công nghệ Thông tin' },
-      { email: 'nguyentann0804@gmail.com', name: 'ThS. Nguyễn Văn Tân', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'mr.av1222005@gmail.com', name: 'ThS. Mr. AV', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'avanimechannel@gmail.com', name: 'ThS. Vũ Anh', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'hieuhieu22112005@gmail.com', name: 'ThS. Hieu Huynh', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'daipqps37469@gmail.com', name: 'ThS. Đại Phạm Quang', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'vuha3608@ut.edu.vn', name: 'ThS. Vũ Hồ Anh', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'nguyentann0804@gmail.com', name: 'TS. Nguyễn Văn Tân', title: 'TS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'quizgen.ai.team@gmail.com', name: 'Ban Quản trị QuizGen AI', title: 'Admin', dept: 'Phòng Đào Tạo & Khảo Thí' },
       { email: 'hod.cntt@uth.edu.vn', name: 'PGS. TS. Trưởng Khoa CNTT', title: 'PGS. TS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'gv.kinhte@uth.edu.vn', name: 'TS. Giảng viên Kinh tế', title: 'TS.', dept: 'Khoa Kinh tế Vận tải' },
@@ -552,7 +573,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     });
 
     return Array.from(map.values());
-  }, [qgroups, myEmail]);
+  }, [qgroups, myEmail, systemUsersList]);
 
   // Bộ lọc danh sách bạn bè theo ô tìm kiếm / ký tự @ (khi thêm thành viên vào kênh)
   const filteredFriends = useMemo(() => {
@@ -654,12 +675,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     (groups: QGroup[]) => {
       const bl = getBlacklist(myEmail);
       const valid = groups.filter((g) => {
-        // Nếu người dùng đang là thành viên hoặc chủ nhóm -> luôn hợp lệ, tự động gỡ khỏi blacklist nếu từng xóa
+        // Chỉ hiển thị kênh nếu người dùng là thành viên hoặc chủ nhóm
         if (isGroupMemberOrOwner(g, myEmail)) {
           removeFromBlacklist(myEmail, g.id, g.code);
           return true;
         }
-        return !bl.has(g.id) && !bl.has(g.code);
+        return false;
       });
       setQgroups(valid);
       try {
@@ -760,7 +781,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const fetchQGroups = useCallback(async () => {
     try {
-      const res = await apiClient.fetch(`${API_BASE}/documents/qgroups`);
+      const url = myEmail
+        ? `${API_BASE}/documents/qgroups?email=${encodeURIComponent(myEmail)}`
+        : `${API_BASE}/documents/qgroups`;
+      const res = await apiClient.fetch(url);
       if (!res.ok) return;
       const remote = await res.json();
       if (!Array.isArray(remote)) return;
@@ -771,7 +795,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           removeFromBlacklist(myEmail, g.id, g.code);
           return true;
         }
-        return !bl.has(g.id) && !bl.has(g.code);
+        return false;
       });
 
       let merged = [...remoteClean];
@@ -784,7 +808,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               removeFromBlacklist(myEmail, g.id, g.code);
               return true;
             }
-            return !bl.has(g.id) && !bl.has(g.code);
+            return false;
           });
           const remoteKeys = new Set(remoteClean.map((g) => (g.code || g.id).trim()));
           const onlyLocal = localGroups.filter(
@@ -799,7 +823,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       for (const g of merged) {
         const key = (g.code || g.id || '').trim();
         const isActiveMember = isGroupMemberOrOwner(g, myEmail);
-        if (!key || (!isActiveMember && bl.has(key))) continue;
+        if (!key || !isActiveMember || bl.has(key)) continue;
         if (seen.has(key)) continue;
         seen.add(key);
 
@@ -872,6 +896,28 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     }, 2000);
     return () => clearInterval(iv);
   }, [fetchQGroups, fetchGroupInvitations, fetchFriendRequests]);
+
+  // Đồng bộ danh mục tài khoản toàn hệ thống từ auth.db (admin API)
+  useEffect(() => {
+    let isMounted = true;
+    apiClient
+      .fetch(`${API_BASE}/admin/users`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((users) => {
+        if (!isMounted || !Array.isArray(users)) return;
+        const normalized = users.map((u: any) => ({
+          email: u.email,
+          fullName: u.fullName || u.name || 'Giảng viên UTH',
+          academicTitle: u.academicTitle || 'ThS.',
+          department: u.department || 'Khoa Công nghệ Thông tin',
+        }));
+        setSystemUsersList(normalized);
+      })
+      .catch(() => {});
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Khi tài khoản đăng nhập thay đổi (switch user) -> lập tức fetch lại dữ liệu mới nhất
   useEffect(() => {
@@ -1061,23 +1107,51 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
       } catch {}
 
+      // Kiểm tra trong danh mục tài khoản động từ API
+      const dynamicUser = systemUsersList.find((u) => u.email.toLowerCase() === clean);
+      if (dynamicUser) {
+        return {
+          email: dynamicUser.email,
+          fullName: dynamicUser.fullName,
+          academicTitle: dynamicUser.academicTitle || 'ThS.',
+          department: dynamicUser.department || 'Khoa Công nghệ Thông tin',
+          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+          role: 'lecturer',
+        };
+      }
+
       const localRegistered: Record<
         string,
         { fullName: string; academicTitle: string; department: string }
       > = {
         'mr.av1222005@gmail.com': {
-          fullName: 'ThS. Mr. AVvvv',
+          fullName: 'Mr. AV',
           academicTitle: 'ThS.',
           department: 'Khoa Công nghệ Thông tin',
         },
         'avanimechannel@gmail.com': {
-          fullName: 'TS. Hồ Anh Vũ',
-          academicTitle: 'TS.',
+          fullName: 'Vũ Anh',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'hieuhieu22112005@gmail.com': {
+          fullName: 'Hieu Huynh',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'daipqps37469@gmail.com': {
+          fullName: 'Đại Phạm Quang',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'vuha3608@ut.edu.vn': {
+          fullName: 'Vũ Hồ Anh',
+          academicTitle: 'ThS.',
           department: 'Khoa Công nghệ Thông tin',
         },
         'nguyentann0804@gmail.com': {
-          fullName: 'ThS. Nguyễn Văn Tân',
-          academicTitle: 'ThS.',
+          fullName: 'Nguyễn Văn Tân',
+          academicTitle: 'TS.',
           department: 'Khoa Công nghệ Thông tin',
         },
         'quizgen.ai.team@gmail.com': {
@@ -1127,7 +1201,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
       return null;
     },
-    [qgroups]
+    [qgroups, systemUsersList]
   );
 
   // ── Tra cứu cho modal Thêm thành viên vào kênh đang mở ───────────────────
@@ -3611,7 +3685,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       }
                     }}
                     placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên..."
-                    className="w-full pl-8.5 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
+                    className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
                     autoFocus
                   />
                   {lookupStatus === 'searching' && (
@@ -4154,7 +4228,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       }
                     }}
                     placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên..."
-                    className="w-full pl-8.5 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
+                    className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
                     autoFocus
                   />
                   {friendLookupStatus === 'searching' && (
@@ -4589,7 +4663,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           }
                         }}
                         placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên cần thêm..."
-                        className="w-full pl-8.5 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
+                        className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
                       />
                       {createGroupLookupStatus === 'searching' && (
                         <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -5328,7 +5402,8 @@ const ChannelDetailsModal: React.FC<{
 
   useEffect(() => {
     const clean = inviteEmail.trim().toLowerCase();
-    if (!clean || !clean.includes('@') || clean.length < 5) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!clean || !emailRegex.test(clean)) {
       setModalLookupStatus('idle');
       setModalLookedUpUser(null);
       return;
@@ -5354,24 +5429,49 @@ const ChannelDetailsModal: React.FC<{
         { fullName: string; academicTitle: string; department: string }
       > = {
         'mr.av1222005@gmail.com': {
-          fullName: 'ThS. Mr. AVvvv',
+          fullName: 'Mr. AV',
           academicTitle: 'ThS.',
           department: 'Khoa Công nghệ Thông tin',
         },
         'avanimechannel@gmail.com': {
-          fullName: 'TS. Hồ Anh Vũ',
-          academicTitle: 'TS.',
+          fullName: 'Vũ Anh',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'hieuhieu22112005@gmail.com': {
+          fullName: 'Hieu Huynh',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'daipqps37469@gmail.com': {
+          fullName: 'Đại Phạm Quang',
+          academicTitle: 'ThS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'vuha3608@ut.edu.vn': {
+          fullName: 'Vũ Hồ Anh',
+          academicTitle: 'ThS.',
           department: 'Khoa Công nghệ Thông tin',
         },
         'nguyentann0804@gmail.com': {
-          fullName: 'ThS. Nguyễn Văn Tân',
-          academicTitle: 'ThS.',
+          fullName: 'Nguyễn Văn Tân',
+          academicTitle: 'TS.',
           department: 'Khoa Công nghệ Thông tin',
         },
         'quizgen.ai.team@gmail.com': {
           fullName: 'Ban Quản trị QuizGen AI',
           academicTitle: 'Admin',
           department: 'Hệ thống Khảo thí UTH',
+        },
+        'hod.cntt@uth.edu.vn': {
+          fullName: 'PGS. TS. Trưởng Khoa CNTT',
+          academicTitle: 'PGS. TS.',
+          department: 'Khoa Công nghệ Thông tin',
+        },
+        'gv.kinhte@uth.edu.vn': {
+          fullName: 'TS. Giảng viên Kinh tế',
+          academicTitle: 'TS.',
+          department: 'Khoa Kinh tế Vận tải',
         },
       };
       if (localRegistered[clean]) {
@@ -5657,7 +5757,7 @@ const ChannelDetailsModal: React.FC<{
                 )}
 
                 {/* Cảnh báo người dùng chưa đăng ký */}
-                {modalLookupStatus === 'not_found' && inviteEmail.trim().length >= 5 && (
+                {modalLookupStatus === 'not_found' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(inviteEmail.trim()) && (
                   <div className="p-2.5 rounded-lg border border-rose-200 bg-rose-50/60 flex items-start gap-2 text-[11px] text-rose-700 animate-fade-in">
                     <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                     <div>
