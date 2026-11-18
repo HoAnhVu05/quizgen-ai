@@ -1,6 +1,7 @@
 import os
 import time
 import asyncio
+import threading
 import hashlib
 import json
 import logging
@@ -48,6 +49,11 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
 RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "300"))
 STORAGE_DIR = Path(os.getenv("DOCUMENT_STORAGE_DIR", "./data/uploads"))
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+# [SCRUM-99] Bộ điều phối hàng đợi tác vụ bóc tách (Max 3 tác vụ chạy đồng thời)
+# Ngăn chặn quá tải CPU/RAM khi người dùng tải lên đồng loạt 20-50 tài liệu
+MAX_CONCURRENT_PIPELINES = int(os.getenv("MAX_CONCURRENT_PIPELINES", "3"))
+pipeline_semaphore = threading.Semaphore(MAX_CONCURRENT_PIPELINES)
 
 
 def _format_file_size(byte_count: int) -> str:
@@ -179,43 +185,50 @@ def process_document_pipeline(
         _mark_doc_error(document_id, "Tệp tài liệu vật lý không tồn tại trên máy chủ.", stage="file_missing")
         return
 
+    # Thông báo trạng thái xếp hàng điều phối an toàn
+    cache.set_upload_progress(document_id, progress=15, status="extracting", stage="queued_pipeline")
+
+    pipeline_semaphore.acquire()
     try:
-        content = storage_file.read_bytes()
-    except Exception as e:
-        _mark_doc_error(document_id, f"Không thể đọc tệp vật lý: {str(e)}", stage="file_read_error")
-        return
+        try:
+            content = storage_file.read_bytes()
+        except Exception as e:
+            _mark_doc_error(document_id, f"Không thể đọc tệp vật lý: {str(e)}", stage="file_read_error")
+            return
 
-    # Pha 1: Bóc tách văn bản
-    cache.set_upload_progress(document_id, progress=25, status="extracting", stage="parsing_file")
-    _update_doc_progress(document_id, progress=25, status="extracting")
-    try:
-        if ext == "pdf":
-            pages = DocumentParser.parse_pdf(content)
-        else:
-            pages = DocumentParser.parse_docx(content)
-    except Exception as e:
-        _mark_doc_error(document_id, f"Lỗi bóc tách nội dung: {str(e)}", stage="parsing_error")
-        return
+        # Pha 1: Bóc tách văn bản
+        cache.set_upload_progress(document_id, progress=25, status="extracting", stage="parsing_file")
+        _update_doc_progress(document_id, progress=25, status="extracting")
+        try:
+            if ext == "pdf":
+                pages = DocumentParser.parse_pdf(content)
+            else:
+                pages = DocumentParser.parse_docx(content)
+        except Exception as e:
+            _mark_doc_error(document_id, f"Lỗi bóc tách nội dung: {str(e)}", stage="parsing_error")
+            return
 
-    if not pages:
-        _mark_doc_error(document_id, "Tài liệu không có nội dung văn bản để bóc tách.", stage="empty_content")
-        return
+        if not pages:
+            _mark_doc_error(document_id, "Tài liệu không có nội dung văn bản để bóc tách.", stage="empty_content")
+            return
 
-    # Pha 2: Phân đoạn ngữ nghĩa
-    cache.set_upload_progress(document_id, progress=50, status="extracting", stage="chunking", total_pages=len(pages))
-    _update_doc_progress(document_id, progress=50, status="extracting", total_pages=len(pages))
-    try:
-        chunks, chapters_metadata = TextChunker.chunk_by_semantic_blocks(pages, document_id)
-    except EmptyChunksException as e:
-        _mark_doc_error(document_id, str(e), stage="chunking_failed")
-        return
-    except Exception as e:
-        _mark_doc_error(document_id, f"Lỗi phân đoạn ngữ nghĩa: {str(e)}", stage="chunking_error")
-        return
+        # Pha 2: Phân đoạn ngữ nghĩa
+        cache.set_upload_progress(document_id, progress=50, status="extracting", stage="chunking", total_pages=len(pages))
+        _update_doc_progress(document_id, progress=50, status="extracting", total_pages=len(pages))
+        try:
+            chunks, chapters_metadata = TextChunker.chunk_by_semantic_blocks(pages, document_id)
+        except EmptyChunksException as e:
+            _mark_doc_error(document_id, str(e), stage="chunking_failed")
+            return
+        except Exception as e:
+            _mark_doc_error(document_id, f"Lỗi phân đoạn ngữ nghĩa: {str(e)}", stage="chunking_error")
+            return
 
-    if not chunks:
-        _mark_doc_error(document_id, "Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn.", stage="empty_chunks")
-        return
+        if not chunks:
+            _mark_doc_error(document_id, "Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn.", stage="empty_chunks")
+            return
+    finally:
+        pipeline_semaphore.release()
 
     # Pha 3: Lưu cấu trúc chương mục và các chunks vào CSDL
     cache.set_upload_progress(document_id, progress=70, status="embedding", stage="saving_metadata", total_pages=len(pages))

@@ -1499,9 +1499,9 @@ async def get_live_pipelines_endpoint():
                     except Exception:
                         elapsed_sec = 25
 
-                # Detect stalled / warning (3 minutes threshold for large textbooks)
+                # Detect stalled / warning (5 minutes threshold for large batch queues)
                 is_running = status_val in ["extracting", "embedding", "uploading"]
-                is_stalled = is_running and elapsed_sec > 180
+                is_stalled = is_running and elapsed_sec > 300
 
                 if is_running:
                     active_count += 1
@@ -1526,11 +1526,19 @@ async def get_live_pipelines_endpoint():
                     stage_text = "Gặp sự cố gián đoạn"
                     diag_note = err_msg or "Lỗi hệ thống hoặc kết nối mạng"
                 elif status_val == "extracting":
-                    stage_text = f"Bóc tách văn bản PyMuPDF ({r['total_pages']} trang)"
-                    diag_note = "Đang chạy bộ phân tích cú pháp PDF đa luồng"
+                    if prog_val <= 15:
+                        stage_text = "Hàng đợi tiếp nhận (Chờ bộ phân tích)"
+                        diag_note = "Đang xếp hàng điều phối bóc tách an toàn phần cứng"
+                    else:
+                        stage_text = f"Bóc tách văn bản PyMuPDF ({r['total_pages']} trang)"
+                        diag_note = "Đang chạy bộ phân tích cú pháp PDF đa luồng"
                 elif status_val == "embedding":
-                    stage_text = f"Lập chỉ mục Vector RAG ({r['chapters_count']} chương)"
-                    diag_note = "Đang tính toán vector ngữ nghĩa ONNX MiniLM trên CPU"
+                    if prog_val >= 80:
+                        stage_text = f"Lập chỉ mục Vector RAG ({r['chapters_count']} chương)"
+                        diag_note = "Đang tính toán vector ngữ nghĩa ONNX MiniLM (Tải an toàn)"
+                    else:
+                        stage_text = f"Hàng đợi điều phối AI ({r['chapters_count']} chương)"
+                        diag_note = "Đang xếp hàng chờ tài nguyên AI (Bảo vệ nhiệt phần cứng)"
                 else:
                     stage_text = "Đang chuẩn bị tiếp nhận"
                     diag_note = "Tệp đang tải vào hàng đợi bộ nhớ đệm"
@@ -1617,7 +1625,7 @@ async def get_live_pipelines_endpoint():
             "totalTasks": len(documents_list),
             "avgParsingVelocity": "285 trang/s",
             "avgEmbeddingVelocity": "32 chunks/s",
-            "hardwareAcceleration": f"ONNX Multi-Core ({cpu_cores} Cores Enabled)",
+            "hardwareAcceleration": f"ONNX Green AI (Tối đa 2 tác vụ song song, {cpu_cores} Cores)",
             "memoryMode": "ChromaDB Persistent (HNSW Cosine)"
         },
         "tasks": documents_list

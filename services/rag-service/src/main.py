@@ -1,5 +1,6 @@
 import os
 import time
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 from uuid import uuid4
@@ -36,6 +37,11 @@ DEFAULT_TOP_K = int(os.getenv("RAG_DEFAULT_TOP_K", "5"))
 MAX_TOP_K = int(os.getenv("RAG_MAX_TOP_K", "20"))
 
 vector_store = RAGVectorStore(persist_dir=PERSIST_DIR, collection_name=COLLECTION_NAME)
+
+# [SCRUM-99] Bộ điều phối hàng đợi chống nghẽn CPU & bảo vệ nhiệt (Green AI Concurrency Limiter)
+# Giới hạn tối đa 2 tác vụ lập chỉ mục vector tính toán song song để máy chủ hoạt động êm ái, mát mẻ
+MAX_CONCURRENT_INDEXING = int(os.getenv("MAX_CONCURRENT_INDEXING", "2"))
+indexing_semaphore = threading.Semaphore(MAX_CONCURRENT_INDEXING)
 
 
 @app.on_event("startup")
@@ -163,11 +169,36 @@ def index_chunks(
                 detail="Tất cả các đoạn trích trong danh sách đều không có nội dung văn bản hợp lệ."
             )
 
-        indexed_count = vector_store.add_chunks(
-            document_id=doc_id,
-            chunks=valid_chunks,
-            replace_existing=req.should_replace(),
+        # Cập nhật thông báo xếp hàng điều phối AI
+        cache.set_upload_progress(
+            doc_id,
+            progress=70,
+            status="embedding",
+            stage="queued_for_rag"
         )
+
+        # Chờ lượt trong hàng đợi điều phối (tối đa 15 phút)
+        acquired = indexing_semaphore.acquire(timeout=900.0)
+        if not acquired:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Hệ thống AI đang quá tải lượt tính toán vector, vui lòng thử lại sau ít phút."
+            )
+
+        try:
+            cache.set_upload_progress(
+                doc_id,
+                progress=80,
+                status="embedding",
+                stage="indexing_vectors"
+            )
+            indexed_count = vector_store.add_chunks(
+                document_id=doc_id,
+                chunks=valid_chunks,
+                replace_existing=req.should_replace(),
+            )
+        finally:
+            indexing_semaphore.release()
 
         vector_count = vector_store.count_by_document_id(doc_id)
         
