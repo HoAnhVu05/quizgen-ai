@@ -430,6 +430,34 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [newGroupDesc, setNewGroupDesc] = useState('');
   const [inviteEmailInput, setInviteEmailInput] = useState('');
 
+  // Trạng thái chọn nhiều thành viên khi Tạo kênh học thuật mới
+  const [createGroupSelectedMembers, setCreateGroupSelectedMembers] = useState<
+    Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
+  >([]);
+  const [createGroupMemberInput, setCreateGroupMemberInput] = useState('');
+  const [createGroupLookupStatus, setCreateGroupLookupStatus] = useState<
+    'idle' | 'searching' | 'found' | 'not_found'
+  >('idle');
+  const [createGroupLookedUpUser, setCreateGroupLookedUpUser] = useState<{
+    id?: string;
+    email: string;
+    fullName: string;
+    academicTitle?: string;
+    department?: string;
+    university?: string;
+    role?: string;
+  } | null>(null);
+
+  // Hàng đợi chọn nhiều người trong modal Thêm thành viên vào kênh (isDirectAddMemberOpen)
+  const [directAddSelectedMembers, setDirectAddSelectedMembers] = useState<
+    Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
+  >([]);
+
+  // Hàng đợi chọn nhiều người trong modal Thêm bạn bè (isAddFriendOpen)
+  const [selectedFriendsToInvite, setSelectedFriendsToInvite] = useState<
+    Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
+  >([]);
+
   // Public profile modal
   const [profileEmail, setProfileEmail] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | undefined>(undefined);
@@ -557,6 +585,24 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         (f.dept && f.dept.toLowerCase().includes(cleanQ))
     );
   }, [connectedFriends, friendEmailInput]);
+
+  // Bộ lọc danh sách đồng nghiệp khi tạo kênh học thuật mới
+  const filteredColleaguesForNewGroup = useMemo(() => {
+    const selectedEmails = new Set(createGroupSelectedMembers.map((m) => m.email.toLowerCase()));
+    const q = createGroupMemberInput.trim().toLowerCase();
+    const available = connectedFriends.filter((f) => !selectedEmails.has(f.email.toLowerCase()));
+    if (!q || q === '@') {
+      return available;
+    }
+    const cleanQ = q.startsWith('@') ? q.slice(1).trim() : q;
+    if (!cleanQ) return available;
+    return available.filter(
+      (f) =>
+        f.name.toLowerCase().includes(cleanQ) ||
+        f.email.toLowerCase().includes(cleanQ) ||
+        (f.dept && f.dept.toLowerCase().includes(cleanQ))
+    );
+  }, [connectedFriends, createGroupSelectedMembers, createGroupMemberInput]);
 
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -987,19 +1033,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       .catch(() => {});
   };
 
-  // ── Tra cứu tài khoản đăng ký theo Email (Slack Lookup) ───────────────────
-  const handleLookupUser = useCallback(
-    async (email: string) => {
-      const clean = email.trim().toLowerCase();
-      // Chỉ tra cứu hệ thống khi đã nhập hoàn chỉnh địa chỉ email có domain (tránh báo không tồn tại khi mới gõ @)
+  // ── Hàm tra cứu danh tính tài khoản trên toàn hệ thống QuizGen / UTH ────
+  const lookupAccount = useCallback(
+    async (emailVal: string) => {
+      const clean = emailVal.trim().toLowerCase();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
       if (!clean || !emailRegex.test(clean)) {
-        setLookupStatus('idle');
-        setLookedUpUser(null);
-        return;
+        return null;
       }
-
-      setLookupStatus('searching');
       try {
         const res = await apiClient.fetch(
           `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
@@ -1007,16 +1048,19 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         if (res.ok) {
           const data = await res.json();
           if (data.exists && data.user) {
-            setLookedUpUser(data.user);
-            setLookupStatus('found');
-            return;
+            return data.user as {
+              id?: string;
+              email: string;
+              fullName: string;
+              academicTitle?: string;
+              department?: string;
+              university?: string;
+              role?: string;
+            };
           }
         }
-      } catch {
-        // Fallback local check
-      }
+      } catch {}
 
-      // Danh sách tài khoản mẫu/hệ thống đã đăng ký (Demo accounts)
       const localRegistered: Record<
         string,
         { fullName: string; academicTitle: string; department: string }
@@ -1055,44 +1099,61 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
       if (localRegistered[clean]) {
         const info = localRegistered[clean];
-        setLookedUpUser({
+        return {
           email: clean,
           fullName: info.fullName,
           academicTitle: info.academicTitle,
           department: info.department,
           university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
           role: 'lecturer',
-        });
-        setLookupStatus('found');
-        return;
+        };
       }
 
-      // Kiểm tra nếu người này đã có trong bất kỳ group nào trước đó
       const foundInGroups = qgroups.find((g) => {
         const members = (g.members || []).map((m) => String(m).toLowerCase());
         return members.includes(clean) || g.ownerEmail?.toLowerCase() === clean;
       });
 
       if (foundInGroups) {
-        setLookedUpUser({
+        return {
           email: clean,
           fullName: clean.split('@')[0],
           academicTitle: 'Giảng viên',
           department: foundInGroups.department || 'Khoa Chuyên Ngành',
           university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
           role: 'lecturer',
-        });
-        setLookupStatus('found');
-        return;
+        };
       }
 
-      setLookedUpUser(null);
-      setLookupStatus('not_found');
+      return null;
     },
     [qgroups]
   );
 
-  // ── Tra cứu tài khoản đồng nghiệp cho modal Thêm bạn bè ───────────────────
+  // ── Tra cứu cho modal Thêm thành viên vào kênh đang mở ───────────────────
+  const handleLookupUser = useCallback(
+    async (email: string) => {
+      const clean = email.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (!clean || !emailRegex.test(clean)) {
+        setLookupStatus('idle');
+        setLookedUpUser(null);
+        return;
+      }
+      setLookupStatus('searching');
+      const user = await lookupAccount(clean);
+      if (user) {
+        setLookedUpUser(user);
+        setLookupStatus('found');
+      } else {
+        setLookedUpUser(null);
+        setLookupStatus('not_found');
+      }
+    },
+    [lookupAccount]
+  );
+
+  // ── Tra cứu cho modal Thêm bạn bè mới ─────────────────────────────────────
   const handleFriendLookup = useCallback(
     async (emailVal: string) => {
       const clean = emailVal.trim().toLowerCase();
@@ -1102,98 +1163,111 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         setFriendLookedUpUser(null);
         return;
       }
-
       setFriendLookupStatus('searching');
-      try {
-        const res = await apiClient.fetch(
-          `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.exists && data.user) {
-            setFriendLookedUpUser(data.user);
-            setFriendLookupStatus('found');
-            return;
-          }
-        }
-      } catch {
-        // Fallback local check
-      }
-
-      // Danh sách tài khoản mẫu/hệ thống đã đăng ký (Demo accounts)
-      const localRegistered: Record<
-        string,
-        { fullName: string; academicTitle: string; department: string }
-      > = {
-        'mr.av1222005@gmail.com': {
-          fullName: 'ThS. Mr. AVvvv',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'avanimechannel@gmail.com': {
-          fullName: 'TS. Hồ Anh Vũ',
-          academicTitle: 'TS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'nguyentann0804@gmail.com': {
-          fullName: 'ThS. Nguyễn Văn Tân',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'quizgen.ai.team@gmail.com': {
-          fullName: 'Ban Quản trị QuizGen AI',
-          academicTitle: 'Admin',
-          department: 'Hệ thống Khảo thí UTH',
-        },
-        'hod.cntt@uth.edu.vn': {
-          fullName: 'PGS. TS. Trưởng Khoa CNTT',
-          academicTitle: 'PGS. TS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'gv.kinhte@uth.edu.vn': {
-          fullName: 'TS. Giảng viên Kinh tế',
-          academicTitle: 'TS.',
-          department: 'Khoa Kinh tế Vận tải',
-        },
-      };
-
-      if (localRegistered[clean]) {
-        const info = localRegistered[clean];
-        setFriendLookedUpUser({
-          email: clean,
-          fullName: info.fullName,
-          academicTitle: info.academicTitle,
-          department: info.department,
-          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-          role: 'lecturer',
-        });
+      const user = await lookupAccount(clean);
+      if (user) {
+        setFriendLookedUpUser(user);
         setFriendLookupStatus('found');
-        return;
+      } else {
+        setFriendLookedUpUser(null);
+        setFriendLookupStatus('not_found');
       }
-
-      // Kiểm tra nếu người này đã có trong bất kỳ group nào trước đó
-      const foundInGroups = qgroups.find((g) => {
-        const members = (g.members || []).map((m) => String(m).toLowerCase());
-        return members.includes(clean) || g.ownerEmail?.toLowerCase() === clean;
-      });
-
-      if (foundInGroups) {
-        setFriendLookedUpUser({
-          email: clean,
-          fullName: clean.split('@')[0],
-          academicTitle: 'Giảng viên',
-          department: foundInGroups.department || 'Khoa Chuyên Ngành',
-          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-          role: 'lecturer',
-        });
-        setFriendLookupStatus('found');
-        return;
-      }
-
-      setFriendLookedUpUser(null);
-      setFriendLookupStatus('not_found');
     },
-    [qgroups]
+    [lookupAccount]
+  );
+
+  // ── Tra cứu cho modal Tạo kênh học thuật mới ──────────────────────────────
+  const handleCreateGroupMemberLookup = useCallback(
+    async (emailVal: string) => {
+      const clean = emailVal.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      if (!clean || !emailRegex.test(clean)) {
+        setCreateGroupLookupStatus('idle');
+        setCreateGroupLookedUpUser(null);
+        return;
+      }
+      setCreateGroupLookupStatus('searching');
+      const user = await lookupAccount(clean);
+      if (user) {
+        setCreateGroupLookedUpUser(user);
+        setCreateGroupLookupStatus('found');
+      } else {
+        setCreateGroupLookedUpUser(null);
+        setCreateGroupLookupStatus('not_found');
+      }
+    },
+    [lookupAccount]
+  );
+
+  // ── Chọn thành viên cho kênh Tạo mới ─────────────────────────────────────
+  const handleAddMemberToNewGroup = useCallback(
+    (user: { email: string; fullName?: string; name?: string; academicTitle?: string; title?: string; department?: string; dept?: string }) => {
+      const clean = user.email.trim().toLowerCase();
+      const memberName = user.fullName || user.name || clean.split('@')[0];
+      const title = user.academicTitle || user.title;
+      const dept = user.department || user.dept;
+      if (clean === myEmail.toLowerCase()) {
+        onShowToast('info', 'Thông báo', 'Bạn là Trưởng nhóm khởi tạo nên đã có sẵn trong kênh.');
+        return;
+      }
+      if (createGroupSelectedMembers.some((m) => m.email.toLowerCase() === clean)) {
+        onShowToast('info', 'Đã có trong danh sách', `${memberName} (${clean}) đã được chọn.`);
+        return;
+      }
+      setCreateGroupSelectedMembers((prev) => [...prev, { email: clean, fullName: memberName, academicTitle: title, department: dept }]);
+      setCreateGroupMemberInput('');
+      setCreateGroupLookedUpUser(null);
+      setCreateGroupLookupStatus('idle');
+    },
+    [myEmail, createGroupSelectedMembers, onShowToast]
+  );
+
+  // ── Hàng đợi chọn nhiều người trong modal Thêm thành viên vào kênh ───────
+  const handleQueueDirectAddMember = useCallback(
+    (user: { email: string; fullName?: string; name?: string; academicTitle?: string; title?: string; department?: string; dept?: string }) => {
+      if (!activeGroup) return;
+      const clean = user.email.trim().toLowerCase();
+      const memberName = user.fullName || user.name || clean.split('@')[0];
+      const title = user.academicTitle || user.title;
+      const dept = user.department || user.dept;
+      const currentMembers = (activeGroup.members || []).map((m) => String(m).toLowerCase());
+      if (currentMembers.includes(clean)) {
+        onShowToast('info', 'Đã là thành viên', `${memberName} (${clean}) đã có trong kênh #${activeGroup.name}`);
+        return;
+      }
+      if (directAddSelectedMembers.some((m) => m.email.toLowerCase() === clean)) {
+        onShowToast('info', 'Đã chọn', `${memberName} đã có trong danh sách chờ thêm.`);
+        return;
+      }
+      setDirectAddSelectedMembers((prev) => [...prev, { email: clean, fullName: memberName, academicTitle: title, department: dept }]);
+      setDirectAddMemberEmail('');
+      setLookedUpUser(null);
+      setLookupStatus('idle');
+    },
+    [activeGroup, directAddSelectedMembers, onShowToast]
+  );
+
+  // ── Hàng đợi chọn nhiều người trong modal Thêm bạn bè ────────────────────
+  const handleQueueFriendInvite = useCallback(
+    (user: { email: string; fullName?: string; name?: string; academicTitle?: string; title?: string; department?: string; dept?: string }) => {
+      const clean = user.email.trim().toLowerCase();
+      const memberName = user.fullName || user.name || clean.split('@')[0];
+      const title = user.academicTitle || user.title;
+      const dept = user.department || user.dept;
+      if (clean === myEmail.toLowerCase()) {
+        onShowToast('warning', 'Không hợp lệ', 'Bạn không thể kết bạn với chính mình.');
+        return;
+      }
+      if (selectedFriendsToInvite.some((m) => m.email.toLowerCase() === clean)) {
+        onShowToast('info', 'Đã chọn', `${memberName} đã có trong danh sách chờ kết bạn.`);
+        return;
+      }
+      setSelectedFriendsToInvite((prev) => [...prev, { email: clean, fullName: memberName, academicTitle: title, department: dept }]);
+      setFriendEmailInput('');
+      setFriendLookedUpUser(null);
+      setFriendLookupStatus('idle');
+    },
+    [myEmail, selectedFriendsToInvite, onShowToast]
   );
 
   // Kiểm tra quan hệ bạn bè của 1 email bất kỳ
@@ -1384,7 +1458,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         setDirectAddMemberEmail('');
         setLookedUpUser(null);
         setLookupStatus('idle');
-        setIsDirectAddMemberOpen(false);
         void fetchGroupInvitations();
       } catch {
         onShowToast('error', 'Lỗi kết nối', 'Không thể gửi lời mời nhóm.');
@@ -1392,6 +1465,56 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     },
     [activeGroup, myEmail, myName, onShowToast, fetchGroupInvitations]
   );
+
+  // ── Thêm hàng loạt thành viên đã chọn vào kênh đang mở ───────────────────
+  const handleBatchAddUsersToActiveChannel = useCallback(async () => {
+    if (!activeGroup || directAddSelectedMembers.length === 0) return;
+    setIsAddingMember(true);
+    const newEmails = directAddSelectedMembers.map((m) => m.email.trim().toLowerCase());
+    const updatedMembers = Array.from(new Set([...(activeGroup.members || []).map((m) => String(m).toLowerCase()), ...newEmails]));
+    const memberNames = directAddSelectedMembers.map((m) => m.fullName).join(', ');
+    const nowMs = Date.now();
+    const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    const announcementMsg: QGroupMessage = {
+      id: `msg-${nowMs}`,
+      senderEmail: 'system',
+      senderName: 'Hệ Thống Q-Group',
+      isSystem: true,
+      timestamp: timeStr,
+      text: `🎉 ${myName} đã thêm ${directAddSelectedMembers.length} thành viên (${memberNames}) vào kênh #${activeGroup.name}.`,
+      readBy: [myEmail, ...newEmails],
+    };
+    const updatedMessages = [...(activeGroup.messages || []), announcementMsg];
+    const updatedGroup = {
+      ...activeGroup,
+      members: updatedMembers,
+      memberCount: updatedMembers.length,
+      messages: updatedMessages,
+      updatedAt: nowMs,
+    };
+    const nextGroups = qgroups.map((g) => (g.id === activeGroup.id ? updatedGroup : g));
+    applyGroups(nextGroups);
+    void syncGroupsToBackend(nextGroups);
+
+    setIsAddingMember(false);
+    setDirectAddSelectedMembers([]);
+    setIsDirectAddMemberOpen(false);
+    setDirectAddMemberEmail('');
+    setLookedUpUser(null);
+    setLookupStatus('idle');
+    onShowToast('success', 'Đã thêm thành viên', `Đã thêm ${newEmails.length} đồng nghiệp vào kênh #${activeGroup.name}`);
+    void fetchQGroups();
+  }, [activeGroup, directAddSelectedMembers, myName, myEmail, qgroups, applyGroups, syncGroupsToBackend, fetchQGroups, onShowToast]);
+
+  // ── Gửi lời mời hàng loạt cho các thành viên trong hàng đợi ─────────────
+  const handleBatchSendGroupInvitations = useCallback(async () => {
+    if (!activeGroup || directAddSelectedMembers.length === 0) return;
+    for (const m of directAddSelectedMembers) {
+      await handleSendGroupInvitation(m.email, m.fullName);
+    }
+    setDirectAddSelectedMembers([]);
+    setIsDirectAddMemberOpen(false);
+  }, [activeGroup, directAddSelectedMembers, handleSendGroupInvitation]);
 
   // ── Reaction Handlers ─────────────────────────────────────────────────────
   const handleToggleReaction = useCallback(
@@ -1867,6 +1990,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     }
   };
 
+  const handleBatchSendFriendRequests = async () => {
+    if (selectedFriendsToInvite.length === 0) return;
+    const count = selectedFriendsToInvite.length;
+    for (const m of selectedFriendsToInvite) {
+      await handleSendFriendRequest(m.email);
+    }
+    setSelectedFriendsToInvite([]);
+    handleCloseAddFriendModal();
+    onShowToast('success', 'Đã gửi lời mời', `Đã gửi lời mời kết bạn tới ${count} đồng nghiệp.`);
+  };
+
   const handleAcceptFriendRequest = async (req: FriendRequest) => {
     try {
       const res = await apiClient.fetch(
@@ -1963,6 +2097,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     if (!newGroupName.trim()) return;
     const now = Date.now();
     const code = `QGRP-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+    const selectedEmails = createGroupSelectedMembers.map((m) => m.email.trim().toLowerCase());
+    const initialMembers = Array.from(new Set([myEmail.toLowerCase(), ...selectedEmails]));
+    const memberNamesList = createGroupSelectedMembers.map((m) => m.fullName).join(', ');
+
+    const systemNotice =
+      createGroupSelectedMembers.length > 0
+        ? `🎉 Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName} cùng ${createGroupSelectedMembers.length} đồng nghiệp: ${memberNamesList}. Mã phòng: ${code}`
+        : `Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName}. Mã phòng: ${code}`;
+
     const group: QGroup = {
       id: `qg-${now}`,
       code,
@@ -1973,8 +2116,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       ownerEmail: myEmail,
       ownerName: myName,
       joinPolicy: 'approval_required',
-      memberCount: 1,
-      members: [myEmail],
+      memberCount: initialMembers.length,
+      members: initialMembers,
       pendingRequests: [],
       isDirect: false,
       updatedAt: now,
@@ -1988,7 +2131,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             hour: '2-digit',
             minute: '2-digit',
           }),
-          text: `Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName}. Mã phòng: ${code}`,
+          text: systemNotice,
         },
       ],
     };
@@ -2000,7 +2143,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setNewGroupName('');
     setNewGroupDept('');
     setNewGroupDesc('');
-    onShowToast('success', 'Đã tạo nhóm', `Mã phòng: ${code}`);
+    setCreateGroupSelectedMembers([]);
+    setCreateGroupMemberInput('');
+    setCreateGroupLookedUpUser(null);
+    setCreateGroupLookupStatus('idle');
+    onShowToast('success', 'Đã tạo nhóm', `Mã phòng: ${code} (${initialMembers.length} thành viên)`);
   };
 
   const handleJoinByCode = async (code: string) => {
@@ -3401,6 +3548,48 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
             {/* Modal Body */}
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* CHIPS TRAY: DANH SÁCH THÀNH VIÊN ĐÃ CHỌN (NẾU CÓ) */}
+              {directAddSelectedMembers.length > 0 && (
+                <div className="space-y-1.5 p-3 bg-teal-50/50 border border-teal-200/80 rounded-xl animate-fade-in">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                    <span className="flex items-center gap-1.5 text-teal-900 font-bold">
+                      <Users className="w-3.5 h-3.5 text-[#008689]" />
+                      <span>Đã chọn ({directAddSelectedMembers.length} đồng nghiệp):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDirectAddSelectedMembers([])}
+                      className="text-[10px] text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
+                    >
+                      Xóa tất cả
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                    {directAddSelectedMembers.map((m) => (
+                      <span
+                        key={m.email}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
+                      >
+                        <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                          {initials(m.fullName)}
+                        </span>
+                        <span className="truncate max-w-[140px]">{m.fullName}</span>
+                        {m.academicTitle && (
+                          <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setDirectAddSelectedMembers((prev) => prev.filter((x) => x.email !== m.email))}
+                          className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
                   <span>Tìm kiếm đồng nghiệp hoặc nhập email:</span>
@@ -3418,7 +3607,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && lookupStatus === 'found' && lookedUpUser) {
-                        void handleAddUserToActiveChannel(lookedUpUser.email, lookedUpUser.fullName);
+                        handleQueueDirectAddMember(lookedUpUser);
                       }
                     }}
                     placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên..."
@@ -3473,6 +3662,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       <span>Tài khoản đã kích hoạt hệ thống</span>
                     </span>
                     <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleQueueDirectAddMember(lookedUpUser)}
+                        className="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 cursor-pointer transition-colors flex items-center gap-1"
+                        title="Thêm vào danh sách chọn để thêm nhiều người cùng lúc"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Chọn ({directAddSelectedMembers.length + 1})</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => void handleSendGroupInvitation(lookedUpUser.email, lookedUpUser.fullName)}
@@ -3571,6 +3769,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             <div className="flex items-center gap-1.5 shrink-0">
                               <button
                                 type="button"
+                                onClick={() => handleQueueDirectAddMember(f)}
+                                className="px-2 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Chọn vào danh sách để thêm nhiều người cùng lúc"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Chọn</span>
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => void handleSendGroupInvitation(f.email, f.name)}
                                 className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
                                 title="Gửi lời mời: Đồng nghiệp nhận thông báo và bấm Chấp nhận để vào"
@@ -3599,14 +3806,49 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setIsDirectAddMemberOpen(false)}
-                className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
-              >
-                Đóng
-              </button>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+              <div>
+                {directAddSelectedMembers.length > 0 && (
+                  <span className="text-[11px] text-teal-800 font-bold">
+                    Đã chọn {directAddSelectedMembers.length} đồng nghiệp
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDirectAddMemberOpen(false);
+                    setDirectAddSelectedMembers([]);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
+                >
+                  Đóng
+                </button>
+                {directAddSelectedMembers.length > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleBatchSendGroupInvitations()}
+                      className="px-3.5 py-2 rounded-lg bg-white border border-teal-600 text-[#008689] hover:bg-teal-50 font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
+                      title="Gửi lời mời tham gia kênh cho tất cả người đã chọn"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Gửi lời mời ({directAddSelectedMembers.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleBatchAddUsersToActiveChannel()}
+                      disabled={isAddingMember}
+                      className="px-4 py-2 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
+                      title="Thêm ngay tất cả người đã chọn vào kênh"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Thêm ngay ({directAddSelectedMembers.length})</span>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -3845,6 +4087,48 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
             {/* Modal Body */}
             <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+              {/* CHIPS TRAY: DANH SÁCH ĐỒNG NGHIỆP ĐÃ CHỌN ĐỂ KẾT BẠN */}
+              {selectedFriendsToInvite.length > 0 && (
+                <div className="space-y-1.5 p-3 bg-teal-50/50 border border-teal-200/80 rounded-xl animate-fade-in">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                    <span className="flex items-center gap-1.5 text-teal-900 font-bold">
+                      <UserPlus className="w-3.5 h-3.5 text-[#008689]" />
+                      <span>Đã chọn ({selectedFriendsToInvite.length} đồng nghiệp):</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFriendsToInvite([])}
+                      className="text-[10px] text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
+                    >
+                      Xóa tất cả
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                    {selectedFriendsToInvite.map((m) => (
+                      <span
+                        key={m.email}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
+                      >
+                        <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                          {initials(m.fullName)}
+                        </span>
+                        <span className="truncate max-w-[140px]">{m.fullName}</span>
+                        {m.academicTitle && (
+                          <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFriendsToInvite((prev) => prev.filter((x) => x.email !== m.email))}
+                          className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
                   <span>Tìm kiếm đồng nghiệp hoặc nhập email:</span>
@@ -3863,7 +4147,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         if (friendLookupStatus === 'found' && friendLookedUpUser) {
-                          void handleSendFriendRequest(friendLookedUpUser.email);
+                          handleQueueFriendInvite(friendLookedUpUser);
                         } else if (friendEmailInput.trim()) {
                           void handleSendFriendRequest();
                         }
@@ -3949,14 +4233,25 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           </button>
                         )}
                         {cardState.type === 'none' && (
-                          <button
-                            type="button"
-                            onClick={() => void handleSendFriendRequest(friendLookedUpUser.email)}
-                            className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                          >
-                            <UserPlus className="w-3.5 h-3.5" />
-                            <span>Gửi lời mời kết bạn</span>
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleQueueFriendInvite(friendLookedUpUser)}
+                              className="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 cursor-pointer transition-colors flex items-center gap-1"
+                              title="Thêm vào danh sách chọn để gửi lời mời nhiều người cùng lúc"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Chọn ({selectedFriendsToInvite.length + 1})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleSendFriendRequest(friendLookedUpUser.email)}
+                              className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                              <span>Gửi lời mời kết bạn</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -4046,15 +4341,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             </button>
                           )}
                           {state.type === 'none' && (
-                            <button
-                              type="button"
-                              onClick={() => void handleSendFriendRequest(f.email)}
-                              className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
-                              title="Gửi lời mời kết nối học thuật 1-1"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                              <span>Kết bạn</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleQueueFriendInvite(f)}
+                                className="px-2 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors"
+                                title="Chọn vào danh sách gửi lời mời hàng loạt"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Chọn</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleSendFriendRequest(f.email)}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                                title="Gửi lời mời kết nối học thuật 1-1"
+                              >
+                                <UserPlus className="w-3.5 h-3.5" />
+                                <span>Kết bạn</span>
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
@@ -4065,163 +4371,438 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
-              <button
-                type="button"
-                onClick={handleCloseAddFriendModal}
-                className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
-              >
-                Đóng
-              </button>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+              <div>
+                {selectedFriendsToInvite.length > 0 && (
+                  <span className="text-[11px] text-teal-800 font-bold">
+                    Đã chọn {selectedFriendsToInvite.length} đồng nghiệp
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCloseAddFriendModal}
+                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
+                >
+                  Đóng
+                </button>
+                {selectedFriendsToInvite.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleBatchSendFriendRequests()}
+                    className="px-4 py-2 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
+                    title="Gửi lời mời kết bạn tới tất cả đồng nghiệp đã chọn"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Gửi lời mời tất cả ({selectedFriendsToInvite.length})</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {isCreateGroupOpen && (
-        <Modal
-          onClose={() => setIsCreateGroupOpen(false)}
-          title="Kênh Chuyên Môn Học Thuật"
-          icon={<Users className="w-4 h-4 text-slate-700" />}
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
+          onClick={() => {
+            setIsCreateGroupOpen(false);
+            setCreateGroupSelectedMembers([]);
+            setCreateGroupMemberInput('');
+            setCreateGroupLookedUpUser(null);
+            setCreateGroupLookupStatus('idle');
+          }}
         >
-          {/* Sub-Tabs: Tạo nhóm mới vs Nhập mã tham gia */}
-          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg mb-3 select-none">
-            <button
-              type="button"
-              onClick={() => setGroupModalTab('create')}
-              className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                groupModalTab === 'create'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Tạo kênh mới</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setGroupModalTab('join')}
-              className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                groupModalTab === 'join'
-                  ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Hash className="w-3.5 h-3.5" />
-              <span>Nhập mã tham gia</span>
-            </button>
-          </div>
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base text-slate-900 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-[#008689]" />
+                  <span>Kênh Chuyên Môn Học Thuật</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Không gian làm việc chung: trao đổi, chia sẻ giáo trình và ma trận khảo thí UTH
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateGroupOpen(false);
+                  setCreateGroupSelectedMembers([]);
+                  setCreateGroupMemberInput('');
+                  setCreateGroupLookedUpUser(null);
+                  setCreateGroupLookupStatus('idle');
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-          {groupModalTab === 'create' ? (
-            /* TAB TẠO NHÓM MỚI */
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="font-semibold text-slate-700">Tên kênh học thuật *</label>
-                <input
-                  type="text"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  placeholder="VD: Bộ Môn Mạng & Hệ Điều Hành"
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600"
-                />
-              </div>
-              <div>
-                <label className="font-semibold text-slate-700">Khoa / Bộ môn</label>
-                <input
-                  type="text"
-                  value={newGroupDept}
-                  onChange={(e) => setNewGroupDept(e.target.value)}
-                  placeholder="VD: Khoa Công nghệ Thông tin"
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600"
-                />
-              </div>
-              <div>
-                <label className="font-semibold text-slate-700">Mô tả mục đích kênh</label>
-                <textarea
-                  rows={2}
-                  value={newGroupDesc}
-                  onChange={(e) => setNewGroupDesc(e.target.value)}
-                  placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình và ma trận khảo thí..."
-                  className="w-full mt-1 p-2.5 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 resize-none text-xs"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            {/* Modal Sub-Tabs */}
+            <div className="px-5 pt-3">
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg select-none">
                 <button
                   type="button"
-                  onClick={() => setIsCreateGroupOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
+                  onClick={() => setGroupModalTab('create')}
+                  className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    groupModalTab === 'create'
+                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tạo kênh mới</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGroupModalTab('join')}
+                  className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    groupModalTab === 'join'
+                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Hash className="w-3.5 h-3.5" />
+                  <span>Nhập mã tham gia</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+              {groupModalTab === 'create' ? (
+                /* TAB TẠO NHÓM MỚI */
+                <div className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="font-semibold text-slate-700">Tên kênh học thuật *</label>
+                    <input
+                      type="text"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder="VD: Bộ Môn Mạng & Hệ Điều Hành"
+                      className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white transition-all text-xs text-slate-800"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="font-semibold text-slate-700">Khoa / Bộ môn</label>
+                      <input
+                        type="text"
+                        value={newGroupDept}
+                        onChange={(e) => setNewGroupDept(e.target.value)}
+                        placeholder="VD: Khoa Công nghệ Thông tin"
+                        className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white transition-all text-xs text-slate-800"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700">Mô tả mục đích kênh</label>
+                      <input
+                        type="text"
+                        value={newGroupDesc}
+                        onChange={(e) => setNewGroupDesc(e.target.value)}
+                        placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình..."
+                        className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white transition-all text-xs text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  {/* THÊM THÀNH VIÊN VÀO KÊNH NGAY TẠI ĐÂY (KHÔNG GIỚI HẠN SỐ LƯỢNG) */}
+                  <div className="pt-2 border-t border-slate-200/80 space-y-3">
+                    <div>
+                      <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <UserPlus className="w-3.5 h-3.5 text-[#008689]" />
+                          <span>Thêm thành viên vào kênh (tùy chọn, vô số người):</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-normal">Gõ @ để gợi ý tài khoản</span>
+                      </label>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Thành viên được chọn sẽ có mặt ngay trong kênh khi vừa tạo xong
+                      </p>
+                    </div>
+
+                    {/* CHIPS TRAY: DANH SÁCH THÀNH VIÊN ĐÃ CHỌN VÀO KÊNH MỚI */}
+                    {createGroupSelectedMembers.length > 0 && (
+                      <div className="space-y-1.5 p-3 bg-teal-50/50 border border-teal-200/80 rounded-xl animate-fade-in">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
+                          <span className="flex items-center gap-1.5 text-teal-900 font-bold">
+                            <Users className="w-3.5 h-3.5 text-[#008689]" />
+                            <span>Đã chọn ({createGroupSelectedMembers.length} thành viên):</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setCreateGroupSelectedMembers([])}
+                            className="text-[10px] text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
+                          >
+                            Xóa tất cả
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                          {createGroupSelectedMembers.map((m) => (
+                            <span
+                              key={m.email}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
+                            >
+                              <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
+                                {initials(m.fullName)}
+                              </span>
+                              <span className="truncate max-w-[140px]">{m.fullName}</span>
+                              {m.academicTitle && (
+                                <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => setCreateGroupSelectedMembers((prev) => prev.filter((x) => x.email !== m.email))}
+                                className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* INPUT TÌM KIẾM / NHẬP EMAIL THÀNH VIÊN */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={createGroupMemberInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setCreateGroupMemberInput(val);
+                          void handleCreateGroupMemberLookup(val);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && createGroupLookupStatus === 'found' && createGroupLookedUpUser) {
+                            handleAddMemberToNewGroup(createGroupLookedUpUser);
+                          }
+                        }}
+                        placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên cần thêm..."
+                        className="w-full pl-8.5 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
+                      />
+                      {createGroupLookupStatus === 'searching' && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <span className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
+                        </div>
+                      )}
+                      {createGroupMemberInput && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCreateGroupMemberInput('');
+                            setCreateGroupLookedUpUser(null);
+                            setCreateGroupLookupStatus('idle');
+                          }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* THẺ TÀI KHOẢN TÌM THẤY (ĐÃ ĐĂNG KÝ HỆ THỐNG) */}
+                    {createGroupLookupStatus === 'found' && createGroupLookedUpUser && (
+                      <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
+                            {initials(createGroupLookedUpUser.fullName)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-xs text-slate-900 truncate">{createGroupLookedUpUser.fullName}</span>
+                              {createGroupLookedUpUser.academicTitle && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
+                                  {createGroupLookedUpUser.academicTitle}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate">{createGroupLookedUpUser.email}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{createGroupLookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
+                          <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <span>Tài khoản đã kích hoạt hệ thống</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleAddMemberToNewGroup(createGroupLookedUpUser)}
+                            className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Thêm vào kênh ({createGroupSelectedMembers.length + 1})</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* CẢNH BÁO TÀI KHOẢN CHƯA ĐĂNG KÝ / KHÔNG TỒN TẠI */}
+                    {createGroupLookupStatus === 'not_found' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(createGroupMemberInput.trim()) && (
+                      <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex items-start gap-3 animate-fade-in">
+                        <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+                        <div className="min-w-0 text-xs text-rose-800 space-y-1">
+                          <p className="font-bold">Người dùng không tồn tại trên hệ thống</p>
+                          <p className="text-[11px] text-rose-600 leading-relaxed">
+                            Địa chỉ email <strong>{createGroupMemberInput}</strong> chưa được dùng để đăng ký tài khoản QuizGen AI. Thầy/Cô vui lòng kiểm tra lại địa chỉ email hoặc mời đồng nghiệp đăng ký trước khi thêm vào kênh.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* GỢI Ý ĐỒNG NGHIỆP TRONG TRƯỜNG */}
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                          Gợi ý Đồng nghiệp ({filteredColleaguesForNewGroup.length})
+                        </span>
+                        <span className="text-[10px] text-slate-400">Bấm để chọn nhanh</span>
+                      </div>
+
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        {filteredColleaguesForNewGroup.length === 0 ? (
+                          <p className="text-center text-xs text-slate-400 py-2.5 italic">
+                            Không còn đồng nghiệp nào khác chưa chọn
+                          </p>
+                        ) : (
+                          filteredColleaguesForNewGroup.map((f) => (
+                            <div
+                              key={f.email}
+                              className="p-2.5 rounded-xl bg-slate-50 hover:bg-slate-100/80 border border-slate-200/80 flex items-center justify-between gap-2.5 transition-colors"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                  {initials(f.name)}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
+                                    {f.title && (
+                                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
+                                        {f.title}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] text-slate-400 truncate">{f.email}</p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleAddMemberToNewGroup({ email: f.email, fullName: f.name, academicTitle: f.title, department: f.dept })}
+                                className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>Chọn</span>
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* TAB NHẬP MÃ THAM GIA */
+                <div className="space-y-3.5 text-xs">
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                    <span className="font-semibold text-slate-800 text-[11px] flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Tham gia nhóm qua Mã phòng</span>
+                    </span>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Nhập mã phòng chuyên môn được đồng nghiệp hoặc Trưởng nhóm chia sẻ (ví dụ: <strong className="font-mono text-slate-800">QGRP-L6RUM</strong>).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700">Mã phòng chuyên môn *</label>
+                    <div className="relative mt-1">
+                      <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        value={joinCodeInput}
+                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            void handleJoinByCode(joinCodeInput);
+                          }
+                        }}
+                        placeholder="VD: QGRP-OS2026..."
+                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white font-mono font-bold text-slate-800 placeholder-slate-400 text-xs tracking-wider"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 text-[11px] text-slate-500 px-1">
+                    <p>• Kênh công khai: Bạn sẽ vào thẳng nhóm trò chuyện ngay lập tức.</p>
+                    <p>• Kênh cần phê duyệt: Yêu cầu sẽ được chuyển đến Trưởng nhóm để duyệt.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+              <div>
+                {groupModalTab === 'create' && createGroupSelectedMembers.length > 0 && (
+                  <span className="text-[11px] text-teal-800 font-bold">
+                    Khởi tạo kèm {createGroupSelectedMembers.length} thành viên
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateGroupOpen(false);
+                    setCreateGroupSelectedMembers([]);
+                    setCreateGroupMemberInput('');
+                    setCreateGroupLookedUpUser(null);
+                    setCreateGroupLookupStatus('idle');
+                  }}
+                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
                 >
                   Hủy
                 </button>
-                <button
-                  type="button"
-                  disabled={!newGroupName.trim()}
-                  onClick={handleCreateGroup}
-                  className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors"
-                >
-                  Tạo kênh
-                </button>
+                {groupModalTab === 'create' ? (
+                  <button
+                    type="button"
+                    disabled={!newGroupName.trim()}
+                    onClick={handleCreateGroup}
+                    className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>
+                      Tạo kênh {createGroupSelectedMembers.length > 0 ? `(${createGroupSelectedMembers.length + 1} thành viên)` : ''}
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!joinCodeInput.trim() || isJoiningCode}
+                    onClick={() => void handleJoinByCode(joinCodeInput)}
+                    className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Tham gia kênh ngay</span>
+                  </button>
+                )}
               </div>
             </div>
-          ) : (
-            /* TAB NHẬP MÃ THAM GIA */
-            <div className="space-y-3 text-xs">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                <span className="font-semibold text-slate-800 text-[11px] flex items-center gap-1.5">
-                  <Info className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Tham gia nhóm qua Mã phòng</span>
-                </span>
-                <p className="text-slate-600 text-[11px] leading-relaxed">
-                  Nhập mã phòng chuyên môn được đồng nghiệp hoặc Trưởng nhóm chia sẻ (ví dụ: <strong className="font-mono text-slate-800">QGRP-L6RUM</strong>).
-                </p>
-              </div>
-
-              <div>
-                <label className="font-semibold text-slate-700">Mã phòng chuyên môn *</label>
-                <div className="relative mt-1">
-                  <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="text"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        void handleJoinByCode(joinCodeInput);
-                      }
-                    }}
-                    placeholder="VD: QGRP-OS2026..."
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:border-slate-600 font-mono font-bold text-slate-800 placeholder-slate-400 text-xs tracking-wider"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1 text-[11px] text-slate-500 px-1">
-                <p>• Kênh công khai: Bạn sẽ vào thẳng nhóm trò chuyện ngay lập tức.</p>
-                <p>• Kênh cần phê duyệt: Yêu cầu sẽ được chuyển đến Trưởng nhóm để duyệt.</p>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateGroupOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer transition-colors"
-                >
-                  Đóng
-                </button>
-                <button
-                  type="button"
-                  disabled={!joinCodeInput.trim() || isJoiningCode}
-                  onClick={() => void handleJoinByCode(joinCodeInput)}
-                  className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Tham gia kênh ngay</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </Modal>
+          </div>
+        </div>
       )}
     </div>
   );
