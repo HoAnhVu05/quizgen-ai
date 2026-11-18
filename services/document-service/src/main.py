@@ -1369,9 +1369,8 @@ async def create_friend_request(request: Request):
         return {"status": "error", "message": "senderEmail và targetEmail là bắt buộc"}
     # Tránh duplicate: xóa req cũ cùng cặp sender-target nếu có
     reqs = [r for r in reqs if not (
-        r.get("senderEmail", "").lower() == sender and
-        r.get("targetEmail", "").lower() == target and
-        r.get("status") == "pending"
+        r.get("senderEmail", "").strip().lower() == sender and
+        r.get("targetEmail", "").strip().lower() == target
     )]
     reqs.insert(0, payload)
     save_friend_requests(reqs)

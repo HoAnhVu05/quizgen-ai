@@ -998,8 +998,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     [qgroups, applyGroups, syncGroupsToBackend, onShowToast]
   );
 
-  const handleSendFriendRequest = async () => {
-    const email = friendEmailInput.trim().toLowerCase();
+  const handleSendFriendRequest = async (overrideEmail?: string) => {
+    const email = (overrideEmail || friendEmailInput).trim().toLowerCase();
     if (!email) return;
     if (email === myEmail) {
       onShowToast('warning', 'Không hợp lệ', 'Bạn không thể kết bạn với chính mình.');
@@ -1011,6 +1011,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       senderName: myName,
       senderTitle: currentUser?.academicTitle || 'ThS.',
       targetEmail: email,
+      recipientEmail: email,
       requestedAt: new Date().toISOString(),
       status: 'pending',
     };
@@ -1021,9 +1022,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         body: JSON.stringify(req),
       });
       if (res.ok) {
+        setSentFriendRequests((prev) => [req, ...prev.filter((r) => r.targetEmail !== email)]);
         onShowToast('success', 'Đã gửi lời mời', `Đã gửi lời mời kết bạn tới: ${email}`);
         setFriendEmailInput('');
         setIsAddFriendOpen(false);
+        void fetchFriendRequests();
       }
     } catch {
       onShowToast('error', 'Lỗi', 'Không thể gửi lời mời.');
@@ -1341,6 +1344,31 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           />
         ) : (
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+            {/* Lời mời kết bạn nổi bật cho tài khoản nhận */}
+            {friendRequests.length > 0 && (
+              <div
+                onClick={() => setFilterTab('invitations')}
+                className="m-2.5 p-3 rounded-2xl bg-gradient-to-r from-purple-500/10 via-indigo-500/10 to-teal-500/10 border-2 border-purple-400/80 flex items-center justify-between gap-2.5 cursor-pointer hover:bg-purple-100/60 transition-all shadow-xs"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-xs">
+                    <UserPlus className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-purple-900 truncate flex items-center gap-1.5">
+                      <span>{friendRequests.length} lời mời kết bạn mới</span>
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
+                    </p>
+                    <p className="text-[10px] text-purple-700 truncate">
+                      Từ: <strong>{friendRequests[0]?.senderName || friendRequests[0]?.senderEmail}</strong>
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-xl bg-purple-600 text-white text-[11px] font-bold shrink-0 shadow-xs">
+                  Xem ngay
+                </span>
+              </div>
+            )}
             {sortedGroups.length === 0 ? (
               <div className="p-8 text-center text-slate-400 space-y-2">
                 <MessageCircle className="w-10 h-10 mx-auto text-slate-300" />
@@ -2106,8 +2134,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }}
         currentUser={currentUser}
         onSendFriendRequest={(email) => {
-          setFriendEmailInput(email || '');
-          void handleSendFriendRequest();
+          void handleSendFriendRequest(email);
         }}
       />
 

@@ -195,7 +195,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
         const midX = window.innerWidth / 2;
         const targetSide: 'left' | 'right' = curX < midX ? 'left' : 'right';
-        const snappedX = targetSide === 'left' ? 16 : Math.max(16, window.innerWidth - 72);
+        const snappedX = targetSide === 'left' ? 16 : Math.max(16, window.innerWidth - 80);
         const clampedY = Math.min(Math.max(16, curY), window.innerHeight - 80);
 
         const finalPos = { x: Math.round(snappedX), y: Math.round(clampedY), side: targetSide };
@@ -386,80 +386,98 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const fabStyle: React.CSSProperties = isCurrentlyDragging && fabPosition
+    ? {
+        position: 'fixed',
+        left: `${fabPosition.x}px`,
+        top: `${fabPosition.y}px`,
+        right: 'auto',
+        bottom: 'auto',
+        touchAction: 'none',
+        transition: 'none',
+      }
+    : fabPosition
+    ? {
+        position: 'fixed',
+        top: `${fabPosition.y}px`,
+        ...(snapSide === 'left'
+          ? { left: '16px', right: 'auto' }
+          : { right: '16px', left: 'auto' }),
+        bottom: 'auto',
+        touchAction: 'none',
+        transition: 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+      }
+    : {
+        position: 'fixed',
+        bottom: '24px',
+        right: '16px',
+        touchAction: 'none',
+        transition: 'all 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+      };
+
   return (
     <>
-      {/* ─── Floating Action Button (FAB) (Draggable kéo thả + Tự hút 2 cánh) ─── */}
-      {!isOpen && (
+      {/* ─── Floating Action Button (FAB) (Draggable kéo thả + Tự hút 2 cánh + Morphing) ─── */}
+      <div
+        ref={fabElementRef}
+        onPointerDown={handlePointerDown}
+        style={fabStyle}
+        className={`fixed z-40 flex items-center gap-2 select-none group transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          snapSide === 'left' ? 'flex-row-reverse' : ''
+        } ${
+          isCurrentlyDragging ? 'cursor-grabbing scale-105' : 'cursor-grab'
+        } ${
+          isOpen ? 'scale-0 opacity-0 pointer-events-none' : 'scale-100 opacity-100 pointer-events-auto'
+        }`}
+        title="Nhấp để mở Quanta AI — kéo ra đâu cũng được, khi buông tay sẽ tự hút về mép trái/phải"
+      >
+        {/* Subtle floating badge tooltip */}
         <div
-          ref={fabElementRef}
-          onPointerDown={handlePointerDown}
-          style={
-            fabPosition
-              ? {
-                  position: 'fixed',
-                  left: `${fabPosition.x}px`,
-                  top: `${fabPosition.y}px`,
-                  right: 'auto',
-                  bottom: 'auto',
-                  touchAction: 'none',
-                  transition: isCurrentlyDragging ? 'none' : 'all 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
-                }
-              : {
-                  touchAction: 'none',
-                }
-          }
-          className={`${
-            fabPosition ? '' : 'fixed bottom-4 right-4 sm:bottom-6 sm:right-6'
-          } z-40 flex items-center gap-2 select-none group ${
-            isCurrentlyDragging ? 'cursor-grabbing scale-105' : 'cursor-grab'
-          } ${snapSide === 'left' ? 'flex-row-reverse' : ''}`}
-          title="Nhấp để mở Quanta AI — kéo ra đâu cũng được, khi buông tay sẽ tự hút về mép trái/phải"
-        >
-          {/* Subtle floating badge tooltip */}
-          <div
-            className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none ${
-              isCurrentlyDragging ? 'opacity-70' : 'animate-bounce'
-            } ${
-              activeThemeId === 'spring'
-                ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
-                : 'bg-white/95 text-slate-700 border border-slate-200'
-            }`}
-          >
-            <Sparkles className={`w-3.5 h-3.5 ${activeThemeId === 'spring' ? 'text-[#E7B947]' : 'text-[#008689]'}`} />
-            <span>Hỏi Quanta AI</span>
-          </div>
-
-          <button
-            type="button"
-            aria-label="Mở Trợ lý Khảo thí AI"
-            className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative group ${
-              isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105 shadow-2xl' : 'hover:scale-105 active:scale-95'
-            } ${
-              activeThemeId === 'spring'
-                ? 'bg-gradient-to-tr from-[#087E79] to-[#00a3a8] ring-2 ring-[#E7B947] ring-offset-2 tet-gold-glow'
-                : 'bg-gradient-to-tr from-[#008689] to-[#00b4b8]'
-            }`}
-          >
-            {!isCurrentlyDragging && (
-              <div className="absolute inset-0 rounded-full bg-[#008689] opacity-25 animate-ping pointer-events-none" />
-            )}
-            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10 pointer-events-none" />
-            <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-emerald-400 border-2 border-white rounded-full pointer-events-none" />
-          </button>
-        </div>
-      )}
-
-      {/* ─── Modern AI Chat Drawer / Window (Mở theo bên cánh bong bóng) ──── */}
-      {isOpen && (
-        <div
-          className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 ${
-            snapSide === 'left'
-              ? 'sm:left-6 sm:right-auto animate-in fade-in slide-in-from-left-4'
-              : 'sm:right-6 sm:left-auto animate-in fade-in slide-in-from-right-4'
-          } sm:w-96 ${
-            isMinimized ? 'h-14 sm:h-16' : 'h-[520px] max-h-[82vh] sm:max-h-[85vh]'
+          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shadow-md pointer-events-none ${
+            isCurrentlyDragging ? 'opacity-70' : 'animate-bounce'
+          } ${
+            activeThemeId === 'spring'
+              ? 'bg-[#FFF8E9] text-[#8F171C] border border-[#E7B947]'
+              : 'bg-white/95 text-slate-700 border border-slate-200'
           }`}
         >
+          <Sparkles className={`w-3.5 h-3.5 ${activeThemeId === 'spring' ? 'text-[#E7B947]' : 'text-[#008689]'}`} />
+          <span>Hỏi Quanta AI</span>
+        </div>
+
+        <button
+          type="button"
+          aria-label="Mở Trợ lý Khảo thí AI"
+          className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full text-white shadow-xl hover:shadow-2xl transition-all duration-300 flex items-center justify-center relative group ${
+            isCurrentlyDragging ? 'ring-4 ring-teal-400/60 scale-105 shadow-2xl' : 'hover:scale-105 active:scale-95'
+          } ${
+            activeThemeId === 'spring'
+              ? 'bg-gradient-to-tr from-[#087E79] to-[#00a3a8] ring-2 ring-[#E7B947] ring-offset-2 tet-gold-glow'
+              : 'bg-gradient-to-tr from-[#008689] to-[#00b4b8]'
+          }`}
+        >
+          {!isCurrentlyDragging && (
+            <div className="absolute inset-0 rounded-full bg-[#008689] opacity-25 animate-ping pointer-events-none" />
+          )}
+          <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 text-white group-hover:rotate-12 transition-transform duration-300 relative z-10 pointer-events-none" />
+          <span className="absolute top-0 right-0 w-3 h-3 sm:w-3.5 sm:h-3.5 bg-emerald-400 border-2 border-white rounded-full pointer-events-none" />
+        </button>
+      </div>
+
+      {/* ─── Modern AI Chat Drawer / Window (Dãn nở mượt mà từ bong bóng & Co rút khi đóng) ──── */}
+      <div
+        className={`fixed z-50 bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:w-96 ${
+          snapSide === 'left'
+            ? 'sm:left-6 sm:right-auto origin-bottom-left'
+            : 'sm:right-6 sm:left-auto origin-bottom-right'
+        } ${
+          isMinimized ? 'h-14 sm:h-16' : 'h-[520px] max-h-[82vh] sm:max-h-[85vh]'
+        } ${
+          isOpen
+            ? 'scale-100 opacity-100 pointer-events-auto translate-y-0'
+            : 'scale-0 opacity-0 pointer-events-none translate-y-8'
+        }`}
+      >
           {/* Header */}
           <div className="bg-gradient-to-r from-[#008689] via-[#007678] to-[#006062] px-4 py-3 text-white flex items-center justify-between shadow-sm select-none">
             <div className="flex items-center gap-2.5 min-w-0">
@@ -676,7 +694,6 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
             </>
           )}
         </div>
-      )}
     </>
   );
 };
