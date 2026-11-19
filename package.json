@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "docx-preview": "^0.4.1",
     "katex": "^0.19.1",
     "lucide-react": "^1.16.0",
     "nodemailer": "^10.5.0",

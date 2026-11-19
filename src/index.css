@@ -457,40 +457,5 @@
   }
 }
 
-/* Document Preview Modal - Docx Rendering Styles */
-.docx-doc-render {
-  background: transparent !important;
-  padding: 0 !important;
-  font-family: inherit !important;
-}
-
-.docx-doc-render > .docx-wrapper {
-  background: transparent !important;
-  padding: 0 !important;
-}
-
-.docx-doc-render .docx {
-  background: #ffffff !important;
-  box-shadow: none !important;
-  margin-bottom: 24px !important;
-  color: #1e293b !important;
-  padding: 24px 32px !important;
-  border-radius: 8px !important;
-  line-height: 1.65 !important;
-}
-
-.docx-doc-render table {
-  border-collapse: collapse !important;
-  margin: 12px 0 !important;
-  width: 100% !important;
-}
-
-.docx-doc-render td,
-.docx-doc-render th {
-  border: 1px solid #cbd5e1 !important;
-  padding: 6px 10px !important;
-  font-size: 11px !important;
-}
-
 
 
