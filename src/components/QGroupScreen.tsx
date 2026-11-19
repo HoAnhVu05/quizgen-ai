@@ -4001,7 +4001,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   )}
 
                   {/* Modern Unified Composer Box (Telegram / Zalo Style) */}
-                  <div className="border border-slate-300 hover:border-slate-400 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100/60 rounded-2xl bg-white shadow-2xs transition-all overflow-hidden">
+                  <div className="border border-slate-300 hover:border-slate-400 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100/60 rounded-2xl bg-white shadow-2xs transition-all relative">
                     {/* Hidden File Input */}
                     <input
                       type="file"
@@ -4037,75 +4037,35 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     />
 
                     {/* Bottom Action Bar */}
-                    <div className="px-2.5 py-1.5 flex items-center justify-between border-t border-slate-100 bg-slate-50/60">
+                    <div className="px-2.5 py-1.5 flex items-center justify-between border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
                       <div className="flex items-center gap-1">
-                        {/* Attach Dropdown Menu */}
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsAttachPopoverOpen(!isAttachPopoverOpen);
-                              setIsEmojiPickerOpen(false);
-                            }}
-                            className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer flex items-center gap-1 transition-colors ${
-                              isAttachPopoverOpen ? 'bg-slate-200 text-slate-900' : ''
-                            }`}
-                            title="Đính kèm tệp, ảnh hoặc giáo trình"
-                          >
-                            <Paperclip className="w-4 h-4 text-slate-600" />
-                          </button>
+                        {/* 1. NÚT ĐÍNH KÈM TỆP & ẢNH TRỰC TIẾP TỪ THIẾT BỊ (Mở File Explorer ngay) */}
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer flex items-center gap-1 transition-colors"
+                          title="Tải tệp & ảnh từ thiết bị (Word, PDF, Ảnh, Video, Excel, ZIP...)"
+                        >
+                          <Paperclip className="w-4 h-4 text-slate-600" />
+                        </button>
 
-                          {isAttachPopoverOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute left-0 bottom-10 z-30 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1 animate-fade-in text-xs"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsAttachPopoverOpen(false);
-                                  fileInputRef.current?.click();
-                                }}
-                                className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-teal-50 text-slate-700 hover:text-teal-900 transition-colors cursor-pointer text-left"
-                              >
-                                <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
-                                  <FileText className="w-4 h-4" />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-slate-800 text-xs">Tải tệp từ thiết bị</p>
-                                  <p className="text-[10px] text-slate-400">File Word, PDF, Ảnh, Video, Excel, ZIP</p>
-                                </div>
-                              </button>
+                        {/* 2. NÚT GIÁO TRÌNH THƯ VIỆN UTH */}
+                        <button
+                          type="button"
+                          onClick={() => setIsTextbookModalOpen(true)}
+                          className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 cursor-pointer flex items-center gap-1 transition-colors"
+                          title="Đính kèm giáo trình Thư viện UTH"
+                        >
+                          <BookOpen className="w-4 h-4 text-slate-600 hover:text-teal-700" />
+                        </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsAttachPopoverOpen(false);
-                                  setIsTextbookModalOpen(true);
-                                }}
-                                className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-100 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer text-left"
-                              >
-                                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
-                                  <BookOpen className="w-4 h-4" />
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="font-semibold text-slate-800 text-xs">Giáo trình Thư viện UTH</p>
-                                  <p className="text-[10px] text-slate-400">Liên kết giáo trình để sinh đề thi</p>
-                                </div>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Emoji Quick Picker Trigger */}
+                        {/* 3. NÚT EMOJI */}
                         <div className="relative">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               setIsEmojiPickerOpen(!isEmojiPickerOpen);
-                              setIsAttachPopoverOpen(false);
                             }}
                             className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer transition-colors ${
                               isEmojiPickerOpen ? 'bg-slate-200 text-slate-900' : ''
