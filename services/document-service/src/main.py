@@ -898,7 +898,7 @@ async def upload_qgroup_attachment(file: UploadFile = File(...)):
         is_audio = (file.content_type or "").startswith("audio/")
         att_type = "image" if is_image else "video" if is_video else "audio" if is_audio else "file"
         
-        file_url = f"/api/documents/qgroups/attachments/{disk_name}"
+        file_url = f"/api/v1/documents/qgroups/attachments/{disk_name}"
         return {
             "status": "success",
             "fileUrl": file_url,
@@ -913,12 +913,23 @@ async def upload_qgroup_attachment(file: UploadFile = File(...)):
 
 @app.get("/documents/qgroups/attachments/{filename}")
 @app.get("/qgroups/attachments/{filename}")
-async def get_qgroup_attachment(filename: str):
+async def get_qgroup_attachment(filename: str, download: bool = False):
     file_path = QGROUP_ATTACHMENTS_DIR / filename
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Attachment not found")
     orig_name = filename.split("_", 1)[1] if "_" in filename else filename
-    return FileResponse(file_path, filename=orig_name)
+    import mimetypes
+    content_type, _ = mimetypes.guess_type(orig_name)
+    if not content_type:
+        content_type = "application/octet-stream"
+
+    if download:
+        return FileResponse(file_path, filename=orig_name, media_type=content_type)
+    else:
+        headers = {
+            "Content-Disposition": f'inline; filename="{orig_name}"'
+        }
+        return FileResponse(file_path, media_type=content_type, headers=headers)
 
 @app.get("/qgroups")
 @app.get("/documents/qgroups")

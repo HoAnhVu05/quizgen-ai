@@ -133,6 +133,8 @@ async def auth_proxy(path: str, request: Request):
 
 @app.api_route("/api/v1/documents", methods=METHODS)
 @app.api_route("/api/v1/documents/{path:path}", methods=METHODS)
+@app.api_route("/api/documents", methods=METHODS)
+@app.api_route("/api/documents/{path:path}", methods=METHODS)
 async def document_proxy(request: Request, path: str = ""):
     target = f"/{path}".rstrip("/") if not path else f"/{path}"
     return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/documents", request)

@@ -543,6 +543,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [menuGroupId, setMenuGroupId] = useState<string | null>(null);
 
   // Slack Header Modals & Toolbars
+  const [detailsGroup, setDetailsGroup] = useState<QGroup | null>(null);
   const [isChannelDetailsOpen, setIsChannelDetailsOpen] = useState(false);
   const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
   const [channelDetailsTab, setChannelDetailsTab] = useState<'about' | 'members' | 'files'>('about');
@@ -2916,6 +2917,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       setMenuGroupId(null);
                     }}
                     onViewDetails={() => {
+                      setDetailsGroup(group);
                       setChannelDetailsTab('about');
                       setIsChannelDetailsOpen(true);
                       setMenuGroupId(null);
@@ -2997,6 +2999,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setMenuGroupId(null);
                             }}
                             onViewDetails={() => {
+                              setDetailsGroup(group);
                               setChannelDetailsTab('about');
                               setIsChannelDetailsOpen(true);
                               setMenuGroupId(null);
@@ -3079,6 +3082,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setMenuGroupId(null);
                             }}
                             onViewDetails={() => {
+                              setDetailsGroup(group);
                               setChannelDetailsTab('about');
                               setIsChannelDetailsOpen(true);
                               setMenuGroupId(null);
@@ -3136,6 +3140,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       setProfileEmail(activeInfo.partnerEmail || null);
                       setProfileName(activeInfo.displayName);
                     } else {
+                      setDetailsGroup(activeGroup);
                       setIsChannelDetailsOpen(true);
                     }
                   }}
@@ -3159,6 +3164,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           setProfileEmail(activeInfo.partnerEmail || null);
                           setProfileName(activeInfo.displayName);
                         } else {
+                          setDetailsGroup(activeGroup);
                           setIsChannelDetailsOpen(true);
                         }
                       }}
@@ -3214,6 +3220,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       <>
                         <span
                           onClick={() => {
+                            setDetailsGroup(activeGroup);
                             setChannelDetailsTab('members');
                             setIsChannelDetailsOpen(true);
                           }}
@@ -3301,6 +3308,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setProfileEmail(activeInfo.partnerEmail || null);
                               setProfileName(activeInfo.displayName);
                             } else {
+                              setDetailsGroup(activeGroup);
                               setChannelDetailsTab('about');
                               setIsChannelDetailsOpen(true);
                             }
@@ -3734,15 +3742,25 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                   <p className="truncate font-semibold text-slate-800 text-xs">{msg.attachment.name}</p>
                                   <p className="text-[10px] text-slate-400 font-medium">{msg.attachment.size}</p>
                                 </div>
-                                <a
-                                  href={msg.attachment.fileUrl}
-                                  download={msg.attachment.name}
-                                  onClick={() => onShowToast('info', 'Đang tải ảnh xuống...', msg.attachment?.name || 'Ảnh')}
-                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shrink-0 cursor-pointer"
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rawUrl = msg.attachment!.fileUrl!;
+                                    const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
+                                    const a = document.createElement('a');
+                                    a.href = dlUrl;
+                                    a.download = msg.attachment?.name || 'image.png';
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    onShowToast('info', 'Đang tải ảnh xuống...', msg.attachment?.name || 'Ảnh');
+                                  }}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-teal-600 hover:text-white text-slate-700 transition-colors shrink-0 cursor-pointer"
                                   title="Tải ảnh về máy"
                                 >
                                   <Download className="w-3.5 h-3.5" />
-                                </a>
+                                </button>
                               </div>
                             </div>
                           ) : msg.attachment.type === 'video' && msg.attachment.fileUrl ? (
@@ -3761,17 +3779,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             <div
                               onClick={() => {
                                 if (msg.attachment?.fileUrl) {
-                                  const a = document.createElement('a');
-                                  a.href = msg.attachment.fileUrl;
-                                  a.download = msg.attachment.name;
-                                  a.click();
-                                  onShowToast('info', 'Đang tải tệp xuống...', msg.attachment.name);
+                                  // Bấm vào thẻ để mở xem tệp trên tab trình duyệt
+                                  window.open(msg.attachment.fileUrl, '_blank', 'noopener,noreferrer');
                                 }
                               }}
-                              className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 transition-all text-left shadow-2xs cursor-pointer group"
-                              title={`Bấm để tải xuống ${msg.attachment.name}`}
+                              className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-teal-400 hover:bg-slate-50/70 transition-all text-left shadow-2xs cursor-pointer group flex items-center justify-between gap-3"
+                              title={`Bấm để mở xem tệp ${msg.attachment.name}`}
                             >
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
                                 <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-teal-50 text-slate-700 group-hover:text-teal-700 flex items-center justify-center shrink-0 border border-slate-200 transition-colors">
                                   {getFileIcon(msg.attachment.name)}
                                 </div>
@@ -3780,18 +3795,32 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                     {msg.attachment.name}
                                   </p>
                                   <p className="text-[10px] text-slate-500 font-medium">
-                                    {msg.attachment.size} • Tệp tài liệu
+                                    {msg.attachment.size} • Bấm để xem tệp
                                   </p>
                                 </div>
-                                {msg.attachment.fileUrl && (
-                                  <div
-                                    className="p-2 rounded-lg bg-slate-100 group-hover:bg-teal-600 text-slate-700 group-hover:text-white transition-all shrink-0 flex items-center gap-1 text-xs font-medium"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                    <span className="hidden sm:inline">Tải về</span>
-                                  </div>
-                                )}
                               </div>
+                              {msg.attachment.fileUrl && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const rawUrl = msg.attachment!.fileUrl!;
+                                    const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
+                                    const a = document.createElement('a');
+                                    a.href = dlUrl;
+                                    a.download = msg.attachment!.name;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                    onShowToast('info', 'Đang tải tệp xuống...', msg.attachment!.name);
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-slate-200/80 shadow-2xs"
+                                  title="Tải tệp về máy"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span className="hidden sm:inline">Tải về</span>
+                                </button>
+                              )}
                             </div>
                           ) : (
                             /* Textbook Attachment */
@@ -4554,36 +4583,45 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       {/* ====================================================================
           MODAL: CHI TIẾT KÊNH (SLACK STYLE INFORMATIONAL MULTI-TAB)
       ==================================================================== */}
-      {isChannelDetailsOpen && activeGroup && (
-        <ChannelDetailsModal
-          group={activeGroup}
-          myEmail={myEmail}
-          activeTab={channelDetailsTab}
-          onTabChange={setChannelDetailsTab}
-          inviteEmail={inviteEmailInput}
-          onInviteEmailChange={setInviteEmailInput}
-          onInvite={() => void handleInviteToGroup(activeGroup)}
-          onClose={() => setIsChannelDetailsOpen(false)}
-          onLeaveGroup={() => {
-            setIsChannelDetailsOpen(false);
-            void handleLeaveGroup(activeGroup);
-          }}
-          onDeleteChat={() => {
-            setIsChannelDetailsOpen(false);
-            handleDeleteChat(activeGroup);
-          }}
-          onUnfriend={(email, name) => {
-            setIsChannelDetailsOpen(false);
-            handleUnfriend(email, name);
-          }}
-          onKickMember={(email, name) => {
-            void handleKickMember(activeGroup, email, name);
-          }}
-          onRespondJoinRequest={(reqId, email, action) => {
-            void handleRespondJoinRequest(activeGroup, reqId, email, action);
-          }}
-        />
-      )}
+      {isChannelDetailsOpen && (detailsGroup || activeGroup) && (() => {
+        const targetGroup = detailsGroup || activeGroup!;
+        return (
+          <ChannelDetailsModal
+            group={targetGroup}
+            myEmail={myEmail}
+            activeTab={channelDetailsTab}
+            onTabChange={setChannelDetailsTab}
+            inviteEmail={inviteEmailInput}
+            onInviteEmailChange={setInviteEmailInput}
+            onInvite={() => void handleInviteToGroup(targetGroup)}
+            onClose={() => {
+              setIsChannelDetailsOpen(false);
+              setDetailsGroup(null);
+            }}
+            onLeaveGroup={() => {
+              setIsChannelDetailsOpen(false);
+              setDetailsGroup(null);
+              void handleLeaveGroup(targetGroup);
+            }}
+            onDeleteChat={() => {
+              setIsChannelDetailsOpen(false);
+              setDetailsGroup(null);
+              handleDeleteChat(targetGroup);
+            }}
+            onUnfriend={(email, name) => {
+              setIsChannelDetailsOpen(false);
+              setDetailsGroup(null);
+              handleUnfriend(email, name);
+            }}
+            onKickMember={(email, name) => {
+              void handleKickMember(targetGroup, email, name);
+            }}
+            onRespondJoinRequest={(reqId, email, action) => {
+              void handleRespondJoinRequest(targetGroup, reqId, email, action);
+            }}
+          />
+        );
+      })()}
 
       {/* ====================================================================
           MODAL: CÀI ĐẶT KÊNH (SLACK / TEAMS DEDICATED CHANNEL SETTINGS)
