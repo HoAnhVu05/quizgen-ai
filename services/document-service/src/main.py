@@ -921,7 +921,21 @@ async def get_qgroup_attachment(filename: str, download: bool = False):
     orig_name = filename.split("_", 1)[1] if "_" in filename else filename
     import mimetypes
     content_type, _ = mimetypes.guess_type(orig_name)
-    if not content_type:
+
+    # Audio/Video explicit MIME types override
+    AUDIO_EXT_MAP = {
+        ".webm": "audio/webm",
+        ".weba": "audio/webm",
+        ".ogg": "audio/ogg",
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+    }
+    ext = file_path.suffix.lower()
+    if ext in AUDIO_EXT_MAP:
+        content_type = AUDIO_EXT_MAP[ext]
+    elif not content_type:
         content_type = "application/octet-stream"
 
     if download:

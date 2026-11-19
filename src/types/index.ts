@@ -213,6 +213,7 @@ export interface QGroupMessage {
     questionCount?: number;
     durationMinutes?: number;
     duration?: number;
+    waveform?: number[];
     authorName?: string;
   };
   sharedPost?: {

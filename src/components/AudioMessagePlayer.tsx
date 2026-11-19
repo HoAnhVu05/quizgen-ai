@@ -7,6 +7,7 @@ interface AudioMessagePlayerProps {
     name?: string;
     size?: string;
     duration?: number;
+    waveform?: number[];
   };
   onShowToast: (type: 'success' | 'error' | 'info' | 'warning', title: string, message: string) => void;
 }
@@ -17,6 +18,58 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ attachme
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(attachment.duration || 0);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const [waveform, setWaveform] = useState<number[]>(
+    attachment.waveform && attachment.waveform.length > 0
+      ? attachment.waveform
+      : [35, 50, 75, 90, 65, 45, 80, 100, 70, 55, 60, 85, 40, 35, 55, 80, 95, 65, 45, 75, 85, 60, 50, 40, 60, 75, 50, 35]
+  );
+
+  // Extract real waveform from PCM audio data if not pre-computed
+  useEffect(() => {
+    if (attachment.waveform && attachment.waveform.length > 0) {
+      setWaveform(attachment.waveform);
+      return;
+    }
+    if (!attachment.fileUrl) return;
+
+    let isMounted = true;
+    fetch(attachment.fileUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error('Network error');
+        return res.arrayBuffer();
+      })
+      .then((buf) => {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        return audioCtx.decodeAudioData(buf);
+      })
+      .then((audioBuffer) => {
+        if (!isMounted) return;
+        const channelData = audioBuffer.getChannelData(0);
+        const barCount = 30;
+        const blockSize = Math.floor(channelData.length / barCount);
+        if (blockSize <= 0) return;
+        const peaks: number[] = [];
+        let maxVal = 0.001;
+        for (let i = 0; i < barCount; i++) {
+          let sum = 0;
+          for (let j = 0; j < blockSize; j++) {
+            sum += Math.abs(channelData[i * blockSize + j]);
+          }
+          const avg = sum / blockSize;
+          peaks.push(avg);
+          if (avg > maxVal) maxVal = avg;
+        }
+        const normalized = peaks.map((p) => Math.max(18, Math.min(100, Math.round((p / maxVal) * 100))));
+        setWaveform(normalized);
+      })
+      .catch((err) => {
+        console.warn('Real waveform decode notice:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [attachment.fileUrl, attachment.waveform]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -103,12 +156,6 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ attachme
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Simulated static waveform bar heights (28 bars)
-  const barHeights = [
-    30, 45, 70, 90, 60, 40, 80, 100, 75, 50, 65, 85, 45, 30,
-    55, 75, 95, 60, 40, 70, 85, 65, 50, 40, 60, 75, 50, 30,
-  ];
-
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
@@ -150,14 +197,14 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ attachme
           {/* Interactive Waveform / Slider */}
           <div className="relative h-6 flex items-center gap-0.5 cursor-pointer">
             <div className="absolute inset-0 flex items-center gap-0.5 pointer-events-none">
-              {barHeights.map((h, i) => {
-                const barProgress = (i / barHeights.length) * 100;
+              {waveform.map((h, i) => {
+                const barProgress = (i / waveform.length) * 100;
                 const isPassed = barProgress <= progressPercent;
                 return (
                   <span
                     key={i}
                     style={{ height: `${h}%` }}
-                    className={`w-1 rounded-full transition-colors ${
+                    className={`w-1 rounded-full transition-all duration-150 ${
                       isPassed ? 'bg-teal-600' : 'bg-slate-300'
                     }`}
                   />

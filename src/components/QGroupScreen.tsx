@@ -415,7 +415,10 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
         );
       } else if (m[5]) {
         // Tag / @mention thành viên
-        const isBroadcast = val.toLowerCase() === '@everyone' || val.toLowerCase() === '@kênh';
+        const isBroadcast =
+          val.toLowerCase() === '@all' ||
+          val.toLowerCase() === '@everyone' ||
+          val.toLowerCase() === '@kênh';
         tokens.push(
           <span
             key={m.index}
@@ -613,6 +616,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const liveWaveformSamplesRef = useRef<number[]>([]);
+  const animFrameRef = useRef<number | null>(null);
+  const [liveMicLevels, setLiveMicLevels] = useState<number[]>([30, 50, 80, 60, 40, 70, 50, 30]);
 
   // @Mention state
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -1365,6 +1373,44 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
+      // Real AudioContext and Analyser for dynamic live waveform visualization
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+        source.connect(analyser);
+        audioContextRef.current = audioCtx;
+        analyserRef.current = analyser;
+        liveWaveformSamplesRef.current = [];
+
+        const freqData = new Uint8Array(analyser.frequencyBinCount);
+        const updateVisuals = () => {
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(freqData);
+          let sum = 0;
+          for (let i = 0; i < freqData.length; i++) sum += freqData[i];
+          const avg = sum / freqData.length;
+          liveWaveformSamplesRef.current.push(avg);
+
+          const bands = [
+            Math.max(20, Math.min(100, Math.round((freqData[1] || 0) * 0.9))),
+            Math.max(20, Math.min(100, Math.round((freqData[3] || 0) * 1.1))),
+            Math.max(20, Math.min(100, Math.round((freqData[5] || 0) * 1.2))),
+            Math.max(20, Math.min(100, Math.round((freqData[7] || 0) * 1.3))),
+            Math.max(20, Math.min(100, Math.round((freqData[9] || 0) * 1.2))),
+            Math.max(20, Math.min(100, Math.round((freqData[11] || 0) * 1.1))),
+            Math.max(20, Math.min(100, Math.round((freqData[13] || 0) * 0.9))),
+            Math.max(20, Math.min(100, Math.round((freqData[15] || 0) * 0.8))),
+          ];
+          setLiveMicLevels(bands);
+          animFrameRef.current = requestAnimationFrame(updateVisuals);
+        };
+        animFrameRef.current = requestAnimationFrame(updateVisuals);
+      } catch (e) {
+        console.warn('AudioContext not supported or blocked for live visualizer:', e);
+      }
+
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
@@ -1401,6 +1447,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   };
 
   const cancelVoiceRecording = () => {
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
@@ -1412,6 +1466,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     mediaStreamRef.current = null;
     mediaRecorderRef.current = null;
     audioChunksRef.current = [];
+    liveWaveformSamplesRef.current = [];
     setIsRecording(false);
     setRecordingSeconds(0);
     onShowToast('info', 'Đã hủy ghi âm', 'Đoạn ghi âm chưa được gửi.');
@@ -1419,6 +1474,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const stopAndSendVoiceRecording = () => {
     if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
 
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
@@ -1428,13 +1492,33 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     const duration = recordingSeconds;
     const recorder = mediaRecorderRef.current;
 
+    // Compute real physical waveform bars (30 samples) from live voice levels
+    const samples = liveWaveformSamplesRef.current;
+    const targetCount = 30;
+    let finalWaveform: number[] = [];
+    if (samples.length > 0) {
+      const step = samples.length / targetCount;
+      let maxVal = 0.01;
+      for (let i = 0; i < targetCount; i++) {
+        const idx = Math.min(samples.length - 1, Math.floor(i * step));
+        const val = samples[idx] || 0;
+        finalWaveform.push(val);
+        if (val > maxVal) maxVal = val;
+      }
+      finalWaveform = finalWaveform.map((v) => Math.max(18, Math.min(100, Math.round((v / maxVal) * 100))));
+    } else {
+      finalWaveform = [35, 50, 75, 90, 65, 45, 80, 100, 70, 55, 60, 85, 40, 35, 55, 80, 95, 65, 45, 75, 85, 60, 50, 40, 60, 75, 50, 35];
+    }
+
     recorder.onstop = async () => {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
       mediaRecorderRef.current = null;
 
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const actualMime = recorder.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunksRef.current, { type: actualMime });
       audioChunksRef.current = [];
+      liveWaveformSamplesRef.current = [];
       setIsRecording(false);
       setRecordingSeconds(0);
 
@@ -1445,7 +1529,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
       try {
         onShowToast('info', 'Đang gửi ghi âm...', `Thời lượng: ${formatDuration(duration)}`);
-        const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+        const ext = actualMime.includes('mp4') ? 'm4a' : actualMime.includes('ogg') ? 'ogg' : 'webm';
+        const audioFile = new File([audioBlob], `voice_${Date.now()}.${ext}`, { type: actualMime });
         const formData = new FormData();
         formData.append('file', audioFile);
 
@@ -1476,6 +1561,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               fileUrl: res.fileUrl,
               size: res.size || `${Math.round(audioBlob.size / 1024)} KB`,
               duration: duration,
+              waveform: finalWaveform,
             },
           };
 
@@ -1519,14 +1605,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
     if (!activeGroup.isDirect) {
       list.push({
-        id: 'everyone',
-        tag: 'everyone',
-        role: 'Thông báo cho tất cả thành viên trong phòng',
-      });
-      list.push({
-        id: 'kenh',
-        tag: 'kênh',
-        role: 'Thông báo tới tất cả thành viên kênh này',
+        id: 'all',
+        tag: 'all',
+        role: 'Thông báo cho tất cả thành viên trong nhóm (@all)',
       });
     }
 
@@ -2575,14 +2656,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         setTransferGroup(null);
         onShowToast(
           'success',
-          'Nhượng quyền thành công',
-          `Đã nhượng quyền cho ${selectedNewOwner} và rời khỏi nhóm.`
+          'Chuyển quyền thành công',
+          `Đã chuyển quyền Trưởng nhóm cho ${selectedNewOwner} và rời khỏi nhóm.`
         );
       } else {
-        onShowToast('error', 'Lỗi', 'Không thể nhượng quyền trưởng nhóm.');
+        onShowToast('error', 'Lỗi', 'Không thể chuyển quyền trưởng nhóm.');
       }
     } catch {
-      onShowToast('error', 'Lỗi', 'Lỗi kết nối khi nhượng quyền.');
+      onShowToast('error', 'Lỗi', 'Lỗi kết nối khi chuyển quyền.');
     } finally {
       setIsTransferringOwner(false);
     }
@@ -3309,7 +3390,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 handleUnfriend(info.partnerEmail, info.displayName);
                               }
                             }}
-                            onLeave={() => handleDeleteChat(group)}
+                            onLeave={() => handleLeaveGroup(group)}
                             onDisband={() => handleDisbandGroup(group)}
                             onCopyCode={() => {
                               navigator.clipboard.writeText(group.code);
@@ -3396,7 +3477,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 handleUnfriend(info.partnerEmail, info.displayName);
                               }
                             }}
-                            onLeave={() => handleDeleteChat(group)}
+                            onLeave={() => handleLeaveGroup(group)}
                             onDisband={() => handleDisbandGroup(group)}
                             onCopyCode={() => {
                               navigator.clipboard.writeText(group.code);
@@ -3595,144 +3676,202 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   </button>
 
                   {/* Slack Popup Dropdown Menu */}
-                  {isHeaderMenuOpen && (
-                    <div
-                      className="absolute right-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 text-xs animate-fade-in divide-y divide-slate-100 select-none"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="py-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsHeaderMenuOpen(false);
-                            if (activeGroup.isDirect) {
-                              setProfileEmail(activeInfo.partnerEmail || null);
-                              setProfileName(activeInfo.displayName);
-                            } else {
-                              setDetailsGroup(activeGroup);
-                              setChannelDetailsTab('about');
-                              setIsChannelDetailsOpen(true);
-                            }
-                          }}
-                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
-                        >
-                          <span className="flex items-center gap-2">
-                            <Info className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
-                            <span>{activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết kênh (Channel details)'}</span>
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                        </button>
+                  {isHeaderMenuOpen && (() => {
+                    const isGroupOwner = (activeGroup.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
+                    const isActivePinned = Boolean(
+                      activeGroup.isPinned || (activeGroup.pinnedBy || []).some((e) => e.toLowerCase() === myEmail.toLowerCase())
+                    );
 
-                        {!activeGroup.isDirect && (
+                    return (
+                      <div
+                        className="absolute right-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 text-xs animate-fade-in divide-y divide-slate-100 select-none"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* Nhóm 1: Ghim, Chi tiết, Mã phòng & Thông báo */}
+                        <div className="py-1">
                           <button
                             type="button"
                             onClick={() => {
                               setIsHeaderMenuOpen(false);
-                              navigator.clipboard.writeText(activeGroup.code);
-                              onShowToast('info', 'Đã sao chép mã phòng', activeGroup.code);
+                              handleTogglePinConversation(activeGroup);
                             }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
+                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
                           >
-                            <span className="flex items-center gap-2">
-                              <Copy className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
-                              <span>Sao chép mã phòng (Copy)</span>
-                            </span>
-                            <span className="font-mono text-[10px] text-slate-400">{activeGroup.code}</span>
+                            <Pin className={`w-3.5 h-3.5 ${isActivePinned ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
+                            <span>{isActivePinned ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại lên đầu'}</span>
                           </button>
-                        )}
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsHeaderMenuOpen(false);
-                            setIsStarred(!isStarred);
-                            onShowToast('info', isStarred ? 'Bỏ đánh dấu sao' : 'Đã đánh dấu sao kênh', activeInfo.displayName);
-                          }}
-                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 text-slate-700 font-medium group cursor-pointer"
-                        >
-                          <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-amber-400 text-amber-500' : 'text-slate-400 group-hover:text-slate-700'}`} />
-                          <span>{isStarred ? 'Bỏ đánh dấu sao' : 'Đánh dấu sao kênh (Star)'}</span>
-                        </button>
-                      </div>
-
-                      <div className="py-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsHeaderMenuOpen(false);
-                            setIsSummarizeModalOpen(true);
-                          }}
-                          className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
-                        >
-                          <span className="flex items-center gap-2">
-                            <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                            <span>Tóm tắt kênh bằng AI (Summarize)</span>
-                          </span>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                        </button>
-
-                        {!activeGroup.isDirect && (
                           <button
                             type="button"
                             onClick={() => {
                               setIsHeaderMenuOpen(false);
-                              setIsChannelSettingsOpen(true);
+                              if (activeGroup.isDirect) {
+                                setProfileEmail(activeInfo.partnerEmail || null);
+                                setProfileName(activeInfo.displayName);
+                              } else {
+                                setDetailsGroup(activeGroup);
+                                setChannelDetailsTab('about');
+                                setIsChannelDetailsOpen(true);
+                              }
                             }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium group cursor-pointer"
+                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
                           >
-                            <span className="flex items-center gap-2">
-                              <Settings className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
-                              <span>Cài đặt kênh (Edit settings)</span>
+                            <span className="flex items-center gap-2.5">
+                              {activeGroup.isDirect ? <User className="w-3.5 h-3.5 text-slate-400" /> : <Info className="w-3.5 h-3.5 text-slate-400" />}
+                              <span>{activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết kênh'}</span>
                             </span>
                             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                           </button>
-                        )}
-                      </div>
 
-                      <div className="py-1">
-                        {activeGroup.isDirect ? (
-                          <>
+                          {!activeGroup.isDirect && (
                             <button
                               type="button"
                               onClick={() => {
                                 setIsHeaderMenuOpen(false);
-                                handleDeleteChat(activeGroup);
+                                navigator.clipboard.writeText(activeGroup.code);
+                                onShowToast('info', 'Đã sao chép mã phòng', activeGroup.code);
                               }}
-                              className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-semibold cursor-pointer text-xs"
+                              className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
                             >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                              <span>Xóa đoạn chat (Delete)</span>
+                              <span className="flex items-center gap-2.5">
+                                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Sao chép mã phòng</span>
+                              </span>
+                              <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{activeGroup.code}</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHeaderMenuOpen(false);
-                                if (activeInfo.partnerEmail) {
-                                  handleUnfriend(activeInfo.partnerEmail, activeInfo.displayName);
-                                }
-                              }}
-                              className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-semibold cursor-pointer text-xs"
-                            >
-                              <UserMinus className="w-3.5 h-3.5 text-rose-500" />
-                              <span>Hủy kết bạn (Unfriend)</span>
-                            </button>
-                          </>
-                        ) : (
+                          )}
+
                           <button
                             type="button"
                             onClick={() => {
                               setIsHeaderMenuOpen(false);
-                              handleLeaveGroup(activeGroup);
+                              handleToggleMute(activeGroup);
                             }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2 text-rose-600 font-semibold cursor-pointer text-xs"
+                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
                           >
-                            <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                            <span>Rời khỏi kênh (Leave channel)</span>
+                            {activeGroup.muted ? (
+                              <>
+                                <Bell className="w-3.5 h-3.5 text-slate-600" />
+                                <span>Bật thông báo</span>
+                              </>
+                            ) : (
+                              <>
+                                <BellOff className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Tắt thông báo</span>
+                              </>
+                            )}
                           </button>
+                        </div>
+
+                        {/* Nhóm 2: AI & Quản trị kênh */}
+                        {!activeGroup.isDirect && (
+                          <div className="py-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsHeaderMenuOpen(false);
+                                setIsSummarizeModalOpen(true);
+                              }}
+                              className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
+                            >
+                              <span className="flex items-center gap-2.5">
+                                <Sparkles className="w-3.5 h-3.5 text-teal-600" />
+                                <span>Tóm tắt kênh bằng AI</span>
+                              </span>
+                              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                            </button>
+
+                            {isGroupOwner && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsHeaderMenuOpen(false);
+                                    setIsChannelSettingsOpen(true);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
+                                >
+                                  <span className="flex items-center gap-2.5">
+                                    <Settings className="w-3.5 h-3.5 text-slate-400" />
+                                    <span>Cài đặt kênh</span>
+                                  </span>
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsHeaderMenuOpen(false);
+                                    handleLeaveGroup(activeGroup);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
+                                >
+                                  <UserCheck className="w-3.5 h-3.5 text-slate-600" />
+                                  <span>Chuyển quyền Trưởng nhóm</span>
+                                </button>
+                              </>
+                            )}
+                          </div>
                         )}
+
+                        {/* Nhóm 3: Rời khỏi / Giải tán / Xóa */}
+                        <div className="py-1">
+                          {activeGroup.isDirect ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsHeaderMenuOpen(false);
+                                  handleDeleteChat(activeGroup);
+                                }}
+                                className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                                <span>Xóa đoạn chat</span>
+                              </button>
+                              {activeInfo.partnerEmail && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsHeaderMenuOpen(false);
+                                    handleUnfriend(activeInfo.partnerEmail!, activeInfo.displayName);
+                                  }}
+                                  className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
+                                >
+                                  <UserMinus className="w-3.5 h-3.5 text-rose-500" />
+                                  <span>Hủy kết bạn</span>
+                                </button>
+                              )}
+                            </>
+                          ) : isGroupOwner ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsHeaderMenuOpen(false);
+                                handleDisbandGroup(activeGroup);
+                              }}
+                              className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Giải tán nhóm</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsHeaderMenuOpen(false);
+                                handleLeaveGroup(activeGroup);
+                              }}
+                              className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
+                            >
+                              <LogOut className="w-3.5 h-3.5 text-rose-500" />
+                              <span>Rời khỏi kênh</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -4548,13 +4687,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 {formatDuration(recordingSeconds)}
                               </span>
                             </span>
-                            {/* Animated wave bars */}
-                            <div className="hidden sm:flex items-center gap-0.5 h-4">
-                              {[40, 70, 100, 60, 30, 80, 50, 90].map((h, i) => (
+                            {/* Real-time live audio wave bars dancing to voice */}
+                            <div className="flex items-center gap-1 h-5 px-1 bg-rose-50/80 rounded-md border border-rose-200/50">
+                              {liveMicLevels.map((h, i) => (
                                 <span
                                   key={i}
                                   style={{ height: `${h}%` }}
-                                  className="w-1 bg-rose-500 rounded-full animate-pulse"
+                                  className="w-1 bg-rose-500 rounded-full transition-all duration-75"
                                 />
                               ))}
                             </div>
@@ -5181,12 +5320,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )}
 
       {/* ====================================================================
-          MODAL: NHƯỢNG QUYỀN TRƯỞNG NHÓM TRƯỚC KHI RỜI (SAFE LEADER EXIT)
+          MODAL: CHUYỂN QUYỀN TRƯỞNG NHÓM TRƯỚC KHI RỜI (SAFE LEADER EXIT)
       ==================================================================== */}
       {isTransferOwnerModalOpen && transferGroup && (
         <Modal
           onClose={() => setIsTransferOwnerModalOpen(false)}
-          title="Nhượng Quyền Trưởng Nhóm"
+          title="Chuyển Quyền Trưởng Nhóm"
           icon={<UserCheck className="w-4 h-4 text-amber-600" />}
         >
           <div className="space-y-4 text-xs">
@@ -5258,7 +5397,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   onClick={handleTransferOwnerAndLeave}
                   className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
                 >
-                  {isTransferringOwner ? 'Đang nhượng quyền...' : 'Nhượng quyền & Rời'}
+                  {isTransferringOwner ? 'Đang chuyển quyền...' : 'Chuyển quyền & Rời'}
                 </button>
               </div>
             </div>
@@ -6419,7 +6558,7 @@ const ConversationItem: React.FC<{
             <div className="border-t border-slate-100 my-1" />
             {isOwner ? (
               <>
-                <MenuBtn icon={<UserCheck className="w-3.5 h-3.5 text-slate-700" />} label="Nhượng quyền Trưởng nhóm" onClick={onLeave} />
+                <MenuBtn icon={<UserCheck className="w-3.5 h-3.5 text-slate-700" />} label="Chuyển quyền Trưởng nhóm" onClick={onLeave} />
                 {onDisband && (
                   <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-600" />} label="Giải tán nhóm" onClick={onDisband} danger />
                 )}
@@ -7638,7 +7777,7 @@ const ChannelSettingsModal: React.FC<{
 
                 <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl flex items-center justify-between gap-3">
                   <div>
-                    <p className="font-semibold text-amber-900 text-xs">Nhượng quyền Trưởng nhóm</p>
+                    <p className="font-semibold text-amber-900 text-xs">Chuyển quyền Trưởng nhóm</p>
                     <p className="text-[11px] text-amber-700 mt-0.5">
                       Chuyển quyền quản trị nhóm cho một giảng viên khác trong kênh.
                     </p>
@@ -7648,7 +7787,7 @@ const ChannelSettingsModal: React.FC<{
                     onClick={onTransferOwner}
                     className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shrink-0 cursor-pointer transition-colors"
                   >
-                    Nhượng quyền
+                    Chuyển quyền
                   </button>
                 </div>
 
