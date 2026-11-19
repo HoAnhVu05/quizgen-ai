@@ -83,8 +83,48 @@ const AppContent: React.FC = () => {
   }, [currentUser?.id, fetchSubscription]);
 
   // ─── App State ────────────────────────────────────────────────────────────
-  const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
-  const [adminTab, setAdminTab] = useState<string>('overview');
+  const [currentScreen, setCurrentScreen] = useState<ScreenId>(() => {
+    try {
+      const saved =
+        sessionStorage.getItem('quizgen_active_screen') ||
+        localStorage.getItem('quizgen_active_screen');
+      const validScreens: ScreenId[] = [
+        'dashboard',
+        'review',
+        'generate',
+        'bank',
+        'upload',
+        'forum',
+        'qgroup',
+        'admin_portal',
+      ];
+      if (saved && validScreens.includes(saved as ScreenId)) {
+        return saved as ScreenId;
+      }
+    } catch {}
+    return 'dashboard';
+  });
+
+  const [adminTab, setAdminTab] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('quizgen_admin_tab') || 'overview';
+    } catch {
+      return 'overview';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('quizgen_active_screen', currentScreen);
+      localStorage.setItem('quizgen_active_screen', currentScreen);
+    } catch {}
+  }, [currentScreen]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('quizgen_admin_tab', adminTab);
+    } catch {}
+  }, [adminTab]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLuckyMoneyOpen, setIsLuckyMoneyOpen] = useState(() => {
@@ -644,15 +684,39 @@ const AppContent: React.FC = () => {
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
+    const savedScreen =
+      sessionStorage.getItem('quizgen_active_screen') ||
+      localStorage.getItem('quizgen_active_screen');
+    const validScreens: ScreenId[] = [
+      'dashboard',
+      'review',
+      'generate',
+      'bank',
+      'upload',
+      'forum',
+      'qgroup',
+      'admin_portal',
+    ];
+
     if (user.role === 'admin') {
-      setCurrentScreen('admin_portal');
+      setCurrentScreen(
+        savedScreen && validScreens.includes(savedScreen as ScreenId)
+          ? (savedScreen as ScreenId)
+          : 'admin_portal'
+      );
       handleShowToast(
         'success',
         'Xác thực 2FA Thành công — Mở Cổng Admin',
         `Chào mừng Quản trị viên ${user.fullName} vào Trung tâm Quản trị Hệ thống!`
       );
     } else {
-      setCurrentScreen('dashboard');
+      setCurrentScreen(
+        savedScreen &&
+          validScreens.includes(savedScreen as ScreenId) &&
+          savedScreen !== 'admin_portal'
+          ? (savedScreen as ScreenId)
+          : 'dashboard'
+      );
       const title = user.academicTitle ? `${user.academicTitle} ` : '';
       handleShowToast(
         'success',
@@ -697,9 +761,13 @@ const AppContent: React.FC = () => {
     localStorage.removeItem('quizgen_auth_token');
     localStorage.removeItem('quizgen_user');
     localStorage.removeItem('quizgen_remember_me');
+    localStorage.removeItem('quizgen_active_screen');
+    localStorage.removeItem('qgroup_selected_group_id');
     sessionStorage.removeItem('quizgen_token');
     sessionStorage.removeItem('quizgen_auth_token');
     sessionStorage.removeItem('quizgen_user');
+    sessionStorage.removeItem('quizgen_active_screen');
+    sessionStorage.removeItem('qgroup_selected_group_id');
     setCurrentUser(null);
     setIsAuthenticated(false);
     setAuthScreen('login');

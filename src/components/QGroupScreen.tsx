@@ -539,8 +539,36 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [systemUsersList, setSystemUsersList] = useState<
     Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
   >([]);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('');
-  const [showMobileChat, setShowMobileChat] = useState<boolean>(false);
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(() => {
+    try {
+      return (
+        sessionStorage.getItem('qgroup_selected_group_id') ||
+        localStorage.getItem('qgroup_selected_group_id') ||
+        ''
+      );
+    } catch {
+      return '';
+    }
+  });
+  const [showMobileChat, setShowMobileChat] = useState<boolean>(() => {
+    try {
+      const saved =
+        sessionStorage.getItem('qgroup_selected_group_id') ||
+        localStorage.getItem('qgroup_selected_group_id');
+      return Boolean(saved);
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (selectedGroupId) {
+      try {
+        sessionStorage.setItem('qgroup_selected_group_id', selectedGroupId);
+        localStorage.setItem('qgroup_selected_group_id', selectedGroupId);
+      } catch {}
+    }
+  }, [selectedGroupId]);
   const [searchQuery, setSearchQuery] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [filterTab, setFilterTab] = useState<
@@ -1268,15 +1296,19 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       });
   }, [qgroups, searchQuery, filterTab, myEmail]);
 
-  // Tự động chọn nhóm/hội thoại hợp lệ hiển thị cho tài khoản hiện tại
+  // Tự động chọn nhóm/hội thoại hợp lệ hiển thị cho tài khoản hiện tại (bảo toàn khi tải lại trang)
   useEffect(() => {
-    if (sortedGroups.length > 0) {
-      const isValid = sortedGroups.some((g) => g.id === selectedGroupId || g.code === selectedGroupId);
-      if (!isValid) {
-        setSelectedGroupId(sortedGroups[0].id);
+    if (qgroups.length > 0) {
+      if (!selectedGroupId) {
+        setSelectedGroupId(sortedGroups[0]?.id || qgroups[0].id);
+      } else {
+        const existsInAll = qgroups.some(
+          (g) => g.id === selectedGroupId || g.code === selectedGroupId
+        );
+        if (!existsInAll && sortedGroups.length > 0) {
+          setSelectedGroupId(sortedGroups[0].id);
+        }
       }
-    } else if (qgroups.length > 0 && !selectedGroupId) {
-      setSelectedGroupId(qgroups[0].id);
     }
   }, [sortedGroups, qgroups, selectedGroupId]);
 
@@ -2072,7 +2104,79 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setFriendLookupStatus('idle');
   }, []);
 
-  // ── Thêm thành viên trực tiếp vào kênh đang mở (kèm tin nhắn thông báo) ────
+  // ── Gửi lời mời chính thức vào kênh (Chờ đồng nghiệp bấm chấp nhận) ──────────
+  const handleSendGroupInvitation = useCallback(
+    async (targetEmail: string, targetName?: string) => {
+      if (!activeGroup) return;
+      const clean = targetEmail.trim().toLowerCase();
+      const currentMembers = (activeGroup.members || []).map((m) =>
+        String(m).toLowerCase()
+      );
+      if (currentMembers.includes(clean)) {
+        onShowToast(
+          'info',
+          'Đã là thành viên',
+          `${clean} đã có mặt trong kênh #${activeGroup.name}`
+        );
+        return;
+      }
+      const displayName = targetName || clean;
+      const inv: QGroupInvitation = {
+        id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        groupId: activeGroup.id,
+        groupCode: activeGroup.code,
+        groupName: activeGroup.name,
+        department: activeGroup.department || 'Khoa Công nghệ Thông tin',
+        inviterEmail: myEmail,
+        inviterName: myName,
+        targetEmail: clean,
+        targetName: displayName,
+        status: 'pending',
+        invitedAt: new Date().toISOString(),
+      };
+
+      // Đánh dấu ngay lập tức trên UI (0ms feedback) để nút chuyển sang "Đã mời"
+      setLocallyInvitedGroupMembers((prev) => new Set(prev).add(`${activeGroup.id}:${clean}`));
+      setSentGroupInvitations((prev) => [inv, ...prev.filter((x) => !(x.groupId === activeGroup.id && x.targetEmail.toLowerCase() === clean))]);
+
+      try {
+        await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(inv),
+        });
+        onShowToast(
+          'success',
+          'Đã gửi lời mời tham gia',
+          `Đã gửi lời mời tới ${displayName} (${clean}). Đồng nghiệp sẽ nhận được thông báo để chấp nhận do chưa kết bạn.`
+        );
+        setInviteEmailInput('');
+        void fetchGroupInvitations();
+      } catch {
+        onShowToast('error', 'Lỗi kết nối', 'Không thể gửi lời mời nhóm.');
+      }
+    },
+    [activeGroup, myEmail, myName, onShowToast, fetchGroupInvitations]
+  );
+
+  // Kiểm tra xem đồng nghiệp đã được mời vào kênh đang chọn hay chưa
+  const isMemberInvitedToActiveChannel = useCallback(
+    (targetEmail: string) => {
+      if (!activeGroup) return false;
+      const clean = targetEmail.trim().toLowerCase();
+      const groupKey = `${activeGroup.id}:${clean}`;
+      if (locallyInvitedGroupMembers.has(groupKey)) return true;
+      return sentGroupInvitations.some(
+        (inv) =>
+          inv.groupId === activeGroup.id &&
+          inv.targetEmail?.trim().toLowerCase() === clean &&
+          inv.status === 'pending'
+      );
+    },
+    [activeGroup, locallyInvitedGroupMembers, sentGroupInvitations]
+  );
+
+  // ── Thêm thành viên trực tiếp vào kênh đang mở (Chỉ khi đã là BẠN BÈ, chưa kết bạn -> gửi lời mời chờ duyệt) ────
   const handleAddUserToActiveChannel = useCallback(
     async (emailToAdd: string, displayName?: string) => {
       if (!activeGroup) return;
@@ -2090,6 +2194,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         return;
       }
 
+      // KIỂM TRA QUAN HỆ BẠN BÈ: Nếu chưa kết bạn thì gửi lời mời chờ đồng ý
+      const friendship = getFriendshipState(clean);
+      if (friendship.type !== 'friend') {
+        await handleSendGroupInvitation(clean, displayName || lookedUpUser?.fullName);
+        setIsAddingMember(false);
+        setIsDirectAddMemberOpen(false);
+        setDirectAddMemberEmail('');
+        setLookedUpUser(null);
+        setLookupStatus('idle');
+        return;
+      }
+
       setIsAddingMember(true);
       const updatedMembers = [...(activeGroup.members || []), clean];
       const memberName = displayName || lookedUpUser?.fullName || clean;
@@ -2104,7 +2220,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         senderName: 'Hệ Thống Q-Group',
         isSystem: true,
         timestamp: timeStr,
-        text: `🎉 ${myName} đã thêm ${memberName} (${clean}) vào kênh #${activeGroup.name}.`,
+        text: `🎉 ${myName} đã thêm bạn bè ${memberName} (${clean}) vào kênh #${activeGroup.name}.`,
         readBy: [myEmail, clean],
       };
       const updatedMessages = [...(activeGroup.messages || []), announcementMsg];
@@ -2168,110 +2284,50 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       );
       void fetchQGroups();
     },
-    [activeGroup, qgroups, lookedUpUser, myName, myEmail, applyGroups, fetchQGroups, syncGroupsToBackend, onShowToast]
+    [activeGroup, qgroups, lookedUpUser, myName, myEmail, applyGroups, fetchQGroups, syncGroupsToBackend, getFriendshipState, handleSendGroupInvitation, onShowToast]
   );
 
-  // ── Gửi lời mời chính thức vào kênh (Chờ đồng nghiệp bấm chấp nhận) ──────────
-  const handleSendGroupInvitation = useCallback(
-    async (targetEmail: string, targetName?: string) => {
-      if (!activeGroup) return;
-      const clean = targetEmail.trim().toLowerCase();
-      const currentMembers = (activeGroup.members || []).map((m) =>
-        String(m).toLowerCase()
-      );
-      if (currentMembers.includes(clean)) {
-        onShowToast(
-          'info',
-          'Đã là thành viên',
-          `${clean} đã có mặt trong kênh #${activeGroup.name}`
-        );
-        return;
-      }
-      const displayName = targetName || clean;
-      const inv: QGroupInvitation = {
-        id: `inv-${Date.now()}`,
-        groupId: activeGroup.id,
-        groupCode: activeGroup.code,
-        groupName: activeGroup.name,
-        department: activeGroup.department || 'Khoa Công nghệ Thông tin',
-        inviterEmail: myEmail,
-        inviterName: myName,
-        targetEmail: clean,
-        targetName: displayName,
-        status: 'pending',
-        invitedAt: new Date().toISOString(),
-      };
-
-      // Đánh dấu ngay lập tức trên UI (0ms feedback) để nút chuyển sang "Đã mời"
-      setLocallyInvitedGroupMembers((prev) => new Set(prev).add(`${activeGroup.id}:${clean}`));
-      setSentGroupInvitations((prev) => [inv, ...prev.filter((x) => !(x.groupId === activeGroup.id && x.targetEmail.toLowerCase() === clean))]);
-
-      try {
-        await apiClient.fetch(`${API_BASE}/documents/qgroups/invitations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(inv),
-        });
-        onShowToast(
-          'success',
-          'Đã gửi lời mời tham gia',
-          `Đã gửi lời mời tới ${displayName} (${clean}). Đồng nghiệp sẽ nhận được thông báo để chấp nhận.`
-        );
-        setInviteEmailInput('');
-        void fetchGroupInvitations();
-      } catch {
-        onShowToast('error', 'Lỗi kết nối', 'Không thể gửi lời mời nhóm.');
-      }
-    },
-    [activeGroup, myEmail, myName, onShowToast, fetchGroupInvitations]
-  );
-
-  // Kiểm tra xem đồng nghiệp đã được mời vào kênh đang chọn hay chưa
-  const isMemberInvitedToActiveChannel = useCallback(
-    (targetEmail: string) => {
-      if (!activeGroup) return false;
-      const clean = targetEmail.trim().toLowerCase();
-      const groupKey = `${activeGroup.id}:${clean}`;
-      if (locallyInvitedGroupMembers.has(groupKey)) return true;
-      return sentGroupInvitations.some(
-        (inv) =>
-          inv.groupId === activeGroup.id &&
-          inv.targetEmail?.trim().toLowerCase() === clean &&
-          inv.status === 'pending'
-      );
-    },
-    [activeGroup, locallyInvitedGroupMembers, sentGroupInvitations]
-  );
-
-  // ── Thêm hàng loạt thành viên đã chọn vào kênh đang mở ───────────────────
+  // ── Thêm hàng loạt thành viên đã chọn vào kênh đang mở (Phân luồng: Bạn bè vào thẳng, Chưa kết bạn gửi lời mời) ────
   const handleBatchAddUsersToActiveChannel = useCallback(async () => {
     if (!activeGroup || directAddSelectedMembers.length === 0) return;
     setIsAddingMember(true);
-    const newEmails = directAddSelectedMembers.map((m) => m.email.trim().toLowerCase());
-    const updatedMembers = Array.from(new Set([...(activeGroup.members || []).map((m) => String(m).toLowerCase()), ...newEmails]));
-    const memberNames = directAddSelectedMembers.map((m) => m.fullName).join(', ');
-    const nowMs = Date.now();
-    const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-    const announcementMsg: QGroupMessage = {
-      id: `msg-${nowMs}`,
-      senderEmail: 'system',
-      senderName: 'Hệ Thống Q-Group',
-      isSystem: true,
-      timestamp: timeStr,
-      text: `🎉 ${myName} đã thêm ${directAddSelectedMembers.length} thành viên (${memberNames}) vào kênh #${activeGroup.name}.`,
-      readBy: [myEmail, ...newEmails],
-    };
-    const updatedMessages = [...(activeGroup.messages || []), announcementMsg];
-    const updatedGroup = {
-      ...activeGroup,
-      members: updatedMembers,
-      memberCount: updatedMembers.length,
-      messages: updatedMessages,
-      updatedAt: nowMs,
-    };
-    const nextGroups = qgroups.map((g) => (g.id === activeGroup.id ? updatedGroup : g));
-    applyGroups(nextGroups);
-    void syncGroupsToBackend(nextGroups);
+
+    const friends = directAddSelectedMembers.filter((m) => getFriendshipState(m.email).type === 'friend');
+    const nonFriends = directAddSelectedMembers.filter((m) => getFriendshipState(m.email).type !== 'friend');
+
+    // 1. Gửi lời mời chờ duyệt cho đồng nghiệp chưa kết bạn
+    for (const nf of nonFriends) {
+      await handleSendGroupInvitation(nf.email, nf.fullName);
+    }
+
+    // 2. Thêm thẳng bạn bè đã kết nối
+    if (friends.length > 0) {
+      const newEmails = friends.map((m) => m.email.trim().toLowerCase());
+      const updatedMembers = Array.from(new Set([...(activeGroup.members || []).map((m) => String(m).toLowerCase()), ...newEmails]));
+      const memberNames = friends.map((m) => m.fullName).join(', ');
+      const nowMs = Date.now();
+      const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const announcementMsg: QGroupMessage = {
+        id: `msg-${nowMs}`,
+        senderEmail: 'system',
+        senderName: 'Hệ Thống Q-Group',
+        isSystem: true,
+        timestamp: timeStr,
+        text: `🎉 ${myName} đã thêm ${friends.length} bạn bè (${memberNames}) vào kênh #${activeGroup.name}.`,
+        readBy: [myEmail, ...newEmails],
+      };
+      const updatedMessages = [...(activeGroup.messages || []), announcementMsg];
+      const updatedGroup = {
+        ...activeGroup,
+        members: updatedMembers,
+        memberCount: updatedMembers.length,
+        messages: updatedMessages,
+        updatedAt: nowMs,
+      };
+      const nextGroups = qgroups.map((g) => (g.id === activeGroup.id ? updatedGroup : g));
+      applyGroups(nextGroups);
+      void syncGroupsToBackend(nextGroups);
+    }
 
     setIsAddingMember(false);
     setDirectAddSelectedMembers([]);
@@ -2279,9 +2335,20 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setDirectAddMemberEmail('');
     setLookedUpUser(null);
     setLookupStatus('idle');
-    onShowToast('success', 'Đã thêm thành viên', `Đã thêm ${newEmails.length} đồng nghiệp vào kênh #${activeGroup.name}`);
+
+    if (friends.length > 0 && nonFriends.length > 0) {
+      onShowToast(
+        'success',
+        'Xử lý thành viên',
+        `Đã thêm ${friends.length} bạn bè vào nhóm. Đã gửi lời mời tham gia tới ${nonFriends.length} đồng nghiệp chưa kết bạn (chờ đồng ý).`
+      );
+    } else if (friends.length > 0) {
+      onShowToast('success', 'Đã thêm thành viên', `Đã thêm ${friends.length} bạn bè vào kênh #${activeGroup.name}`);
+    } else if (nonFriends.length > 0) {
+      onShowToast('info', 'Đã gửi lời mời tham gia', `Đã gửi lời mời tham gia tới ${nonFriends.length} đồng nghiệp chưa kết bạn (chờ đồng ý).`);
+    }
     void fetchQGroups();
-  }, [activeGroup, directAddSelectedMembers, myName, myEmail, qgroups, applyGroups, syncGroupsToBackend, fetchQGroups, onShowToast]);
+  }, [activeGroup, directAddSelectedMembers, getFriendshipState, handleSendGroupInvitation, myName, myEmail, qgroups, applyGroups, syncGroupsToBackend, fetchQGroups, onShowToast]);
 
   // ── Gửi lời mời hàng loạt cho các thành viên trong hàng đợi ─────────────
   const handleBatchSendGroupInvitations = useCallback(async () => {
@@ -3075,14 +3142,32 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     if (!newGroupName.trim()) return;
     const now = Date.now();
     const code = `QGRP-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
-    const selectedEmails = createGroupSelectedMembers.map((m) => m.email.trim().toLowerCase());
-    const initialMembers = Array.from(new Set([myEmail.toLowerCase(), ...selectedEmails]));
-    const memberNamesList = createGroupSelectedMembers.map((m) => m.fullName).join(', ');
 
-    const systemNotice =
-      createGroupSelectedMembers.length > 0
-        ? `🎉 Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName} cùng ${createGroupSelectedMembers.length} đồng nghiệp: ${memberNamesList}. Mã phòng: ${code}`
-        : `Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName}. Mã phòng: ${code}`;
+    // Tách thành viên: Đã kết bạn (vào thẳng nhóm) vs Chưa kết bạn (gửi lời mời chờ đồng ý)
+    const confirmedFriends: typeof createGroupSelectedMembers = [];
+    const unconfirmedMembers: typeof createGroupSelectedMembers = [];
+
+    createGroupSelectedMembers.forEach((m) => {
+      const state = getFriendshipState(m.email);
+      if (state.type === 'friend') {
+        confirmedFriends.push(m);
+      } else {
+        unconfirmedMembers.push(m);
+      }
+    });
+
+    const friendEmails = confirmedFriends.map((m) => m.email.trim().toLowerCase());
+    const initialMembers = Array.from(new Set([myEmail.toLowerCase(), ...friendEmails]));
+
+    let systemNotice = `🎉 Nhóm "${newGroupName.trim()}" đã được khởi tạo bởi ${myName}. Mã phòng: ${code}`;
+    if (confirmedFriends.length > 0) {
+      const friendNames = confirmedFriends.map((m) => m.fullName).join(', ');
+      systemNotice += ` • Thành viên kết nối: ${friendNames}.`;
+    }
+    if (unconfirmedMembers.length > 0) {
+      const pendingNames = unconfirmedMembers.map((m) => m.fullName).join(', ');
+      systemNotice += ` • Đã gửi lời mời tham gia tới: ${pendingNames} (chờ đồng ý do chưa kết bạn).`;
+    }
 
     const group: QGroup = {
       id: `qg-${now}`,
@@ -3116,6 +3201,32 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     const next = [group, ...qgroups];
     applyGroups(next);
     void syncGroupsToBackend(next);
+
+    // Gửi lời mời tham gia nhóm tới các đồng nghiệp chưa kết bạn
+    unconfirmedMembers.forEach((m) => {
+      const cleanTarget = m.email.trim().toLowerCase();
+      const inv: QGroupInvitation = {
+        id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        groupId: group.id,
+        groupCode: group.code,
+        groupName: group.name,
+        department: group.department || 'Khoa Chuyên Ngành',
+        inviterEmail: myEmail,
+        inviterName: myName,
+        targetEmail: cleanTarget,
+        targetName: m.fullName,
+        status: 'pending',
+        invitedAt: new Date().toISOString(),
+      };
+      setSentGroupInvitations((prev) => [inv, ...prev]);
+      setLocallyInvitedGroupMembers((prev) => new Set(prev).add(`${group.id}:${cleanTarget}`));
+      void apiClient.fetch(`${API_BASE}/documents/qgroups/invitations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inv),
+      });
+    });
+
     setSelectedGroupId(group.id);
     setShowMobileChat(true);
     setIsCreateGroupOpen(false);
@@ -3126,7 +3237,28 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setCreateGroupMemberInput('');
     setCreateGroupLookedUpUser(null);
     setCreateGroupLookupStatus('idle');
-    onShowToast('success', 'Đã tạo nhóm', `Mã phòng: ${code} (${initialMembers.length} thành viên)`);
+
+    if (unconfirmedMembers.length > 0 && confirmedFriends.length > 0) {
+      onShowToast(
+        'success',
+        'Đã tạo nhóm thành công',
+        `Đã thêm ${confirmedFriends.length} bạn bè vào nhóm. Đã gửi lời mời tham gia tới ${unconfirmedMembers.length} đồng nghiệp chưa kết bạn (chờ đồng ý).`
+      );
+    } else if (unconfirmedMembers.length > 0) {
+      onShowToast(
+        'success',
+        'Đã tạo nhóm thành công',
+        `Mã phòng: ${code}. Đã gửi lời mời tham gia tới ${unconfirmedMembers.length} đồng nghiệp (chờ đồng ý do chưa kết bạn).`
+      );
+    } else if (confirmedFriends.length > 0) {
+      onShowToast(
+        'success',
+        'Đã tạo nhóm thành công',
+        `Mã phòng: ${code} (đã thêm ${confirmedFriends.length} bạn bè vào nhóm)`
+      );
+    } else {
+      onShowToast('success', 'Đã tạo nhóm', `Mã phòng: ${code}`);
+    }
   };
 
   const handleJoinByCode = async (code: string) => {
@@ -6050,12 +6182,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
                         <span className="flex items-center gap-1.5">
                           <UserPlus className="w-3.5 h-3.5 text-[#008689]" />
-                          <span>Thêm thành viên vào kênh (tùy chọn, vô số người):</span>
+                          <span>Thêm thành viên vào kênh:</span>
                         </span>
                         <span className="text-[10px] text-slate-400 font-normal">Gõ @ để gợi ý tài khoản</span>
                       </label>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Thành viên được chọn sẽ có mặt ngay trong kênh khi vừa tạo xong
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Đồng nghiệp đã kết bạn sẽ vào thẳng nhóm. Đồng nghiệp chưa kết bạn sẽ nhận được lời mời tham gia (chờ đồng ý).
                       </p>
                     </div>
 
@@ -6076,27 +6208,48 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                          {createGroupSelectedMembers.map((m) => (
-                            <span
-                              key={m.email}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
-                            >
-                              <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
-                                {initials(m.fullName)}
-                              </span>
-                              <span className="truncate max-w-[140px]">{m.fullName}</span>
-                              {m.academicTitle && (
-                                <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setCreateGroupSelectedMembers((prev) => prev.filter((x) => x.email !== m.email))}
-                                className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
+                          {createGroupSelectedMembers.map((m) => {
+                            const isFriend = getFriendshipState(m.email).type === 'friend';
+                            return (
+                              <span
+                                key={m.email}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border text-xs font-semibold shadow-2xs animate-scale-up ${
+                                  isFriend
+                                    ? 'text-[#008689] border-teal-300'
+                                    : 'text-amber-800 border-amber-300'
+                                }`}
                               >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ))}
+                                <span
+                                  className={`w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center shrink-0 ${
+                                    isFriend ? 'bg-[#008689]' : 'bg-amber-600'
+                                  }`}
+                                >
+                                  {initials(m.fullName)}
+                                </span>
+                                <span className="truncate max-w-[140px]">{m.fullName}</span>
+                                <span
+                                  className={`text-[9px] px-1 py-0.2 rounded font-medium shrink-0 ${
+                                    isFriend
+                                      ? 'bg-teal-50 text-[#008689]'
+                                      : 'bg-amber-50 text-amber-700'
+                                  }`}
+                                >
+                                  {isFriend ? 'Vào thẳng' : 'Chờ đồng ý'}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setCreateGroupSelectedMembers((prev) =>
+                                      prev.filter((x) => x.email !== m.email)
+                                    )
+                                  }
+                                  className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -6148,13 +6301,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             {initials(createGroupLookedUpUser.fullName)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-xs text-slate-900 truncate">{createGroupLookedUpUser.fullName}</span>
                               {createGroupLookedUpUser.academicTitle && (
                                 <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
                                   {createGroupLookedUpUser.academicTitle}
                                 </span>
                               )}
+                              {(() => {
+                                const isFriend = getFriendshipState(createGroupLookedUpUser.email).type === 'friend';
+                                return (
+                                  <span
+                                    className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border shrink-0 ${
+                                      isFriend
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                                    }`}
+                                  >
+                                    {isFriend ? 'Bạn bè • Vào thẳng' : 'Chưa kết bạn • Chờ đồng ý'}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <p className="text-[11px] text-slate-500 truncate">{createGroupLookedUpUser.email}</p>
                             <p className="text-[10px] text-slate-400 truncate">{createGroupLookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
@@ -6237,13 +6404,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                     {initials(f.name)}
                                   </div>
                                   <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
                                       <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
                                       {f.title && (
                                         <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
                                           {f.title}
                                         </span>
                                       )}
+                                      {(() => {
+                                        const isFriend = getFriendshipState(f.email).type === 'friend';
+                                        return (
+                                          <span
+                                            className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border shrink-0 ${
+                                              isFriend
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                : 'bg-amber-50 text-amber-700 border-amber-200'
+                                            }`}
+                                          >
+                                            {isFriend ? 'Bạn bè' : 'Chưa kết bạn'}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                     <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
                                   </div>
@@ -6319,11 +6500,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             {/* Modal Footer */}
             <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
               <div>
-                {groupModalTab === 'create' && createGroupSelectedMembers.length > 0 && (
-                  <span className="text-[11px] text-teal-800 font-bold">
-                    Khởi tạo kèm {createGroupSelectedMembers.length} thành viên
-                  </span>
-                )}
+                {groupModalTab === 'create' && createGroupSelectedMembers.length > 0 && (() => {
+                  const friendsCount = createGroupSelectedMembers.filter((m) => getFriendshipState(m.email).type === 'friend').length;
+                  const nonFriendsCount = createGroupSelectedMembers.length - friendsCount;
+                  return (
+                    <span className="text-[11px] text-teal-800 font-bold">
+                      {friendsCount > 0 && `${friendsCount} bạn bè (vào thẳng)`}
+                      {friendsCount > 0 && nonFriendsCount > 0 && ' • '}
+                      {nonFriendsCount > 0 && `${nonFriendsCount} chờ đồng ý`}
+                    </span>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-2">
                 <button
