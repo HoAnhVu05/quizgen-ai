@@ -58,6 +58,33 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const [workbook, setWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [activeSheetName, setActiveSheetName] = useState<string>('');
   const [isLoadingExcel, setIsLoadingExcel] = useState(false);
+
+  // ── Mobile Back Gesture & History Popstate Handler ───────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      window.history.pushState({ modal: 'doc-preview' }, '');
+    } catch {}
+
+    const handlePopState = () => {
+      onClose();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isOpen, onClose]);
+
+  const handleSafeClose = () => {
+    try {
+      if (window.history.state?.modal === 'doc-preview') {
+        window.history.back();
+        return;
+      }
+    } catch {}
+    onClose();
+  };
   const [excelError, setExcelError] = useState<string | null>(null);
   const [excelSearch, setExcelSearch] = useState('');
   const [visibleRowsLimit, setVisibleRowsLimit] = useState(100);
@@ -181,25 +208,44 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in select-none"
-        onClick={onClose}
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in select-none"
+        onClick={handleSafeClose}
       >
+        {/* Mobile-Safe Fixed Top Header */}
         <div
-          className="relative max-w-5xl max-h-[90vh] flex flex-col items-center"
+          className="fixed top-0 left-0 right-0 z-50 px-3 py-3 sm:px-6 bg-gradient-to-b from-black/90 via-black/50 to-transparent flex items-center justify-between"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Close button */}
           <button
             type="button"
-            onClick={onClose}
-            className="absolute -top-12 right-0 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors backdrop-blur-sm"
-            title="Đóng"
+            onClick={handleSafeClose}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white font-medium text-xs backdrop-blur-md transition-all cursor-pointer shadow-md"
+            title="Quay lại"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Quay lại</span>
+          </button>
+
+          <span className="text-xs text-white/90 font-medium truncate max-w-[180px] sm:max-w-md mx-2">
+            {fileName}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleSafeClose}
+            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center backdrop-blur-md cursor-pointer transition-all shadow-md"
+            title="Đóng xem ảnh"
           >
             <X className="w-5 h-5" />
           </button>
+        </div>
 
+        <div
+          className="relative max-w-5xl w-full max-h-[85vh] flex flex-col items-center mt-12 sm:mt-6"
+          onClick={(e) => e.stopPropagation()}
+        >
           {/* Floating Image */}
-          <div className="overflow-auto max-h-[78vh] flex items-center justify-center p-2">
+          <div className="overflow-auto max-h-[70vh] sm:max-h-[76vh] flex items-center justify-center p-2">
             <img
               src={fileUrl}
               alt={fileName}
@@ -207,13 +253,13 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
                 transform: `scale(${zoomScale}) rotate(${rotation}deg)`,
                 transition: 'transform 0.15s ease-out',
               }}
-              className="max-w-full max-h-[74vh] object-contain rounded-xl shadow-2xl select-none"
+              className="max-w-full max-h-[66vh] sm:max-h-[72vh] object-contain rounded-xl shadow-2xl select-none"
             />
           </div>
 
           {/* Sleek Floating Glass Pill Toolbar */}
-          <div className="mt-3 flex items-center gap-2 bg-slate-900/80 backdrop-blur-md border border-white/10 text-white px-4 py-2 rounded-full shadow-xl text-xs">
-            <span className="font-medium truncate max-w-[180px] sm:max-w-xs text-slate-200 pr-2 border-r border-white/10">
+          <div className="mt-3 flex items-center gap-2 bg-slate-900/90 backdrop-blur-md border border-white/10 text-white px-3 sm:px-4 py-2 rounded-full shadow-2xl text-xs flex-wrap justify-center">
+            <span className="font-medium truncate max-w-[120px] sm:max-w-xs text-slate-200 pr-2 border-r border-white/10 hidden sm:inline">
               {fileName}
             </span>
 
@@ -263,6 +309,16 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>Tải về</span>
             </button>
+
+            <button
+              type="button"
+              onClick={handleSafeClose}
+              className="flex items-center gap-1 text-rose-300 hover:text-rose-200 font-semibold px-2 py-1 rounded-md hover:bg-white/10 transition-colors cursor-pointer"
+              title="Đóng cửa sổ"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Đóng</span>
+            </button>
           </div>
         </div>
       </div>
@@ -276,7 +332,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         role="dialog"
         aria-modal="true"
         className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-black/60 backdrop-blur-sm animate-fade-in select-none"
-        onClick={onClose}
+        onClick={handleSafeClose}
       >
         <div
           className="relative max-w-6xl w-full h-[92vh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
@@ -345,7 +401,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleSafeClose}
                 className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 title="Đóng xem trước"
               >
@@ -525,7 +581,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         role="dialog"
         aria-modal="true"
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in select-none"
-        onClick={onClose}
+        onClick={handleSafeClose}
       >
         <div
           className="relative max-w-5xl w-full h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
@@ -567,7 +623,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleSafeClose}
                 className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 title="Đóng"
               >
@@ -595,7 +651,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         role="dialog"
         aria-modal="true"
         className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/60 backdrop-blur-sm animate-fade-in select-none"
-        onClick={onClose}
+        onClick={handleSafeClose}
       >
         <div
           className="relative max-w-5xl w-full h-[90vh] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
@@ -639,7 +695,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               </button>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleSafeClose}
                 className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
                 title="Đóng"
               >
@@ -666,7 +722,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-xs animate-fade-in select-none"
-      onClick={onClose}
+      onClick={handleSafeClose}
     >
       <div
         className="relative max-w-md w-full bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.18)] border border-slate-100 p-6 sm:p-7 text-center overflow-hidden animate-scale-up"
@@ -675,7 +731,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         {/* Top Close Button */}
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleSafeClose}
           className="absolute top-4 right-4 w-7 h-7 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
           title="Đóng"
         >

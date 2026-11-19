@@ -31,7 +31,7 @@ const AppContent: React.FC = () => {
   // ─── Authentication State ────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem('quizgen_user');
+      const saved = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -40,7 +40,12 @@ const AppContent: React.FC = () => {
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return !!(localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_user'));
+      return !!(
+        sessionStorage.getItem('quizgen_token') ||
+        sessionStorage.getItem('quizgen_user') ||
+        localStorage.getItem('quizgen_token') ||
+        localStorage.getItem('quizgen_user')
+      );
     } catch {
       return false;
     }
@@ -649,6 +654,10 @@ const AppContent: React.FC = () => {
     localStorage.removeItem('quizgen_token');
     localStorage.removeItem('quizgen_auth_token');
     localStorage.removeItem('quizgen_user');
+    localStorage.removeItem('quizgen_remember_me');
+    sessionStorage.removeItem('quizgen_token');
+    sessionStorage.removeItem('quizgen_auth_token');
+    sessionStorage.removeItem('quizgen_user');
     setCurrentUser(null);
     setIsAuthenticated(false);
     setAuthScreen('login');

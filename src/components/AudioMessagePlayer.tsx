@@ -171,7 +171,7 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ attachme
         <audio
           ref={audioRef}
           src={attachment.fileUrl}
-          preload="metadata"
+          preload="auto"
           playsInline
         />
       )}

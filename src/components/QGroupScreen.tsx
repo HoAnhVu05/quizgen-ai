@@ -616,11 +616,39 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const analyserStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const liveWaveformSamplesRef = useRef<number[]>([]);
   const animFrameRef = useRef<number | null>(null);
   const [liveMicLevels, setLiveMicLevels] = useState<number[]>([30, 50, 80, 60, 40, 70, 50, 30]);
+
+  // ── Mobile Back Gesture & History Popstate Handler for Media Preview ───────
+  useEffect(() => {
+    if (!previewMediaUrl) return;
+    try {
+      window.history.pushState({ modal: 'qgroup-media' }, '');
+    } catch {}
+
+    const handlePopState = () => {
+      setPreviewMediaUrl(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [previewMediaUrl]);
+
+  const closePreviewMedia = useCallback(() => {
+    try {
+      if (window.history.state?.modal === 'qgroup-media') {
+        window.history.back();
+        return;
+      }
+    } catch {}
+    setPreviewMediaUrl(null);
+  }, []);
 
   // @Mention state
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -1392,7 +1420,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
           }
-          const source = audioCtx.createMediaStreamSource(stream);
+          const analyserStream = stream.clone();
+          analyserStreamRef.current = analyserStream;
+          const source = audioCtx.createMediaStreamSource(analyserStream);
           const analyser = audioCtx.createAnalyser();
           analyser.fftSize = 64;
           analyser.smoothingTimeConstant = 0.3;
@@ -1491,6 +1521,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
+    analyserStreamRef.current?.getTracks().forEach((track) => track.stop());
+    analyserStreamRef.current = null;
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
     mediaRecorderRef.current = null;
@@ -1540,6 +1572,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         audioContextRef.current.close().catch(() => {});
         audioContextRef.current = null;
       }
+      analyserStreamRef.current?.getTracks().forEach((track) => track.stop());
+      analyserStreamRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
       mediaRecorderRef.current = null;
@@ -2659,6 +2693,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     [myEmail, myName, qgroups, applyGroups, selectedGroupId, handleDisbandGroup, handleDeleteChat, onShowToast]
   );
 
+  const handleOpenTransferOwnership = useCallback(
+    (group: QGroup) => {
+      const otherMembers = (group.members || []).filter(
+        (m) => m.toLowerCase() !== myEmail.toLowerCase()
+      );
+      if (otherMembers.length === 0) {
+        onShowToast(
+          'info',
+          'Chưa có thành viên khác',
+          'Nhóm cần có ít nhất 1 thành viên khác để chuyển quyền Trưởng nhóm. Vui lòng mời giảng viên khác vào nhóm trước.'
+        );
+        return;
+      }
+      setTransferGroup(group);
+      setSelectedNewOwner(otherMembers[0] || '');
+      setIsTransferOwnerModalOpen(true);
+    },
+    [myEmail, onShowToast]
+  );
+
   const handleTransferOwnerAndLeave = useCallback(async () => {
     if (!transferGroup || !selectedNewOwner) return;
     setIsTransferringOwner(true);
@@ -3339,6 +3393,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       }
                     }}
                     onLeave={() => handleLeaveGroup(group)}
+                    onTransferOwner={() => handleOpenTransferOwnership(group)}
                     onDisband={() => handleDisbandGroup(group)}
                     onCopyCode={() => {
                       navigator.clipboard.writeText(group.code);
@@ -3425,6 +3480,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               }
                             }}
                             onLeave={() => handleLeaveGroup(group)}
+                            onTransferOwner={() => handleOpenTransferOwnership(group)}
                             onDisband={() => handleDisbandGroup(group)}
                             onCopyCode={() => {
                               navigator.clipboard.writeText(group.code);
@@ -3512,6 +3568,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               }
                             }}
                             onLeave={() => handleLeaveGroup(group)}
+                            onTransferOwner={() => handleOpenTransferOwnership(group)}
                             onDisband={() => handleDisbandGroup(group)}
                             onCopyCode={() => {
                               navigator.clipboard.writeText(group.code);
@@ -3836,7 +3893,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                   type="button"
                                   onClick={() => {
                                     setIsHeaderMenuOpen(false);
-                                    handleLeaveGroup(activeGroup);
+                                    handleOpenTransferOwnership(activeGroup);
                                   }}
                                   className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
                                 >
@@ -6351,33 +6408,69 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       {/* Lightbox Media Zoom Modal */}
       {previewMediaUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs animate-fade-in"
-          onClick={() => setPreviewMediaUrl(null)}
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in select-none"
+          onClick={closePreviewMedia}
         >
-          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+          {/* Mobile-Safe Fixed Top Header */}
+          <div
+            className="fixed top-0 left-0 right-0 z-50 px-3 py-3 sm:px-6 bg-gradient-to-b from-black/95 via-black/60 to-transparent flex items-center justify-between pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
-              onClick={() => setPreviewMediaUrl(null)}
-              className="absolute -top-10 right-0 text-white/80 hover:text-white p-1 rounded-full bg-black/40 hover:bg-black/60 cursor-pointer"
+              onClick={closePreviewMedia}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white font-medium text-xs backdrop-blur-md transition-all cursor-pointer shadow-md"
+              title="Quay lại"
             >
-              <X className="w-6 h-6" />
+              <ArrowLeft className="w-4 h-4" />
+              <span>Quay lại</span>
             </button>
+
+            <span className="text-xs text-white/90 font-medium truncate max-w-[180px] sm:max-w-md mx-2">
+              {previewMediaUrl.name}
+            </span>
+
+            <button
+              type="button"
+              onClick={closePreviewMedia}
+              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center backdrop-blur-md cursor-pointer transition-all shadow-md"
+              title="Đóng xem ảnh"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div
+            className="relative max-w-4xl w-full max-h-[85vh] flex flex-col items-center mt-12 sm:mt-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <img
               src={previewMediaUrl.url}
               alt={previewMediaUrl.name}
-              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
+              className="max-w-full max-h-[70vh] sm:max-h-[78vh] object-contain rounded-xl shadow-2xl"
             />
-            <div className="mt-3 flex items-center gap-4 bg-slate-900/90 text-white px-4 py-2 rounded-full text-xs shadow-lg">
-              <span className="font-medium truncate max-w-sm">{previewMediaUrl.name}</span>
+            <div className="mt-3 flex items-center gap-2 sm:gap-4 bg-slate-900/90 text-white px-4 py-2 rounded-full text-xs shadow-xl backdrop-blur-md border border-white/10">
+              <span className="font-medium truncate max-w-[140px] sm:max-w-sm">{previewMediaUrl.name}</span>
+              <div className="h-3 w-[1px] bg-white/20 mx-1" />
               <a
                 href={previewMediaUrl.url}
                 download={previewMediaUrl.name}
-                className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 font-bold ml-2 cursor-pointer"
+                className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 font-bold cursor-pointer"
               >
                 <Download className="w-4 h-4" />
                 <span>Tải về</span>
               </a>
+              <button
+                type="button"
+                onClick={closePreviewMedia}
+                className="flex items-center gap-1 text-rose-300 hover:text-rose-200 font-semibold px-2 py-1 rounded-md hover:bg-white/10 transition-colors cursor-pointer ml-1"
+                title="Đóng xem ảnh"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Đóng</span>
+              </button>
             </div>
           </div>
         </div>
@@ -6491,6 +6584,7 @@ const ConversationItem: React.FC<{
   onTogglePin: () => void;
   onDelete: () => void;
   onLeave: () => void;
+  onTransferOwner?: () => void;
   onDisband?: () => void;
   onCopyCode: () => void;
   onUnfriend?: () => void;
@@ -6507,6 +6601,7 @@ const ConversationItem: React.FC<{
   onTogglePin,
   onDelete,
   onLeave,
+  onTransferOwner,
   onDisband,
   onCopyCode,
   onUnfriend,
@@ -6592,7 +6687,14 @@ const ConversationItem: React.FC<{
             <div className="border-t border-slate-100 my-1" />
             {isOwner ? (
               <>
-                <MenuBtn icon={<UserCheck className="w-3.5 h-3.5 text-slate-700" />} label="Chuyển quyền Trưởng nhóm" onClick={onLeave} />
+                <MenuBtn
+                  icon={<UserCheck className="w-3.5 h-3.5 text-slate-700" />}
+                  label="Chuyển quyền Trưởng nhóm"
+                  onClick={() => {
+                    if (onTransferOwner) onTransferOwner();
+                    else onLeave();
+                  }}
+                />
                 {onDisband && (
                   <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-600" />} label="Giải tán nhóm" onClick={onDisband} danger />
                 )}

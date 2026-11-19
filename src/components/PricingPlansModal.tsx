@@ -236,7 +236,7 @@ export const PricingPlansModal: React.FC<PricingPlansModalProps> = ({
               </div>
 
               <div className="text-[11px] font-bold px-3 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                Mã tài khoản: {currentUser?.id || 'Lecturer'}
+                Mã tài khoản: {currentUser?.id || currentUser?.email || 'GV-UTH'}
               </div>
             </div>
           )}

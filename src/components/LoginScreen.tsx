@@ -368,6 +368,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     }
   };
 
+  const saveUserSession = (user: UserProfile, token: string, remember: boolean) => {
+    apiClient.setTokens(token);
+    if (remember) {
+      localStorage.setItem('quizgen_token', token);
+      localStorage.setItem('quizgen_auth_token', token);
+      localStorage.setItem('quizgen_user', JSON.stringify(user));
+      localStorage.setItem('quizgen_remember_me', 'true');
+      sessionStorage.removeItem('quizgen_token');
+      sessionStorage.removeItem('quizgen_auth_token');
+      sessionStorage.removeItem('quizgen_user');
+    } else {
+      sessionStorage.setItem('quizgen_token', token);
+      sessionStorage.setItem('quizgen_auth_token', token);
+      sessionStorage.setItem('quizgen_user', JSON.stringify(user));
+      sessionStorage.setItem('quizgen_remember_me', 'false');
+      localStorage.removeItem('quizgen_token');
+      localStorage.removeItem('quizgen_auth_token');
+      localStorage.removeItem('quizgen_user');
+      localStorage.removeItem('quizgen_remember_me');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLocked) return;
@@ -382,6 +404,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
       let authenticatedUser: UserProfile | null = null;
       let backendFailed = false;
+      let backendAccessToken = '';
 
       // ─── 1. Gửi xác thực tới Backend Auth Service ─────────────────────────
       try {
@@ -398,18 +421,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
         if (res.ok) {
           const data = await res.json();
           if (data.access_token) {
-            apiClient.setTokens(data.access_token, data.refresh_token || `mock-jwt-refresh-${data.user?.role || selectedRole}-${Date.now()}`);
-            localStorage.setItem('quizgen_token', data.access_token);
-            localStorage.setItem('quizgen_auth_token', data.access_token);
+            backendAccessToken = data.access_token;
             if (data.user) {
+              const emailPrefix = (data.user.email || normalizedEmail).split('@')[0];
               authenticatedUser = {
                 id: data.user.id || `usr-${Date.now()}`,
-                fullName: data.user.full_name || currentRoleConfig.defaultName,
+                fullName: data.user.full_name || emailPrefix || currentRoleConfig.defaultName,
                 email: data.user.email || normalizedEmail,
                 academicTitle: data.user.academic_title || currentRoleConfig.defaultTitle,
                 department: data.user.department || currentRoleConfig.defaultDept,
                 faculty: data.user.department || currentRoleConfig.defaultDept,
-                university: data.user.university || 'Đại học Quốc gia',
+                university: data.user.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
                 role: (data.user.role as UserRole) || selectedRole,
                 roleLabel:
                   data.user.role === 'head_of_department'
@@ -586,27 +608,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           return;
         }
 
-        // Nếu là Giảng viên -> Lưu phiên & vào thẳng Không gian Giảng viên 4 bước
-        const curRole = 'lecturer';
+        // Lưu phiên đăng nhập theo tùy chọn "Ghi nhớ đăng nhập" (rememberMe)
+        const curRole: UserRole = authenticatedUser.role || selectedRole || 'lecturer';
         const userIdentifier = authenticatedUser.id || authenticatedUser.email || 'usr-lec';
-        const mockAccess = `mock-jwt-user-${userIdentifier}-${curRole}-${Date.now()}`;
-        const mockRefresh = `mock-jwt-refresh-${userIdentifier}-${curRole}-${Date.now()}`;
-        apiClient.setTokens(mockAccess, mockRefresh);
-        localStorage.setItem('quizgen_token', mockAccess);
-        localStorage.setItem('quizgen_auth_token', mockAccess);
-        const finalLecturer: UserProfile = {
+        const tokenToSave = backendAccessToken || `mock-jwt-user-${userIdentifier}-${curRole}-${Date.now()}`;
+        const finalUser: UserProfile = {
           ...authenticatedUser,
-          role: 'lecturer',
-          roleLabel: 'Giảng viên',
+          role: curRole,
+          roleLabel:
+            authenticatedUser.roleLabel ||
+            (curRole === 'head_of_department'
+              ? 'Trưởng bộ môn'
+              : (curRole as string) === 'admin'
+              ? 'Quản trị Khảo thi'
+              : 'Giảng viên'),
         };
-        localStorage.setItem('quizgen_user', JSON.stringify(finalLecturer));
+        saveUserSession(finalUser, tokenToSave, rememberMe);
         appendSecurityAuditLog(
-          finalLecturer.email,
-          'LECTURER_LOGIN_SUCCESS',
-          `Giảng viên ${finalLecturer.fullName} đăng nhập thành công.`,
+          finalUser.email,
+          'USER_LOGIN_SUCCESS',
+          `${finalUser.roleLabel} ${finalUser.fullName} đăng nhập thành công.`,
           'info'
         );
-        onLogin(finalLecturer);
+        onLogin(finalUser);
       }
     } catch (err: any) {
       setIsLoading(false);
@@ -959,7 +983,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
               department: savedProfile?.department || authenticatedUser.department,
               faculty: savedProfile?.department || authenticatedUser.faculty,
             };
-            localStorage.setItem('quizgen_user', JSON.stringify(mergedUser));
+            const gToken = `mock-jwt-google-${mergedUser.id || 'usr'}-${Date.now()}`;
+            saveUserSession(mergedUser, gToken, true);
             onLogin(mergedUser);
           } else {
             // Chưa từng xác nhận học vị -> Mở mục hỏi học vị & xác nhận họ tên ngay
@@ -1167,14 +1192,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       localStorage.setItem('quizgen_google_profiles', JSON.stringify(profiles));
     } catch {}
 
+    const storedAuthToken = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token') || '';
+
     try {
       const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
-      const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token') || '';
       await fetch(`${API_BASE}/auth/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(storedAuthToken ? { Authorization: `Bearer ${storedAuthToken}` } : {}),
         },
         body: JSON.stringify({
           email: finalizedUser.email,
@@ -1186,7 +1212,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       });
     } catch {}
 
-    localStorage.setItem('quizgen_user', JSON.stringify(finalizedUser));
+    const gToken = storedAuthToken || `mock-jwt-google-${finalizedUser.id || 'usr'}-${Date.now()}`;
+    saveUserSession(finalizedUser, gToken, true);
     appendSecurityAuditLog(
       finalizedUser.email,
       'GOOGLE_PROFILE_CONFIRMED',
@@ -1259,7 +1286,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       twoFactorVerified: true,
     };
 
-    localStorage.setItem('quizgen_user', JSON.stringify(verifiedAdmin));
+    saveUserSession(verifiedAdmin, mockAccess, rememberMe);
     appendSecurityAuditLog(
       verifiedAdmin.email,
       'ADMIN_2FA_LOGIN_VERIFIED',
