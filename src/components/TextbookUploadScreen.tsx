@@ -81,11 +81,13 @@ export interface QGroupMessage {
   isPinned?: boolean;
   reactions?: Record<string, string[]>;
   attachment?: {
-    type: 'textbook' | 'exam';
+    type: 'textbook' | 'exam' | 'file' | 'image' | 'video' | 'audio';
     id: string;
     name: string;
     subject?: string;
     size?: string;
+    fileUrl?: string;
+    fileType?: string;
     totalPages?: number;
     questionCount?: number;
     durationMinutes?: number;

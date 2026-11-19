@@ -68,8 +68,10 @@ import {
   Pencil,
   Undo2,
   CheckCircle2,
-  PanelLeftClose,
-  PanelLeftOpen,
+  Download,
+  File as FileIcon,
+  Film,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   QGroup,
@@ -314,6 +316,187 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
   };
 }
 
+// ── Helpers for Attachments & Rich Formatting ─────────────────────────────
+const getFileIcon = (fileName: string) => {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.doc') || lower.endsWith('.docx')) {
+    return <FileText className="w-5 h-5 text-blue-600" />;
+  }
+  if (lower.endsWith('.pdf')) {
+    return <FileText className="w-5 h-5 text-rose-600" />;
+  }
+  if (lower.endsWith('.xls') || lower.endsWith('.xlsx') || lower.endsWith('.csv')) {
+    return <FileText className="w-5 h-5 text-emerald-600" />;
+  }
+  if (lower.endsWith('.ppt') || lower.endsWith('.pptx')) {
+    return <FileText className="w-5 h-5 text-amber-600" />;
+  }
+  if (lower.endsWith('.zip') || lower.endsWith('.rar') || lower.endsWith('.7z')) {
+    return <FileIcon className="w-5 h-5 text-indigo-600" />;
+  }
+  return <FileIcon className="w-5 h-5 text-slate-600" />;
+};
+
+const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  // Phân tách khối code: ```lang ... ```
+  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g;
+  const parts: Array<{ type: 'text' | 'code'; content: string; language?: string }> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+    }
+    parts.push({
+      type: 'code',
+      language: match[1] || 'code',
+      content: match[2].trimEnd(),
+    });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ type: 'text', content: text.slice(lastIndex) });
+  }
+
+  const renderInlineSpans = (str: string) => {
+    const tokenRegex = /(https?:\/\/[^\s]+)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)/g;
+    const tokens: React.ReactNode[] = [];
+    let cur = 0;
+    let m: RegExpExecArray | null;
+
+    while ((m = tokenRegex.exec(str)) !== null) {
+      if (m.index > cur) {
+        tokens.push(str.slice(cur, m.index));
+      }
+      const val = m[0];
+      if (m[1]) {
+        // Link web
+        tokens.push(
+          <a
+            key={m.index}
+            href={val}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-teal-600 hover:text-teal-700 underline break-all font-medium"
+          >
+            {val}
+          </a>
+        );
+      } else if (m[2]) {
+        // In đậm: **text**
+        tokens.push(
+          <strong key={m.index} className="font-bold text-slate-900">
+            {val.slice(2, -2)}
+          </strong>
+        );
+      } else if (m[3]) {
+        // In nghiêng: *text*
+        tokens.push(
+          <em key={m.index} className="italic text-slate-800">
+            {val.slice(1, -1)}
+          </em>
+        );
+      } else if (m[4]) {
+        // Inline code: `code`
+        tokens.push(
+          <code
+            key={m.index}
+            className="px-1.5 py-0.5 rounded text-[11.5px] font-mono bg-slate-100 text-rose-600 border border-slate-200"
+          >
+            {val.slice(1, -1)}
+          </code>
+        );
+      }
+      cur = m.index + val.length;
+    }
+    if (cur < str.length) {
+      tokens.push(str.slice(cur));
+    }
+    return tokens.length > 0 ? tokens : str;
+  };
+
+  const renderLines = (rawText: string) => {
+    const lines = rawText.split('\n');
+    return lines.map((line, lIdx) => {
+      if (line.startsWith('> ')) {
+        // Trích dẫn
+        return (
+          <div
+            key={lIdx}
+            className="my-1.5 pl-3 py-1 border-l-4 border-teal-500 bg-teal-50/40 rounded-r-lg text-slate-700 italic text-[12.5px]"
+          >
+            {renderInlineSpans(line.slice(2))}
+          </div>
+        );
+      }
+      if (line.startsWith('- ') || line.startsWith('* ')) {
+        // Gạch đầu dòng
+        return (
+          <div key={lIdx} className="flex items-start gap-2 my-0.5 ml-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600 mt-1.5 shrink-0" />
+            <span className="text-[13px] text-slate-800">{renderInlineSpans(line.slice(2))}</span>
+          </div>
+        );
+      }
+      return (
+        <span key={lIdx} className="block min-h-[1.2em]">
+          {renderInlineSpans(line)}
+        </span>
+      );
+    });
+  };
+
+  return (
+    <div className="text-[13px] text-slate-800 leading-relaxed font-normal break-words space-y-1">
+      {parts.map((p, idx) => {
+        if (p.type === 'code') {
+          return (
+            <div
+              key={idx}
+              className="my-2 rounded-xl overflow-hidden bg-slate-900 border border-slate-800 text-slate-100 shadow-xs"
+            >
+              <div className="flex items-center justify-between px-3 py-1.5 bg-slate-800/90 border-b border-slate-700/60 text-[11px] font-mono">
+                <span className="uppercase font-semibold tracking-wider text-teal-400">
+                  {p.language || 'code'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(p.content);
+                    setCopiedIdx(idx);
+                    setTimeout(() => setCopiedIdx(null), 2000);
+                  }}
+                  className="flex items-center gap-1 hover:text-white transition-colors cursor-pointer text-slate-300"
+                  title="Sao chép mã"
+                >
+                  {copiedIdx === idx ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Đã chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="p-3 text-xs font-mono overflow-x-auto text-emerald-300 whitespace-pre leading-5">
+                <code>{p.content}</code>
+              </pre>
+            </div>
+          );
+        }
+        return <div key={idx}>{renderLines(p.content)}</div>;
+      })}
+    </div>
+  );
+};
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -367,8 +550,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [isHuddleOpen, setIsHuddleOpen] = useState(false);
   const [isStarred, setIsStarred] = useState(false);
 
-  // Left Sidebar Collapse & In-App Modern Confirm Dialog
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // In-App Modern Confirm Dialog
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -379,16 +561,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     onConfirm: () => void | Promise<void>;
   } | null>(null);
 
-  // Slack Rich Composer Popovers
+  // Composer Attachments & Popovers
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [isAttachPopoverOpen, setIsAttachPopoverOpen] = useState(false);
+  const [isTextbookModalOpen, setIsTextbookModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [previewMediaUrl, setPreviewMediaUrl] = useState<{ url: string; name: string } | null>(null);
   const [selectedAttachment, setSelectedAttachment] = useState<{
-    type: 'textbook';
+    type: 'textbook' | 'file' | 'image' | 'video' | 'audio';
     id: string;
     name: string;
     size: string;
-    totalPages: number;
-    authorName: string;
+    fileUrl?: string;
+    fileType?: string;
+    totalPages?: number;
+    authorName?: string;
   } | null>(null);
 
   // Available Textbooks for Attachment
@@ -1030,6 +1217,60 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   }, [activeGroup, myEmail]);
 
   const totalInvitations = friendRequests.length + groupInvitations.length;
+
+  // ── File Selection & Paste Support ─────────────────────────────────────────
+  const handleFileSelect = (file: File) => {
+    if (file.size > 25 * 1024 * 1024) {
+      onShowToast('warning', 'Tệp quá lớn', 'Hệ thống hỗ trợ gửi tệp tối đa 25MB.');
+      return;
+    }
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+    const isAudio = file.type.startsWith('audio/');
+    const type = isImage ? 'image' : isVideo ? 'video' : isAudio ? 'audio' : 'file';
+
+    const formattedSize =
+      file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setSelectedAttachment({
+        type,
+        id: `att-${Date.now()}`,
+        name: file.name,
+        size: formattedSize,
+        fileUrl: dataUrl,
+        fileType: file.type,
+      });
+      onShowToast('info', 'Đã đính kèm tệp', `${file.name} (${formattedSize})`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf('image') !== -1) {
+        const blob = item.getAsFile();
+        if (blob) {
+          e.preventDefault();
+          const file = new File(
+            [blob],
+            `screenshot-${new Date().toLocaleTimeString('vi-VN').replace(/:/g, '-')}.png`,
+            { type: blob.type }
+          );
+          handleFileSelect(file);
+          onShowToast('info', 'Đã dán ảnh', 'Ảnh chụp màn hình đã được đính kèm.');
+          break;
+        }
+      }
+    }
+  };
 
   // ── Rich Text Insertion ───────────────────────────────────────────────────
   const insertFormatting = (prefix: string, suffix: string = '') => {
@@ -2480,196 +2721,115 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           LEFT SIDEBAR: CONVERSATION LIST (SLACK WORKSPACE STYLE)
       ==================================================================== */}
       <div
-        className={`${
-          isSidebarCollapsed ? 'md:w-16' : 'md:w-72 lg:w-80'
-        } ${
+        className={`md:w-72 lg:w-80 ${
           showMobileChat ? 'hidden md:flex' : 'flex w-full'
         } bg-slate-50 border-r border-slate-200 flex-col shrink-0 h-full transition-all duration-200`}
       >
         {/* Header */}
         <div className="p-3 border-b border-slate-200/80 space-y-2.5 bg-white">
           <div className="flex items-center justify-between">
-            {!isSidebarCollapsed && (
-              <div className="min-w-0 pr-1">
-                <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5 truncate">
-                  <span>UTH Academic</span>
-                  {totalInvitations > 0 && (
-                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-                  )}
-                </h2>
-                <p className="text-[10px] text-slate-500 font-medium truncate">Khoa CNTT • Kênh Học Thuật</p>
-              </div>
-            )}
-            <div className={`flex items-center gap-1 ${isSidebarCollapsed ? 'mx-auto flex-col' : ''}`}>
-              {!isSidebarCollapsed && (
-                <>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsAddFriendOpen(true);
-                    }}
-                    className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
-                    title="Thêm đồng nghiệp mới"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setGroupModalTab('create');
-                      setIsCreateGroupOpen(true);
-                    }}
-                    className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center transition-colors shadow-xs cursor-pointer"
-                    title="Tạo kênh mới hoặc Nhập mã"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                  {/* Nút thu gọn Sidebar trên Desktop (Chỉ hiện khi Desktop và đang mở) */}
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarCollapsed(true)}
-                    className="hidden md:flex w-7 h-7 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 items-center justify-center transition-colors cursor-pointer"
-                    title="Thu gọn danh sách kênh"
-                  >
-                    <PanelLeftClose className="w-4 h-4" />
-                  </button>
-                </>
-              )}
+            <div className="min-w-0 pr-1">
+              <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5 truncate">
+                <span>UTH Academic</span>
+                {totalInvitations > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                )}
+              </h2>
+              <p className="text-[10px] text-slate-500 font-medium truncate">Khoa CNTT • Kênh Học Thuật</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsAddFriendOpen(true);
+                }}
+                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
+                title="Thêm đồng nghiệp mới"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setGroupModalTab('create');
+                  setIsCreateGroupOpen(true);
+                }}
+                className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center transition-colors shadow-xs cursor-pointer"
+                title="Tạo kênh mới hoặc Nhập mã"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          {!isSidebarCollapsed && (
-            <>
-              {/* Search */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm kiếm kênh hoặc đồng nghiệp..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-100 hover:bg-slate-200/70 focus:bg-white border border-transparent focus:border-slate-400 rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none transition-all"
-                />
-              </div>
+          {/* Search */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Tìm kiếm kênh hoặc đồng nghiệp..."
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-100 hover:bg-slate-200/70 focus:bg-white border border-transparent focus:border-slate-400 rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none transition-all"
+            />
+          </div>
 
-              {/* Filter tabs (Slack Clean Minimal Buttons) */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFilterTab('all');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                    filterTab === 'all'
-                      ? 'bg-slate-900 text-white shadow-2xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  Tất cả
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFilterTab('unread');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                    filterTab === 'unread'
-                      ? 'bg-slate-900 text-white shadow-2xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  Chưa đọc
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFilterTab('invitations');
-                  }}
-                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    filterTab === 'invitations'
-                      ? 'bg-slate-900 text-white shadow-2xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <span>Lời mời</span>
-                  {totalInvitations > 0 && (
-                    <span className="px-1.5 rounded-full text-[10px] font-bold bg-rose-500 text-white">
-                      {totalInvitations}
-                    </span>
-                  )}
-                </button>
-              </div>
-            </>
-          )}
+          {/* Filter tabs */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterTab('all');
+              }}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                filterTab === 'all'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Tất cả
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterTab('unread');
+              }}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                filterTab === 'unread'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Chưa đọc
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setFilterTab('invitations');
+              }}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                filterTab === 'invitations'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <span>Lời mời</span>
+              {totalInvitations > 0 && (
+                <span className="px-1.5 rounded-full text-[10px] font-bold bg-rose-500 text-white">
+                  {totalInvitations}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Conversation List / Invitations */}
-        {isSidebarCollapsed ? (
-          <div className="flex-1 overflow-y-auto py-2 px-1.5 space-y-2 flex flex-col items-center">
-            {totalInvitations > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsSidebarCollapsed(false);
-                  setFilterTab('invitations');
-                }}
-                className="relative w-10 h-10 rounded-xl bg-rose-50 text-rose-600 hover:bg-rose-100 flex items-center justify-center transition-colors"
-                title={`${totalInvitations} lời mời`}
-              >
-                <Inbox className="w-4 h-4" />
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-bold flex items-center justify-center">
-                  {totalInvitations}
-                </span>
-              </button>
-            )}
-            {sortedGroups.map((group) => {
-              const info = resolveChatDisplayInfo(group, myEmail);
-              const isSelected = group.id === selectedGroupId;
-              const msgs = group.messages || [];
-              const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-              const isUnread =
-                !isSelected &&
-                Boolean(
-                  lastMsg &&
-                  !lastMsg.isSystem &&
-                  lastMsg.senderEmail?.toLowerCase() !== myEmail &&
-                  !(lastMsg.readBy || []).some((r) => String(r).toLowerCase() === myEmail)
-                );
-
-              return (
-                <button
-                  key={group.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedGroupId(group.id);
-                    setShowMobileChat(true);
-                    markGroupAsRead(group.id);
-                  }}
-                  className={`relative w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-slate-900 text-white shadow-md ring-2 ring-teal-500'
-                      : 'bg-white hover:bg-slate-200 text-slate-700 border border-slate-200'
-                  }`}
-                  title={`${info.displayName} (${group.isDirect ? 'Tin nhắn 1-1' : 'Kênh'})`}
-                >
-                  {group.isDirect ? (
-                    info.avatarInitials
-                  ) : (
-                    <Hash className="w-4 h-4" />
-                  )}
-                  {isUnread && (
-                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-teal-500 ring-2 ring-white" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        ) : filterTab === 'invitations' ? (
+        {filterTab === 'invitations' ? (
           <InvitationsPanel
             friendRequests={friendRequests}
             sentFriendRequests={sentFriendRequests}
@@ -2956,18 +3116,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 >
                   <ArrowLeft className="w-5 h-5 text-slate-700" />
                 </button>
-
-                {/* Desktop Expand Sidebar Button (Chỉ hiện trên desktop md: khi sidebar đang thu gọn) */}
-                {isSidebarCollapsed && (
-                  <button
-                    type="button"
-                    onClick={() => setIsSidebarCollapsed(false)}
-                    className="hidden md:flex p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer shrink-0"
-                    title="Mở rộng danh sách hội nhóm"
-                  >
-                    <PanelLeftOpen className="w-4 h-4 text-teal-600" />
-                  </button>
-                )}
                 <div
                   onClick={() => {
                     if (activeGroup.isDirect) {
@@ -3446,10 +3594,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           </div>
                         </div>
                       ) : (
-                        /* Text Message thông thường */
+                        /* Text Message thông thường (Rich Formatted Markdown, Code & Links) */
                         msg.text && !msg.text.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
-                          <div className="text-[13px] text-slate-800 leading-relaxed mt-1 whitespace-pre-wrap font-normal">
-                            {msg.text}
+                          <div className="mt-1">
+                            <FormattedMessageText text={msg.text} />
                           </div>
                         )
                       )}
@@ -3549,34 +3697,122 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         );
                       })()}
 
-                      {/* Direct Attachment (Chỉ hiển thị nếu không phải tin nhắn chia sẻ bài viết để tránh duplicate) */}
+                      {/* Direct Attachment (Hỗ trợ Ảnh, Video, File máy tính & Giáo trình thư viện) */}
                       {!msg.isRecalled && msg.attachment && !msg.sharedPost && !msg.text?.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
-                        <div className="mt-2 p-3 rounded-xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs max-w-md">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-lg bg-slate-100 text-teal-700 flex items-center justify-center shrink-0 border border-slate-200">
-                              <BookOpen className="w-4 h-4" />
+                        <div className="mt-2.5 max-w-md">
+                          {msg.attachment.type === 'image' && msg.attachment.fileUrl ? (
+                            <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 shadow-2xs group relative">
+                              <img
+                                src={msg.attachment.fileUrl}
+                                alt={msg.attachment.name}
+                                className="max-h-72 w-auto object-cover rounded-t-2xl cursor-pointer hover:opacity-95 transition-opacity"
+                                onClick={() => {
+                                  if (msg.attachment?.fileUrl) {
+                                    setPreviewMediaUrl({
+                                      url: msg.attachment.fileUrl,
+                                      name: msg.attachment.name || 'image.png',
+                                    });
+                                  }
+                                }}
+                              />
+                              <div className="p-2.5 flex items-center justify-between text-xs bg-white border-t border-slate-100">
+                                <div className="min-w-0 pr-2">
+                                  <p className="truncate font-semibold text-slate-800 text-xs">{msg.attachment.name}</p>
+                                  <p className="text-[10px] text-slate-400 font-medium">{msg.attachment.size}</p>
+                                </div>
+                                <a
+                                  href={msg.attachment.fileUrl}
+                                  download={msg.attachment.name}
+                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shrink-0 cursor-pointer"
+                                  title="Tải ảnh về máy"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-bold text-slate-900 truncate">
-                                {msg.attachment.name}
-                              </p>
-                              <p className="text-[10px] text-slate-500 font-medium">
-                                {msg.attachment.totalPages} trang • {msg.attachment.size} • Giáo trình học thuật
-                              </p>
+                          ) : msg.attachment.type === 'video' && msg.attachment.fileUrl ? (
+                            <div className="rounded-2xl overflow-hidden border border-slate-200 bg-black shadow-2xs">
+                              <video
+                                src={msg.attachment.fileUrl}
+                                controls
+                                className="max-h-72 w-full"
+                              />
+                              <div className="p-2.5 flex items-center justify-between text-xs bg-slate-900 text-white">
+                                <span className="truncate font-medium text-xs max-w-[200px]">{msg.attachment.name}</span>
+                                <span className="text-[10px] text-slate-400">{msg.attachment.size}</span>
+                              </div>
                             </div>
-                          </div>
-                          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onShowToast('success', 'Đã nạp giáo trình', `Đã chuyển ${msg.attachment?.name} vào không gian sinh đề`);
-                              }}
-                              className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>Dùng Sinh Đề Ngay</span>
-                            </button>
-                          </div>
+                          ) : msg.attachment.type === 'file' ? (
+                            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                                  {getFileIcon(msg.attachment.name)}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-900 truncate">
+                                    {msg.attachment.name}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 font-medium">
+                                    {msg.attachment.size} • Tệp tài liệu
+                                  </p>
+                                </div>
+                                {msg.attachment.fileUrl && (
+                                  <a
+                                    href={msg.attachment.fileUrl}
+                                    download={msg.attachment.name}
+                                    className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shrink-0 cursor-pointer"
+                                    title="Tải tệp xuống"
+                                  >
+                                    <Download className="w-4 h-4" />
+                                  </a>
+                                )}
+                              </div>
+                              {(msg.attachment.name.toLowerCase().endsWith('.docx') ||
+                                msg.attachment.name.toLowerCase().endsWith('.pdf')) && (
+                                <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onShowToast('success', 'Đã nạp tài liệu', `Đã chuyển ${msg.attachment?.name} vào không gian sinh đề`);
+                                    }}
+                                    className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                  >
+                                    <Sparkles className="w-3.5 h-3.5" />
+                                    <span>Dùng Sinh Đề Ngay</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            /* Textbook Attachment */
+                            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200">
+                                  <BookOpen className="w-5 h-5 text-teal-700" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-bold text-slate-900 truncate">
+                                    {msg.attachment.name}
+                                  </p>
+                                  <p className="text-[10px] text-slate-500 font-medium">
+                                    {msg.attachment.totalPages} trang • {msg.attachment.size} • Giáo trình học thuật
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onShowToast('success', 'Đã nạp giáo trình', `Đã chuyển ${msg.attachment?.name} vào không gian sinh đề`);
+                                  }}
+                                  className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Dùng Sinh Đề Ngay</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -3723,71 +3959,144 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     </div>
                   )}
 
-                  {/* Attachment Preview (if any) */}
+                  {/* Staged Attachment Preview (Hiện tệp đang chuẩn bị gửi) */}
                   {selectedAttachment && (
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <BookOpen className="w-4 h-4 text-teal-600 shrink-0" />
-                        <span className="font-semibold text-slate-800 truncate">{selectedAttachment.name}</span>
-                        <span className="text-[10px] text-slate-500">({selectedAttachment.size})</span>
+                    <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs animate-fade-in">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {selectedAttachment.type === 'image' && selectedAttachment.fileUrl ? (
+                          <img
+                            src={selectedAttachment.fileUrl}
+                            alt={selectedAttachment.name}
+                            className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
+                          />
+                        ) : selectedAttachment.type === 'video' ? (
+                          <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200">
+                            <Film className="w-4 h-4" />
+                          </div>
+                        ) : selectedAttachment.type === 'textbook' ? (
+                          <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200">
+                            <BookOpen className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                            {getFileIcon(selectedAttachment.name)}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-semibold text-slate-800 truncate max-w-xs">{selectedAttachment.name}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {selectedAttachment.size} • {selectedAttachment.type === 'image' ? 'Hình ảnh' : selectedAttachment.type === 'video' ? 'Video' : selectedAttachment.type === 'textbook' ? 'Giáo trình UTH' : 'Tài liệu'}
+                          </p>
+                        </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => setSelectedAttachment(null)}
-                        className="p-1 rounded hover:bg-slate-200 text-slate-500 cursor-pointer"
+                        className="w-6 h-6 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer transition-colors"
+                        title="Gỡ đính kèm"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
 
-                  {/* Formatting Toolbar (Slack Style) */}
-                  <div className="flex items-center justify-between gap-1 border border-slate-300 rounded-xl p-1 bg-slate-50/50 focus-within:border-slate-500 focus-within:bg-white transition-all shadow-2xs">
-                    <div className="flex-1 flex flex-col">
-                      {/* Top Buttons: B, I, Code, List, Quote */}
-                      <div className="flex items-center gap-1 px-2 pt-1 border-b border-slate-200 pb-1 text-slate-600">
-                        <button
-                          type="button"
-                          onClick={() => insertFormatting('**', '**')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-700 cursor-pointer font-bold"
-                          title="In đậm (Bold)"
-                        >
-                          <Bold className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => insertFormatting('*', '*')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-700 cursor-pointer italic"
-                          title="In nghiêng (Italic)"
-                        >
-                          <Italic className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => insertFormatting('`', '`')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-700 cursor-pointer font-mono"
-                          title="Mã / Code"
-                        >
-                          <Code className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => insertFormatting('\n- ')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-700 cursor-pointer"
-                          title="Gạch đầu dòng (List)"
-                        >
-                          <List className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => insertFormatting('\n> ')}
-                          className="p-1 rounded hover:bg-slate-200 text-slate-700 cursor-pointer"
-                          title="Trích dẫn (Quote)"
-                        >
-                          <Quote className="w-3.5 h-3.5" />
-                        </button>
+                  {/* Modern Unified Composer Box (Telegram / Zalo Style) */}
+                  <div className="border border-slate-300 hover:border-slate-400 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100/60 rounded-2xl bg-white shadow-2xs transition-all overflow-hidden">
+                    {/* Hidden File Input */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleFileSelect(f);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                      accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
+                    />
 
-                        <div className="h-3 w-px bg-slate-200 mx-1" />
+                    {/* Textarea */}
+                    <textarea
+                      ref={textareaRef}
+                      rows={2}
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onPaste={handleComposerPaste}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder={
+                        activeGroup.isDirect
+                          ? `Nhắn tin tới ${activeGroup.directPartnerName || activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng, hoặc dán ảnh Ctrl+V)`
+                          : `Nhắn tin trong #${activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng, hoặc dán ảnh Ctrl+V)`
+                      }
+                      className="w-full px-3.5 pt-2.5 pb-1 text-xs text-slate-800 placeholder-slate-400 bg-transparent outline-none resize-none leading-relaxed"
+                    />
+
+                    {/* Bottom Action Bar */}
+                    <div className="px-2.5 py-1.5 flex items-center justify-between border-t border-slate-100 bg-slate-50/60">
+                      <div className="flex items-center gap-1">
+                        {/* Attach Dropdown Menu */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsAttachPopoverOpen(!isAttachPopoverOpen);
+                              setIsEmojiPickerOpen(false);
+                            }}
+                            className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer flex items-center gap-1 transition-colors ${
+                              isAttachPopoverOpen ? 'bg-slate-200 text-slate-900' : ''
+                            }`}
+                            title="Đính kèm tệp, ảnh hoặc giáo trình"
+                          >
+                            <Paperclip className="w-4 h-4 text-slate-600" />
+                          </button>
+
+                          {isAttachPopoverOpen && (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              className="absolute left-0 bottom-10 z-30 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-1.5 space-y-1 animate-fade-in text-xs"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAttachPopoverOpen(false);
+                                  fileInputRef.current?.click();
+                                }}
+                                className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-teal-50 text-slate-700 hover:text-teal-900 transition-colors cursor-pointer text-left"
+                              >
+                                <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                                  <FileText className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-slate-800 text-xs">Tải tệp từ thiết bị</p>
+                                  <p className="text-[10px] text-slate-400">File Word, PDF, Ảnh, Video, Excel, ZIP</p>
+                                </div>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setIsAttachPopoverOpen(false);
+                                  setIsTextbookModalOpen(true);
+                                }}
+                                className="w-full flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-100 text-slate-700 hover:text-slate-900 transition-colors cursor-pointer text-left"
+                              >
+                                <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                                  <BookOpen className="w-4 h-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-slate-800 text-xs">Giáo trình Thư viện UTH</p>
+                                  <p className="text-[10px] text-slate-400">Liên kết giáo trình để sinh đề thi</p>
+                                </div>
+                              </button>
+                            </div>
+                          )}
+                        </div>
 
                         {/* Emoji Quick Picker Trigger */}
                         <div className="relative">
@@ -3798,16 +4107,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setIsEmojiPickerOpen(!isEmojiPickerOpen);
                               setIsAttachPopoverOpen(false);
                             }}
-                            className="p-1 rounded hover:bg-slate-200 text-slate-600 cursor-pointer"
+                            className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer transition-colors ${
+                              isEmojiPickerOpen ? 'bg-slate-200 text-slate-900' : ''
+                            }`}
                             title="Chèn biểu tượng cảm xúc"
                           >
-                            <Smile className="w-3.5 h-3.5" />
+                            <Smile className="w-4 h-4 text-slate-600" />
                           </button>
 
                           {isEmojiPickerOpen && (
                             <div
                               onClick={(e) => e.stopPropagation()}
-                              className="absolute left-0 bottom-8 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-1.5 text-base animate-fade-in"
+                              className="absolute left-0 bottom-10 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-1.5 text-base animate-fade-in"
                             >
                               {['👍', '❤️', '👏', '💡', '🔥', '📚', '🎓', '✍️', '🎉', '✅'].map((emoji) => (
                                 <button
@@ -3825,102 +4136,24 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             </div>
                           )}
                         </div>
-
-                        {/* Attach Textbook Trigger */}
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsAttachPopoverOpen(!isAttachPopoverOpen);
-                              setIsEmojiPickerOpen(false);
-                            }}
-                            className="p-1 rounded hover:bg-slate-200 text-slate-600 cursor-pointer flex items-center gap-1 text-[11px] font-semibold"
-                            title="Đính kèm giáo trình từ Thư viện"
-                          >
-                            <Paperclip className="w-3.5 h-3.5 text-slate-600" />
-                            <span className="hidden sm:inline text-slate-700">Đính kèm giáo trình</span>
-                          </button>
-
-                          {isAttachPopoverOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute left-0 bottom-8 z-30 w-72 bg-white border border-slate-200 rounded-xl shadow-xl p-3 space-y-2 animate-fade-in text-xs"
-                            >
-                              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                                <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                                  <BookOpen className="w-3.5 h-3.5 text-teal-700" />
-                                  Kho Giáo Trình Sẵn Có
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setIsAttachPopoverOpen(false)}
-                                  className="text-slate-400 hover:text-slate-600"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                              <div className="max-h-48 overflow-y-auto space-y-1.5">
-                                {availableTextbooks.map((tb) => (
-                                  <div
-                                    key={tb.id}
-                                    onClick={() => {
-                                      setSelectedAttachment({
-                                        type: 'textbook',
-                                        id: tb.id,
-                                        name: tb.name,
-                                        size: tb.size,
-                                        totalPages: tb.totalPages,
-                                        authorName: tb.authorName,
-                                      });
-                                      setIsAttachPopoverOpen(false);
-                                      onShowToast('info', 'Đã chọn tệp đính kèm', tb.name);
-                                    }}
-                                    className="p-2 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 cursor-pointer transition-all space-y-0.5"
-                                  >
-                                    <p className="font-semibold text-slate-800 truncate">{tb.name}</p>
-                                    <p className="text-[10px] text-slate-500">
-                                      {tb.totalPages} trang • {tb.size}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
                       </div>
 
-                      {/* Multi-line Textarea */}
-                      <textarea
-                        ref={textareaRef}
-                        rows={2}
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSend();
-                          }
-                        }}
-                        placeholder={
-                          activeGroup.isDirect
-                            ? `Nhắn tin tới ${activeGroup.directPartnerName || activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng)`
-                            : `Nhắn tin trong #${activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng)`
-                        }
-                        className="w-full px-3 py-2 text-xs text-slate-800 placeholder-slate-400 bg-transparent outline-none resize-none"
-                      />
+                      {/* Send Button */}
+                      <button
+                        type="button"
+                        onClick={() => handleSend()}
+                        disabled={!chatInput.trim() && !selectedAttachment}
+                        className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
+                          chatInput.trim() || selectedAttachment
+                            ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
+                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                        title="Gửi tin nhắn (Enter)"
+                      >
+                        <span className="hidden sm:inline">Gửi</span>
+                        <Send className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-
-                    {/* Send Button */}
-                    <button
-                      type="button"
-                      onClick={() => handleSend()}
-                      disabled={!chatInput.trim() && !selectedAttachment}
-                      className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-white flex items-center justify-center transition-all shadow-xs shrink-0 self-end mb-1 mr-1 cursor-pointer"
-                      title="Gửi tin nhắn (Enter)"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </>
               )}
@@ -5384,6 +5617,96 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />
+      )}
+
+      {/* Lightbox Media Zoom Modal */}
+      {previewMediaUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs animate-fade-in"
+          onClick={() => setPreviewMediaUrl(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => setPreviewMediaUrl(null)}
+              className="absolute -top-10 right-0 text-white/80 hover:text-white p-1 rounded-full bg-black/40 hover:bg-black/60 cursor-pointer"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={previewMediaUrl.url}
+              alt={previewMediaUrl.name}
+              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <div className="mt-3 flex items-center gap-4 bg-slate-900/90 text-white px-4 py-2 rounded-full text-xs shadow-lg">
+              <span className="font-medium truncate max-w-sm">{previewMediaUrl.name}</span>
+              <a
+                href={previewMediaUrl.url}
+                download={previewMediaUrl.name}
+                className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 font-bold ml-2 cursor-pointer"
+              >
+                <Download className="w-4 h-4" />
+                <span>Tải về</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Textbook Picker Modal */}
+      {isTextbookModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
+          onClick={() => setIsTextbookModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-3.5 border-b border-slate-200 flex items-center justify-between">
+              <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-teal-700" />
+                Kho Giáo Trình Thư Viện UTH
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsTextbookModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-3 max-h-72 overflow-y-auto space-y-2">
+              {availableTextbooks.map((tb) => (
+                <div
+                  key={tb.id}
+                  onClick={() => {
+                    setSelectedAttachment({
+                      type: 'textbook',
+                      id: tb.id,
+                      name: tb.name,
+                      size: tb.size,
+                      totalPages: tb.totalPages,
+                      authorName: tb.authorName,
+                    });
+                    setIsTextbookModalOpen(false);
+                    onShowToast('info', 'Đã chọn giáo trình', tb.name);
+                  }}
+                  className="p-3 rounded-xl border border-slate-200 hover:border-teal-500 hover:bg-teal-50/30 cursor-pointer transition-all space-y-0.5"
+                >
+                  <p className="font-semibold text-slate-900 text-xs truncate">{tb.name}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {tb.totalPages} trang • {tb.size} • Tác giả: {tb.authorName}
+                  </p>
+                </div>
+              ))}
+              {availableTextbooks.length === 0 && (
+                <p className="text-center text-xs text-slate-400 py-6">Chưa có giáo trình nào trong thư viện.</p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
