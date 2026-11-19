@@ -747,6 +747,8 @@ def toggle_document_share(
 # Q-GROUP & INVITATION PERSISTENCE (CENTRALIZED MULTI-ACCOUNT SYNC)
 # =========================================================================
 QGROUPS_FILE = STORAGE_DIR.parent / "qgroups.json"
+QGROUP_ATTACHMENTS_DIR = STORAGE_DIR.parent / "uploads" / "qgroup_attachments"
+QGROUP_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 QGROUP_INVITATIONS_FILE = STORAGE_DIR.parent / "qgroup_invitations.json"
 FRIEND_REQUESTS_FILE = STORAGE_DIR.parent / "friend_requests.json"
 
@@ -875,6 +877,48 @@ def save_server_invitations(invitations: list):
             json.dump(invitations, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error(f"Error saving invitations: {e}")
+
+@app.post("/documents/qgroups/upload-attachment")
+@app.post("/qgroups/upload-attachment")
+async def upload_qgroup_attachment(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        orig_name = file.filename or "file"
+        clean_name = "".join(c for c in orig_name if c.isalnum() or c in "._- ")
+        disk_name = f"{uuid.uuid4().hex[:8]}_{clean_name}"
+        disk_path = QGROUP_ATTACHMENTS_DIR / disk_name
+        with open(disk_path, "wb") as f:
+            f.write(content)
+        
+        size_bytes = len(content)
+        formatted_size = f"{size_bytes / (1024 * 1024):.1f} MB" if size_bytes > 1024 * 1024 else f"{round(size_bytes / 1024)} KB"
+        
+        is_image = (file.content_type or "").startswith("image/")
+        is_video = (file.content_type or "").startswith("video/")
+        is_audio = (file.content_type or "").startswith("audio/")
+        att_type = "image" if is_image else "video" if is_video else "audio" if is_audio else "file"
+        
+        file_url = f"/api/documents/qgroups/attachments/{disk_name}"
+        return {
+            "status": "success",
+            "fileUrl": file_url,
+            "name": orig_name,
+            "size": formatted_size,
+            "type": att_type,
+            "fileType": file.content_type or "application/octet-stream",
+        }
+    except Exception as e:
+        logger.error(f"Error uploading qgroup attachment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents/qgroups/attachments/{filename}")
+@app.get("/qgroups/attachments/{filename}")
+async def get_qgroup_attachment(filename: str):
+    file_path = QGROUP_ATTACHMENTS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    orig_name = filename.split("_", 1)[1] if "_" in filename else filename
+    return FileResponse(file_path, filename=orig_name)
 
 @app.get("/qgroups")
 @app.get("/documents/qgroups")

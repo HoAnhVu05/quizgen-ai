@@ -1219,7 +1219,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const totalInvitations = friendRequests.length + groupInvitations.length;
 
   // ── File Selection & Paste Support ─────────────────────────────────────────
-  const handleFileSelect = (file: File) => {
+  const handleFileSelect = async (file: File) => {
     if (file.size > 25 * 1024 * 1024) {
       onShowToast('warning', 'Tệp quá lớn', 'Hệ thống hỗ trợ gửi tệp tối đa 25MB.');
       return;
@@ -1234,20 +1234,34 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
         : `${Math.round(file.size / 1024)} KB`;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setSelectedAttachment({
-        type,
-        id: `att-${Date.now()}`,
-        name: file.name,
-        size: formattedSize,
-        fileUrl: dataUrl,
-        fileType: file.type,
-      });
-      onShowToast('info', 'Đã đính kèm tệp', `${file.name} (${formattedSize})`);
-    };
-    reader.readAsDataURL(file);
+    onShowToast('info', 'Đang tải tệp lên...', file.name);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await apiClient
+        .fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
+          method: 'POST',
+          body: formData,
+        })
+        .then((r) => r.json());
+
+      if (res && res.fileUrl) {
+        setSelectedAttachment({
+          type: res.type || type,
+          id: `att-${Date.now()}`,
+          name: res.name || file.name,
+          size: res.size || formattedSize,
+          fileUrl: res.fileUrl,
+          fileType: res.fileType || file.type,
+        });
+        onShowToast('success', 'Đã đính kèm tệp', `${file.name} (${formattedSize})`);
+      } else {
+        throw new Error(res?.detail || 'Không thể tải tệp lên máy chủ');
+      }
+    } catch (err: any) {
+      onShowToast('error', 'Lỗi tải tệp', err?.message || 'Không thể tải tệp lên máy chủ.');
+    }
   };
 
   const handleComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -3723,6 +3737,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 <a
                                   href={msg.attachment.fileUrl}
                                   download={msg.attachment.name}
+                                  onClick={() => onShowToast('info', 'Đang tải ảnh xuống...', msg.attachment?.name || 'Ảnh')}
                                   className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shrink-0 cursor-pointer"
                                   title="Tải ảnh về máy"
                                 >
@@ -3743,13 +3758,25 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               </div>
                             </div>
                           ) : msg.attachment.type === 'file' ? (
-                            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs">
+                            <div
+                              onClick={() => {
+                                if (msg.attachment?.fileUrl) {
+                                  const a = document.createElement('a');
+                                  a.href = msg.attachment.fileUrl;
+                                  a.download = msg.attachment.name;
+                                  a.click();
+                                  onShowToast('info', 'Đang tải tệp xuống...', msg.attachment.name);
+                                }
+                              }}
+                              className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50/50 transition-all text-left shadow-2xs cursor-pointer group"
+                              title={`Bấm để tải xuống ${msg.attachment.name}`}
+                            >
                               <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
+                                <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-teal-50 text-slate-700 group-hover:text-teal-700 flex items-center justify-center shrink-0 border border-slate-200 transition-colors">
                                   {getFileIcon(msg.attachment.name)}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold text-slate-900 truncate">
+                                  <p className="text-xs font-bold text-slate-900 group-hover:text-teal-900 truncate transition-colors">
                                     {msg.attachment.name}
                                   </p>
                                   <p className="text-[10px] text-slate-500 font-medium">
@@ -3757,31 +3784,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                   </p>
                                 </div>
                                 {msg.attachment.fileUrl && (
-                                  <a
-                                    href={msg.attachment.fileUrl}
-                                    download={msg.attachment.name}
-                                    className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shrink-0 cursor-pointer"
-                                    title="Tải tệp xuống"
+                                  <div
+                                    className="p-2 rounded-lg bg-slate-100 group-hover:bg-teal-600 text-slate-700 group-hover:text-white transition-all shrink-0 flex items-center gap-1 text-xs font-medium"
                                   >
                                     <Download className="w-4 h-4" />
-                                  </a>
+                                    <span className="hidden sm:inline">Tải về</span>
+                                  </div>
                                 )}
                               </div>
-                              {(msg.attachment.name.toLowerCase().endsWith('.docx') ||
-                                msg.attachment.name.toLowerCase().endsWith('.pdf')) && (
-                                <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      onShowToast('success', 'Đã nạp tài liệu', `Đã chuyển ${msg.attachment?.name} vào không gian sinh đề`);
-                                    }}
-                                    className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                  >
-                                    <Sparkles className="w-3.5 h-3.5" />
-                                    <span>Dùng Sinh Đề Ngay</span>
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           ) : (
                             /* Textbook Attachment */
