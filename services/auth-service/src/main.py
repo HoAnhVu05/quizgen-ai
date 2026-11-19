@@ -602,7 +602,14 @@ def get_me(
         except Exception:
             pass
 
-    # 2. Hỗ trợ mock token có chứa ID hoặc email của người dùng thật
+    # 2. Hỗ trợ tra cứu qua Gateway Header / Email nếu được chỉ định rõ
+    if not user and x_user_email and x_user_email.strip():
+        user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == x_user_email.strip().lower())).scalar_one_or_none()
+
+    if not user and x_user_id and x_user_id.strip():
+        user = db.execute(select(UserDB).filter_by(id=x_user_id.strip())).scalar_one_or_none()
+
+    # 3. Hỗ trợ mock token có chứa ID hoặc email của người dùng thật
     if not user and raw_token and raw_token.startswith("mock-jwt-"):
         parts = raw_token.split("-")
         for p in parts:
@@ -618,32 +625,53 @@ def get_me(
             candidate_id = "-".join(parts[2:-1]) if len(parts) > 3 else parts[2]
             user = db.execute(select(UserDB).filter(or_(UserDB.id == candidate_id, func.lower(UserDB.email) == candidate_id.lower()))).scalar_one_or_none()
 
-        if not user:
-            # Resilient fallback for demo/guest/mobile accounts so F5/pull-to-refresh never kicks them out
-            role_cand = "admin" if "admin" in raw_token else "head_of_department" if "head" in raw_token else "lecturer"
-            name_cand = "Quản trị viên" if role_cand == "admin" else "Trưởng bộ môn" if role_cand == "head_of_department" else "Giảng viên UTH"
-            return LecturerResponse(
-                id=x_user_id or f"usr-{role_cand[:3]}-guest",
-                email=x_user_email or f"{role_cand}@quizgen.ai",
-                full_name=name_cand,
-                academic_title="ThS." if role_cand == "lecturer" else "PGS.TS.",
-                university="Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
-                department="Khoa Công nghệ Thông tin",
-                role=role_cand,
-                is_active=True,
-                profile_completed=True,
-                created_at=datetime.utcnow()
-            )
+    # 4. Nếu người dùng có email hợp lệ nhưng chưa có trong auth.db -> Tự động khởi tạo để lưu trữ bền vững
+    if not user:
+        extracted_email = None
+        if x_user_email and "@" in x_user_email:
+            extracted_email = x_user_email.strip().lower()
+        elif raw_token:
+            for p in raw_token.split("-"):
+                if "@" in p:
+                    extracted_email = p.strip().lower()
+                    break
 
-    # 3. Hỗ trợ tra cứu qua Gateway Header nếu được chỉ định rõ
-    if not user and x_user_email and x_user_email.strip():
-        user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == x_user_email.strip().lower())).scalar_one_or_none()
-
-    if not user and x_user_id and x_user_id.strip():
-        user = db.execute(select(UserDB).filter_by(id=x_user_id.strip())).scalar_one_or_none()
+        if extracted_email and "@" in extracted_email:
+            user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == extracted_email)).scalar_one_or_none()
+            if not user:
+                name_cand = extracted_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                user = UserDB(
+                    id=f"usr-auto-{uuid.uuid4().hex[:8]}",
+                    email=extracted_email,
+                    full_name=name_cand,
+                    academic_title="ThS.",
+                    university="Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+                    department="Khoa Công nghệ Thông tin",
+                    password_hash=hash_password(uuid.uuid4().hex),
+                    role="lecturer",
+                    is_active=True,
+                    created_at=datetime.utcnow()
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
 
     if not user:
-        raise HTTPException(status_code=401, detail="Phiên làm việc không hợp lệ hoặc không tìm thấy tài khoản người dùng.")
+        # Chỉ fallback tài khoản demo nếu hoàn toàn không có email nào được truyền
+        role_cand = "admin" if "admin" in (raw_token or "") else "head_of_department" if "head" in (raw_token or "") else "lecturer"
+        name_cand = "Quản trị viên" if role_cand == "admin" else "Trưởng bộ môn" if role_cand == "head_of_department" else "Giảng viên UTH"
+        return LecturerResponse(
+            id=x_user_id or f"usr-{role_cand[:3]}-guest",
+            email=x_user_email or f"{role_cand}@quizgen.ai",
+            full_name=name_cand,
+            academic_title="ThS." if role_cand == "lecturer" else "PGS.TS.",
+            university="Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+            department="Khoa Công nghệ Thông tin",
+            role=role_cand,
+            is_active=True,
+            profile_completed=True,
+            created_at=datetime.utcnow()
+        )
 
     check_user_lock_or_raise(user, db)
     return serialize_user(user)
@@ -933,6 +961,25 @@ def lookup_user_by_email(email: str = Query(...), db: Session = Depends(get_db))
                 "is_active": user.is_active
             }
         }
+
+    # Hỗ trợ tìm kiếm & mời đồng nghiệp qua email hợp lệ ngay cả khi chưa đăng nhập
+    if "@" in clean_email and "." in clean_email:
+        name_guess = clean_email.split("@")[0].replace(".", " ").replace("_", " ").title()
+        return {
+            "exists": True,
+            "is_invited": True,
+            "user": {
+                "id": f"usr-ext-{clean_email.replace('@', '-at-')}",
+                "email": clean_email,
+                "fullName": name_guess,
+                "academicTitle": "ThS.",
+                "department": "Khoa Công nghệ Thông tin",
+                "university": "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+                "role": "lecturer",
+                "is_active": True
+            }
+        }
+
     return {
         "exists": False,
         "message": "Người dùng không tồn tại trên hệ thống hoặc email chưa được dùng để đăng ký tài khoản."

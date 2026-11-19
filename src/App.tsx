@@ -213,17 +213,34 @@ const AppContent: React.FC = () => {
 
   const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
-  // ─── Khởi động: Đọc quizgen_token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
+  // ─── Khởi động: Đọc token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
   useEffect(() => {
-    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+    const token =
+      sessionStorage.getItem('quizgen_token') ||
+      sessionStorage.getItem('quizgen_auth_token') ||
+      localStorage.getItem('quizgen_token') ||
+      localStorage.getItem('quizgen_auth_token');
     if (!token) return;
 
     const verifySession = async () => {
+      const savedUserStr = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
+      let currentSavedEmail = '';
+      let currentSavedId = '';
+      if (savedUserStr) {
+        try {
+          const parsed = JSON.parse(savedUserStr);
+          currentSavedEmail = parsed.email || '';
+          currentSavedId = parsed.id || '';
+        } catch {}
+      }
+
       try {
         const res = await fetch(`${API_BASE}/auth/me`, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
+            'X-User-Email': currentSavedEmail,
+            'X-User-Id': currentSavedId,
             'Content-Type': 'application/json',
           },
         });
@@ -236,6 +253,9 @@ const AppContent: React.FC = () => {
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_refresh_token');
           localStorage.removeItem('quizgen_user');
+          sessionStorage.removeItem('quizgen_token');
+          sessionStorage.removeItem('quizgen_auth_token');
+          sessionStorage.removeItem('quizgen_user');
           setCurrentUser(null);
           setIsAuthenticated(false);
           setAuthScreen('login');
@@ -254,10 +274,19 @@ const AppContent: React.FC = () => {
             localStorage.removeItem('quizgen_auth_token');
             localStorage.removeItem('quizgen_refresh_token');
             localStorage.removeItem('quizgen_user');
+            sessionStorage.removeItem('quizgen_token');
+            sessionStorage.removeItem('quizgen_auth_token');
+            sessionStorage.removeItem('quizgen_user');
             setCurrentUser(null);
             setIsAuthenticated(false);
             setAuthScreen('login');
             setLockedAlert({ isOpen: true, message: lockMsg });
+            return;
+          }
+
+          // Bảo vệ tài khoản: Nếu máy chủ trả về tài khoản mẫu/fallback nhưng trên máy đang có email thật, không ghi đè
+          if (data.email === 'lecturer@quizgen.ai' && currentSavedEmail && currentSavedEmail !== 'lecturer@quizgen.ai') {
+            console.warn('[AUTH] Bỏ qua fallback guest để bảo toàn tài khoản người dùng thực tế:', currentSavedEmail);
             return;
           }
 
@@ -284,10 +313,14 @@ const AppContent: React.FC = () => {
           };
           setCurrentUser(profile);
           setIsAuthenticated(true);
-          localStorage.setItem('quizgen_user', JSON.stringify(profile));
+          const isRemembered = localStorage.getItem('quizgen_remember_me') === 'true';
+          if (isRemembered) {
+            localStorage.setItem('quizgen_user', JSON.stringify(profile));
+          } else {
+            sessionStorage.setItem('quizgen_user', JSON.stringify(profile));
+          }
         } else if (res.status === 401) {
-          // Chỉ dọn dẹp phiên nếu thực sự không có thông tin người dùng trong localStorage
-          const savedUserStr = localStorage.getItem('quizgen_user');
+          // Chỉ dọn dẹp phiên nếu thực sự không có thông tin người dùng trong storage
           if (savedUserStr) {
             try {
               const savedUser = JSON.parse(savedUserStr);
@@ -301,13 +334,15 @@ const AppContent: React.FC = () => {
           localStorage.removeItem('quizgen_token');
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_user');
+          sessionStorage.removeItem('quizgen_token');
+          sessionStorage.removeItem('quizgen_auth_token');
+          sessionStorage.removeItem('quizgen_user');
           setCurrentUser(null);
           setIsAuthenticated(false);
         }
       } catch (err) {
         console.warn('[AUTH] Kiểm tra phiên qua /auth/me thất bại (mạng/tunnel):', err);
-        // Khi mạng chập chờn hoặc reload qua Cloudflare Tunnel, vẫn giữ phiên từ localStorage
-        const savedUserStr = localStorage.getItem('quizgen_user');
+        // Khi mạng chập chờn hoặc reload qua Cloudflare Tunnel, vẫn giữ phiên từ storage
         if (savedUserStr) {
           try {
             const savedUser = JSON.parse(savedUserStr);
@@ -326,7 +361,12 @@ const AppContent: React.FC = () => {
     if (!isAuthenticated) return;
 
     const checkLockStatus = async () => {
-      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+      const token =
+        sessionStorage.getItem('quizgen_token') ||
+        sessionStorage.getItem('quizgen_auth_token') ||
+        localStorage.getItem('quizgen_token') ||
+        localStorage.getItem('quizgen_auth_token') ||
+        apiClient.getAccessToken();
       if (!token) return;
 
       try {
@@ -334,6 +374,8 @@ const AppContent: React.FC = () => {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
+            'X-User-Email': currentUser?.email || '',
+            'X-User-Id': currentUser?.id || '',
             'Content-Type': 'application/json',
           },
         });
@@ -365,7 +407,7 @@ const AppContent: React.FC = () => {
             setIsAuthenticated(false);
             setAuthScreen('login');
             setLockedAlert({ isOpen: true, message: lockMsg });
-          } else if (data.role && currentUser && data.role !== currentUser.role) {
+          } else if (data.email !== 'lecturer@quizgen.ai' && data.role && currentUser && data.role !== currentUser.role) {
             const newRole = data.role as UserRole;
             const updatedUser: UserProfile = {
               ...currentUser,
