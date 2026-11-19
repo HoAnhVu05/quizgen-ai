@@ -1370,54 +1370,81 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const startVoiceRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       mediaStreamRef.current = stream;
+
+      // Ensure all audio tracks are active
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+      });
 
       // Real AudioContext and Analyser for dynamic live waveform visualization
       try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 64;
-        source.connect(analyser);
-        audioContextRef.current = audioCtx;
-        analyserRef.current = analyser;
-        liveWaveformSamplesRef.current = [];
+        const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtxClass) {
+          const audioCtx = new AudioCtxClass();
+          if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+          }
+          const source = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 64;
+          analyser.smoothingTimeConstant = 0.3;
+          source.connect(analyser);
+          audioContextRef.current = audioCtx;
+          analyserRef.current = analyser;
+          liveWaveformSamplesRef.current = [];
 
-        const freqData = new Uint8Array(analyser.frequencyBinCount);
-        const updateVisuals = () => {
-          if (!analyserRef.current) return;
-          analyserRef.current.getByteFrequencyData(freqData);
-          let sum = 0;
-          for (let i = 0; i < freqData.length; i++) sum += freqData[i];
-          const avg = sum / freqData.length;
-          liveWaveformSamplesRef.current.push(avg);
+          const freqData = new Uint8Array(analyser.frequencyBinCount);
+          const updateVisuals = () => {
+            if (!analyserRef.current) return;
+            analyserRef.current.getByteFrequencyData(freqData);
+            let sum = 0;
+            for (let i = 0; i < freqData.length; i++) sum += freqData[i];
+            const avg = sum / freqData.length;
+            liveWaveformSamplesRef.current.push(avg);
 
-          const bands = [
-            Math.max(20, Math.min(100, Math.round((freqData[1] || 0) * 0.9))),
-            Math.max(20, Math.min(100, Math.round((freqData[3] || 0) * 1.1))),
-            Math.max(20, Math.min(100, Math.round((freqData[5] || 0) * 1.2))),
-            Math.max(20, Math.min(100, Math.round((freqData[7] || 0) * 1.3))),
-            Math.max(20, Math.min(100, Math.round((freqData[9] || 0) * 1.2))),
-            Math.max(20, Math.min(100, Math.round((freqData[11] || 0) * 1.1))),
-            Math.max(20, Math.min(100, Math.round((freqData[13] || 0) * 0.9))),
-            Math.max(20, Math.min(100, Math.round((freqData[15] || 0) * 0.8))),
-          ];
-          setLiveMicLevels(bands);
+            const bands = [
+              Math.max(20, Math.min(100, Math.round((freqData[1] || 0) * 0.9))),
+              Math.max(20, Math.min(100, Math.round((freqData[3] || 0) * 1.1))),
+              Math.max(20, Math.min(100, Math.round((freqData[5] || 0) * 1.2))),
+              Math.max(20, Math.min(100, Math.round((freqData[7] || 0) * 1.3))),
+              Math.max(20, Math.min(100, Math.round((freqData[9] || 0) * 1.2))),
+              Math.max(20, Math.min(100, Math.round((freqData[11] || 0) * 1.1))),
+              Math.max(20, Math.min(100, Math.round((freqData[13] || 0) * 0.9))),
+              Math.max(20, Math.min(100, Math.round((freqData[15] || 0) * 0.8))),
+            ];
+            setLiveMicLevels(bands);
+            animFrameRef.current = requestAnimationFrame(updateVisuals);
+          };
           animFrameRef.current = requestAnimationFrame(updateVisuals);
-        };
-        animFrameRef.current = requestAnimationFrame(updateVisuals);
+        }
       } catch (e) {
         console.warn('AudioContext not supported or blocked for live visualizer:', e);
       }
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : MediaRecorder.isTypeSupported('audio/mp4')
-        ? 'audio/mp4'
-        : '';
+      // Detect best supported audio MIME type
+      let mimeType = '';
+      const candidateMimes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4;codecs=mp4a.40.2',
+        'audio/mp4',
+        'audio/aac',
+        'audio/ogg;codecs=opus',
+      ];
+      for (const cand of candidateMimes) {
+        if (MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) {
+          mimeType = cand;
+          break;
+        }
+      }
 
       const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       mediaRecorderRef.current = recorder;
@@ -1429,7 +1456,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
       };
 
-      recorder.start(250);
+      recorder.start(100);
       setIsRecording(true);
       setRecordingSeconds(0);
 
@@ -1451,16 +1478,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
     }
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     mediaStreamRef.current = null;
@@ -1479,11 +1508,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       cancelAnimationFrame(animFrameRef.current);
       animFrameRef.current = null;
     }
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-
     if (recordingTimerRef.current) {
       clearInterval(recordingTimerRef.current);
       recordingTimerRef.current = null;
@@ -1511,6 +1535,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     }
 
     recorder.onstop = async () => {
+      // Clean up AudioContext & MediaStream AFTER recorder has safely stopped
+      if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
+      }
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
       mediaRecorderRef.current = null;
@@ -1522,7 +1551,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       setIsRecording(false);
       setRecordingSeconds(0);
 
-      if (audioBlob.size < 500) {
+      if (audioBlob.size < 300) {
         onShowToast('warning', 'Ghi âm quá ngắn', 'Vui lòng nói rõ ràng hơn.');
         return;
       }
@@ -1595,6 +1624,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       }
     };
 
+    try {
+      if (recorder.state === 'recording') {
+        recorder.requestData();
+      }
+    } catch (e) {}
     recorder.stop();
   };
 

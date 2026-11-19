@@ -588,8 +588,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
 
         // Nếu là Giảng viên -> Lưu phiên & vào thẳng Không gian Giảng viên 4 bước
         const curRole = 'lecturer';
-        const mockAccess = 'mock-jwt-access-' + curRole + '-' + Date.now();
-        const mockRefresh = 'mock-jwt-refresh-' + curRole + '-' + Date.now();
+        const userIdentifier = authenticatedUser.id || authenticatedUser.email || 'usr-lec';
+        const mockAccess = `mock-jwt-user-${userIdentifier}-${curRole}-${Date.now()}`;
+        const mockRefresh = `mock-jwt-refresh-${userIdentifier}-${curRole}-${Date.now()}`;
         apiClient.setTokens(mockAccess, mockRefresh);
         localStorage.setItem('quizgen_token', mockAccess);
         localStorage.setItem('quizgen_auth_token', mockAccess);

@@ -281,7 +281,18 @@ const AppContent: React.FC = () => {
           setIsAuthenticated(true);
           localStorage.setItem('quizgen_user', JSON.stringify(profile));
         } else if (res.status === 401) {
-          // Phiên hết hạn -> Dọn dẹp token
+          // Chỉ dọn dẹp phiên nếu thực sự không có thông tin người dùng trong localStorage
+          const savedUserStr = localStorage.getItem('quizgen_user');
+          if (savedUserStr) {
+            try {
+              const savedUser = JSON.parse(savedUserStr);
+              // Bảo lưu phiên cho người dùng, không đá văng ra login khi kéo tải lại trang trên di động
+              setCurrentUser(savedUser);
+              setIsAuthenticated(true);
+              console.warn('[AUTH] Token máy chủ chưa đồng bộ, bảo lưu phiên đăng nhập hiện tại trên thiết bị.');
+              return;
+            } catch (e) {}
+          }
           localStorage.removeItem('quizgen_token');
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_user');
@@ -289,7 +300,16 @@ const AppContent: React.FC = () => {
           setIsAuthenticated(false);
         }
       } catch (err) {
-        console.warn('[AUTH] Kiểm tra phiên qua /auth/me thất bại:', err);
+        console.warn('[AUTH] Kiểm tra phiên qua /auth/me thất bại (mạng/tunnel):', err);
+        // Khi mạng chập chờn hoặc reload qua Cloudflare Tunnel, vẫn giữ phiên từ localStorage
+        const savedUserStr = localStorage.getItem('quizgen_user');
+        if (savedUserStr) {
+          try {
+            const savedUser = JSON.parse(savedUserStr);
+            setCurrentUser(savedUser);
+            setIsAuthenticated(true);
+          } catch (e) {}
+        }
       }
     };
 

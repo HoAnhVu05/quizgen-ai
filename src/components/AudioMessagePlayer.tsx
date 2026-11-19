@@ -109,12 +109,16 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ attachme
       audio.pause();
       setIsPlaying(false);
     } else {
-      audio.play().then(() => {
-        setIsPlaying(true);
-      }).catch((e) => {
-        console.error('Audio playback error', e);
-        setIsPlaying(false);
-      });
+      const p = audio.play();
+      if (p !== undefined) {
+        p.then(() => {
+          setIsPlaying(true);
+        }).catch((e) => {
+          console.error('Audio playback error', e);
+          setIsPlaying(false);
+          onShowToast('error', 'Không thể phát âm thanh', 'Trình duyệt bị chặn phát âm thanh hoặc tệp chưa tải xong.');
+        });
+      }
     }
   };
 
@@ -164,7 +168,12 @@ export const AudioMessagePlayer: React.FC<AudioMessagePlayerProps> = ({ attachme
       className="p-3 rounded-2xl bg-gradient-to-r from-teal-50/80 to-slate-50 border border-teal-200/80 shadow-2xs max-w-sm w-full select-none"
     >
       {attachment.fileUrl && (
-        <audio ref={audioRef} src={attachment.fileUrl} preload="metadata" />
+        <audio
+          ref={audioRef}
+          src={attachment.fileUrl}
+          preload="metadata"
+          playsInline
+        />
       )}
 
       <div className="flex items-center gap-3">
