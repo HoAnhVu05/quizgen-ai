@@ -335,6 +335,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
   >([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [showMobileChat, setShowMobileChat] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [filterTab, setFilterTab] = useState<
@@ -1843,6 +1844,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           applyGroups(next);
           if (selectedGroupId === group.id) {
             setSelectedGroupId(next[0]?.id || '');
+            setShowMobileChat(false);
           }
           apiClient
             .fetch(`${API_BASE}/documents/qgroups/${encodeURIComponent(group.id)}`, {
@@ -1883,6 +1885,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             applyGroups(next);
             if (activeGroup && (activeGroup.isDirect || activeGroup.type === 'direct')) {
               setSelectedGroupId(next[0]?.id || '');
+              setShowMobileChat(false);
             }
             setIsChannelDetailsOpen(false);
             onShowToast('success', 'Đã hủy kết bạn', `Đã hủy kết bạn với ${displayName}.`);
@@ -1916,7 +1919,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             (g) => g.id !== group.id && g.code !== group.code
           );
           applyGroups(next);
-          if (selectedGroupId === group.id) setSelectedGroupId(next[0]?.id || '');
+          if (selectedGroupId === group.id) {
+            setSelectedGroupId(next[0]?.id || '');
+            setShowMobileChat(false);
+          }
           setIsChannelDetailsOpen(false);
           onShowToast('success', 'Đã giải tán nhóm', group.name);
         },
@@ -1982,7 +1988,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             (g) => g.id !== group.id && g.code !== group.code
           );
           applyGroups(next);
-          if (selectedGroupId === group.id) setSelectedGroupId(next[0]?.id || '');
+          if (selectedGroupId === group.id) {
+            setSelectedGroupId(next[0]?.id || '');
+            setShowMobileChat(false);
+          }
           onShowToast('info', 'Đã rời khỏi nhóm', group.name);
         },
       });
@@ -2298,6 +2307,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       setGroupInvitations((prev) => prev.filter((i) => i.id !== inv.id));
       await fetchQGroups();
       setSelectedGroupId(inv.groupId);
+      setShowMobileChat(true);
       setFilterTab('groups');
       onShowToast('success', 'Đã tham gia nhóm', inv.groupName);
     } catch {}
@@ -2393,6 +2403,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     applyGroups(next);
     void syncGroupsToBackend(next);
     setSelectedGroupId(group.id);
+    setShowMobileChat(true);
     setIsCreateGroupOpen(false);
     setNewGroupName('');
     setNewGroupDept('');
@@ -2433,10 +2444,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         const updated = [joinedGroup, ...filtered];
         applyGroups(updated);
         setSelectedGroupId(joinedGroup.id);
+        setShowMobileChat(true);
         onShowToast('success', 'Tham gia nhóm thành công', res.message || `Chào mừng bạn đến với ${joinedGroup.name}`);
       } else if (res.status === 'already_member') {
         setIsCreateGroupOpen(false);
         setSelectedGroupId(res.group?.id || '');
+        if (res.group?.id) setShowMobileChat(true);
         onShowToast('info', 'Bạn đã là thành viên', res.message || 'Bạn đã tham gia nhóm này trước đó.');
       } else if (res.status === 'pending_approval') {
         setIsCreateGroupOpen(false);
@@ -2470,7 +2483,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         className={`${
           isSidebarCollapsed ? 'md:w-16' : 'md:w-72 lg:w-80'
         } ${
-          selectedGroupId ? 'hidden md:flex' : 'flex w-full'
+          showMobileChat ? 'hidden md:flex' : 'flex w-full'
         } bg-slate-50 border-r border-slate-200 flex-col shrink-0 h-full transition-all duration-200`}
       >
         {/* Header */}
@@ -2634,6 +2647,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   type="button"
                   onClick={() => {
                     setSelectedGroupId(group.id);
+                    setShowMobileChat(true);
                     markGroupAsRead(group.id);
                   }}
                   className={`relative w-10 h-10 rounded-xl flex items-center justify-center text-xs font-bold transition-all cursor-pointer ${
@@ -2713,6 +2727,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     isMenuOpen={menuGroupId === group.id}
                     onSelect={() => {
                       setSelectedGroupId(group.id);
+                      setShowMobileChat(true);
                       markGroupAsRead(group.id);
                       setMenuGroupId(null);
                     }}
@@ -2793,6 +2808,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             isMenuOpen={menuGroupId === group.id}
                             onSelect={() => {
                               setSelectedGroupId(group.id);
+                              setShowMobileChat(true);
                               markGroupAsRead(group.id);
                               setMenuGroupId(null);
                             }}
@@ -2874,6 +2890,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             isMenuOpen={menuGroupId === group.id}
                             onSelect={() => {
                               setSelectedGroupId(group.id);
+                              setShowMobileChat(true);
                               markGroupAsRead(group.id);
                               setMenuGroupId(null);
                             }}
@@ -2924,7 +2941,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       {/* ====================================================================
           RIGHT CHAT PANEL (SLACK STYLE HEADER & RICH COMPOSER)
       ==================================================================== */}
-      <div className={`flex-1 flex-col h-full overflow-hidden bg-white ${selectedGroupId ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`flex-1 flex-col h-full overflow-hidden bg-white ${showMobileChat ? 'flex' : 'hidden md:flex'}`}>
         {activeGroup && activeInfo ? (
           <>
             {/* Slack Style Chat Header */}
@@ -2933,7 +2950,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 {/* Mobile Back Button (Chuẩn Zalo/Telegram/Slack: Bấm để quay về danh sách kênh) */}
                 <button
                   type="button"
-                  onClick={() => setSelectedGroupId('')}
+                  onClick={() => setShowMobileChat(false)}
                   className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 cursor-pointer"
                   title="Quay lại danh sách hội nhóm"
                 >
@@ -4531,6 +4548,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           });
           if (dm) {
             setSelectedGroupId(dm.id);
+            setShowMobileChat(true);
             setFilterTab('all');
           } else {
             onShowToast('info', 'Bắt đầu trò chuyện', `Chưa có đoạn chat riêng với ${targetEmail}`);
