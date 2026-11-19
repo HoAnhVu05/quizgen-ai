@@ -87,6 +87,7 @@ import apiClient, { API_BASE } from '../services/apiClient';
 import { PublicProfileModal } from './PublicProfileModal';
 import { SlackEmojiPicker } from './SlackEmojiPicker';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -586,6 +587,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [isTextbookModalOpen, setIsTextbookModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [previewMediaUrl, setPreviewMediaUrl] = useState<{ url: string; name: string } | null>(null);
+  const [previewFile, setPreviewFile] = useState<{
+    url: string;
+    name: string;
+    size?: string;
+    type?: string;
+  } | null>(null);
+  const [activePinnedIdx, setActivePinnedIdx] = useState(0);
   const [selectedAttachment, setSelectedAttachment] = useState<{
     type: 'textbook' | 'file' | 'image' | 'video' | 'audio';
     id: string;
@@ -1214,7 +1222,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
         return true;
       })
-      .sort((a, b) => getGroupSortTime(b) - getGroupSortTime(a));
+      .sort((a, b) => {
+        const cleanMyEmail = myEmail.toLowerCase().trim();
+        const aPinned = Boolean(a.isPinned || (a.pinnedBy || []).some((e) => e.toLowerCase() === cleanMyEmail));
+        const bPinned = Boolean(b.isPinned || (b.pinnedBy || []).some((e) => e.toLowerCase() === cleanMyEmail));
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        return getGroupSortTime(b) - getGroupSortTime(a);
+      });
   }, [qgroups, searchQuery, filterTab, myEmail]);
 
   // Tự động chọn nhóm/hội thoại hợp lệ hiển thị cho tài khoản hiện tại
@@ -1247,6 +1262,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     const ownerEmail = (activeGroup.ownerEmail || '').toLowerCase().trim();
     return members.includes(cleanMyEmail) || ownerEmail === cleanMyEmail;
   }, [activeGroup, myEmail]);
+
+  const pinnedMessages = useMemo(() => {
+    return (activeGroup?.messages || []).filter((m) => m.isPinned);
+  }, [activeGroup]);
 
   const totalInvitations = friendRequests.length + groupInvitations.length;
 
@@ -2318,6 +2337,41 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     [activeGroup, qgroups, applyGroups, onShowToast]
   );
 
+  const handleTogglePinConversation = useCallback(
+    (group: QGroup) => {
+      const cleanMyEmail = myEmail.toLowerCase().trim();
+      const isPinned = Boolean(
+        group.isPinned || (group.pinnedBy || []).some((e) => e.toLowerCase() === cleanMyEmail)
+      );
+      const nowPinned = !isPinned;
+      const updated = qgroups.map((g) => {
+        if (g.id !== group.id && g.code !== group.code) return g;
+        const currentList = (g.pinnedBy || []).map((e) => e.toLowerCase());
+        let nextPinnedBy: string[];
+        if (nowPinned) {
+          nextPinnedBy = Array.from(new Set([...currentList, cleanMyEmail]));
+        } else {
+          nextPinnedBy = currentList.filter((e) => e !== cleanMyEmail);
+        }
+        return {
+          ...g,
+          isPinned: nextPinnedBy.length > 0,
+          pinnedBy: nextPinnedBy,
+        };
+      });
+      applyGroups(updated);
+      void syncGroupsToBackend(updated);
+      onShowToast(
+        'info',
+        nowPinned ? 'Đã ghim hội thoại' : 'Đã bỏ ghim hội thoại',
+        nowPinned
+          ? `"${group.name || group.directPartnerName}" được ghim lên đầu danh sách`
+          : `Đã bỏ ghim "${group.name || group.directPartnerName}"`
+      );
+    },
+    [qgroups, myEmail, applyGroups, syncGroupsToBackend, onShowToast]
+  );
+
   // ── Actions ───────────────────────────────────────────────────────────────
   const handleDeleteChat = useCallback(
     (group: QGroup) => {
@@ -3158,6 +3212,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       setMenuGroupId(null);
                     }}
                     onMute={() => handleToggleMute(group)}
+                    onTogglePin={() => {
+                      handleTogglePinConversation(group);
+                      setMenuGroupId(null);
+                    }}
                     onDelete={() => handleDeleteChat(group)}
                     onUnfriend={() => {
                       const info = resolveChatDisplayInfo(group, myEmail);
@@ -3240,6 +3298,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setMenuGroupId(null);
                             }}
                             onMute={() => handleToggleMute(group)}
+                            onTogglePin={() => {
+                              handleTogglePinConversation(group);
+                              setMenuGroupId(null);
+                            }}
                             onDelete={() => handleDeleteChat(group)}
                             onUnfriend={() => {
                               const info = resolveChatDisplayInfo(group, myEmail);
@@ -3323,6 +3385,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               setMenuGroupId(null);
                             }}
                             onMute={() => handleToggleMute(group)}
+                            onTogglePin={() => {
+                              handleTogglePinConversation(group);
+                              setMenuGroupId(null);
+                            }}
                             onDelete={() => handleDeleteChat(group)}
                             onUnfriend={() => {
                               const info = resolveChatDisplayInfo(group, myEmail);
@@ -3671,6 +3737,78 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               </div>
             </div>
 
+            {/* Pinned Messages Bar (Slack Sticky Pinned Banner) */}
+            {pinnedMessages.length > 0 && (
+              <div className="px-4 py-2 bg-amber-50/95 border-b border-amber-200/90 flex items-center justify-between gap-3 text-xs z-10 shrink-0 backdrop-blur-xs transition-all shadow-2xs">
+                <div
+                  onClick={() => {
+                    const curMsg = pinnedMessages[activePinnedIdx % pinnedMessages.length];
+                    if (curMsg) {
+                      const el = document.getElementById(`chat-msg-${curMsg.id}`);
+                      if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        el.classList.add('ring-2', 'ring-amber-400', 'bg-amber-100/70');
+                        setTimeout(() => {
+                          el.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-100/70');
+                        }, 2500);
+                      }
+                    }
+                  }}
+                  className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer group"
+                  title="Nhấn để xem tin nhắn được ghim trong hội thoại"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/60">
+                    <Pin className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-900 text-[11px]">
+                      <span>Tin nhắn đã ghim</span>
+                      {pinnedMessages.length > 1 && (
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-200 text-amber-800 font-semibold">
+                          {(activePinnedIdx % pinnedMessages.length) + 1}/{pinnedMessages.length}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-slate-700 truncate text-[11px] group-hover:text-amber-950 transition-colors">
+                      <strong className="text-slate-900">
+                        {pinnedMessages[activePinnedIdx % pinnedMessages.length].senderName}:{' '}
+                      </strong>
+                      {pinnedMessages[activePinnedIdx % pinnedMessages.length].text ||
+                        (pinnedMessages[activePinnedIdx % pinnedMessages.length].attachment
+                          ? `[Tệp đính kèm: ${pinnedMessages[activePinnedIdx % pinnedMessages.length].attachment?.name}]`
+                          : '...')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {pinnedMessages.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setActivePinnedIdx((prev) => (prev + 1) % pinnedMessages.length)}
+                      className="px-2 py-1 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-semibold transition-colors cursor-pointer border border-amber-300/60"
+                      title="Chuyển sang tin nhắn đã ghim tiếp theo"
+                    >
+                      Xem tiếp
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const curMsg = pinnedMessages[activePinnedIdx % pinnedMessages.length];
+                      if (curMsg) {
+                        handleTogglePinMessage(curMsg.id);
+                      }
+                    }}
+                    className="w-6 h-6 rounded-md hover:bg-amber-200 text-amber-700 hover:text-amber-950 flex items-center justify-center cursor-pointer transition-colors"
+                    title="Bỏ ghim tin nhắn này"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Message Stream (Slack Linear Flow) */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2 bg-[#fcfdfe]">
               {/* Channel Welcome Card */}
@@ -3744,7 +3882,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 return (
                   <div
                     key={msg.id}
-                    className="flex items-start gap-3 px-3 py-2 -mx-2 rounded-lg hover:bg-slate-100/70 transition-colors group relative select-text"
+                    id={`chat-msg-${msg.id}`}
+                    className="flex items-start gap-3 px-3 py-2 -mx-2 rounded-lg hover:bg-slate-100/70 transition-all duration-300 group relative select-text"
                   >
                     <div
                       onClick={() => {
@@ -3965,9 +4104,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 className="max-h-72 w-auto object-cover rounded-t-2xl cursor-pointer hover:opacity-95 transition-opacity"
                                 onClick={() => {
                                   if (msg.attachment?.fileUrl) {
-                                    setPreviewMediaUrl({
+                                    setPreviewFile({
                                       url: msg.attachment.fileUrl,
                                       name: msg.attachment.name || 'image.png',
+                                      size: msg.attachment.size,
+                                      type: 'image/jpeg',
                                     });
                                   }
                                 }}
@@ -3975,7 +4116,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                               <div className="p-2.5 flex items-center justify-between text-xs bg-white border-t border-slate-100">
                                 <div className="min-w-0 pr-2">
                                   <p className="truncate font-semibold text-slate-800 text-xs">{msg.attachment.name}</p>
-                                  <p className="text-[10px] text-slate-400 font-medium">{msg.attachment.size}</p>
+                                  <p className="text-[10px] text-slate-400 font-medium">{msg.attachment.size} • Bấm để xem &amp; thu phóng</p>
                                 </div>
                                 <button
                                   type="button"
@@ -3991,7 +4132,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                     document.body.removeChild(a);
                                     onShowToast('info', 'Đang tải ảnh xuống...', msg.attachment?.name || 'Ảnh');
                                   }}
-                                  className="p-1.5 rounded-lg bg-slate-100 hover:bg-teal-600 hover:text-white text-slate-700 transition-colors shrink-0 cursor-pointer"
+                                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 hover:text-white text-slate-700 transition-all shrink-0 flex items-center justify-center cursor-pointer border border-slate-200/80 shadow-2xs"
                                   title="Tải ảnh về máy"
                                 >
                                   <Download className="w-3.5 h-3.5" />
@@ -4018,8 +4159,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                             <div
                               onClick={() => {
                                 if (msg.attachment?.fileUrl) {
-                                  // Bấm vào thẻ để mở xem tệp trên tab trình duyệt
-                                  window.open(msg.attachment.fileUrl, '_blank', 'noopener,noreferrer');
+                                  setPreviewFile({
+                                    url: msg.attachment.fileUrl,
+                                    name: msg.attachment.name,
+                                    size: msg.attachment.size,
+                                    type: msg.attachment.fileType,
+                                  });
                                 }
                               }}
                               className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-teal-400 hover:bg-slate-50/70 transition-all text-left shadow-2xs cursor-pointer group flex items-center justify-between gap-3"
@@ -4053,11 +4198,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                     document.body.removeChild(a);
                                     onShowToast('info', 'Đang tải tệp xuống...', msg.attachment!.name);
                                   }}
-                                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center gap-1.5 text-xs font-semibold cursor-pointer border border-slate-200/80 shadow-2xs"
+                                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer border border-slate-200/80 shadow-2xs"
                                   title="Tải tệp về máy"
                                 >
                                   <Download className="w-3.5 h-3.5" />
-                                  <span className="hidden sm:inline">Tải về</span>
                                 </button>
                               )}
                             </div>
@@ -6008,6 +6152,29 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         />
       )}
 
+      {/* Universal Document & Media Preview Modal with Zoom, Rotate, and Safe Download */}
+      {previewFile && (
+        <DocumentPreviewModal
+          isOpen={Boolean(previewFile)}
+          fileUrl={previewFile.url}
+          fileName={previewFile.name}
+          fileSize={previewFile.size}
+          fileType={previewFile.type}
+          onClose={() => setPreviewFile(null)}
+          onDownload={() => {
+            const rawUrl = previewFile.url;
+            const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
+            const a = document.createElement('a');
+            a.href = dlUrl;
+            a.download = previewFile.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            onShowToast('info', 'Đang tải tệp xuống...', previewFile.name);
+          }}
+        />
+      )}
+
       {/* Lightbox Media Zoom Modal */}
       {previewMediaUrl && (
         <div
@@ -6148,6 +6315,7 @@ const ConversationItem: React.FC<{
   onViewProfile: () => void;
   onViewDetails: () => void;
   onMute: () => void;
+  onTogglePin: () => void;
   onDelete: () => void;
   onLeave: () => void;
   onDisband?: () => void;
@@ -6163,6 +6331,7 @@ const ConversationItem: React.FC<{
   onViewProfile,
   onViewDetails,
   onMute,
+  onTogglePin,
   onDelete,
   onLeave,
   onDisband,
@@ -6183,6 +6352,9 @@ const ConversationItem: React.FC<{
   const isGroup = !group.isDirect;
   const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
   const info = resolveChatDisplayInfo(group, myEmail);
+  const isPinned = Boolean(
+    group.isPinned || (group.pinnedBy || []).some((e) => e.toLowerCase() === myEmail.toLowerCase())
+  );
 
   if (isGroup) {
     return (
@@ -6203,6 +6375,7 @@ const ConversationItem: React.FC<{
             }`}
           />
           <span className="text-xs truncate">{group.name}</span>
+          {isPinned && <Pin className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
           {isOwner && (
             <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 shrink-0">
               Trưởng nhóm
@@ -6233,6 +6406,11 @@ const ConversationItem: React.FC<{
           >
             <MenuBtn icon={<Info className="w-3.5 h-3.5 text-slate-600" />} label="Chi tiết kênh" onClick={onViewDetails} />
             <MenuBtn icon={<Copy className="w-3.5 h-3.5 text-slate-500" />} label="Sao chép mã nhóm" onClick={onCopyCode} />
+            <MenuBtn
+              icon={<Pin className={`w-3.5 h-3.5 ${isPinned ? 'text-amber-500 fill-amber-500' : 'text-slate-500'}`} />}
+              label={isPinned ? 'Bỏ ghim kênh' : 'Ghim kênh lên đầu'}
+              onClick={onTogglePin}
+            />
             <MenuBtn
               icon={group.muted ? <Bell className="w-3.5 h-3.5 text-slate-600" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
               label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
@@ -6274,8 +6452,9 @@ const ConversationItem: React.FC<{
           </div>
           <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <p className="text-xs truncate">{info.displayName}</p>
+          {isPinned && <Pin className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
         </div>
       </div>
 
@@ -6300,6 +6479,11 @@ const ConversationItem: React.FC<{
           className="absolute right-6 top-7 z-40 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-xs animate-fade-in"
         >
           <MenuBtn icon={<User className="w-3.5 h-3.5 text-slate-600" />} label="Xem trang cá nhân" onClick={onViewProfile} />
+          <MenuBtn
+            icon={<Pin className={`w-3.5 h-3.5 ${isPinned ? 'text-amber-500 fill-amber-500' : 'text-slate-500'}`} />}
+            label={isPinned ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại lên đầu'}
+            onClick={onTogglePin}
+          />
           <MenuBtn
             icon={group.muted ? <Bell className="w-3.5 h-3.5 text-slate-600" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
             label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
