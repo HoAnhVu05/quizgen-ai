@@ -6,11 +6,6 @@ def seed_default_knowledge_base(db: Session):
     Nạp sẵn các danh mục và bài viết cẩm nang học thuật mẫu chất lượng cao
     để hỗ trợ giảng viên ngay từ lần khởi chạy đầu tiên.
     """
-    # Kiểm tra xem đã có dữ liệu chưa
-    existing_count = db.query(SupportFAQCategory).count()
-    if existing_count > 0:
-        return
-
     categories = [
         SupportFAQCategory(
             id="cat-doc-parsing",
@@ -47,7 +42,8 @@ def seed_default_knowledge_base(db: Session):
     ]
 
     for cat in categories:
-        db.add(cat)
+        if not db.query(SupportFAQCategory).filter(SupportFAQCategory.slug == cat.slug).first():
+            db.add(cat)
     db.commit()
 
     articles = [
@@ -129,9 +125,59 @@ Sau khi xuất bản gói `QTI_Package.zip` từ QuizGen AI:
             view_count=290,
             helpful_count=110,
             unhelpful_count=0
+        ),
+        SupportFAQArticle(
+            id="art-sqlite-wal",
+            category_id="cat-doc-parsing",
+            title="Khắc phục hiện tượng khóa cơ sở dữ liệu (Database is locked) khi nạp giáo trình lớn",
+            slug="khac-phuc-khoa-database-sqlite-wal",
+            content_markdown="""# Khắc phục hiện tượng khóa database khi tải tệp
+
+Khi nạp đồng thời nhiều giáo trình dung lượng lớn, hệ thống áp dụng cơ chế tự động:
+1. **SQLite Write-Ahead Logging (WAL):** Cho phép các luồng đọc và ghi diễn ra đồng thời mà không chặn lẫn nhau.
+2. **Busy Timeout 60s & Exponential Retry:** Nếu database đang có tác vụ ghi nặng, hệ thống tự động chờ tối đa 60 giây và thử lại 3 lần.
+3. **Lời khuyên vận hành:** Khi tải tài liệu vượt 40MB, nên chia nhỏ thành từng tập hoặc upload tuần tự để đạt tốc độ bóc tách chương mục nhanh nhất.""",
+            tags="sqlite,wal,database,locked,upload,retry",
+            view_count=175,
+            helpful_count=68,
+            unhelpful_count=1
+        ),
+        SupportFAQArticle(
+            id="art-discrete-math",
+            category_id="cat-ai-bloom",
+            title="Soạn thảo công thức Toán rời rạc, Mệnh đề Logic và Lý thuyết Tập hợp",
+            slug="soan-thao-toan-roi-rac-logic-menh-de",
+            content_markdown="""# Công thức Toán rời rạc & Đại số Logic trên QuizGen AI
+
+QuizGen AI hỗ trợ toàn diện các ký hiệu chuẩn cho môn Toán rời rạc, Cấu trúc dữ liệu và Lý thuyết đồ thị:
+- **Lượng từ & Logic:** `\\forall` (∀), `\\exists` (∃), `\\land` (∧), `\\lor` (∨), `\\neg` (¬), `\\to` (→), `\\leftrightarrow` (↔), `\\equiv` (≡), `\\oplus` (⊕).
+- **Lý thuyết tập hợp:** `\\in` (∈), `\\notin` (∉), `\\subset` (⊂), `\\subseteq` (⊆), `\\cap` (∩), `\\cup` (∪), `\\setminus` (∖), `\\emptyset` (∅).
+- **Tập số học:** `\\mathbb{R}` (ℝ), `\\mathbb{N}` (ℕ), `\\mathbb{Z}` (ℤ), `\\mathbb{Q}` (ℚ), `\\mathbb{C}` (ℂ).
+- **Xuất bản:** Tự động chuyển đổi sang ký tự Unicode học thuật hiển thị sắc nét trên cả Word (.docx) và PDF Vector ReportLab in ấn A4.""",
+            tags="discrete,math,logic,set,unicode,latex,export",
+            view_count=310,
+            helpful_count=125,
+            unhelpful_count=2
+        ),
+        SupportFAQArticle(
+            id="art-canvas-qti-warning",
+            category_id="cat-exam-export",
+            title="Xử lý các cảnh báo thường gặp khi nạp đề thi IMS QTI 2.1 vào Canvas LMS",
+            slug="xu-ly-canh-bao-canvas-lms-qti",
+            content_markdown="""# Xử lý cảnh báo khi Import QTI vào Canvas LMS
+
+Khi nhập tệp `QTI_Package.zip` vào Canvas:
+1. **Cảnh báo 'Some questions were imported with warnings':** Đây là cảnh báo thông thường của Canvas khi xử lý thẻ XML siêu dữ liệu Bloom hoặc điểm tin cậy RAG. Đề thi vẫn được tạo hoàn toàn chính xác với đầy đủ 4 phương án A, B, C, D và đáp án đúng.
+2. **Kiểm tra Ngân hàng câu hỏi (Item Bank):** Sau khi import, hãy vào mục **Quizzes** hoặc **Item Banks** trên Canvas để xem trực quan danh sách câu hỏi đã được đồng bộ.
+3. **Cấu hình xáo trộn trên LMS:** Thầy/Cô có thể bật tính năng *Shuffle Answers* của Canvas để kết hợp xáo trộn trực tuyến bên cạnh các mã đề in ấn vật lý (101, 102, 103, 104).""",
+            tags="canvas,lms,qti,warning,import,moodle",
+            view_count=240,
+            helpful_count=98,
+            unhelpful_count=1
         )
     ]
 
     for art in articles:
-        db.add(art)
+        if not db.query(SupportFAQArticle).filter(SupportFAQArticle.slug == art.slug).first():
+            db.add(art)
     db.commit()

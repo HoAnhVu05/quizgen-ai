@@ -69,8 +69,16 @@ def clean_latex_to_text(text: str) -> str:
         (r'\\infty\b', '∞'), (r'\\partial\b', '∂'), (r'\\nabla\b', '∇'),
         (r'\\int\b', '∫'), (r'\\sum\b', '∑'), (r'\\prod\b', '∏'),
         (r'\\notin\b', '∉'), (r'\\in\b', '∈'), (r'\\subset\b', '⊂'), (r'\\subseteq\b', '⊆'),
+        (r'\\supset\b', '⊃'), (r'\\supseteq\b', '⊇'), (r'\\setminus\b', '∖'),
         (r'\\cap\b', '∩'), (r'\\cup\b', '∪'), (r'\\emptyset\b', '∅'),
-        (r'\\rightarrow\b', '→'), (r'\\leftarrow\b', '←'), (r'\\Rightarrow\b', '⇒'), (r'\\Leftrightarrow\b', '⇔'),
+        (r'\\forall\b', '∀'), (r'\\exists\b', '∃'),
+        (r'\\land\b', '∧'), (r'\\wedge\b', '∧'), (r'\\lor\b', '∨'), (r'\\vee\b', '∨'),
+        (r'\\neg\b', '¬'), (r'\\lnot\b', '¬'), (r'\\sim\b', '∼'),
+        (r'\\rightarrow\b', '→'), (r'\\leftarrow\b', '←'), (r'\\to\b', '→'),
+        (r'\\Rightarrow\b', '⇒'), (r'\\Leftrightarrow\b', '⇔'), (r'\\leftrightarrow\b', '↔'),
+        (r'\\equiv\b', '≡'), (r'\\oplus\b', '⊕'), (r'\\bot\b', '⊥'), (r'\\top\b', '⊤'),
+        (r'\\vdash\b', '⊢'), (r'\\models\b', '⊨'),
+        (r'\\mathbb\{R\}', 'ℝ'), (r'\\mathbb\{N\}', 'ℕ'), (r'\\mathbb\{Z\}', 'ℤ'), (r'\\mathbb\{Q\}', 'ℚ'), (r'\\mathbb\{C\}', 'ℂ'),
         (r'\\log\b', 'log'), (r'\\ln\b', 'ln'), (r'\\sin\b', 'sin'), (r'\\cos\b', 'cos'), (r'\\tan\b', 'tan'),
         (r'\\cdot\b', '·'), (r'\\circ\b', '°')
     ]

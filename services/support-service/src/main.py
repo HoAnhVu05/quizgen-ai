@@ -477,8 +477,14 @@ def auto_suggest_solution(payload: AutoSuggestRequest, db: Session = Depends(get
     # Quy tắc nhận dạng mẹo tức thì
     if any(k in text_to_search for k in ["omr", "in ấn", "phiếu", "a4", "lệch"]):
         quick_tip = "Mẹo in ấn OMR: Khi in file PDF trắc nghiệm, luôn chọn tỷ lệ Actual Size (100%) và khổ giấy A4 để máy in không làm lệch tọa độ ô tròn."
+    elif any(k in text_to_search for k in ["toán rời rạc", "mệnh đề", "logic", "tập hợp", "discrete"]):
+        quick_tip = "Mẹo Toán rời rạc & Logic: Hệ thống hỗ trợ đầy đủ ký hiệu ∀, ∃, ∧, ∨, ¬, →, ↔, ⊂, ∩, ∪, ℝ, ℕ, ℤ và tự động làm sạch Unicode khi xuất Word và PDF OMR."
     elif any(k in text_to_search for k in ["latex", "toán", "công thức", "vỡ font", "font"]):
         quick_tip = "Mẹo công thức LaTeX: QuizGen AI đã tích hợp bộ làm sạch Unicode học thuật tự động cho Word (.docx), bạn có thể xuất thử tệp PDF Vector để đảm bảo tính mỹ thuật tuyệt đối."
+    elif any(k in text_to_search for k in ["wal", "locked", "khóa database", "database is locked"]):
+        quick_tip = "Mẹo SQLite WAL: Hệ thống đã tối ưu hóa chế độ Write-Ahead Logging và timeout 60s để chống khóa database khi nạp tệp dung lượng lớn."
+    elif any(k in text_to_search for k in ["canvas", "moodle", "qti", "lms"]):
+        quick_tip = "Mẹo Canvas QTI: Cảnh báo XML metadata trên Canvas là bình thường và không ảnh hưởng đến nội dung bài thi. Câu hỏi vẫn được import đầy đủ 100%."
     elif any(k in text_to_search for k in ["vietqr", "thanh toán", "chuyển khoản", "nâng cấp", "pro"]):
         quick_tip = "Mẹo kích hoạt VietQR: Hệ thống đối soát tự động qua Webhook NAPAS 24/7. Vui lòng đảm bảo giữ nguyên nội dung chuyển khoản ORDER_xxxxxx để hệ thống duyệt ngay trong 3 giây."
 
