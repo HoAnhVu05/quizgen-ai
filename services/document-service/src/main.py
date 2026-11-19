@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
+import uuid
 from uuid import uuid4
 
 logger = logging.getLogger("document-service")

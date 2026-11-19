@@ -72,6 +72,7 @@ import {
   File as FileIcon,
   Film,
   Image as ImageIcon,
+  AtSign,
 } from 'lucide-react';
 import {
   QGroup,
@@ -84,6 +85,8 @@ import {
 } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
 import { PublicProfileModal } from './PublicProfileModal';
+import { SlackEmojiPicker } from './SlackEmojiPicker';
+import { AudioMessagePlayer } from './AudioMessagePlayer';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -362,7 +365,7 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
   }
 
   const renderInlineSpans = (str: string) => {
-    const tokenRegex = /(https?:\/\/[^\s]+)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)/g;
+    const tokenRegex = /(https?:\/\/[^\s]+)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)|(@[a-zA-Z0-9_\.\u00C0-\u1EF9]+(?:\s+[a-zA-Z0-9_\.\u00C0-\u1EF9]+){0,2})/g;
     const tokens: React.ReactNode[] = [];
     let cur = 0;
     let m: RegExpExecArray | null;
@@ -408,6 +411,21 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
           >
             {val.slice(1, -1)}
           </code>
+        );
+      } else if (m[5]) {
+        // Tag / @mention thành viên
+        const isBroadcast = val.toLowerCase() === '@everyone' || val.toLowerCase() === '@kênh';
+        tokens.push(
+          <span
+            key={m.index}
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 mx-0.5 rounded-md font-semibold text-xs transition-colors cursor-pointer select-text ${
+              isBroadcast
+                ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 font-bold'
+                : 'bg-teal-100/90 text-teal-800 ring-1 ring-teal-200 hover:bg-teal-200'
+            }`}
+          >
+            {val}
+          </span>
         );
       }
       cur = m.index + val.length;
@@ -577,7 +595,20 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     fileType?: string;
     totalPages?: number;
     authorName?: string;
+    duration?: number;
   } | null>(null);
+
+  // Voice Recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // @Mention state
+  const [isMentionOpen, setIsMentionOpen] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState<string | null>(null);
 
   // Available Textbooks for Attachment
   const [availableTextbooks, setAvailableTextbooks] = useState<Array<{
@@ -1302,6 +1333,210 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       textarea.setSelectionRange(start + prefix.length, start + prefix.length + (selected ? selected.length : 8));
     }, 50);
   };
+
+  // ── Voice Recording Helpers ───────────────────────────────────────────────
+  const formatDuration = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : '';
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.start(250);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      console.error('Error starting audio recording:', err);
+      onShowToast(
+        'error',
+        'Không thể ghi âm',
+        'Vui lòng cấp quyền truy cập micro cho trình duyệt.'
+      );
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    onShowToast('info', 'Đã hủy ghi âm', 'Đoạn ghi âm chưa được gửi.');
+  };
+
+  const stopAndSendVoiceRecording = () => {
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+
+    const duration = recordingSeconds;
+    const recorder = mediaRecorderRef.current;
+
+    recorder.onstop = async () => {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      mediaRecorderRef.current = null;
+
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      audioChunksRef.current = [];
+      setIsRecording(false);
+      setRecordingSeconds(0);
+
+      if (audioBlob.size < 500) {
+        onShowToast('warning', 'Ghi âm quá ngắn', 'Vui lòng nói rõ ràng hơn.');
+        return;
+      }
+
+      try {
+        onShowToast('info', 'Đang gửi ghi âm...', `Thời lượng: ${formatDuration(duration)}`);
+        const audioFile = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('file', audioFile);
+
+        const res = await apiClient
+          .fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
+            method: 'POST',
+            body: formData,
+          })
+          .then((r) => r.json());
+
+        if (res && res.fileUrl && activeGroup) {
+          const now = Date.now();
+          const newMsg: QGroupMessage = {
+            id: `msg-${now}`,
+            senderEmail: myEmail,
+            senderName: myName,
+            senderTitle: currentUser?.academicTitle || 'GV',
+            avatarColor: 'bg-slate-700',
+            text: `🎙️ Tin nhắn thoại (${formatDuration(duration)})`,
+            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+            isPinned: false,
+            readBy: [myEmail],
+            reactions: {},
+            attachment: {
+              type: 'audio',
+              id: `att-${now}`,
+              name: `Ghi âm (${formatDuration(duration)})`,
+              fileUrl: res.fileUrl,
+              size: res.size || `${Math.round(audioBlob.size / 1024)} KB`,
+              duration: duration,
+            },
+          };
+
+          const updated = qgroups.map((g) =>
+            g.id === activeGroup.id
+              ? { ...g, updatedAt: now, messages: [...(g.messages || []), newMsg] }
+              : g
+          );
+          applyGroups(updated);
+          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
+
+          const targetId = activeGroup.id || activeGroup.code;
+          apiClient
+            .fetch(
+              `${API_BASE}/documents/qgroups/${encodeURIComponent(targetId)}/messages`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newMsg),
+              }
+            )
+            .catch(() => {});
+
+          onShowToast('success', 'Đã gửi tin nhắn thoại', `Thời lượng: ${formatDuration(duration)}`);
+        } else {
+          throw new Error(res?.detail || 'Không thể lưu bản ghi âm');
+        }
+      } catch (err: any) {
+        console.error('Error uploading voice recording:', err);
+        onShowToast('error', 'Lỗi gửi tin nhắn thoại', err?.message || 'Không thể tải lên đoạn ghi âm.');
+      }
+    };
+
+    recorder.stop();
+  };
+
+  // ── @Mention Candidate List ───────────────────────────────────────────────
+  const mentionCandidates = useMemo(() => {
+    if (!activeGroup) return [];
+    const list: { id: string; tag: string; role: string; email?: string }[] = [];
+
+    if (!activeGroup.isDirect) {
+      list.push({
+        id: 'everyone',
+        tag: 'everyone',
+        role: 'Thông báo cho tất cả thành viên trong phòng',
+      });
+      list.push({
+        id: 'kenh',
+        tag: 'kênh',
+        role: 'Thông báo tới tất cả thành viên kênh này',
+      });
+    }
+
+    // Members of active group
+    const memberEmails = activeGroup.members || [];
+    memberEmails.forEach((email) => {
+      const isOwner = email.toLowerCase() === (activeGroup.ownerEmail || '').toLowerCase();
+      const isMe = email.toLowerCase() === myEmail.toLowerCase();
+      let displayName = isOwner && activeGroup.ownerName ? activeGroup.ownerName : email.split('@')[0];
+      if (activeGroup.isDirect && activeGroup.directPartnerName) {
+        displayName = activeGroup.directPartnerName;
+      }
+      list.push({
+        id: email,
+        tag: displayName,
+        role: isOwner ? 'Trưởng nhóm' : isMe ? 'Bạn' : 'Thành viên',
+        email,
+      });
+    });
+
+    if (!mentionSearch) return list;
+    const q = mentionSearch.toLowerCase();
+    return list.filter(
+      (c) =>
+        c.tag.toLowerCase().includes(q) ||
+        (c.email && c.email.toLowerCase().includes(q)) ||
+        c.role.toLowerCase().includes(q)
+    );
+  }, [activeGroup, myEmail, mentionSearch]);
 
   // ── Send Message ──────────────────────────────────────────────────────────
   const handleSend = (e?: React.FormEvent) => {
@@ -3775,6 +4010,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 <span className="text-[10px] text-slate-400">{msg.attachment.size}</span>
                               </div>
                             </div>
+                          ) : msg.attachment.type === 'audio' && msg.attachment.fileUrl ? (
+                            <div className="mt-2.5 max-w-sm">
+                              <AudioMessagePlayer attachment={msg.attachment} onShowToast={onShowToast} />
+                            </div>
                           ) : msg.attachment.type === 'file' ? (
                             <div
                               onClick={() => {
@@ -4054,14 +4293,88 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
                     />
 
+                    {/* Autocomplete Mention Popover */}
+                    {isMentionOpen && mentionCandidates.length > 0 && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="absolute left-2 bottom-full mb-2 z-40 w-72 sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
+                      >
+                        <div className="px-3 py-1.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wide">
+                          <span className="flex items-center gap-1 text-teal-800">
+                            <AtSign className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Nhắc đến thành viên (@)</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-normal">Esc để đóng</span>
+                        </div>
+                        <div className="max-h-52 overflow-y-auto p-1 divide-y divide-slate-50">
+                          {mentionCandidates.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                const cursorPos = textareaRef.current?.selectionStart || chatInput.length;
+                                const textBefore = chatInput.slice(0, cursorPos);
+                                const atIdx = textBefore.lastIndexOf('@');
+                                if (atIdx !== -1) {
+                                  const beforeAt = chatInput.slice(0, atIdx);
+                                  const after = chatInput.slice(cursorPos);
+                                  setChatInput(`${beforeAt}@${c.tag} ${after}`);
+                                } else {
+                                  setChatInput((prev) => `${prev}@${c.tag} `);
+                                }
+                                setIsMentionOpen(false);
+                                setMentionSearch(null);
+                                textareaRef.current?.focus();
+                              }}
+                              className="w-full px-2.5 py-1.5 rounded-xl hover:bg-teal-50 flex items-center justify-between text-left group transition-colors cursor-pointer"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="w-6 h-6 rounded-md bg-slate-800 text-white font-bold text-[9px] flex items-center justify-center shrink-0 group-hover:bg-teal-700 transition-colors">
+                                  {c.tag === 'everyone' ? '📢' : c.tag === 'kênh' ? '🔔' : (c.tag || 'GV').slice(0, 2).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-xs font-bold text-slate-800 group-hover:text-teal-900 truncate">
+                                    @{c.tag}
+                                  </p>
+                                  {c.email && (
+                                    <p className="text-[10px] text-slate-400 truncate">{c.email}</p>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-slate-100 group-hover:bg-teal-100 group-hover:text-teal-800 shrink-0">
+                                {c.role}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Textarea */}
                     <textarea
                       ref={textareaRef}
                       rows={2}
                       value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setChatInput(val);
+                        const cursorPos = e.target.selectionStart || val.length;
+                        const textBefore = val.slice(0, cursorPos);
+                        const atMatch = textBefore.match(/@([a-zA-Z0-9_\.\u00C0-\u1EF9]*)$/);
+                        if (atMatch) {
+                          setMentionSearch(atMatch[1]);
+                          setIsMentionOpen(true);
+                        } else {
+                          setIsMentionOpen(false);
+                          setMentionSearch(null);
+                        }
+                      }}
                       onPaste={handleComposerPaste}
                       onKeyDown={(e) => {
+                        if (isMentionOpen && e.key === 'Escape') {
+                          setIsMentionOpen(false);
+                          return;
+                        }
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
                           handleSend();
@@ -4077,81 +4390,149 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
                     {/* Bottom Action Bar */}
                     <div className="px-2.5 py-1.5 flex items-center justify-between border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
-                      <div className="flex items-center gap-1">
-                        {/* 1. NÚT ĐÍNH KÈM TỆP & ẢNH TRỰC TIẾP TỪ THIẾT BỊ (Mở File Explorer ngay) */}
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer flex items-center gap-1 transition-colors"
-                          title="Tải tệp & ảnh từ thiết bị (Word, PDF, Ảnh, Video, Excel, ZIP...)"
-                        >
-                          <Paperclip className="w-4 h-4 text-slate-600" />
-                        </button>
-
-                        {/* 2. NÚT GIÁO TRÌNH THƯ VIỆN UTH */}
-                        <button
-                          type="button"
-                          onClick={() => setIsTextbookModalOpen(true)}
-                          className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 cursor-pointer flex items-center gap-1 transition-colors"
-                          title="Đính kèm giáo trình Thư viện UTH"
-                        >
-                          <BookOpen className="w-4 h-4 text-slate-600 hover:text-teal-700" />
-                        </button>
-
-                        {/* 3. NÚT EMOJI */}
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setIsEmojiPickerOpen(!isEmojiPickerOpen);
-                            }}
-                            className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer transition-colors ${
-                              isEmojiPickerOpen ? 'bg-slate-200 text-slate-900' : ''
-                            }`}
-                            title="Chèn biểu tượng cảm xúc"
-                          >
-                            <Smile className="w-4 h-4 text-slate-600" />
-                          </button>
-
-                          {isEmojiPickerOpen && (
-                            <div
-                              onClick={(e) => e.stopPropagation()}
-                              className="absolute left-0 bottom-10 z-30 bg-white border border-slate-200 rounded-xl shadow-xl p-2 flex items-center gap-1.5 text-base animate-fade-in"
-                            >
-                              {['👍', '❤️', '👏', '💡', '🔥', '📚', '🎓', '✍️', '🎉', '✅'].map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  onClick={() => {
-                                    setChatInput((prev) => prev + emoji);
-                                    setIsEmojiPickerOpen(false);
-                                  }}
-                                  className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center transition-all hover:scale-110 cursor-pointer"
-                                >
-                                  {emoji}
-                                </button>
+                      {isRecording ? (
+                        /* Voice Recording Mode UI */
+                        <div className="flex items-center justify-between w-full py-0.5 animate-fade-in">
+                          <div className="flex items-center gap-2.5">
+                            <span className="relative flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" />
+                            </span>
+                            <span className="text-xs font-bold text-rose-700 flex items-center gap-1.5 font-mono">
+                              <span>Đang ghi âm...</span>
+                              <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded-md text-[11px]">
+                                {formatDuration(recordingSeconds)}
+                              </span>
+                            </span>
+                            {/* Animated wave bars */}
+                            <div className="hidden sm:flex items-center gap-0.5 h-4">
+                              {[40, 70, 100, 60, 30, 80, 50, 90].map((h, i) => (
+                                <span
+                                  key={i}
+                                  style={{ height: `${h}%` }}
+                                  className="w-1 bg-rose-500 rounded-full animate-pulse"
+                                />
                               ))}
                             </div>
-                          )}
-                        </div>
-                      </div>
+                          </div>
 
-                      {/* Send Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleSend()}
-                        disabled={!chatInput.trim() && !selectedAttachment}
-                        className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
-                          chatInput.trim() || selectedAttachment
-                            ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
-                            : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                        }`}
-                        title="Gửi tin nhắn (Enter)"
-                      >
-                        <span className="hidden sm:inline">Gửi</span>
-                        <Send className="w-3.5 h-3.5" />
-                      </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={cancelVoiceRecording}
+                              className="px-2.5 py-1 rounded-lg hover:bg-slate-200 text-slate-600 hover:text-rose-600 font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Hủy ghi âm"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Hủy</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={stopAndSendVoiceRecording}
+                              className="px-3 py-1 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                              title="Dừng và gửi tin nhắn thoại"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>Gửi Voice</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* Normal Action Bar */
+                        <div className="flex items-center justify-between w-full">
+                          <div className="flex items-center gap-1">
+                            {/* 1. NÚT ĐÍNH KÈM TỆP & ẢNH TRỰC TIẾP TỪ THIẾT BỊ */}
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer flex items-center gap-1 transition-colors"
+                              title="Tải tệp & ảnh từ thiết bị (Word, PDF, Ảnh, Video, Excel, ZIP...)"
+                            >
+                              <Paperclip className="w-4 h-4 text-slate-600" />
+                            </button>
+
+                            {/* 2. NÚT GIÁO TRÌNH THƯ VIỆN UTH */}
+                            <button
+                              type="button"
+                              onClick={() => setIsTextbookModalOpen(true)}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 cursor-pointer flex items-center gap-1 transition-colors"
+                              title="Đính kèm giáo trình Thư viện UTH"
+                            >
+                              <BookOpen className="w-4 h-4 text-slate-600 hover:text-teal-700" />
+                            </button>
+
+                            {/* 3. NÚT EMOJI (KHO EMOJI PHONG CÁCH SLACK) */}
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsEmojiPickerOpen(!isEmojiPickerOpen);
+                                }}
+                                className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer transition-colors ${
+                                  isEmojiPickerOpen ? 'bg-slate-200 text-slate-900' : ''
+                                }`}
+                                title="Kho biểu tượng cảm xúc (Slack Emoji)"
+                              >
+                                <Smile className="w-4 h-4 text-slate-600" />
+                              </button>
+
+                              {isEmojiPickerOpen && (
+                                <SlackEmojiPicker
+                                  onSelect={(emoji) => {
+                                    setChatInput((prev) => prev + emoji);
+                                    setIsEmojiPickerOpen(false);
+                                    textareaRef.current?.focus();
+                                  }}
+                                  onClose={() => setIsEmojiPickerOpen(false)}
+                                />
+                              )}
+                            </div>
+
+                            {/* 4. NÚT TAG / MENTION THÀNH VIÊN (@) */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatInput((prev) => prev + '@');
+                                setMentionSearch('');
+                                setIsMentionOpen(true);
+                                textareaRef.current?.focus();
+                              }}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 cursor-pointer flex items-center gap-1 transition-colors"
+                              title="Nhắc đến thành viên (@mention)"
+                            >
+                              <AtSign className="w-4 h-4 text-slate-600 hover:text-teal-700" />
+                            </button>
+
+                            {/* 5. NÚT GHI ÂM TIN NHẮN THOẠI (MIC) */}
+                            <button
+                              type="button"
+                              onClick={startVoiceRecording}
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-rose-50 cursor-pointer flex items-center gap-1 transition-colors"
+                              title="Ghi âm tin nhắn thoại (Voice note)"
+                            >
+                              <Mic className="w-4 h-4 text-slate-600 hover:text-rose-600" />
+                            </button>
+                          </div>
+
+                          {/* Send Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleSend()}
+                            disabled={!chatInput.trim() && !selectedAttachment}
+                            className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
+                              chatInput.trim() || selectedAttachment
+                                ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
+                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            }`}
+                            title="Gửi tin nhắn (Enter)"
+                          >
+                            <span className="hidden sm:inline">Gửi</span>
+                            <Send className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </>

@@ -212,6 +212,7 @@ export interface QGroupMessage {
     totalPages?: number;
     questionCount?: number;
     durationMinutes?: number;
+    duration?: number;
     authorName?: string;
   };
   sharedPost?: {
