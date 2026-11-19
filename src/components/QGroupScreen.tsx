@@ -3643,19 +3643,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           </button>
                         )}
 
-                        {/* Thu hồi tin nhắn (Chỉ tin nhắn của mình) */}
-                        {isMe && (
-                          <button
-                            type="button"
-                            onClick={() => handleRecallMessage(msg.id)}
-                            className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center text-xs cursor-pointer"
-                            title="Thu hồi tin nhắn"
-                          >
-                            <Undo2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-
-                        {/* Xóa tin nhắn (Dành cho admin / chủ phòng / người gửi) */}
+                        {/* Xóa tin nhắn (Dành cho admin / chủ phòng / người gửi) - Chuẩn Slack/Teams */}
                         {(isMe || isOwner) && (
                           <button
                             type="button"
