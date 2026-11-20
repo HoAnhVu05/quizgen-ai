@@ -293,6 +293,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Tùy biến Giao diện Hệ thống',
           icon: Palette,
         },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'support',
+          label: 'Tiếp nhận & CSKH Kỹ thuật',
+          icon: LifeBuoy,
+        },
       ];
     }
 

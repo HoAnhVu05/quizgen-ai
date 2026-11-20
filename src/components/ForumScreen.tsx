@@ -1344,11 +1344,11 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
                 {/* Attached Image with Lightbox Zoom - Hiển thị 100% kích thước gốc của ảnh, không cắt xén */}
                 {post.imageUrl && (
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-50/70 group flex items-center justify-center p-1 sm:p-1.5 shadow-2xs">
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-200/90 bg-slate-50/70 group flex items-center justify-center p-1 sm:p-1.5 shadow-2xs w-full">
                     <img
                       src={post.imageUrl}
                       alt="Minh họa bài viết"
-                      className="w-full h-auto object-contain max-h-[85vh] rounded-xl group-hover:opacity-95 transition-all cursor-pointer block"
+                      className="max-w-full w-auto h-auto object-contain max-h-[85vh] rounded-xl group-hover:opacity-95 transition-all cursor-pointer block mx-auto"
                       onClick={() => setLightboxImageUrl(post.imageUrl || null)}
                     />
                     <button

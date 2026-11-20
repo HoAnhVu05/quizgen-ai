@@ -641,13 +641,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         ) : (
           /* ── LECTURER & HOD HEADER ACTIONS ── */
           <>
-            {/* Nút Hỗ Trợ Kỹ Thuật (Support Button) thay thế thông tin user dư thừa */}
+            {/* Nút Hỗ Trợ Kỹ Thuật (Compact Support Button) */}
             <button
               type="button"
               onClick={() => onNavigate?.('support')}
-              className={`flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl border transition-all text-left shadow-2xs group cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-all text-left shadow-2xs group cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
                 currentScreen === 'support'
-                  ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold ring-2 ring-emerald-400/30'
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold ring-2 ring-emerald-400/20'
                   : activeThemeId === 'spring'
                   ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/80 text-[#8F171C]'
                   : activeThemeId === 'summer'
@@ -658,28 +658,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                   ? 'border-[#78BDE8]/70 hover:border-[#2563A6] bg-[#F3FAFF]/80 text-[#243B64]'
                   : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
                   ? 'border-[#E7B947]/70 hover:border-[#DA251D] bg-[#FFF3D1]/80 text-[#8F171C]'
-                  : 'border-slate-200 bg-white hover:border-emerald-500 hover:bg-slate-50 text-slate-700'
+                  : 'border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50 text-slate-700'
               }`}
-              title="Trung tâm Hỗ trợ Kỹ thuật & Cẩm nang Học thuật UTH"
+              title="Trung tâm Hỗ trợ Kỹ thuật & Cẩm nang Học thuật"
             >
-              <div
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shadow-xs shrink-0 group-hover:rotate-12 transition-transform ${
-                  currentScreen === 'support'
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                }`}
-              >
-                <LifeBuoy className="w-4 h-4" />
-              </div>
-              <div className="flex flex-col text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold leading-tight">Hỗ Trợ Kỹ Thuật</span>
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Đang trực tuyến" />
-                </div>
-                <span className="text-[10px] text-slate-400 font-medium leading-none hidden sm:inline">
-                  Cẩm nang &amp; Báo lỗi
-                </span>
-              </div>
+              <LifeBuoy className="w-3.5 h-3.5 text-emerald-600 shrink-0 group-hover:rotate-45 transition-transform" />
+              <span className="text-xs font-bold leading-none">Hỗ trợ</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="Trực tuyến" />
             </button>
 
             {/* Subscription Plan Badge & Upgrade Action */}

@@ -30,7 +30,8 @@ import {
   RefreshCw,
   Info,
   ShieldCheck,
-  Sparkle
+  Inbox,
+  AlertCircle
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { API_BASE } from '../services/apiClient';
@@ -108,6 +109,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshingTickets, setIsRefreshingTickets] = useState(false);
 
   // Form tạo ticket mới
   const [formSubject, setFormSubject] = useState('');
@@ -117,6 +119,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
 
   // Quản lý đính kèm ảnh / tệp lỗi khi tạo ticket
   const [createFiles, setCreateFiles] = useState<File[]>([]);
@@ -128,14 +131,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   const [replyMessage, setReplyMessage] = useState('');
   const [replyFiles, setReplyFiles] = useState<File[]>([]);
   const [replyPreviews, setReplyPreviews] = useState<{ url: string; name: string; size: string; isImage: boolean }[]>([]);
-  const [isDraggingReply, setIsDraggingReply] = useState(false);
   const replyFileInputRef = useRef<HTMLInputElement>(null);
   const [isSendingReply, setIsSendingReply] = useState(false);
-
-  // Khảo sát đánh giá CSAT
-  const [feedbackRating, setFeedbackRating] = useState(5);
-  const [feedbackText, setFeedbackText] = useState('');
-  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
 
   // Lightbox xem ảnh toàn màn hình
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
@@ -152,8 +149,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15); // A5
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
       gain.gain.setValueAtTime(0.08, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
       osc.start();
@@ -206,7 +203,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   }, [activeTab, selectedTicket]);
 
   const appendCreateFiles = (newFiles: File[]) => {
-    const combined = [...createFiles, ...newFiles].slice(0, 5); // Tối đa 5 file
+    const combined = [...createFiles, ...newFiles].slice(0, 5);
     setCreateFiles(combined);
 
     const previews = combined.map((f) => ({
@@ -245,7 +242,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     setReplyPreviews(updatedPreviews);
   };
 
-  // Tải danh mục và bài viết FAQ
+  // Tải danh mục và bài viết FAQ từ máy chủ
   useEffect(() => {
     fetchFAQData();
     fetchTickets();
@@ -256,7 +253,6 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     if (!selectedTicket) return;
     const ticketId = selectedTicket.id;
 
-    // Tải ngay lập tức
     fetchTicketDetail(ticketId);
 
     const interval = setInterval(() => {
@@ -316,7 +312,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         const catData = await catRes.json();
         setCategories(catData);
       } else {
-        setCategories(mockCategories);
+        setCategories([]);
       }
 
       const artRes = await fetch(`${API_BASE}/support/faq/articles`);
@@ -324,17 +320,18 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         const artData = await artRes.json();
         setArticles(artData);
       } else {
-        setArticles(mockArticles);
+        setArticles([]);
       }
     } catch {
-      setCategories(mockCategories);
-      setArticles(mockArticles);
+      setCategories([]);
+      setArticles([]);
     } finally {
       setIsLoading(false);
     }
   };
 
   const fetchTickets = async () => {
+    setIsRefreshingTickets(true);
     try {
       const headers: Record<string, string> = {
         'x-user-id': currentUser?.id || 'usr-lec-001',
@@ -347,10 +344,12 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         const data = await res.json();
         setTickets(data);
       } else {
-        setTickets(mockTickets);
+        setTickets([]);
       }
     } catch {
-      setTickets(mockTickets);
+      setTickets([]);
+    } finally {
+      setIsRefreshingTickets(false);
     }
   };
 
@@ -359,6 +358,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     if (!formSubject || !formDescription) return;
 
     setIsSubmitting(true);
+    setSubmitErrorMessage(null);
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -386,7 +386,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
       if (res.ok) {
         const newTicket = await res.json();
 
-        // Nếu có ảnh/file đính kèm, upload ngay vào ticket vừa tạo
+        // Nếu có ảnh/tệp đính kèm, upload ngay
         if (createFiles.length > 0) {
           const formData = new FormData();
           createFiles.forEach((f) => formData.append('files', f));
@@ -413,32 +413,11 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
           fetchTickets();
         }, 1200);
       } else {
-        // Fallback thêm cục bộ
-        const fallbackTicket: SupportTicket = {
-          id: `tk-${Date.now()}`,
-          ticket_code: `TK-2026-${Math.floor(10000 + Math.random() * 90000)}`,
-          subject: formSubject,
-          description: formDescription,
-          category: formCategory,
-          priority: formPriority,
-          status: 'OPEN',
-          sla_first_response_due: new Date(Date.now() + 4 * 3600000).toISOString(),
-          sla_resolution_due: new Date(Date.now() + 12 * 3600000).toISOString(),
-          created_at: new Date().toISOString()
-        };
-        setTickets([fallbackTicket, ...tickets]);
-        setSubmitSuccess(true);
-        setTimeout(() => {
-          setSubmitSuccess(false);
-          setActiveTab('my_tickets');
-        }, 1200);
+        const errJson = await res.json().catch(() => null);
+        setSubmitErrorMessage(errJson?.detail || 'Không thể tạo phiếu hỗ trợ, vui lòng thử lại.');
       }
-    } catch {
-      setSubmitSuccess(true);
-      setTimeout(() => {
-        setSubmitSuccess(false);
-        setActiveTab('my_tickets');
-      }, 1200);
+    } catch (err: any) {
+      setSubmitErrorMessage(err?.message || 'Lỗi kết nối máy chủ hỗ trợ.');
     } finally {
       setIsSubmitting(false);
     }
@@ -466,7 +445,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
       if (res.ok) {
         const newMsg = await res.json();
 
-        // Nếu có upload kèm tệp
+        // Upload kèm file nếu có
         if (replyFiles.length > 0) {
           const formData = new FormData();
           replyFiles.forEach((f) => formData.append('files', f));
@@ -495,38 +474,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         setReplyMessage('');
         setReplyFiles([]);
         setReplyPreviews([]);
-      } else {
-        const dummyMsg: TicketMessage = {
-          id: `msg-${Date.now()}`,
-          sender_name: currentUser?.fullName || 'Tôi',
-          sender_role: 'USER',
-          message_body: replyMessage,
-          created_at: new Date().toISOString()
-        };
-        setSelectedTicket({
-          ...selectedTicket,
-          messages: [...(selectedTicket.messages || []), dummyMsg]
-        });
-        setReplyMessage('');
-        setReplyFiles([]);
-        setReplyPreviews([]);
       }
-    } catch {
-      const dummyMsg: TicketMessage = {
-        id: `msg-${Date.now()}`,
-        sender_name: currentUser?.fullName || 'Tôi',
-        sender_role: 'USER',
-        message_body: replyMessage,
-        created_at: new Date().toISOString()
-      };
-      setSelectedTicket({
-        ...selectedTicket,
-        messages: [...(selectedTicket.messages || []), dummyMsg]
-      });
-      setReplyMessage('');
-      setReplyFiles([]);
-      setReplyPreviews([]);
-    } finally {
+    } catch {} finally {
       setIsSendingReply(false);
     }
   };
@@ -539,38 +488,40 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   );
 
   return (
-    <div className="flex-1 h-full overflow-y-auto bg-slate-950 text-slate-100 flex flex-col font-sans select-text">
-      {/* ─── Top Academic Header ─── */}
-      <header className="px-6 py-6 border-b border-white/[0.08] bg-slate-900/60 backdrop-blur-md sticky top-0 z-30">
+    <div className="flex-1 h-full overflow-y-auto bg-slate-50/70 text-slate-800 flex flex-col font-sans select-text">
+      {/* ─── Top Academic Header (Matching Notion / Canvas UI Style) ─── */}
+      <header className="px-6 py-5 border-b border-slate-200/90 bg-white/90 backdrop-blur-md sticky top-0 z-30 shadow-2xs">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20 shrink-0">
-              <LifeBuoy className="w-6 h-6" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-teal-50 border border-teal-200 text-[#008689] flex items-center justify-center shadow-2xs shrink-0">
+              <LifeBuoy className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white">Trung Tâm Hỗ Trợ & Cẩm Nang Học Thuật</h1>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  SLA 100% Active
+                <h1 className="text-lg font-extrabold tracking-tight text-slate-900">
+                  Trung Tâm Hỗ Trợ &amp; Cẩm Nang Học Thuật
+                </h1>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  SLA Active
                 </span>
               </div>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Giải quyết trực tiếp sự cố bóc tách giáo trình, công thức LaTeX, xuất đề thi OMR và đối soát tài khoản
+              <p className="text-xs text-slate-500 mt-0.5">
+                Giải quyết trực tiếp sự cố bóc tách giáo trình, công thức LaTeX, in ấn phiếu OMR và tài khoản
               </p>
             </div>
           </div>
 
-          {/* Quick Actions / Tab Switcher */}
-          <div className="flex items-center gap-2 bg-slate-900 border border-white/10 p-1 rounded-xl">
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
             <button
               onClick={() => {
                 setActiveTab('faq');
                 setSelectedTicket(null);
               }}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'faq'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                  ? 'bg-white text-[#008689] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -582,16 +533,16 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 setActiveTab('my_tickets');
                 fetchTickets();
               }}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all relative cursor-pointer ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative cursor-pointer ${
                 activeTab === 'my_tickets'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                  ? 'bg-white text-[#008689] shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
-              <span>Phiếu hỗ trợ của tôi</span>
+              <span>Phiếu của tôi</span>
               {tickets.length > 0 && (
-                <span className="w-4 h-4 rounded-full bg-emerald-400 text-slate-950 text-[10px] font-black flex items-center justify-center">
+                <span className="px-1.5 py-0.2 rounded-full bg-[#008689] text-white text-[10px] font-black">
                   {tickets.length}
                 </span>
               )}
@@ -602,10 +553,10 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 setActiveTab('create_ticket');
                 setSelectedTicket(null);
               }}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'create_ticket'
-                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md'
-                  : 'text-emerald-400 hover:bg-emerald-500/10'
+                  ? 'bg-[#008689] text-white shadow-xs'
+                  : 'bg-teal-50 text-[#008689] border border-teal-200/80 hover:bg-teal-100/60'
               }`}
             >
               <PlusCircle className="w-3.5 h-3.5" />
@@ -621,10 +572,12 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         {activeTab === 'faq' && (
           <div className="space-y-6">
             {/* Search Banner */}
-            <div className="relative rounded-2xl bg-gradient-to-br from-slate-900 to-slate-900/40 border border-white/[0.08] p-6 text-center space-y-3">
-              <h2 className="text-lg font-bold text-white">Tra cứu nhanh cẩm nang xử lý sự cố học thuật</h2>
-              <p className="text-xs text-slate-400 max-w-xl mx-auto">
-                Nhập từ khóa như: <code className="text-emerald-400">in OMR</code>, <code className="text-teal-400">công thức LaTeX</code>, <code className="text-amber-400">VietQR</code>, <code className="text-blue-400">Canvas QTI</code>
+            <div className="rounded-2xl bg-white border border-slate-200 p-6 text-center space-y-3 shadow-2xs">
+              <h2 className="text-base font-extrabold text-slate-900">
+                Tra cứu cẩm nang xử lý sự cố &amp; hướng dẫn chuẩn học thuật
+              </h2>
+              <p className="text-xs text-slate-500 max-w-xl mx-auto">
+                Nhập từ khóa như: <span className="font-semibold text-[#008689]">in OMR A4</span>, <span className="font-semibold text-[#008689]">công thức LaTeX</span>, <span className="font-semibold text-[#008689]">VietQR</span>, <span className="font-semibold text-[#008689]">Canvas LMS</span>
               </p>
               <div className="max-w-xl mx-auto relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
@@ -633,37 +586,37 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Tìm kiếm giải pháp hoặc bài viết hướng dẫn..."
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white transition-all shadow-2xs"
                 />
               </div>
             </div>
 
             {/* Selected Article Detail View */}
             {selectedArticle ? (
-              <div className="bg-slate-900/70 border border-white/[0.08] rounded-2xl p-6 backdrop-blur-xl space-y-4">
+              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-2xs space-y-4">
                 <button
                   onClick={() => setSelectedArticle(null)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:underline cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[#008689] hover:underline cursor-pointer"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Quay lại danh mục</span>
+                  <span>Quay lại cẩm nang</span>
                 </button>
-                <h2 className="text-xl font-bold text-white">{selectedArticle.title}</h2>
-                <div className="flex items-center gap-4 text-xs text-slate-400 pb-4 border-b border-white/[0.08]">
+                <h2 className="text-lg font-extrabold text-slate-900">{selectedArticle.title}</h2>
+                <div className="flex items-center gap-4 text-xs text-slate-400 pb-4 border-b border-slate-100">
                   <span>Lượt xem: {selectedArticle.view_count}</span>
                   <span>Đánh giá hữu ích: {selectedArticle.helpful_count} ⭐</span>
                   {selectedArticle.tags && (
-                    <span className="text-emerald-400 font-mono">#{selectedArticle.tags}</span>
+                    <span className="text-[#008689] font-mono font-medium">#{selectedArticle.tags}</span>
                   )}
                 </div>
-                <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-line py-2">
+                <div className="text-slate-700 text-xs sm:text-sm leading-relaxed whitespace-pre-line py-2">
                   {selectedArticle.content_markdown}
                 </div>
-                <div className="pt-4 border-t border-white/[0.08] flex items-center justify-between">
-                  <span className="text-xs text-slate-400">Bài viết này có giải quyết được sự cố của bạn không?</span>
+                <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">Bài viết này có giúp Thầy/Cô giải quyết sự cố không?</span>
                   <button
-                    onClick={() => alert('Cảm ơn Thầy/Cô đã đánh giá hữu ích!')}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 text-xs font-semibold border border-emerald-500/30 cursor-pointer"
+                    onClick={() => alert('Cảm ơn Thầy/Cô đã gửi phản hồi đánh giá!')}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 text-[#008689] hover:bg-teal-100 text-xs font-bold border border-teal-200 cursor-pointer"
                   >
                     <ThumbsUp className="w-3.5 h-3.5" />
                     <span>Hữu ích ({selectedArticle.helpful_count + 1})</span>
@@ -678,9 +631,9 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     <div
                       key={cat.id}
                       onClick={() => setSearchQuery(cat.name.split('.')[1]?.trim() || cat.name)}
-                      className="p-5 rounded-2xl bg-slate-900/60 hover:bg-slate-900 border border-white/[0.06] hover:border-emerald-500/40 transition-all cursor-pointer group shadow-sm"
+                      className="p-5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 hover:border-[#008689]/60 transition-all cursor-pointer group shadow-2xs"
                     >
-                      <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-emerald-400 mb-3 group-hover:scale-110 transition-transform">
+                      <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-100 flex items-center justify-center text-[#008689] mb-3 group-hover:scale-105 transition-transform">
                         {cat.icon === 'Download' ? (
                           <Download className="w-5 h-5" />
                         ) : cat.icon === 'CreditCard' ? (
@@ -691,11 +644,11 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                           <FileText className="w-5 h-5" />
                         )}
                       </div>
-                      <h3 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors">
+                      <h3 className="text-sm font-bold text-slate-900 group-hover:text-[#008689] transition-colors">
                         {cat.name}
                       </h3>
-                      <p className="text-xs text-slate-400 mt-1 line-clamp-2">{cat.description}</p>
-                      <span className="inline-block mt-3 text-[11px] font-mono text-emerald-400/90 font-semibold">
+                      <p className="text-xs text-slate-500 mt-1 line-clamp-2 leading-relaxed">{cat.description}</p>
+                      <span className="inline-block mt-3 text-[11px] font-mono text-[#008689] font-bold">
                         {cat.articles_count} bài viết chuyên sâu →
                       </span>
                     </div>
@@ -705,7 +658,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 {/* Articles List */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-slate-200">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       Bài viết cẩm nang phổ biến ({filteredArticles.length})
                     </h3>
                   </div>
@@ -715,15 +668,15 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                       <div
                         key={art.id}
                         onClick={() => setSelectedArticle(art)}
-                        className="p-4 rounded-xl bg-slate-900/40 hover:bg-slate-900/80 border border-white/[0.05] hover:border-emerald-500/30 transition-all cursor-pointer group flex items-start justify-between gap-3"
+                        className="p-4 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-[#008689]/50 transition-all cursor-pointer group flex items-start justify-between gap-3 shadow-2xs"
                       >
                         <div className="space-y-1">
-                          <h4 className="text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">
+                          <h4 className="text-xs font-bold text-slate-900 group-hover:text-[#008689] transition-colors">
                             {art.title}
                           </h4>
-                          <p className="text-[11px] text-slate-400 line-clamp-2">{art.content_markdown}</p>
+                          <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">{art.content_markdown}</p>
                         </div>
-                        <ChevronRight className="w-4 h-4 text-slate-500 group-hover:translate-x-1 transition-transform shrink-0 mt-1" />
+                        <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 group-hover:text-[#008689] transition-all shrink-0 mt-1" />
                       </div>
                     ))}
                   </div>
@@ -738,76 +691,76 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
           <div>
             {selectedTicket ? (
               // Chi tiết hội thoại ticket 2 chiều
-              <div className="bg-slate-900/70 border border-white/[0.08] rounded-2xl p-6 backdrop-blur-xl shadow-2xl flex flex-col gap-4">
-                <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
+              <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-2xs flex flex-col gap-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <button
                     onClick={() => setSelectedTicket(null)}
-                    className="inline-flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#008689] transition-colors cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" />
                     <span>Quay lại danh sách phiếu</span>
                   </button>
 
                   <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-mono bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    <span className="flex items-center gap-1.5 text-[11px] text-emerald-700 font-mono bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
                       Live Chat Sync (3.5s)
                     </span>
                   </div>
                 </div>
 
                 {/* Ticket Header & SLA */}
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-950/60 p-4 rounded-xl border border-white/[0.05]">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200/70">
                   <div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-mono text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md">
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-mono text-xs font-bold text-[#008689] bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md">
                         {selectedTicket.ticket_code}
                       </span>
                       <span
-                        className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                           selectedTicket.status === 'RESOLVED'
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : selectedTicket.status === 'IN_PROGRESS'
-                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                            : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-blue-50 text-blue-700 border border-blue-200'
                         }`}
                       >
                         {selectedTicket.status}
                       </span>
-                      <span className="text-xs text-slate-400">Mức độ: <strong>{selectedTicket.priority}</strong></span>
+                      <span className="text-xs text-slate-500">Mức độ: <strong>{selectedTicket.priority}</strong></span>
                     </div>
-                    <h2 className="text-lg font-bold text-white mt-1.5">{selectedTicket.subject}</h2>
+                    <h2 className="text-base font-extrabold text-slate-900 mt-1">{selectedTicket.subject}</h2>
                   </div>
 
-                  <div className="text-right text-xs text-slate-400">
-                    <p className="flex items-center gap-1 justify-end text-amber-300 font-bold">
+                  <div className="text-right text-xs text-slate-500">
+                    <p className="flex items-center gap-1 justify-end text-amber-700 font-bold">
                       <Clock className="w-3.5 h-3.5" /> Cam kết phản hồi SLA:
                     </p>
-                    <p className="font-mono text-slate-300 mt-0.5">
+                    <p className="font-mono text-slate-700 mt-0.5">
                       Trước {new Date(selectedTicket.sla_first_response_due).toLocaleTimeString('vi-VN')} ({new Date(selectedTicket.sla_first_response_due).toLocaleDateString('vi-VN')})
                     </p>
                   </div>
                 </div>
 
                 {/* Luồng tin nhắn đàm thoại */}
-                <div className="py-2 space-y-4 max-h-[460px] overflow-y-auto pr-2 scrollbar-thin">
+                <div className="py-2 space-y-3.5 max-h-[460px] overflow-y-auto pr-2 scrollbar-thin">
                   {/* Mô tả ban đầu */}
-                  <div className="bg-slate-800/40 rounded-xl p-4 border border-white/[0.04] space-y-2">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span className="font-bold text-slate-200 flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-emerald-400" /> Mô tả sự cố ban đầu
+                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200/80 space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <FileText className="w-3.5 h-3.5 text-[#008689]" /> Mô tả sự cố ban đầu
                       </span>
-                      <span>{new Date(selectedTicket.created_at).toLocaleString('vi-VN')}</span>
+                      <span className="font-mono">{new Date(selectedTicket.created_at).toLocaleString('vi-VN')}</span>
                     </div>
-                    <p className="text-sm text-slate-300 whitespace-pre-line leading-relaxed">
+                    <p className="text-xs sm:text-sm text-slate-700 whitespace-pre-line leading-relaxed">
                       {selectedTicket.description}
                     </p>
 
                     {/* Tệp đính kèm ban đầu của ticket nếu có */}
                     {selectedTicket.attachments && selectedTicket.attachments.length > 0 && (
-                      <div className="pt-2 border-t border-white/[0.05] space-y-1.5">
-                        <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1">
-                          <Paperclip className="w-3 h-3 text-emerald-400" /> Tệp đính kèm khi mở phiếu:
+                      <div className="pt-2 border-t border-slate-200/60 space-y-1.5">
+                        <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+                          <Paperclip className="w-3 h-3 text-[#008689]" /> Tệp đính kèm khi mở phiếu:
                         </span>
                         <div className="flex flex-wrap gap-2">
                           {selectedTicket.attachments.map((att) => {
@@ -819,14 +772,14 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                                   setLightboxImageUrl(att.file_url || `/api/v1/support/attachments/${att.file_name}`);
                                   setLightboxCaption(att.file_name);
                                 }}
-                                className="relative rounded-lg overflow-hidden border border-white/10 group cursor-pointer hover:border-emerald-400 transition-colors"
+                                className="relative rounded-lg overflow-hidden border border-slate-200 group cursor-pointer hover:border-[#008689] transition-colors shadow-2xs"
                               >
                                 <img
                                   src={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
                                   alt={att.file_name}
                                   className="w-24 h-20 object-cover rounded-lg group-hover:scale-105 transition-transform"
                                 />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                   <Maximize2 className="w-4 h-4 text-white" />
                                 </div>
                               </div>
@@ -835,9 +788,9 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                                 key={att.id}
                                 href={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
                                 download
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-white/10 hover:border-emerald-400 text-xs text-slate-200 transition-colors"
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-[#008689] text-xs text-slate-700 transition-colors shadow-2xs"
                               >
-                                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                                <FileText className="w-3.5 h-3.5 text-amber-500" />
                                 <span className="max-w-[150px] truncate">{att.file_name}</span>
                                 <Download className="w-3 h-3 text-slate-400" />
                               </a>
@@ -852,30 +805,30 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                   {selectedTicket.messages?.map((msg) => (
                     <div
                       key={msg.id}
-                      className={`p-4 rounded-xl text-sm ${
+                      className={`p-4 rounded-xl text-xs sm:text-sm ${
                         msg.sender_role === 'USER'
-                          ? 'bg-emerald-950/40 border border-emerald-500/20 ml-8'
-                          : 'bg-slate-900 border border-white/10 mr-8'
+                          ? 'bg-teal-50/70 border border-teal-200/80 ml-8 text-teal-950'
+                          : 'bg-white border border-slate-200/90 mr-8 text-slate-800 shadow-2xs'
                       }`}
                     >
-                      <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-                        <span className="font-bold flex items-center gap-1.5 text-white">
+                      <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
+                        <span className="font-bold flex items-center gap-1.5 text-slate-900">
                           {msg.sender_role === 'USER' ? (
                             'Tôi (Giảng viên)'
                           ) : (
                             <>
-                              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                              <ShieldCheck className="w-4 h-4 text-[#008689]" />
                               <span>Kỹ sư QuizGen AI ({msg.sender_name})</span>
                             </>
                           )}
                         </span>
-                        <span>{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</span>
+                        <span className="font-mono text-[11px]">{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</span>
                       </div>
-                      <p className="text-slate-200 whitespace-pre-line leading-relaxed">{msg.message_body}</p>
+                      <p className="whitespace-pre-line leading-relaxed">{msg.message_body}</p>
 
                       {/* Tệp đính kèm trong tin nhắn */}
                       {msg.attachments && msg.attachments.length > 0 && (
-                        <div className="mt-3 pt-2 border-t border-white/[0.05] flex flex-wrap gap-2">
+                        <div className="mt-3 pt-2 border-t border-slate-200/60 flex flex-wrap gap-2">
                           {msg.attachments.map((att) => {
                             const isImg = att.mime_type.startsWith('image/');
                             return isImg ? (
@@ -885,14 +838,14 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                                   setLightboxImageUrl(att.file_url || `/api/v1/support/attachments/${att.file_name}`);
                                   setLightboxCaption(att.file_name);
                                 }}
-                                className="relative rounded-lg overflow-hidden border border-white/10 group cursor-pointer hover:border-emerald-400 transition-colors"
+                                className="relative rounded-lg overflow-hidden border border-slate-200 group cursor-pointer hover:border-[#008689] transition-colors shadow-2xs"
                               >
                                 <img
                                   src={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
                                   alt={att.file_name}
                                   className="w-28 h-20 object-cover rounded-lg group-hover:scale-105 transition-transform"
                                 />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                   <Maximize2 className="w-4 h-4 text-white" />
                                 </div>
                               </div>
@@ -901,9 +854,9 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                                 key={att.id}
                                 href={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
                                 download
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 border border-white/10 hover:border-emerald-400 text-xs text-slate-200 transition-colors"
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-[#008689] text-xs text-slate-700 transition-colors shadow-2xs"
                               >
-                                <FileText className="w-3.5 h-3.5 text-amber-400" />
+                                <FileText className="w-3.5 h-3.5 text-amber-500" />
                                 <span className="max-w-[150px] truncate">{att.file_name}</span>
                                 <Download className="w-3 h-3 text-slate-400" />
                               </a>
@@ -917,22 +870,22 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
 
                 {/* Khay xem trước ảnh lỗi sắp gửi trong phản hồi */}
                 {replyPreviews.length > 0 && (
-                  <div className="p-2.5 rounded-xl bg-slate-900 border border-white/10 flex items-center gap-2 overflow-x-auto">
-                    <span className="text-[10px] text-slate-400 font-semibold uppercase shrink-0">Tệp đính kèm ({replyPreviews.length}):</span>
+                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-2 overflow-x-auto">
+                    <span className="text-[10px] text-slate-500 font-bold uppercase shrink-0">Tệp đính kèm ({replyPreviews.length}):</span>
                     {replyPreviews.map((p, idx) => (
-                      <div key={idx} className="relative group shrink-0 rounded-lg overflow-hidden border border-white/10 bg-slate-950 p-1 flex items-center gap-2">
+                      <div key={idx} className="relative group shrink-0 rounded-lg overflow-hidden border border-slate-200 bg-white p-1 flex items-center gap-2 shadow-2xs">
                         {p.isImage ? (
                           <img src={p.url} alt={p.name} className="w-10 h-10 object-cover rounded" />
                         ) : (
-                          <FileText className="w-6 h-6 text-amber-400 mx-1" />
+                          <FileText className="w-6 h-6 text-amber-500 mx-1" />
                         )}
-                        <div className="text-[10px] max-w-[100px] truncate text-slate-300">
+                        <div className="text-[10px] max-w-[100px] truncate text-slate-700 font-medium">
                           {p.name}
                         </div>
                         <button
                           type="button"
                           onClick={() => removeReplyFile(idx)}
-                          className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
+                          className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -942,7 +895,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 )}
 
                 {/* Khung gửi phản hồi 2 chiều & Đính kèm */}
-                <div className="pt-2 border-t border-white/[0.08] flex items-center gap-2">
+                <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                   <input
                     type="file"
                     ref={replyFileInputRef}
@@ -959,7 +912,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     type="button"
                     onClick={() => replyFileInputRef.current?.click()}
                     title="Đính kèm ảnh chụp lỗi hoặc tệp minh chứng (Hỗ trợ Ctrl+V)"
-                    className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 border border-white/10 transition-colors cursor-pointer shrink-0"
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-[#008689] border border-slate-200 transition-colors cursor-pointer shrink-0"
                   >
                     <Paperclip className="w-4 h-4" />
                   </button>
@@ -974,13 +927,13 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                         handleSendReply();
                       }
                     }}
-                    placeholder="Gửi phản hồi tới kỹ sư... (Bấm Win+Shift+S rồi Ctrl+V để dán ảnh lỗi tức thì)"
-                    className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    placeholder="Gửi phản hồi tới kỹ sư... (Bấm Win+Shift+S rồi Ctrl+V để dán ảnh chụp lỗi)"
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white"
                   />
                   <button
                     onClick={handleSendReply}
                     disabled={isSendingReply || (!replyMessage.trim() && replyFiles.length === 0)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-md disabled:opacity-50 cursor-pointer shrink-0"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#008689] hover:bg-[#006d70] text-white font-bold text-xs transition-all shadow-xs disabled:opacity-50 cursor-pointer shrink-0"
                   >
                     <Send className="w-3.5 h-3.5" />
                     <span>{isSendingReply ? 'Đang gửi...' : 'Gửi'}</span>
@@ -988,63 +941,85 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 </div>
               </div>
             ) : (
-              // Bảng danh sách ticket
+              // Bảng danh sách ticket (XÓA DỮ LIỆU MẪU - EMPTY STATE HỌC THUẬT)
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-white">Danh sách yêu cầu hỗ trợ của bạn</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900">Danh sách phiếu hỗ trợ của bạn</h3>
+                    <button
+                      onClick={fetchTickets}
+                      disabled={isRefreshingTickets}
+                      className="p-1 text-slate-400 hover:text-[#008689] transition-colors rounded-lg hover:bg-slate-100 cursor-pointer"
+                      title="Làm mới danh sách"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingTickets ? 'animate-spin text-[#008689]' : ''}`} />
+                    </button>
+                  </div>
                   <button
                     onClick={() => setActiveTab('create_ticket')}
-                    className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer"
+                    className="flex items-center gap-1.5 text-xs text-[#008689] hover:underline font-bold cursor-pointer"
                   >
                     <PlusCircle className="w-4 h-4" />
-                    <span>Tạo yêu cầu mới</span>
+                    <span>Tạo phiếu mới</span>
                   </button>
                 </div>
 
                 {tickets.length === 0 ? (
-                  <div className="bg-slate-900/40 border border-white/[0.06] rounded-2xl p-12 text-center">
-                    <CheckCircle2 className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-                    <h4 className="text-sm font-bold text-slate-300">Bạn chưa có phiếu hỗ trợ nào</h4>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Mọi thắc mắc kỹ thuật sẽ được tiếp nhận và xử lý theo cam kết SLA tại đây.
-                    </p>
+                  // Empty State Học Thuật Tinh Gọn (Zero Mock Data)
+                  <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-12 text-center space-y-3 shadow-2xs">
+                    <div className="w-14 h-14 rounded-2xl bg-teal-50 border border-teal-100 text-[#008689] flex items-center justify-center mx-auto shadow-2xs">
+                      <Inbox className="w-7 h-7" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-extrabold text-slate-800">Chưa có phiếu hỗ trợ nào</h4>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        Mọi thắc mắc kỹ thuật về bóc tách giáo trình, công thức toán LaTeX, in ấn phiếu OMR hoặc tài khoản sẽ được Đội ngũ Kỹ sư tiếp nhận và xử lý theo cam kết SLA tại đây.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('create_ticket')}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#008689] hover:bg-[#006d70] text-white font-bold text-xs shadow-xs transition-all cursor-pointer"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5" />
+                      <span>Tạo phiếu hỗ trợ ngay</span>
+                    </button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {tickets.map((t) => (
                       <div
                         key={t.id}
                         onClick={() => setSelectedTicket(t)}
-                        className="bg-slate-900/60 hover:bg-slate-900/90 border border-white/[0.06] hover:border-emerald-500/30 rounded-xl p-5 cursor-pointer transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 group shadow-sm"
+                        className="bg-white hover:bg-slate-50 border border-slate-200/90 hover:border-[#008689]/60 rounded-xl p-4.5 cursor-pointer transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 group shadow-2xs"
                       >
-                        <div className="flex items-start gap-4">
-                          <div className="font-mono text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-md mt-0.5">
+                        <div className="flex items-start gap-3.5">
+                          <div className="font-mono text-xs font-bold text-[#008689] bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-md mt-0.5">
                             {t.ticket_code}
                           </div>
                           <div>
-                            <h4 className="text-sm font-bold text-white group-hover:text-emerald-300 transition-colors">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#008689] transition-colors">
                               {t.subject}
                             </h4>
-                            <p className="text-xs text-slate-400 line-clamp-1 mt-1">{t.description}</p>
+                            <p className="text-xs text-slate-500 line-clamp-1 mt-0.5">{t.description}</p>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-4 shrink-0">
+                        <div className="flex items-center gap-3.5 shrink-0">
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                               t.status === 'RESOLVED'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : t.status === 'IN_PROGRESS'
-                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                : 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
                             }`}
                           >
                             {t.status}
                           </span>
-                          <span className="text-xs text-slate-500 font-mono">
+                          <span className="text-xs text-slate-400 font-mono">
                             {new Date(t.created_at).toLocaleDateString('vi-VN')}
                           </span>
-                          <ChevronRight className="w-4 h-4 text-slate-500 group-hover:translate-x-1 transition-all" />
+                          <ChevronRight className="w-4 h-4 text-slate-400 group-hover:translate-x-1 group-hover:text-[#008689] transition-all" />
                         </div>
                       </div>
                     ))}
@@ -1057,34 +1032,41 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
 
         {/* --- TAB 3: CREATE TICKET (KHAY ẢNH LỖI ĐẦY ĐỦ TIỆN NGHI) --- */}
         {activeTab === 'create_ticket' && (
-          <div className="max-w-3xl mx-auto bg-slate-900/70 border border-white/[0.08] rounded-2xl p-8 backdrop-blur-xl shadow-2xl space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <LifeBuoy className="w-5 h-5 text-emerald-400" />
+          <div className="max-w-3xl mx-auto bg-white border border-slate-200/90 rounded-2xl p-6 sm:p-8 shadow-2xs space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                <LifeBuoy className="w-5 h-5 text-[#008689]" />
                 <span>Tạo Phiếu Hỗ Trợ Kỹ Thuật &amp; Báo Lỗi Hệ Thống</span>
               </h2>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 Kỹ sư QuizGen AI cam kết phản hồi trong vòng{' '}
-                <strong className="text-emerald-400">
+                <strong className="text-[#008689]">
                   {currentUser?.planTier === 'ENTERPRISE' ? '1 giờ' : '4 giờ'}
                 </strong>{' '}
-                theo tiêu chuẩn chất lượng SLA.
+                theo tiêu chuẩn chất lượng dịch vụ SLA.
               </p>
             </div>
 
             {submitSuccess ? (
-              <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-8 text-center my-6 animate-in zoom-in-95 duration-200">
-                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-2 animate-bounce" />
-                <h4 className="text-base font-bold text-white">Gửi phiếu hỗ trợ thành công!</h4>
-                <p className="text-xs text-slate-300 mt-1">
-                  Mã ticket đã được khởi tạo và gửi tới Đội ngũ Kỹ sư. Đang mở luồng trao đổi trực tiếp...
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-8 text-center my-6 animate-in zoom-in-95 duration-200">
+                <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-2 animate-bounce" />
+                <h4 className="text-sm font-extrabold text-slate-900">Gửi phiếu hỗ trợ thành công!</h4>
+                <p className="text-xs text-slate-600 mt-1">
+                  Mã ticket đã được cấp phát. Đang mở luồng trao đổi trực tiếp với Đội ngũ Kỹ sư...
                 </p>
               </div>
             ) : (
-              <form onSubmit={handleCreateTicket} className="space-y-5">
+              <form onSubmit={handleCreateTicket} className="space-y-4 sm:space-y-5">
+                {submitErrorMessage && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{submitErrorMessage}</span>
+                  </div>
+                )}
+
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Tiêu đề sự cố / Yêu cầu <span className="text-rose-400">*</span>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Tiêu đề sự cố / Yêu cầu <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1092,22 +1074,22 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     value={formSubject}
                     onChange={(e) => setFormSubject(e.target.value)}
                     placeholder="VD: Lỗi vỡ font công thức toán khi xuất file Word hoặc lệch lề phiếu OMR"
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white transition-all shadow-2xs"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">Phân hệ phát sinh sự cố</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">Phân hệ phát sinh sự cố</label>
                     <select
                       value={formCategory}
                       onChange={(e) => setFormCategory(e.target.value)}
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#008689] focus:bg-white"
                     >
                       <option value="EXAM_EXPORT_ERROR">1. Đóng gói &amp; Xuất Word / PDF OMR / Canvas QTI</option>
                       <option value="DOC_PARSING_ERROR">2. Nạp &amp; Bóc tách Giáo trình (PDF/DOCX/OCR)</option>
                       <option value="AI_HALLUCINATION">3. Chất lượng câu hỏi AI &amp; Thang đo Bloom</option>
-                      <option value="PAYMENT_BILLING">4. Cổng thanh toán VietQR &amp; Nâng cấp gói cước</option>
+                      <option value="PAYMENT_BILLING">4. Cổng thanh toán VietQR &amp; Gói cước PRO</option>
                       <option value="ACCOUNT_SECURITY">5. Tài khoản &amp; Đăng nhập Google SSO</option>
                       <option value="FEATURE_REQUEST">6. Đề xuất Tính năng Mới</option>
                       <option value="GENERAL_INQUIRY">7. Hỏi đáp Chung</option>
@@ -1115,11 +1097,11 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1.5">Mức độ ưu tiên</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">Mức độ ưu tiên</label>
                     <select
                       value={formPriority}
                       onChange={(e) => setFormPriority(e.target.value)}
-                      className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-[#008689] focus:bg-white"
                     >
                       <option value="LOW">Thấp (Tư vấn, đóng góp ý kiến)</option>
                       <option value="MEDIUM">Trung bình (Lỗi thông thường)</option>
@@ -1130,8 +1112,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                    Mô tả chi tiết sự cố <span className="text-rose-400">*</span>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Mô tả chi tiết sự cố <span className="text-rose-500">*</span>
                   </label>
                   <textarea
                     required
@@ -1139,19 +1121,19 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     value={formDescription}
                     onChange={(e) => setFormDescription(e.target.value)}
                     placeholder="Mô tả cụ thể các bước gây ra lỗi, câu hỏi nào bị ảnh hưởng hoặc mã đề thi đang thao tác..."
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 leading-relaxed"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white leading-relaxed"
                   />
                 </div>
 
                 {/* ─── KHAY ĐÍNH KÈM ẢNH LỖI TIỆN LỢI (HỖ TRỢ CTRL+V & KÉO THẢ) ─── */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <ImageIcon className="w-4 h-4 text-emerald-400" />
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <ImageIcon className="w-4 h-4 text-[#008689]" />
                       <span>Ảnh chụp màn hình lỗi &amp; Tệp minh chứng</span>
                     </label>
-                    <span className="text-[11px] text-emerald-400 font-mono">
-                      (Hỗ trợ <strong>Ctrl + V</strong> dán ảnh chụp màn hình trực tiếp)
+                    <span className="text-[11px] text-[#008689] font-mono">
+                      (Bấm <strong>Win + Shift + S</strong> rồi <strong>Ctrl + V</strong> để dán ảnh)
                     </span>
                   </div>
 
@@ -1172,8 +1154,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     onClick={() => createFileInputRef.current?.click()}
                     className={`p-5 rounded-2xl border-2 border-dashed transition-all text-center cursor-pointer ${
                       isDraggingCreate
-                        ? 'border-emerald-400 bg-emerald-500/10 scale-[1.01]'
-                        : 'border-white/10 hover:border-emerald-500/50 bg-slate-950/60'
+                        ? 'border-[#008689] bg-teal-50/50 scale-[1.01]'
+                        : 'border-slate-300 hover:border-[#008689] bg-slate-50/60'
                     }`}
                   >
                     <input
@@ -1189,13 +1171,13 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                       className="hidden"
                     />
                     <div className="flex flex-col items-center gap-1.5">
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center text-emerald-400 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#008689] shadow-2xs">
                         <ImageIcon className="w-5 h-5" />
                       </div>
-                      <p className="text-xs font-semibold text-slate-200 mt-1">
+                      <p className="text-xs font-bold text-slate-800 mt-1">
                         Bấm vào đây để chọn ảnh hoặc kéo thả tệp vào đây
                       </p>
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[11px] text-slate-400">
                         Hỗ trợ ảnh PNG, JPG, WEBP hoặc tệp Word, PDF, ZIP (Tối đa 5 tệp, 15MB/tệp)
                       </p>
                     </div>
@@ -1207,13 +1189,13 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                       {createPreviews.map((p, idx) => (
                         <div
                           key={idx}
-                          className="relative group rounded-xl overflow-hidden border border-white/10 bg-slate-900 p-2 flex items-center gap-2.5 shadow-sm"
+                          className="relative group rounded-xl overflow-hidden border border-slate-200 bg-white p-2 flex items-center gap-2.5 shadow-2xs"
                         >
                           {p.isImage ? (
                             <img
                               src={p.url}
                               alt={p.name}
-                              className="w-12 h-12 object-cover rounded-lg shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+                              className="w-12 h-12 object-cover rounded-lg shrink-0 cursor-pointer hover:opacity-90 transition-opacity border border-slate-100"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setLightboxImageUrl(p.url);
@@ -1221,13 +1203,13 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                               }}
                             />
                           ) : (
-                            <div className="w-12 h-12 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                            <div className="w-12 h-12 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
                               <FileText className="w-6 h-6" />
                             </div>
                           )}
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold text-slate-200 truncate">{p.name}</p>
-                            <span className="text-[10px] text-slate-500 font-mono">{p.size}</span>
+                            <p className="text-xs font-bold text-slate-800 truncate">{p.name}</p>
+                            <span className="text-[10px] text-slate-400 font-mono">{p.size}</span>
                           </div>
                           <button
                             type="button"
@@ -1235,7 +1217,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                               e.stopPropagation();
                               removeCreateFile(idx);
                             }}
-                            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
                             title="Xóa tệp này"
                           >
                             <X className="w-4 h-4" />
@@ -1248,17 +1230,17 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
 
                 {/* Hộp gợi ý tự động của AI */}
                 {aiTip && (
-                  <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3.5 flex items-start gap-3">
-                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-emerald-200 leading-relaxed">{aiTip}</p>
+                  <div className="bg-teal-50 border border-teal-200 rounded-xl p-3.5 flex items-start gap-3">
+                    <Sparkles className="w-4 h-4 text-[#008689] shrink-0 mt-0.5" />
+                    <p className="text-xs text-teal-900 leading-relaxed font-medium">{aiTip}</p>
                   </div>
                 )}
 
                 {/* Thẻ thông báo tự động thu thập ngữ cảnh môi trường */}
-                <div className="p-3 rounded-xl bg-slate-950/40 border border-white/5 flex items-center gap-2.5 text-[11px] text-slate-400">
-                  <Info className="w-4 h-4 text-teal-400 shrink-0" />
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-2.5 text-[11px] text-slate-500">
+                  <Info className="w-4 h-4 text-[#008689] shrink-0" />
                   <span>
-                    Hệ thống tự động ghi nhận thông tin trình duyệt, màn hình và mã định danh liên quan để hỗ trợ kỹ thuật viên chẩn đoán lỗi nhanh nhất.
+                    Hệ thống tự động ghi nhận phiên bản trình duyệt, độ phân giải màn hình và URL để kỹ thuật viên chẩn đoán lỗi nhanh nhất.
                   </span>
                 </div>
 
@@ -1266,14 +1248,14 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('faq')}
-                    className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/[0.04] cursor-pointer"
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100 cursor-pointer"
                   >
                     Hủy bỏ
                   </button>
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-all shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 cursor-pointer"
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#008689] hover:bg-[#006d70] text-white font-bold text-xs transition-all shadow-xs disabled:opacity-50 cursor-pointer"
                   >
                     <Send className="w-4 h-4" />
                     <span>{isSubmitting ? 'Đang gửi...' : 'Gửi phiếu hỗ trợ'}</span>
@@ -1291,7 +1273,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
           isOpen={!!lightboxImageUrl}
           imageUrl={lightboxImageUrl}
           imageCaption={lightboxCaption}
-          title="Minh chứng Ảnh chụp Sự cố & Lỗi Kỹ thuật"
+          title="Minh chứng Ảnh chụp Sự cố &amp; Lỗi Kỹ thuật"
           onClose={() => {
             setLightboxImageUrl(null);
             setLightboxCaption('');
@@ -1301,115 +1283,3 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     </div>
   );
 };
-
-// Dữ liệu mẫu ban đầu để giao diện hoạt động tức thì
-const mockCategories: FAQCategory[] = [
-  {
-    id: 'cat-doc',
-    name: '1. Nạp & Bóc tách Giáo trình',
-    slug: 'document-ingestion-ocr',
-    description: 'Hướng dẫn tải lên tệp PDF, Word và khắc phục sự cố bóc tách chương mục.',
-    icon: 'FileText',
-    articles_count: 3
-  },
-  {
-    id: 'cat-ai',
-    name: '2. Sinh Câu hỏi AI & Bloom',
-    slug: 'ai-bloom-matrix',
-    description: 'Tối ưu hóa câu hỏi AI theo thang đo Bloom và định dạng công thức toán LaTeX.',
-    icon: 'Cpu',
-    articles_count: 4
-  },
-  {
-    id: 'cat-exam',
-    name: '3. Đóng gói & In ấn Khảo thí',
-    slug: 'exam-export-omr-qti',
-    description: 'Xuất đề thi Word, in ấn PDF Vector A4 kèm phiếu OMR và nhập vào Canvas LMS.',
-    icon: 'Download',
-    articles_count: 5
-  },
-  {
-    id: 'cat-pay',
-    name: '4. Gói cước & Cổng VietQR',
-    slug: 'payment-subscription-vietqr',
-    description: 'Quy trình nâng cấp tài khoản qua quét mã VietQR và quản lý hạn mức.',
-    icon: 'CreditCard',
-    articles_count: 2
-  }
-];
-
-const mockArticles: FAQArticle[] = [
-  {
-    id: 'art-omr',
-    category_id: 'cat-exam',
-    title: 'Quy chuẩn in ấn Phiếu trả lời trắc nghiệm OMR 50 câu chuẩn khổ giấy A4',
-    slug: 'quy-chuan-in-phieu-omr-50-cau-a4',
-    content_markdown: `Phiếu trả lời trắc nghiệm OMR 50 câu được thiết kế theo tọa độ vật lý chuẩn xác:
-1. Kích cỡ trang in: Chọn đúng khổ giấy A4 (210 x 297 mm), không chọn khổ Letter.
-2. Tỷ lệ in (Scale): Bắt buộc chọn Actual Size (100%) hoặc Fit to Printable Area, không chọn phóng to vì sẽ làm lệch tọa độ các ô tròn.
-3. Phần mềm chấm tương thích: Tương thích hoàn toàn với ZipGrade, TestScanner, OMR Maker.`,
-    tags: 'omr,print,pdf,a4,exam',
-    view_count: 350,
-    helpful_count: 142
-  },
-  {
-    id: 'art-latex',
-    category_id: 'cat-ai',
-    title: 'Hướng dẫn soạn thảo và hiển thị công thức toán học LaTeX trực quan',
-    slug: 'huong-dan-soan-thao-cong-thuc-toan-latex',
-    content_markdown: `QuizGen AI hỗ trợ đầy đủ công nghệ biên dịch công thức toán học KaTeX:
-- Công thức cùng dòng: Kẹp biểu thức giữa hai dấu đô la: ví dụ $E = mc^2$.
-- Tự động làm sạch khi xuất Word: Khi xuất đề thi ra file Word (.docx), hệ thống tự động chuyển đổi các mã LaTeX phức tạp sang ký tự Unicode toán học chuẩn để đảm bảo máy in không bị lỗi font.`,
-    tags: 'latex,math,formula,katex',
-    view_count: 210,
-    helpful_count: 89
-  },
-  {
-    id: 'art-qti',
-    category_id: 'cat-exam',
-    title: 'Cách nhập (Import) đề thi vào hệ thống LMS Canvas và Moodle qua gói IMS QTI 2.1',
-    slug: 'nhap-de-thi-canvas-moodle-ims-qti',
-    content_markdown: `Sau khi xuất bản gói QTI_Package.zip từ QuizGen AI:
-1. Trên Canvas LMS: Vào Settings -> Import Course Content -> Chọn QTI .zip file -> Bấm Import.
-2. Trên Moodle: Vào Question bank -> Chọn Import -> Chọn định dạng IMS QTI 2.1 package và tải tệp lên.`,
-    tags: 'qti,canvas,moodle,lms',
-    view_count: 185,
-    helpful_count: 76
-  },
-  {
-    id: 'art-vietqr',
-    category_id: 'cat-pay',
-    title: 'Quy trình thanh toán quét mã VietQR tự động kích hoạt tài khoản PRO',
-    slug: 'quy-trinh-thanh-toan-vietqr-tu-dong',
-    content_markdown: `1. Trên giao diện Web, bấm nút "Nâng cấp gói cước" và chọn gói mong muốn.
-2. Hệ thống sinh mã Dynamic VietQR kèm số tiền và mã hóa đơn riêng biệt.
-3. Chuyển khoản thành công, Webhook NAPAS 24/7 kích hoạt nâng cấp tài khoản của bạn ngay lập tức trong 3 giây.`,
-    tags: 'vietqr,payment,pro,upgrade',
-    view_count: 290,
-    helpful_count: 110
-  }
-];
-
-const mockTickets: SupportTicket[] = [
-  {
-    id: 'tk-101',
-    ticket_code: 'TK-2026-88123',
-    subject: 'Lỗi căn lề khi in phiếu OMR 50 câu trên máy in trường thi',
-    description: 'Tôi in file PDF xuất từ QuizGen AI nhưng ô tròn câu 40-50 bị sát mép dưới giấy.',
-    category: 'EXAM_EXPORT_ERROR',
-    priority: 'HIGH',
-    status: 'IN_PROGRESS',
-    sla_first_response_due: new Date(Date.now() + 2 * 3600000).toISOString(),
-    sla_resolution_due: new Date(Date.now() + 8 * 3600000).toISOString(),
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    messages: [
-      {
-        id: 'm-1',
-        sender_name: 'Nguyễn Văn Kỹ sư',
-        sender_role: 'SUPPORT_STAFF',
-        message_body: 'Chào Thầy/Cô, vui lòng kiểm tra xem phần mềm in đã chọn đúng khổ giấy A4 (210x297mm) và tỷ lệ Actual Size 100% chưa ạ?',
-        created_at: new Date(Date.now() - 1800000).toISOString()
-      }
-    ]
-  }
-];
