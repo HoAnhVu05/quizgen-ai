@@ -25,6 +25,7 @@ import {
   CornerDownLeft,
   X,
   CreditCard,
+  LifeBuoy,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -640,76 +641,45 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         ) : (
           /* ── LECTURER & HOD HEADER ACTIONS ── */
           <>
+            {/* Nút Hỗ Trợ Kỹ Thuật (Support Button) thay thế thông tin user dư thừa */}
             <button
               type="button"
-              onClick={onOpenProfileModal}
-              className={`flex items-center gap-2 p-1 sm:px-2.5 sm:py-1 rounded-xl border transition-all text-left shadow-2xs group ${
-                activeThemeId === 'spring'
-                  ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/60'
+              onClick={() => onNavigate?.('support')}
+              className={`flex items-center gap-2 px-3 py-1.5 sm:px-3.5 sm:py-1.5 rounded-xl border transition-all text-left shadow-2xs group cursor-pointer hover:scale-[1.02] active:scale-[0.98] ${
+                currentScreen === 'support'
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-800 font-bold ring-2 ring-emerald-400/30'
+                  : activeThemeId === 'spring'
+                  ? 'border-[#E7B947]/70 hover:border-[#B82025] bg-[#FFF8E9]/80 text-[#8F171C]'
                   : activeThemeId === 'summer'
-                  ? 'border-[#26B9D5]/70 hover:border-[#087EAD] bg-[#EAFBFF]/60'
+                  ? 'border-[#26B9D5]/70 hover:border-[#087EAD] bg-[#EAFBFF]/80 text-[#087EAD]'
                   : activeThemeId === 'autumn'
-                  ? 'border-[#E9B85D]/70 hover:border-[#B85C38] bg-[#FFF3DF]/60'
+                  ? 'border-[#E9B85D]/70 hover:border-[#B85C38] bg-[#FFF3DF]/80 text-[#70452F]'
                   : activeThemeId === 'winter'
-                  ? 'border-[#78BDE8]/70 hover:border-[#2563A6] bg-[#F3FAFF]/60'
+                  ? 'border-[#78BDE8]/70 hover:border-[#2563A6] bg-[#F3FAFF]/80 text-[#243B64]'
                   : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
-                  ? 'border-[#E7B947]/70 hover:border-[#DA251D] bg-[#FFF3D1]/60'
-                  : 'border-slate-200 bg-white hover:border-[#008689] hover:bg-slate-50'
+                  ? 'border-[#E7B947]/70 hover:border-[#DA251D] bg-[#FFF3D1]/80 text-[#8F171C]'
+                  : 'border-slate-200 bg-white hover:border-emerald-500 hover:bg-slate-50 text-slate-700'
               }`}
-              title="Nhấp để xem & cập nhật hồ sơ tài khoản"
+              title="Trung tâm Hỗ trợ Kỹ thuật & Cẩm nang Học thuật UTH"
             >
               <div
-                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg font-black text-xs flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
-                  activeThemeId === 'spring'
-                    ? 'bg-gradient-to-tr from-[#B82025] to-[#E7B947] text-white'
-                    : activeThemeId === 'summer'
-                    ? 'bg-gradient-to-tr from-[#087EAD] to-[#26B9D5] text-white'
-                    : activeThemeId === 'autumn'
-                    ? 'bg-gradient-to-tr from-[#B85C38] to-[#E9B85D] text-white'
-                    : activeThemeId === 'winter'
-                    ? 'bg-gradient-to-tr from-[#2563A6] to-[#78BDE8] text-white'
-                    : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
-                    ? 'bg-gradient-to-tr from-[#DA251D] to-[#FFCD00] text-white'
-                    : 'bg-gradient-to-tr from-[#008689] to-teal-400 text-white'
+                className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shadow-xs shrink-0 group-hover:rotate-12 transition-transform ${
+                  currentScreen === 'support'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
                 }`}
               >
-                {userInitial}
+                <LifeBuoy className="w-4 h-4" />
               </div>
-              <div className="hidden md:block min-w-0 max-w-[110px] xl:max-w-[160px]">
-                <div
-                  className={`text-xs font-bold truncate leading-tight transition-colors ${
-                    activeThemeId === 'spring'
-                      ? 'text-[#8F171C] group-hover:text-[#B82025]'
-                      : activeThemeId === 'summer'
-                      ? 'text-[#087EAD] group-hover:text-[#26B9D5]'
-                      : activeThemeId === 'autumn'
-                      ? 'text-[#70452F] group-hover:text-[#B85C38]'
-                      : activeThemeId === 'winter'
-                      ? 'text-[#243B64] group-hover:text-[#2563A6]'
-                      : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
-                      ? 'text-[#8F171C] group-hover:text-[#DA251D]'
-                      : 'text-slate-800 group-hover:text-[#008689]'
-                  }`}
-                >
-                  {userDisplayName}
+              <div className="flex flex-col text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold leading-tight">Hỗ Trợ Kỹ Thuật</span>
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Đang trực tuyến" />
                 </div>
-                <div className="text-[10px] text-slate-400 font-medium truncate mt-0.5 hidden 2xl:block">
-                  {currentUser?.department || 'Khoa Công nghệ thông tin'}
-                </div>
+                <span className="text-[10px] text-slate-400 font-medium leading-none hidden sm:inline">
+                  Cẩm nang &amp; Báo lỗi
+                </span>
               </div>
-              <UserCog className={`w-3.5 h-3.5 shrink-0 ml-0.5 hidden sm:block transition-colors ${
-                activeThemeId === 'spring'
-                  ? 'text-[#E7B947] group-hover:text-[#B82025]'
-                  : activeThemeId === 'summer'
-                  ? 'text-[#26B9D5] group-hover:text-[#087EAD]'
-                  : activeThemeId === 'autumn'
-                  ? 'text-[#E9B85D] group-hover:text-[#B85C38]'
-                  : activeThemeId === 'winter'
-                  ? 'text-[#78BDE8] group-hover:text-[#2563A6]'
-                  : activeThemeId === 'victory_30_4' || activeThemeId === 'national_day_2_9'
-                  ? 'text-[#FFCD00] group-hover:text-[#DA251D]'
-                  : 'text-slate-400 group-hover:text-[#008689]'
-              }`} />
             </button>
 
             {/* Subscription Plan Badge & Upgrade Action */}

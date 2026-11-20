@@ -68,6 +68,7 @@ class SupportTicket(Base):
     status = Column(String(20), default="OPEN") # OPEN, IN_PROGRESS, WAITING_USER, RESOLVED, CLOSED, CANCELLED
     subject = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
+    error_context_json = Column(Text, nullable=True) # Lưu trữ JSON ngữ cảnh lỗi (trình duyệt, màn hình, lỗi HTTP, error stack)
     assigned_admin_id = Column(String(36), nullable=True)
     
     # SLA Tracking

@@ -4,7 +4,8 @@ import random
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, Depends, HTTPException, Query, Header, Request, status
+from fastapi import FastAPI, Depends, HTTPException, Query, Header, Request, status, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, desc, func
@@ -28,6 +29,7 @@ from .schemas import (
     TicketResponse,
     TicketDetailResponse,
     MessageResponse,
+    AttachmentResponse,
     FAQCategoryResponse,
     FAQArticleResponse,
     FAQArticleCreateRequest,
@@ -38,6 +40,10 @@ from .schemas import (
     SupportMetricsResponse
 )
 from .seed import seed_default_knowledge_base
+
+# Thư mục lưu trữ tệp đính kèm học thuật & ảnh chụp lỗi
+ATTACHMENTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "support_attachments"))
+os.makedirs(ATTACHMENTS_DIR, exist_ok=True)
 
 # Đảm bảo bảng CSDL được tạo
 Base.metadata.create_all(bind=engine)
@@ -145,6 +151,7 @@ def create_ticket(
         status="OPEN",
         subject=payload.subject,
         description=payload.description,
+        error_context_json=payload.error_context_json,
         sla_first_response_due=first_due,
         sla_resolution_due=res_due,
         created_at=now,
@@ -240,7 +247,18 @@ def get_ticket_detail(
 
     # Tạo response thủ công để gắn danh sách tin nhắn đã lọc
     res = TicketDetailResponse.model_validate(ticket)
-    res.messages = [MessageResponse.model_validate(m) for m in visible_messages]
+    parsed_messages = []
+    for m in visible_messages:
+        m_res = MessageResponse.model_validate(m)
+        for att in m_res.attachments or []:
+            att.file_url = f"/api/v1/support/attachments/{att.file_name}"
+        parsed_messages.append(m_res)
+    res.messages = parsed_messages
+
+    # Gắn URL cho các tệp đính kèm cấp ticket
+    for att in res.attachments:
+        att.file_url = f"/api/v1/support/attachments/{att.file_name}"
+
     return res
 
 @app.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
@@ -292,6 +310,82 @@ def add_ticket_message(
     db.commit()
     db.refresh(msg)
     return msg
+
+@app.post("/tickets/{ticket_id}/attachments", response_model=List[AttachmentResponse])
+async def upload_ticket_attachments(
+    ticket_id: str,
+    files: List[UploadFile] = File(...),
+    message_id: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    user: Dict[str, str] = Depends(get_current_user_context)
+):
+    """Tải lên một hoặc nhiều tệp đính kèm (ảnh chụp lỗi, tài liệu, voice note) cho ticket"""
+    ticket = db.query(SupportTicket).filter(
+        or_(SupportTicket.id == ticket_id, SupportTicket.ticket_code == ticket_id)
+    ).first()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket không tồn tại.")
+
+    saved_attachments = []
+    now = utc_now()
+    for file in files:
+        safe_name = os.path.basename(file.filename or "attachment")
+        unique_file_name = f"{int(datetime.now().timestamp()*1000)}_{uuid.uuid4().hex[:6]}_{safe_name}"
+        target_path = os.path.join(ATTACHMENTS_DIR, unique_file_name)
+
+        content = await file.read()
+        with open(target_path, "wb") as f:
+            f.write(content)
+
+        file_size = len(content)
+        mime = file.content_type or "application/octet-stream"
+
+        att = SupportAttachment(
+            ticket_id=ticket.id,
+            message_id=message_id,
+            file_name=unique_file_name,
+            file_size_bytes=file_size,
+            mime_type=mime,
+            file_path=target_path,
+            created_at=now
+        )
+        db.add(att)
+        db.flush()
+
+        att_res = AttachmentResponse.model_validate(att)
+        att_res.file_url = f"/api/v1/support/attachments/{unique_file_name}"
+        saved_attachments.append(att_res)
+
+    ticket.updated_at = now
+    db.commit()
+    return saved_attachments
+
+@app.get("/attachments/{file_name}")
+def get_attachment_file(file_name: str):
+    """Tải hoặc xem trực tiếp ảnh chụp lỗi / tệp đính kèm học thuật"""
+    safe_name = os.path.basename(file_name)
+    target_path = os.path.join(ATTACHMENTS_DIR, safe_name)
+    if not os.path.exists(target_path):
+        raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại.")
+    return FileResponse(target_path, filename=safe_name)
+
+@app.get("/unread-count")
+def get_unread_count(
+    db: Session = Depends(get_db),
+    user: Dict[str, str] = Depends(get_current_user_context)
+):
+    """Lấy số lượng ticket có phản hồi mới hoặc cần hỗ trợ để hiển thị Badge"""
+    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"]
+    if is_admin:
+        count = db.query(SupportTicket).filter(
+            SupportTicket.status.in_(["OPEN", "IN_PROGRESS"])
+        ).count()
+    else:
+        count = db.query(SupportTicket).filter(
+            SupportTicket.user_id == user["user_id"],
+            SupportTicket.status.in_(["WAITING_USER", "RESOLVED"])
+        ).count()
+    return {"unread_count": count}
 
 @app.patch("/tickets/{ticket_id}/status", response_model=TicketResponse)
 def update_ticket_status(

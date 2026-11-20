@@ -10,6 +10,7 @@ class TicketCreateRequest(BaseModel):
     category: str = Field(default="GENERAL_INQUIRY", description="DOC_PARSING_ERROR, AI_HALLUCINATION, EXAM_EXPORT_ERROR, PAYMENT_BILLING, ACCOUNT_SECURITY, FEATURE_REQUEST, GENERAL_INQUIRY")
     priority: Optional[str] = Field(default="MEDIUM", description="LOW, MEDIUM, HIGH, CRITICAL")
     user_tier: Optional[str] = Field(default="FREE", description="FREE, PRO, ENTERPRISE")
+    error_context_json: Optional[str] = Field(default=None, description="Ngữ cảnh lỗi hệ thống (trình duyệt, màn hình, error log)")
 
 class TicketMessageCreateRequest(BaseModel):
     message_body: str = Field(..., min_length=1, description="Nội dung phản hồi")
@@ -33,6 +34,7 @@ class AttachmentResponse(BaseModel):
     file_size_bytes: int
     mime_type: str
     file_path: str
+    file_url: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -75,6 +77,7 @@ class TicketResponse(BaseModel):
     status: str
     subject: str
     description: str
+    error_context_json: Optional[str] = None
     assigned_admin_id: Optional[str] = None
     sla_first_response_due: datetime
     sla_resolution_due: datetime
