@@ -322,11 +322,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Diễn đàn',
       icon: MessageSquare,
     },
-    {
-      id: 'support',
-      label: 'Hỗ trợ & Cẩm nang FAQ',
-      icon: LifeBuoy,
-    },
   ], []);
 
   const lecturerWorkflowSteps = useMemo<NavItem[]>(() => [
