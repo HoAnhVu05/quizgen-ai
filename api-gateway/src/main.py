@@ -120,7 +120,8 @@ def health_check():
             "ai-service",
             "exam-service",
             "admin-service",
-            "payment-service"
+            "payment-service",
+            "support-service"
         ]
     }
 
@@ -216,3 +217,9 @@ async def dashboard_proxy(request: Request, path: str = ""):
 async def theme_proxy(request: Request, path: str = ""):
     target = f"/theme/{path}" if path else "/theme/current"
     return await proxy_request(settings.ADMIN_SERVICE_URL, target, request)
+
+@app.api_route("/api/v1/support", methods=METHODS)
+@app.api_route("/api/v1/support/{path:path}", methods=METHODS)
+async def support_proxy(request: Request, path: str = ""):
+    target = f"/{path}".rstrip("/") if not path else f"/{path}"
+    return await proxy_request(settings.SUPPORT_SERVICE_URL, target or "/tickets", request)

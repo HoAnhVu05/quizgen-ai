@@ -42,6 +42,7 @@ const SCREEN_LABELS: Record<ScreenId, string> = {
   review: 'Bước 3: Đối soát & Biên tập',
   bank: 'Bước 4: Đóng gói & Xuất Đề Thi',
   admin_portal: 'Cổng Quản trị Hệ thống',
+  support: 'Trung tâm Hỗ trợ & FAQ',
 };
 
 const DEFAULT_WELCOME_MESSAGE = (userName: string, screenLabel: string, bookName?: string): ChatMessage => ({
