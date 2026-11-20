@@ -286,12 +286,16 @@ def add_ticket_message(
     sender_role = "SUPPORT_STAFF" if is_admin else "USER"
     is_internal = payload.is_internal_note and is_admin
 
+    body_text = (payload.message_body or payload.content or "").strip()
+    if not body_text:
+        raise HTTPException(status_code=400, detail="Nội dung phản hồi không được để trống.")
+
     msg = SupportTicketMessage(
         ticket_id=ticket.id,
         sender_id=user["user_id"],
         sender_name=user["email"].split("@")[0],
         sender_role=sender_role,
-        message_body=payload.message_body,
+        message_body=body_text,
         is_internal_note=is_internal,
         created_at=now
     )
@@ -309,6 +313,7 @@ def add_ticket_message(
     ticket.updated_at = now
     db.commit()
     db.refresh(msg)
+    msg.content = msg.message_body
     return msg
 
 @app.post("/tickets/{ticket_id}/attachments", response_model=List[AttachmentResponse])

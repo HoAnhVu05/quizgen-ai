@@ -365,7 +365,12 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         await fetchAdminSupportData(true);
       } else {
         const err = await res.json().catch(() => ({}));
-        onShowToast('error', 'Không thể gửi phản hồi', err.detail || 'Lỗi server');
+        const errMsg = typeof err?.detail === 'string'
+          ? err.detail
+          : Array.isArray(err?.detail)
+          ? err.detail.map((i: any) => i?.msg || String(i)).join('; ')
+          : 'Lỗi server';
+        onShowToast('error', 'Không thể gửi phản hồi', errMsg);
       }
     } catch (err: any) {
       onShowToast('error', 'Lỗi kết nối', err.message);
@@ -393,7 +398,12 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         await fetchAdminSupportData(true);
       } else {
         const err = await res.json().catch(() => ({}));
-        onShowToast('error', 'Cập nhật thất bại', err.detail || 'Lỗi server');
+        const errMsg = typeof err?.detail === 'string'
+          ? err.detail
+          : Array.isArray(err?.detail)
+          ? err.detail.map((i: any) => i?.msg || String(i)).join('; ')
+          : 'Lỗi server';
+        onShowToast('error', 'Cập nhật thất bại', errMsg);
       }
     } catch (err: any) {
       onShowToast('error', 'Lỗi kết nối', err.message);

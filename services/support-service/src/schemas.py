@@ -5,15 +5,16 @@ from pydantic import BaseModel, Field
 # --- TICKET SCHEMAS ---
 
 class TicketCreateRequest(BaseModel):
-    subject: str = Field(..., min_length=5, max_length=255, description="Tiêu đề yêu cầu hỗ trợ")
-    description: str = Field(..., min_length=10, description="Mô tả chi tiết sự cố hoặc yêu cầu")
+    subject: str = Field(..., min_length=1, max_length=255, description="Tiêu đề yêu cầu hỗ trợ")
+    description: str = Field(..., min_length=1, description="Mô tả chi tiết sự cố hoặc yêu cầu")
     category: str = Field(default="GENERAL_INQUIRY", description="DOC_PARSING_ERROR, AI_HALLUCINATION, EXAM_EXPORT_ERROR, PAYMENT_BILLING, ACCOUNT_SECURITY, FEATURE_REQUEST, GENERAL_INQUIRY")
     priority: Optional[str] = Field(default="MEDIUM", description="LOW, MEDIUM, HIGH, CRITICAL")
     user_tier: Optional[str] = Field(default="FREE", description="FREE, PRO, ENTERPRISE")
     error_context_json: Optional[str] = Field(default=None, description="Ngữ cảnh lỗi hệ thống (trình duyệt, màn hình, error log)")
 
 class TicketMessageCreateRequest(BaseModel):
-    message_body: str = Field(..., min_length=1, description="Nội dung phản hồi")
+    message_body: Optional[str] = Field(default=None, description="Nội dung phản hồi")
+    content: Optional[str] = Field(default=None, description="Bí danh của message_body")
     is_internal_note: Optional[bool] = Field(default=False, description="Đánh dấu ghi chú nội bộ giữa các kỹ sư")
 
 class TicketStatusUpdateRequest(BaseModel):
@@ -47,6 +48,7 @@ class MessageResponse(BaseModel):
     sender_name: str
     sender_role: str
     message_body: str
+    content: Optional[str] = None
     is_internal_note: bool
     created_at: datetime
     attachments: Optional[List[AttachmentResponse]] = []

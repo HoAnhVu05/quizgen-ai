@@ -353,6 +353,28 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     }
   };
 
+  const formatApiErrorMessage = (detail: any): string => {
+    if (!detail) return 'Không thể tạo phiếu hỗ trợ, vui lòng thử lại.';
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => {
+          if (typeof item === 'string') return item;
+          if (item && typeof item === 'object') {
+            const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : '';
+            const msg = item.msg || item.message || JSON.stringify(item);
+            return field ? `${field}: ${msg}` : msg;
+          }
+          return String(item);
+        })
+        .join('; ');
+    }
+    if (typeof detail === 'object') {
+      return detail.msg || detail.message || JSON.stringify(detail);
+    }
+    return String(detail);
+  };
+
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formSubject || !formDescription) return;
@@ -414,7 +436,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         }, 1200);
       } else {
         const errJson = await res.json().catch(() => null);
-        setSubmitErrorMessage(errJson?.detail || 'Không thể tạo phiếu hỗ trợ, vui lòng thử lại.');
+        setSubmitErrorMessage(formatApiErrorMessage(errJson?.detail));
       }
     } catch (err: any) {
       setSubmitErrorMessage(err?.message || 'Lỗi kết nối máy chủ hỗ trợ.');
@@ -1060,7 +1082,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                 {submitErrorMessage && (
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{submitErrorMessage}</span>
+                    <span>{typeof submitErrorMessage === 'string' ? submitErrorMessage : formatApiErrorMessage(submitErrorMessage)}</span>
                   </div>
                 )}
 
