@@ -416,7 +416,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
               <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mr-1 flex items-center gap-1 shrink-0">
                 <Layers className="w-3 h-3" /> Trang tính:
               </span>
-              {workbook.SheetNames.map((sheetName) => (
+              {workbook.SheetNames.map((sheetName: string) => (
                 <button
                   key={sheetName}
                   type="button"
