@@ -118,7 +118,9 @@ class RedisCacheClient:
         status: str = "extracting",
         stage: str = "",
         total_pages: int = 0,
-        ttl: int = 7200
+        chapters_count: int = 0,
+        ttl: int = 7200,
+        **kwargs
     ) -> bool:
         key = f"task:upload:progress:{document_id}"
         data = {
@@ -127,6 +129,7 @@ class RedisCacheClient:
             "status": status,
             "stage": stage,
             "total_pages": str(total_pages),
+            "chapters_count": str(chapters_count),
             "updated_at": str(time.time())
         }
         try:

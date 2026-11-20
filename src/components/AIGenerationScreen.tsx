@@ -200,7 +200,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [activeMainTab, setActiveMainTab] = useState<'generate' | 'history'>('generate');
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [previewHistoryRecord, setPreviewHistoryRecord] = useState<GenerationHistoryRecord | null>(null);
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
   const [generationHistory, setGenerationHistory] = useState<GenerationHistoryRecord[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_generation_history');
@@ -275,7 +275,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
+  const [libraryModalTab, setLibraryModalTab] = useState<'my' | 'shared'>('shared');
   const [librarySearchQuery, setLibrarySearchQuery] = useState('');
+  const [chapterSearchQuery, setChapterSearchQuery] = useState('');
 
   const hasWarnedBackendRef = useRef(false);
 
@@ -414,8 +416,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   }, [fetchDocuments]);
 
   const selectedDocument = useMemo(
-    () => documents.find((doc) => doc.id === selectedBook) || null,
-    [documents, selectedBook]
+    () =>
+      myDocuments.find((doc) => doc.id === selectedBook) ||
+      sharedDocuments.find((doc) => doc.id === selectedBook) ||
+      documents.find((doc) => doc.id === selectedBook) ||
+      null,
+    [myDocuments, sharedDocuments, documents, selectedBook]
   );
 
   const chaptersList = useMemo(() => {
@@ -426,6 +432,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       DEFAULT_CUSTOM_CHAPTERS
     );
   }, [selectedBook, chaptersByDocument]);
+
+  const filteredChapters = useMemo(() => {
+    if (!chapterSearchQuery.trim()) return chaptersList;
+    const q = chapterSearchQuery.toLowerCase();
+    return chaptersList.filter((ch) => ch.toLowerCase().includes(q));
+  }, [chaptersList, chapterSearchQuery]);
 
   const handleSelectBook = (bookId: string) => {
     setSelectedBook(bookId);
@@ -684,7 +696,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       if (err.name === 'AbortError') {
         msg = 'Yêu cầu sinh câu hỏi quá thời gian chờ (Timeout > 5 phút). Vui lòng thử lại với số lượng câu hỏi ít hơn hoặc kiểm tra kết nối mạng.';
       } else if (isNetworkErr) {
-        msg = 'Không thể kết nối đến Backend AI Gateway tại http://localhost:8000. Bạn có thể bấm "Tiếp tục bằng Bộ sinh AI Dự phòng" bên dưới để chuyển tiếp ngay sang Không gian Kiểm duyệt.';
+        msg = 'Không thể kết nối đến máy chủ AI Gateway. Vui lòng kiểm tra trạng thái mạng hoặc liên hệ quản trị viên.';
       } else {
         msg = err.message || 'Lỗi không xác định khi gọi AI Service.';
       }
@@ -1117,116 +1129,179 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Form: Parameters (2 Cols) */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Card 1: Chọn giáo trình & chương */}
+          {/* Card 1: Chọn giáo trình & chương (Modern Unified UX) */}
           <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                 <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
-                1. Chọn giáo trình & chương mục
+                1. Giáo trình & Chương mục
               </h2>
-              <button
-                type="button"
-                onClick={() => setIsLibraryModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-[#008689] bg-[#e0f7fa]/50 hover:bg-[#e0f7fa] border border-[#008689]/20 rounded-lg transition-colors"
-              >
-                <Library className="w-3 h-3" />
-                Duyệt thư viện ({sharedDocuments.length})
-              </button>
+              {selectedBook && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLibraryModalTab(myDocuments.some((d) => d.id === selectedBook) ? 'my' : 'shared');
+                    setIsLibraryModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#008689] bg-[#e0f7fa] hover:bg-[#b2ebf2] border border-[#008689]/30 rounded-xl transition-all shadow-2xs cursor-pointer"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Đổi giáo trình khác
+                </button>
+              )}
             </div>
 
             {!selectedBook ? (
-              <div className="p-6 rounded-2xl border-2 border-dashed border-teal-200 bg-teal-50/30 text-center space-y-3">
-                <div className="w-12 h-12 rounded-2xl bg-teal-100/70 text-[#008689] flex items-center justify-center mx-auto">
-                  <BookOpen className="w-6 h-6" />
+              <div className="p-7 rounded-2xl border-2 border-dashed border-teal-200 bg-gradient-to-br from-teal-50/40 via-white to-teal-50/20 text-center space-y-3.5">
+                <div className="w-14 h-14 rounded-2xl bg-teal-100/80 text-[#008689] flex items-center justify-center mx-auto shadow-xs">
+                  <BookOpen className="w-7 h-7" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">
-                    Chưa có giáo trình nào được chọn
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Chưa chọn giáo trình để biên soạn đề
                   </h3>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto mt-0.5">
-                    Hệ thống ưu tiên giáo trình riêng của bạn. Nếu chưa tải lên tài liệu nào, bạn có thể nạp giáo trình mới hoặc chọn nhanh từ Thư viện giáo trình dùng chung.
+                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                    Chọn nhanh từ Thư viện giáo trình dùng chung ({sharedDocuments.length} môn) hoặc nạp giáo trình riêng của Thầy/Cô để AI bóc tách chương mục và ma trận câu hỏi.
                   </p>
                 </div>
-                <div className="flex items-center justify-center gap-3 pt-1">
+                <div className="flex items-center justify-center gap-3 pt-1 flex-wrap">
                   <button
                     type="button"
-                    onClick={() => onNavigate('upload')}
-                    className="px-3.5 py-2 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                    onClick={() => {
+                      setLibraryModalTab('shared');
+                      setIsLibraryModalOpen(true);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
                   >
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    + Nạp giáo trình của tôi
+                    <Library className="w-4 h-4" />
+                    Chọn từ Thư viện giáo trình ({sharedDocuments.length})
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsLibraryModalOpen(true)}
-                    className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                    onClick={() => onNavigate('upload')}
+                    className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
                   >
-                    <Library className="w-3.5 h-3.5 text-[#008689]" />
-                    Chọn từ thư viện ({sharedDocuments.length})
+                    <UploadCloud className="w-4 h-4 text-[#008689]" />
+                    Nạp giáo trình cá nhân
                   </button>
                 </div>
               </div>
             ) : (
-              <div>
-                <div className="relative mb-3">
-                  <select
-                    value={selectedBook}
-                    onChange={(e) => handleSelectBook(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:bg-white focus:border-[#008689]"
-                  >
-                    {isLoadingDocuments && (
-                      <option value="">Đang tải danh sách giáo trình...</option>
-                    )}
-                    {myDocuments.length > 0 && (
-                      <optgroup label="👤 Giáo trình của tôi">
-                        {myDocuments.map((doc) => (
-                          <option key={doc.id} value={doc.id}>
-                            {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    {sharedDocuments.length > 0 && (
-                      <optgroup label="🏛️ Thư viện giáo trình dùng chung">
-                        {sharedDocuments.map((doc) => (
-                          <option key={doc.id} value={doc.id}>
-                            {doc.name} ({doc.chaptersCount} chương - {doc.totalPages} trang)
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                  </select>
+              <div className="space-y-4">
+                {/* Selected Textbook Showcase Banner */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/80 via-white to-cyan-50/30 border border-teal-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-2xl bg-[#008689] text-white flex items-center justify-center shrink-0 shadow-xs">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-sm font-extrabold text-slate-900 truncate">
+                          {selectedDocument?.name || selectedBook}
+                        </h3>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          myDocuments.some((d) => d.id === selectedBook)
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        }`}>
+                          {myDocuments.some((d) => d.id === selectedBook) ? 'Cá nhân' : 'Dùng chung'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
+                        <span>{chaptersList.length} chương mục</span>
+                        <span>•</span>
+                        <span>{selectedDocument?.totalPages || '?'} trang</span>
+                        <span>•</span>
+                        <span className="font-bold text-[#008689]">
+                          Đã chọn {selectedChapters.length}/{chaptersList.length} chương
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLibraryModalTab(myDocuments.some((d) => d.id === selectedBook) ? 'my' : 'shared');
+                        setIsLibraryModalOpen(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
+                      Đổi giáo trình
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
-                  {chaptersList.length === 0 && (
-                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400">
-                      Chưa có danh sách chương mục cho tài liệu này.
+                {/* Chapter Selection Controls */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                        Chương mục áp dụng ({selectedChapters.length}/{chaptersList.length})
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedChapters.length === chaptersList.length) {
+                            setSelectedChapters([]);
+                          } else {
+                            setSelectedChapters([...chaptersList]);
+                          }
+                        }}
+                        className="text-xs font-semibold text-[#008689] hover:underline cursor-pointer"
+                      >
+                        {selectedChapters.length === chaptersList.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {chaptersList.length > 5 && (
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={chapterSearchQuery}
+                        onChange={(e) => setChapterSearchQuery(e.target.value)}
+                        placeholder="Lọc nhanh danh sách chương..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:bg-white focus:border-[#008689]"
+                      />
                     </div>
                   )}
-                  {chaptersList.map((ch) => {
-                    const isChecked = selectedChapters.includes(ch);
-                    return (
-                      <div
-                        key={ch}
-                        onClick={() => handleToggleChapter(ch)}
-                        className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-colors flex items-center justify-between ${
-                          isChecked
-                            ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold'
-                            : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
-                        }`}
-                      >
-                        <span className="text-xs truncate pr-2">{ch}</span>
+
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {chaptersList.length === 0 && (
+                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400 text-center">
+                        Chưa có danh sách chương mục cho tài liệu này.
+                      </div>
+                    )}
+                    {filteredChapters.map((ch) => {
+                      const isChecked = selectedChapters.includes(ch);
+                      return (
                         <div
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
+                          key={ch}
+                          onClick={() => handleToggleChapter(ch)}
+                          className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
+                            isChecked
+                              ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold shadow-2xs'
+                              : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
                           }`}
                         >
-                          {isChecked && <Check className="w-3 h-3 text-white" />}
+                          <span className="text-xs truncate pr-2">{ch}</span>
+                          <div
+                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                              isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {isChecked && <Check className="w-3 h-3 text-white" />}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
@@ -1445,35 +1520,73 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         </div>
       )}
 
-      {/* ===== OVERLAY 4: Library Picker Modal ===== */}
+      {/* ===== OVERLAY 4: Unified Textbook Picker Modal ===== */}
       {isLibraryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
             {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-teal-50/50 to-white">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-teal-50/50 via-white to-cyan-50/30">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-[#008689] flex items-center justify-center font-bold">
+                <div className="w-10 h-10 rounded-2xl bg-[#008689] text-white flex items-center justify-center font-bold shadow-xs">
                   <Library className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-900">
-                    Thư Viện Giáo Trình Dùng Chung
+                    Kho Giáo Trình & Tài Liệu Soạn Đề
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Chọn nhanh một giáo trình chuẩn để sinh câu hỏi trắc nghiệm ngay mà không cần tải lên lại.
+                    Chọn giáo trình học thuật chuẩn để AI bóc tách cấu trúc chương mục và tạo đề thi.
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setIsLibraryModalOpen(false)}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors"
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
+            {/* Tabs: Thư viện dùng chung vs Giáo trình của tôi */}
+            <div className="flex items-center border-b border-slate-200 px-5 pt-2 bg-slate-50/40 gap-4">
+              <button
+                type="button"
+                onClick={() => setLibraryModalTab('shared')}
+                className={`pb-2.5 pt-1 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                  libraryModalTab === 'shared'
+                    ? 'border-[#008689] text-[#008689]'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Library className="w-3.5 h-3.5" />
+                <span>Thư viện dùng chung</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  libraryModalTab === 'shared' ? 'bg-[#008689] text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {sharedDocuments.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLibraryModalTab('my')}
+                className={`pb-2.5 pt-1 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
+                  libraryModalTab === 'my'
+                    ? 'border-[#008689] text-[#008689]'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Giáo trình của tôi</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  libraryModalTab === 'my' ? 'bg-[#008689] text-white' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {myDocuments.length}
+                </span>
+              </button>
+            </div>
+
             {/* Search Input */}
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+            <div className="p-4 border-b border-slate-100 bg-white">
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -1481,78 +1594,103 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                   value={librarySearchQuery}
                   onChange={(e) => setLibrarySearchQuery(e.target.value)}
                   placeholder="Tìm kiếm giáo trình theo tên môn học, học phần..."
-                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689]"
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] transition-all"
                 />
               </div>
             </div>
 
-            {/* List of Shared Books */}
+            {/* List of Books */}
             <div className="p-5 overflow-y-auto space-y-3 flex-1">
-              {sharedDocuments
-                .filter(
-                  (d) =>
-                    !librarySearchQuery ||
-                    d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
-                )
-                .map((doc) => {
-                  const isCurrent = selectedBook === doc.id;
-                  return (
-                    <div
-                      key={doc.id}
-                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                        isCurrent
-                          ? 'border-[#008689] bg-[#e0f7fa]/30 ring-1 ring-[#008689]'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 text-[#008689] flex items-center justify-center shrink-0 mt-0.5">
-                          <BookOpen className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-900 leading-snug">
-                            {doc.name}
-                          </h4>
-                          <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              Dùng chung
-                            </span>
-                            <span>• {doc.chaptersCount} chương mục</span>
-                            <span>• {doc.totalPages} trang</span>
+              {libraryModalTab === 'my' && myDocuments.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-200 space-y-3">
+                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-xs font-bold text-slate-700">Chưa có giáo trình cá nhân nào</p>
+                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                    Thầy/Cô có thể tải lên tệp giáo trình PDF / DOCX của riêng mình ở Bước 1 hoặc chọn từ Thư viện dùng chung.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLibraryModalOpen(false);
+                      onNavigate('upload');
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-[#008689] text-white font-bold text-xs hover:bg-[#006f72] transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <UploadCloud className="w-3.5 h-3.5" />
+                    + Nạp giáo trình ở Bước 1
+                  </button>
+                </div>
+              ) : (
+                (libraryModalTab === 'shared' ? sharedDocuments : myDocuments)
+                  .filter(
+                    (d) =>
+                      !librarySearchQuery ||
+                      d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
+                  )
+                  .map((doc) => {
+                    const isCurrent = selectedBook === doc.id;
+                    return (
+                      <div
+                        key={doc.id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isCurrent
+                            ? 'border-[#008689] bg-[#e0f7fa]/30 ring-1 ring-[#008689]'
+                            : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 text-[#008689] flex items-center justify-center shrink-0 mt-0.5">
+                            <BookOpen className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-bold text-slate-900 leading-snug">
+                              {doc.name}
+                            </h4>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                                libraryModalTab === 'shared'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}>
+                                {libraryModalTab === 'shared' ? 'Dùng chung' : 'Cá nhân'}
+                              </span>
+                              <span>• {doc.chaptersCount} chương mục</span>
+                              <span>• {doc.totalPages} trang</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                        {isCurrent ? (
-                          <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-teal-100 text-[#008689] font-bold text-xs">
-                            <Check className="w-3.5 h-3.5" />
-                            Đang chọn
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleSelectBook(doc.id);
-                              setIsLibraryModalOpen(false);
-                              onShowToast(
-                                'success',
-                                'Đã chọn giáo trình',
-                                `Đã áp dụng giáo trình "${doc.name}" để cấu hình sinh đề.`
-                              );
-                            }}
-                            className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            Dùng Giáo Trình Này
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          {isCurrent ? (
+                            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-teal-100 text-[#008689] font-bold text-xs">
+                              <Check className="w-3.5 h-3.5" />
+                              Đang chọn
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleSelectBook(doc.id);
+                                setIsLibraryModalOpen(false);
+                                onShowToast(
+                                  'success',
+                                  'Đã chọn giáo trình',
+                                  `Đã áp dụng giáo trình "${doc.name}" để cấu hình sinh đề.`
+                                );
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              Dùng Giáo Trình Này
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+              )}
 
-              {sharedDocuments.filter(
+              {(libraryModalTab === 'shared' ? sharedDocuments : myDocuments).filter(
                 (d) =>
                   !librarySearchQuery ||
                   d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
@@ -1566,12 +1704,20 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             {/* Modal Footer */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
               <span className="text-[11px] text-slate-500">
-                Tổng cộng {sharedDocuments.length} giáo trình chuẩn trong thư viện
+                Hiển thị{' '}
+                {
+                  (libraryModalTab === 'shared' ? sharedDocuments : myDocuments).filter(
+                    (d) =>
+                      !librarySearchQuery ||
+                      d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
+                  ).length
+                }{' '}
+                giáo trình
               </span>
               <button
                 type="button"
                 onClick={() => setIsLibraryModalOpen(false)}
-                className="px-4 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors"
+                className="px-4 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
               >
                 Đóng
               </button>

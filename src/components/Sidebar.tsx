@@ -36,6 +36,8 @@ import {
   MessageSquare,
   ChevronDown,
   ChevronRight,
+  Zap,
+  Gauge,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -232,6 +234,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           adminSubTab: 'overview',
           label: 'Tổng quan',
           icon: Activity,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'pipeline_monitor',
+          label: 'Giám sát Tiến trình & Tốc độ',
+          icon: Zap,
         },
         {
           id: 'admin_portal',

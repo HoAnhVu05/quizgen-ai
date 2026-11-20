@@ -28,17 +28,15 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
         return
 
     if token.startswith("mock-jwt-"):
-        parts_m = token.split("-")
-        r_part = "lecturer"
-        for p in parts_m:
-            if p in ["admin", "head_of_department", "lecturer"]:
-                r_part = p
-                break
-        uid = "usr-adm-quizgen" if r_part == "admin" else ("usr-hod-001" if r_part == "head_of_department" else "usr-lec-001")
-        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else "nguyentann0804@gmail.com"
-        headers["x-user-id"] = uid
-        headers["x-user-role"] = r_part
-        headers["x-user-email"] = email
+        client_uid = request.headers.get("x-user-id") or request.headers.get("X-User-Id")
+        client_email = request.headers.get("x-user-email") or request.headers.get("X-User-Email")
+        client_role = request.headers.get("x-user-role") or request.headers.get("X-User-Role")
+        if client_uid:
+            headers["x-user-id"] = client_uid.strip()
+        if client_email:
+            headers["x-user-email"] = client_email.strip().lower()
+        if client_role:
+            headers["x-user-role"] = client_role.strip()
         return
 
     try:
@@ -135,6 +133,8 @@ async def auth_proxy(path: str, request: Request):
 
 @app.api_route("/api/v1/documents", methods=METHODS)
 @app.api_route("/api/v1/documents/{path:path}", methods=METHODS)
+@app.api_route("/api/documents", methods=METHODS)
+@app.api_route("/api/documents/{path:path}", methods=METHODS)
 async def document_proxy(request: Request, path: str = ""):
     target = f"/{path}".rstrip("/") if not path else f"/{path}"
     return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/documents", request)

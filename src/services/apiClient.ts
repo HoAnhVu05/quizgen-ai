@@ -14,7 +14,7 @@ export interface TokenPayload {
   user?: any;
 }
 
-export const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+export const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
 class ApiClient {
   private isRefreshing = false;
@@ -184,6 +184,22 @@ class ApiClient {
     if (token && !headers.has('Authorization') && !isAuthEndpoint) {
       headers.set('Authorization', `Bearer ${token}`);
     }
+
+    try {
+      const userStr = localStorage.getItem('quizgen_user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u?.email && !headers.has('X-User-Email')) {
+          headers.set('X-User-Email', u.email);
+        }
+        if (u?.id && !headers.has('X-User-Id')) {
+          headers.set('X-User-Id', u.id);
+        }
+        if (u?.role && !headers.has('X-User-Role')) {
+          headers.set('X-User-Role', u.role);
+        }
+      }
+    } catch {}
 
     const modifiedInit: RequestInit = {
       ...init,

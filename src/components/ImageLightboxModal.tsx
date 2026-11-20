@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2 } from 'lucide-react';
 
 interface ImageLightboxModalProps {
@@ -18,6 +18,33 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
 }) => {
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
+
+  // ── Mobile Back Gesture & History Popstate Handler ───────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    try {
+      window.history.pushState({ modal: 'lightbox-preview' }, '');
+    } catch {}
+
+    const handlePopState = () => {
+      onClose();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [isOpen, onClose]);
+
+  const handleSafeClose = () => {
+    try {
+      if (window.history.state?.modal === 'lightbox-preview') {
+        window.history.back();
+        return;
+      }
+    } catch {}
+    onClose();
+  };
 
   if (!isOpen || !imageUrl) return null;
 
@@ -43,7 +70,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
-      onClick={onClose}
+      onClick={handleSafeClose}
     >
       <div
         className="relative max-w-4xl w-full bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
@@ -102,7 +129,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
 
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleSafeClose}
               className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700/60 transition-colors"
             >
               <X className="w-5 h-5" />

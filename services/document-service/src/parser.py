@@ -94,31 +94,47 @@ class DocumentParser:
     def parse_pdf(file_bytes: bytes) -> List[Dict[str, Any]]:
         """
         Bóc tách từng trang PDF, làm sạch và áp dụng bộ lọc Header/Footer lặp lại.
+        Sử dụng bộ tăng tốc PyMuPDF (fitz C++) cho tốc độ 300+ trang/giây, tự động fallback sang pypdf.
         Ném ngoại lệ ValueError nếu file hỏng, bị mã hóa hoặc không có text.
         """
-        try:
-            reader = PdfReader(io.BytesIO(file_bytes))
-        except PdfReadError as e:
-            raise ValueError(f"Tệp PDF bị hỏng hoặc cấu trúc không hợp lệ: {str(e)}")
-        except Exception as e:
-            raise ValueError(f"Không thể đọc tệp PDF: {str(e)}")
-
-        if reader.is_encrypted:
-            try:
-                decrypted = reader.decrypt("")
-                if not decrypted:
-                    raise ValueError("Tài liệu PDF được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải lên.")
-            except FileNotDecryptedError:
-                raise ValueError("Tài liệu PDF được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải lên.")
-
         raw_pages_lines = []
-        for page in reader.pages:
+        try:
+            import fitz
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            if doc.is_encrypted:
+                if not doc.authenticate(""):
+                    raise ValueError("Tài liệu PDF được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải lên.")
+            for page in doc:
+                try:
+                    raw_text = page.get_text() or ""
+                except Exception:
+                    raw_text = ""
+                lines = [DocumentParser._clean_text(l) for l in raw_text.split("\n") if l.strip()]
+                raw_pages_lines.append(lines)
+            doc.close()
+        except ImportError:
             try:
-                raw_text = page.extract_text() or ""
-            except Exception:
-                raw_text = ""
-            lines = [DocumentParser._clean_text(l) for l in raw_text.split("\n") if l.strip()]
-            raw_pages_lines.append(lines)
+                reader = PdfReader(io.BytesIO(file_bytes))
+            except PdfReadError as e:
+                raise ValueError(f"Tệp PDF bị hỏng hoặc cấu trúc không hợp lệ: {str(e)}")
+            except Exception as e:
+                raise ValueError(f"Không thể đọc tệp PDF: {str(e)}")
+
+            if reader.is_encrypted:
+                try:
+                    decrypted = reader.decrypt("")
+                    if not decrypted:
+                        raise ValueError("Tài liệu PDF được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải lên.")
+                except FileNotDecryptedError:
+                    raise ValueError("Tài liệu PDF được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải lên.")
+
+            for page in reader.pages:
+                try:
+                    raw_text = page.extract_text() or ""
+                except Exception:
+                    raw_text = ""
+                lines = [DocumentParser._clean_text(l) for l in raw_text.split("\n") if l.strip()]
+                raw_pages_lines.append(lines)
 
         # Áp dụng bộ lọc Header/Footer đa trang
         filtered_page_texts = DocumentParser._filter_running_headers_footers(raw_pages_lines)

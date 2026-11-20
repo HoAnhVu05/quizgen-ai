@@ -1,12 +1,14 @@
 import os
 import time
 import asyncio
+import threading
 import hashlib
 import json
 import logging
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional, Any
+import uuid
 from uuid import uuid4
 
 logger = logging.getLogger("document-service")
@@ -48,6 +50,11 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
 RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "300"))
 STORAGE_DIR = Path(os.getenv("DOCUMENT_STORAGE_DIR", "./data/uploads"))
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+
+# [SCRUM-99] Bộ điều phối hàng đợi tác vụ bóc tách (Max 3 tác vụ chạy đồng thời)
+# Ngăn chặn quá tải CPU/RAM khi người dùng tải lên đồng loạt 20-50 tài liệu
+MAX_CONCURRENT_PIPELINES = int(os.getenv("MAX_CONCURRENT_PIPELINES", "3"))
+pipeline_semaphore = threading.Semaphore(MAX_CONCURRENT_PIPELINES)
 
 
 def _format_file_size(byte_count: int) -> str:
@@ -125,40 +132,56 @@ def _update_doc_progress(
     chapters_count: Optional[int] = None,
     error_message: Optional[str] = None
 ):
-    """Cập nhật tiến trình và trạng thái xử lý của tài liệu vào CSDL"""
-    db = SessionLocal()
-    try:
-        doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-        if doc:
-            doc.progress = progress
-            doc.status = status
-            if total_pages is not None:
-                doc.total_pages = total_pages
-            if chapters_count is not None:
-                doc.chapters_count = chapters_count
-            if error_message is not None:
-                doc.error_message = error_message
-            db.commit()
-    finally:
-        db.close()
+    """Cập nhật tiến trình và trạng thái xử lý của tài liệu vào CSDL kèm cơ chế tự động thử lại khi SQLite bận"""
+    for attempt in range(5):
+        db = SessionLocal()
+        try:
+            doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+            if doc:
+                doc.progress = progress
+                doc.status = status
+                if total_pages is not None:
+                    doc.total_pages = total_pages
+                if chapters_count is not None:
+                    doc.chapters_count = chapters_count
+                if error_message is not None:
+                    doc.error_message = error_message
+                doc.updated_at = datetime.utcnow()
+                db.commit()
+            break
+        except Exception as e:
+            db.rollback()
+            if attempt < 4:
+                time.sleep(0.3 * (attempt + 1))
+            else:
+                logger.error(f"[DocumentService] Lỗi cập nhật tiến trình {document_id}: {e}")
+        finally:
+            db.close()
 
 
 def _mark_doc_error(document_id: str, error_msg: str, stage: str = "error"):
-    """Đánh dấu trạng thái lỗi và ghi nhận nguyên nhân vào CSDL và cache"""
-    db = SessionLocal()
-    try:
-        doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-        if doc:
-            doc.status = "error"
-            doc.progress = 0
-            doc.error_message = error_msg
-            db.commit()
-    finally:
-        db.close()
+    """Đánh dấu trạng thái lỗi và ghi nhận nguyên nhân vào CSDL và cache kèm cơ chế tự động thử lại"""
+    for attempt in range(5):
+        db = SessionLocal()
+        try:
+            doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
+            if doc:
+                doc.status = "error"
+                doc.progress = 0
+                doc.error_message = error_msg
+                doc.updated_at = datetime.utcnow()
+                db.commit()
+            break
+        except Exception:
+            db.rollback()
+            if attempt < 4:
+                time.sleep(0.3 * (attempt + 1))
+        finally:
+            db.close()
     cache.set_upload_progress(document_id, progress=0, status="error", stage=stage)
 
 
-async def process_document_pipeline(
+def process_document_pipeline(
     document_id: str,
     file_path: str,
     filename: str,
@@ -166,8 +189,9 @@ async def process_document_pipeline(
     user_id: str
 ):
     """
-    Quy trình xử lý tài liệu nền khép kín (End-to-End Async Document Pipeline):
-    - Pha 1 (25%): Bóc tách văn bản từng trang (PDF/DOCX Parser)
+    Quy trình xử lý tài liệu nền khép kín (End-to-End Background Threadpool Pipeline):
+    - Chạy hoàn toàn trên Starlette Background Threadpool, KHÔNG chặn Asyncio Event Loop.
+    - Pha 1 (25%): Bóc tách văn bản từng trang (PyMuPDF / python-docx Parser)
     - Pha 2 (50%): Phân đoạn ngữ nghĩa (Semantic Chunker) & trích xuất mục lục
     - Pha 3 (70%): Lưu cấu trúc chương và các đoạn trích vào CSDL
     - Pha 4 (85%): Đẩy chunks sang RAG Service với cơ chế Exponential Backoff Retry (3 lần: 1s, 2s, 4s)
@@ -178,88 +202,105 @@ async def process_document_pipeline(
         _mark_doc_error(document_id, "Tệp tài liệu vật lý không tồn tại trên máy chủ.", stage="file_missing")
         return
 
+    # Thông báo trạng thái xếp hàng điều phối an toàn
+    cache.set_upload_progress(document_id, progress=15, status="extracting", stage="queued_pipeline")
+
+    pipeline_semaphore.acquire()
     try:
-        content = storage_file.read_bytes()
-    except Exception as e:
-        _mark_doc_error(document_id, f"Không thể đọc tệp vật lý: {str(e)}", stage="file_read_error")
-        return
+        try:
+            content = storage_file.read_bytes()
+        except Exception as e:
+            _mark_doc_error(document_id, f"Không thể đọc tệp vật lý: {str(e)}", stage="file_read_error")
+            return
 
-    # Pha 1: Bóc tách văn bản
-    cache.set_upload_progress(document_id, progress=25, status="extracting", stage="parsing_file")
-    _update_doc_progress(document_id, progress=25, status="extracting")
-    try:
-        if ext == "pdf":
-            pages = DocumentParser.parse_pdf(content)
-        else:
-            pages = DocumentParser.parse_docx(content)
-    except Exception as e:
-        _mark_doc_error(document_id, f"Lỗi bóc tách nội dung: {str(e)}", stage="parsing_error")
-        return
+        # Pha 1: Bóc tách văn bản
+        cache.set_upload_progress(document_id, progress=25, status="extracting", stage="parsing_file")
+        _update_doc_progress(document_id, progress=25, status="extracting")
+        try:
+            if ext == "pdf":
+                pages = DocumentParser.parse_pdf(content)
+            else:
+                pages = DocumentParser.parse_docx(content)
+        except Exception as e:
+            _mark_doc_error(document_id, f"Lỗi bóc tách nội dung: {str(e)}", stage="parsing_error")
+            return
 
-    if not pages:
-        _mark_doc_error(document_id, "Tài liệu không có nội dung văn bản để bóc tách.", stage="empty_content")
-        return
+        if not pages:
+            _mark_doc_error(document_id, "Tài liệu không có nội dung văn bản để bóc tách.", stage="empty_content")
+            return
 
-    # Pha 2: Phân đoạn ngữ nghĩa
-    cache.set_upload_progress(document_id, progress=50, status="extracting", stage="chunking", total_pages=len(pages))
-    _update_doc_progress(document_id, progress=50, status="extracting", total_pages=len(pages))
-    try:
-        chunks, chapters_metadata = TextChunker.chunk_by_semantic_blocks(pages, document_id)
-    except EmptyChunksException as e:
-        _mark_doc_error(document_id, str(e), stage="chunking_failed")
-        return
-    except Exception as e:
-        _mark_doc_error(document_id, f"Lỗi phân đoạn ngữ nghĩa: {str(e)}", stage="chunking_error")
-        return
+        # Pha 2: Phân đoạn ngữ nghĩa
+        cache.set_upload_progress(document_id, progress=50, status="extracting", stage="chunking", total_pages=len(pages))
+        _update_doc_progress(document_id, progress=50, status="extracting", total_pages=len(pages))
+        try:
+            chunks, chapters_metadata = TextChunker.chunk_by_semantic_blocks(pages, document_id)
+        except EmptyChunksException as e:
+            _mark_doc_error(document_id, str(e), stage="chunking_failed")
+            return
+        except Exception as e:
+            _mark_doc_error(document_id, f"Lỗi phân đoạn ngữ nghĩa: {str(e)}", stage="chunking_error")
+            return
 
-    if not chunks:
-        _mark_doc_error(document_id, "Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn.", stage="empty_chunks")
-        return
+        if not chunks:
+            _mark_doc_error(document_id, "Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn.", stage="empty_chunks")
+            return
+    finally:
+        pipeline_semaphore.release()
 
     # Pha 3: Lưu cấu trúc chương mục và các chunks vào CSDL
     cache.set_upload_progress(document_id, progress=70, status="embedding", stage="saving_metadata", total_pages=len(pages))
     _update_doc_progress(document_id, progress=70, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
-    db = SessionLocal()
-    try:
-        # Xóa các mục cũ nếu có
-        db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
-        db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
 
-        chapters_db = [
-            DocumentChapterDB(
-                id=f"ch-{document_id}-{ch['chapter_index']}",
-                document_id=document_id,
-                chapter_index=ch["chapter_index"],
-                title=ch["title"],
-                page_start=ch["page_start"],
-                page_end=ch["page_end"]
-            )
-            for ch in chapters_metadata
-        ]
-        db.add_all(chapters_db)
+    for db_attempt in range(5):
+        db = SessionLocal()
+        try:
+            # Xóa các mục cũ nếu có
+            db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
+            db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
 
-        chunks_db = [
-            DocumentChunkDB(
-                id=c["chunk_id"],
-                document_id=document_id,
-                page_number=c["page_number"],
-                chapter=c["chapter"],
-                char_count=c["char_count"],
-                text_snippet=c["text"]
-            )
-            for c in chunks
-        ]
-        db.add_all(chunks_db)
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
-        return
-    finally:
-        db.close()
+            chapters_db = [
+                DocumentChapterDB(
+                    id=f"ch-{document_id}-{ch['chapter_index']}",
+                    document_id=document_id,
+                    chapter_index=ch["chapter_index"],
+                    title=ch["title"],
+                    page_start=ch["page_start"],
+                    page_end=ch["page_end"]
+                )
+                for ch in chapters_metadata
+            ]
+            db.add_all(chapters_db)
 
-    # Pha 4: Chuyển tiếp các chunks sang RAG Service với cơ chế Exponential Backoff Retry (3 lần)
-    cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages))
+            chunks_db = [
+                DocumentChunkDB(
+                    id=c["chunk_id"],
+                    document_id=document_id,
+                    page_number=c["page_number"],
+                    chapter=c["chapter"],
+                    char_count=c["char_count"],
+                    text_snippet=c["text"]
+                )
+                for c in chunks
+            ]
+            db.add_all(chunks_db)
+            db.commit()
+
+            # Đã lưu metadata vào CSDL, tiếp tục chuyển sang Pha 4 để lập chỉ mục vector RAG
+            cache.set_upload_progress(document_id, progress=75, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
+            _update_doc_progress(document_id, progress=75, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
+            break
+        except Exception as e:
+            db.rollback()
+            if db_attempt < 4:
+                time.sleep(0.5 * (db_attempt + 1))
+            else:
+                _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
+                return
+        finally:
+            db.close()
+
+    # Pha 4: Chuyển tiếp các chunks sang RAG Service để lập chỉ mục vector (ChromaDB)
+    cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
     _update_doc_progress(document_id, progress=85, status="embedding")
 
     headers = {}
@@ -272,8 +313,8 @@ async def process_document_pipeline(
 
     for attempt in range(1, max_retries + 1):
         try:
-            async with httpx.AsyncClient(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
-                res = await client.post(
+            with httpx.Client(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
+                res = client.post(
                     f"{RAG_SERVICE_URL}/index-chunks",
                     headers=headers,
                     json={
@@ -284,6 +325,7 @@ async def process_document_pipeline(
                 )
                 if res.status_code == 200:
                     rag_success = True
+                    logger.info(f"[DocumentService] True Readiness achieved: Vector indexing completed for document {document_id}")
                     break
                 else:
                     last_rag_error = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
@@ -291,12 +333,12 @@ async def process_document_pipeline(
             last_rag_error = f"Lỗi kết nối RAG Service ({RAG_SERVICE_URL}): {str(e)}"
 
         if attempt < max_retries:
-            await asyncio.sleep(2 ** (attempt - 1))  # 1s, 2s
+            time.sleep(2 ** (attempt - 1))  # 1s, 2s
 
-    # Pha 5: Hoàn tất
+    # Pha 5: Hoàn tất Sẵn Sàng Thật Sự (Chỉ kích hoạt khi Vector RAG đã xong 100%)
     if rag_success:
         _update_doc_progress(document_id, progress=100, status="ready", error_message=None)
-        cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages))
+        cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages), chapters_count=len(chapters_metadata))
     else:
         _mark_doc_error(document_id, last_rag_error, stage="rag_error")
 
@@ -372,10 +414,14 @@ async def upload_document(
 
     # [SCRUM-99] Tính toán SHA-256 để chống trùng lặp dữ liệu (Deduplication)
     file_hash = hashlib.sha256(content).hexdigest()
-    existing_doc = db.query(DocumentDB).filter_by(user_id=user_id, file_hash=file_hash, status="ready").first()
+    existing_doc = db.query(DocumentDB).filter(
+        DocumentDB.user_id == user_id,
+        DocumentDB.file_hash == file_hash,
+        DocumentDB.status != "error"
+    ).first()
     if existing_doc:
         return {
-            "message": "Tài liệu đã tồn tại và đã được phân tích trước đó (SHA-256 Deduplication). Tái sử dụng dữ liệu thành công.",
+            "message": "Tài liệu này đã tồn tại trong tài khoản của bạn (đang sẵn sàng hoặc đang được xử lý).",
             "document": {
                 "id": existing_doc.id,
                 "userId": user_id,
@@ -383,8 +429,8 @@ async def upload_document(
                 "size": existing_doc.file_size,
                 "totalPages": existing_doc.total_pages,
                 "chaptersCount": existing_doc.chapters_count,
-                "status": "ready",
-                "progress": 100,
+                "status": existing_doc.status,
+                "progress": existing_doc.progress,
                 "fileHash": file_hash,
                 "isDuplicate": True,
                 "uploadedAt": "Tái sử dụng (Deduplicated)"
@@ -491,6 +537,76 @@ def get_document_progress(document_id: str, db: Session = Depends(get_db)):
     }
 
 
+@app.post("/documents/{document_id}/retry")
+@app.post("/documents/retry/{document_id}")
+def retry_document_pipeline(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    doc = db.query(DocumentDB).filter_by(id=document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
+
+    target_path = doc.file_path
+    if not target_path or not os.path.exists(target_path):
+        alt_path = STORAGE_DIR / os.path.basename(doc.file_path) if doc.file_path else None
+        if alt_path and alt_path.exists():
+            target_path = str(alt_path)
+            doc.file_path = str(alt_path)
+        else:
+            matched = list(STORAGE_DIR.glob(f"{doc.id}_*"))
+            if matched:
+                target_path = str(matched[0])
+                doc.file_path = target_path
+            else:
+                raise HTTPException(status_code=400, detail="Tệp vật lý không còn lưu trên máy chủ.")
+
+    now_utc = datetime.utcnow()
+    doc.status = "extracting"
+    doc.progress = 15
+    doc.error_message = None
+    doc.created_at = now_utc
+    doc.updated_at = now_utc
+    db.commit()
+
+    cache.set_upload_progress(document_id, progress=15, status="extracting", stage="queued")
+    ext = doc.name.rsplit(".", 1)[-1].lower() if "." in doc.name else "pdf"
+    background_tasks.add_task(
+        process_document_pipeline,
+        document_id=doc.id,
+        file_path=target_path,
+        filename=doc.name,
+        ext=ext,
+        user_id=doc.user_id
+    )
+    return {
+        "status": "success",
+        "message": f"Đã kích hoạt tái xử lý giáo trình '{doc.name}' thành công.",
+        "document_id": doc.id
+    }
+
+
+@app.post("/documents/{document_id}/cancel")
+def cancel_document_pipeline(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    doc = db.query(DocumentDB).filter_by(id=document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giáo trình.")
+    doc.status = "error"
+    doc.error_message = "Tác vụ đã được dừng bởi Quản trị viên."
+    doc.updated_at = datetime.utcnow()
+    db.commit()
+    cache.set_upload_progress(document_id, progress=0, status="error", stage="canceled")
+    return {
+        "status": "success",
+        "message": f"Đã hủy tác vụ của giáo trình '{doc.name}'.",
+        "document_id": doc.id
+    }
+
+
 @app.get("/")
 def root_list_documents(db: Session = Depends(get_db)):
     """Tương thích chuyển hướng root sang danh sách tài liệu"""
@@ -499,8 +615,9 @@ def root_list_documents(db: Session = Depends(get_db)):
 
 @app.get("/documents")
 def list_documents(
-    user_id: Optional[str] = Query(None, description="Lọc theo mã giảng viên sở hữu"),
-    scope: Optional[str] = Query("my", description="Phạm vi: 'my' (cá nhân), 'shared' (ngân hàng dùng chung), 'all' (tất cả)"),
+    user_id: Optional[str] = None,
+    email: Optional[str] = None,
+    scope: Optional[str] = "my",
     current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
     db: Session = Depends(get_db)
 ):
@@ -510,28 +627,63 @@ def list_documents(
     - scope = 'shared': Ngân hàng giáo trình dùng chung toàn trường / Khoa (is_shared == 1).
     - scope = 'all': Admin xem toàn bộ, hoặc trả về giáo trình cá nhân + giáo trình dùng chung.
     """
-    effective_user_id = user_id or (current_user_info.get("id") if current_user_info else None)
+    clean_user_id = user_id.strip() if isinstance(user_id, str) and user_id.strip() else None
+    clean_email = email.strip().lower() if isinstance(email, str) and email.strip() else None
+    clean_scope = scope.strip().lower() if isinstance(scope, str) and scope.strip() else "my"
+
+    effective_user_id = clean_user_id or (current_user_info.get("id") if current_user_info else None)
     is_admin = current_user_info.get("role") == "admin" if current_user_info else False
 
     query = db.query(DocumentDB)
 
-    if scope == "shared":
+    if clean_scope == "shared":
         query = query.filter(DocumentDB.is_shared == 1)
-    elif scope == "my":
+    elif clean_scope == "my":
         if is_admin:
-            if user_id:
-                query = query.filter(DocumentDB.user_id == user_id)
+            if clean_user_id:
+                query = query.filter(DocumentDB.user_id == clean_user_id)
         else:
-            if effective_user_id:
-                query = query.filter(DocumentDB.user_id == effective_user_id)
-            elif user_id:
-                query = query.filter(DocumentDB.user_id == user_id)
-    elif scope == "all":
+            target_uids = [effective_user_id] if effective_user_id else []
+            # Tra cứu thêm user_id từ auth.db theo email nếu có để không bị mất tài liệu
+            lookup_email = clean_email or (current_user_info.get("email") if current_user_info else None)
+            if lookup_email and os.path.exists(AUTH_DB_PATH):
+                try:
+                    conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (lookup_email.strip(),))
+                    row = cursor.fetchone()
+                    if row and row[0] and row[0] not in target_uids:
+                        target_uids.append(row[0])
+                    conn.close()
+                except Exception:
+                    pass
+
+            target_uids = [u for u in set(target_uids) if u and isinstance(u, str)]
+            if target_uids:
+                query = query.filter(DocumentDB.user_id.in_(target_uids))
+            elif clean_user_id:
+                query = query.filter(DocumentDB.user_id == clean_user_id)
+    elif clean_scope == "all":
         if not is_admin:
-            if effective_user_id:
-                query = query.filter(or_(DocumentDB.user_id == effective_user_id, DocumentDB.is_shared == 1))
-        elif user_id:
-            query = query.filter(DocumentDB.user_id == user_id)
+            target_uids = [effective_user_id] if effective_user_id else []
+            lookup_email = clean_email or (current_user_info.get("email") if current_user_info else None)
+            if lookup_email and os.path.exists(AUTH_DB_PATH):
+                try:
+                    conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (lookup_email.strip(),))
+                    row = cursor.fetchone()
+                    if row and row[0] and row[0] not in target_uids:
+                        target_uids.append(row[0])
+                    conn.close()
+                except Exception:
+                    pass
+
+            target_uids = [u for u in set(target_uids) if u and isinstance(u, str)]
+            if target_uids:
+                query = query.filter(or_(DocumentDB.user_id.in_(target_uids), DocumentDB.is_shared == 1))
+        elif clean_user_id:
+            query = query.filter(DocumentDB.user_id == clean_user_id)
 
     docs = query.order_by(DocumentDB.created_at.desc()).all()
     return [
@@ -568,12 +720,10 @@ def toggle_document_share(
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tài liệu.")
 
-    caller_id = current_user_info.get("id") if current_user_info else None
-    caller_role = current_user_info.get("role") if current_user_info else None
-
-    # Kiểm tra quyền sở hữu (trừ Admin)
-    if caller_id and caller_role != "admin" and doc.user_id != caller_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Chỉ người tải lên giáo trình này mới có quyền chia sẻ.")
+    # Tự do chuyển đổi trạng thái Riêng tư / Chia sẻ cho tài liệu trong kho
+    caller_id = current_user_info.get("id") or current_user_info.get("user_id") if current_user_info else None
+    if caller_id and not doc.user_id:
+        doc.user_id = caller_id
 
     target_shared = payload.get("is_shared", not bool(doc.is_shared))
     doc.is_shared = 1 if target_shared else 0
@@ -598,6 +748,8 @@ def toggle_document_share(
 # Q-GROUP & INVITATION PERSISTENCE (CENTRALIZED MULTI-ACCOUNT SYNC)
 # =========================================================================
 QGROUPS_FILE = STORAGE_DIR.parent / "qgroups.json"
+QGROUP_ATTACHMENTS_DIR = STORAGE_DIR.parent / "uploads" / "qgroup_attachments"
+QGROUP_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 QGROUP_INVITATIONS_FILE = STORAGE_DIR.parent / "qgroup_invitations.json"
 FRIEND_REQUESTS_FILE = STORAGE_DIR.parent / "friend_requests.json"
 
@@ -727,22 +879,119 @@ def save_server_invitations(invitations: list):
     except Exception as e:
         logger.error(f"Error saving invitations: {e}")
 
+@app.post("/documents/qgroups/upload-attachment")
+@app.post("/qgroups/upload-attachment")
+async def upload_qgroup_attachment(file: UploadFile = File(...)):
+    try:
+        content = await file.read()
+        orig_name = file.filename or "file"
+        clean_name = "".join(c for c in orig_name if c.isalnum() or c in "._- ")
+        disk_name = f"{uuid.uuid4().hex[:8]}_{clean_name}"
+        disk_path = QGROUP_ATTACHMENTS_DIR / disk_name
+        with open(disk_path, "wb") as f:
+            f.write(content)
+        
+        size_bytes = len(content)
+        formatted_size = f"{size_bytes / (1024 * 1024):.1f} MB" if size_bytes > 1024 * 1024 else f"{round(size_bytes / 1024)} KB"
+        
+        is_image = (file.content_type or "").startswith("image/")
+        is_video = (file.content_type or "").startswith("video/")
+        is_audio = (file.content_type or "").startswith("audio/")
+        att_type = "image" if is_image else "video" if is_video else "audio" if is_audio else "file"
+        
+        file_url = f"/api/v1/documents/qgroups/attachments/{disk_name}"
+        return {
+            "status": "success",
+            "fileUrl": file_url,
+            "name": orig_name,
+            "size": formatted_size,
+            "type": att_type,
+            "fileType": file.content_type or "application/octet-stream",
+        }
+    except Exception as e:
+        logger.error(f"Error uploading qgroup attachment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/documents/qgroups/attachments/{filename}")
+@app.get("/qgroups/attachments/{filename}")
+async def get_qgroup_attachment(filename: str, download: bool = False):
+    file_path = QGROUP_ATTACHMENTS_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    orig_name = filename.split("_", 1)[1] if "_" in filename else filename
+    import mimetypes
+    content_type, _ = mimetypes.guess_type(orig_name)
+
+    # Audio/Video explicit MIME types override
+    AUDIO_EXT_MAP = {
+        ".webm": "audio/webm",
+        ".weba": "audio/webm",
+        ".ogg": "audio/ogg",
+        ".wav": "audio/wav",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+    }
+    ext = file_path.suffix.lower()
+    if ext in AUDIO_EXT_MAP:
+        content_type = AUDIO_EXT_MAP[ext]
+    elif not content_type:
+        content_type = "application/octet-stream"
+
+    if download:
+        return FileResponse(file_path, filename=orig_name, media_type=content_type)
+    else:
+        headers = {
+            "Content-Disposition": f'inline; filename="{orig_name}"'
+        }
+        return FileResponse(file_path, media_type=content_type, headers=headers)
+
 @app.get("/qgroups")
 @app.get("/documents/qgroups")
-def get_qgroups():
-    return load_server_qgroups()
+def get_qgroups(email: Optional[str] = Query(None), request: Request = None):
+    groups = load_server_qgroups()
+    user_email = email
+    if not user_email and request:
+        user_email = request.headers.get("x-user-email")
+    if user_email:
+        clean = user_email.strip().lower()
+        return [
+            g for g in groups
+            if clean == (g.get("ownerEmail") or "").strip().lower()
+            or clean == (g.get("directPartnerEmail") or "").strip().lower()
+            or clean in [str(m).strip().lower() for m in g.get("members", [])]
+        ]
+    return groups
 
 @app.post("/qgroups")
 @app.post("/documents/qgroups")
 async def save_qgroups_endpoint(request: Request):
     payload = await request.json()
     if isinstance(payload, list):
-        save_server_qgroups(payload)
-        return {"status": "success", "count": len(payload), "data": payload}
+        current = load_server_qgroups()
+        current_map = {(g.get("id") or g.get("code")): g for g in current if (g.get("id") or g.get("code"))}
+        for g in payload:
+            gid = g.get("id") or g.get("code")
+            if gid:
+                current_map[gid] = g
+            else:
+                current.append(g)
+        new_list = list(current_map.values())
+        save_server_qgroups(new_list)
+        return {"status": "success", "count": len(new_list), "data": new_list}
     elif isinstance(payload, dict):
         if "groups" in payload and isinstance(payload["groups"], list):
-            save_server_qgroups(payload["groups"])
-            return {"status": "success", "count": len(payload["groups"]), "data": payload["groups"]}
+            current = load_server_qgroups()
+            current_map = {(g.get("id") or g.get("code")): g for g in current if (g.get("id") or g.get("code"))}
+            for g in payload["groups"]:
+                gid = g.get("id") or g.get("code")
+                if gid:
+                    current_map[gid] = g
+                else:
+                    current.append(g)
+            new_list = list(current_map.values())
+            save_server_qgroups(new_list)
+            return {"status": "success", "count": len(new_list), "data": new_list}
         else:
             current = load_server_qgroups()
             idx = next((i for i, g in enumerate(current) if g.get("id") == payload.get("id") or g.get("code") == payload.get("code")), -1)
@@ -807,6 +1056,160 @@ def delete_qgroup_endpoint(group_id: str):
     cleaned = [g for g in groups if str(g.get("id")) != str(group_id) and str(g.get("code")) != str(group_id)]
     save_server_qgroups(cleaned)
     return {"status": "success", "message": f"Đã xóa nhóm {group_id}", "remaining": len(cleaned)}
+
+@app.post("/qgroups/{group_id}/messages/{message_id}/reaction")
+@app.post("/documents/qgroups/{group_id}/messages/{message_id}/reaction")
+async def toggle_message_reaction_endpoint(group_id: str, message_id: str, request: Request):
+    """Đồng bộ thả/hủy cảm xúc tin nhắn vĩnh viễn vào CSDL máy chủ"""
+    payload = await request.json()
+    emoji = str(payload.get("emoji") or "").strip()
+    user_email = str(payload.get("userEmail") or "").strip().lower()
+    if not emoji or not user_email:
+        return {"status": "error", "message": "emoji and userEmail are required"}
+    
+    groups = load_server_qgroups()
+    changed = False
+    updated_reactions = {}
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    reactions = m.get("reactions") or {}
+                    if not isinstance(reactions, dict):
+                        reactions = {}
+                    users = reactions.get(emoji, [])
+                    if not isinstance(users, list):
+                        users = []
+                    users_clean = [u.strip().lower() for u in users]
+                    if user_email in users_clean:
+                        users = [u for u in users if u.strip().lower() != user_email]
+                    else:
+                        users.append(user_email)
+                    
+                    if users:
+                        reactions[emoji] = users
+                    elif emoji in reactions:
+                        del reactions[emoji]
+                    m["reactions"] = reactions
+                    updated_reactions = reactions
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "reactions": updated_reactions}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.post("/qgroups/{group_id}/messages/{message_id}/recall")
+@app.post("/documents/qgroups/{group_id}/messages/{message_id}/recall")
+async def recall_message_endpoint(group_id: str, message_id: str):
+    """Thu hồi tin nhắn vĩnh viễn trên máy chủ"""
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    m["isRecalled"] = True
+                    m["text"] = "Tin nhắn đã được thu hồi"
+                    m["attachment"] = None
+                    m["sharedPost"] = None
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "message": "Đã thu hồi tin nhắn"}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.delete("/qgroups/{group_id}/messages/{message_id}")
+@app.delete("/documents/qgroups/{group_id}/messages/{message_id}")
+def delete_message_endpoint(group_id: str, message_id: str):
+    """Xóa tin nhắn vĩnh viễn khỏi máy chủ"""
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            before = len(g.get("messages", []))
+            g["messages"] = [m for m in g.get("messages", []) if str(m.get("id")) != str(message_id)]
+            if len(g["messages"]) != before:
+                changed = True
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "message": "Đã xóa tin nhắn"}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.patch("/qgroups/{group_id}/messages/{message_id}")
+@app.patch("/documents/qgroups/{group_id}/messages/{message_id}")
+async def edit_message_endpoint(group_id: str, message_id: str, request: Request):
+    """Cập nhật nội dung tin nhắn đã chỉnh sửa vào CSDL máy chủ"""
+    payload = await request.json()
+    new_text = str(payload.get("text") or "").strip()
+    if not new_text:
+        return {"status": "error", "message": "Nội dung tin nhắn không được rỗng"}
+    groups = load_server_qgroups()
+    changed = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    m["text"] = new_text
+                    m["isEdited"] = True
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "message": "Đã cập nhật tin nhắn"}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.post("/qgroups/{group_id}/messages/{message_id}/pin")
+@app.post("/documents/qgroups/{group_id}/messages/{message_id}/pin")
+def pin_message_endpoint(group_id: str, message_id: str):
+    """Ghim hoặc bỏ ghim tin nhắn trên máy chủ"""
+    groups = load_server_qgroups()
+    changed = False
+    is_pinned = False
+    for g in groups:
+        if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
+            for m in g.get("messages", []):
+                if str(m.get("id")) == str(message_id):
+                    m["isPinned"] = not m.get("isPinned", False)
+                    is_pinned = m["isPinned"]
+                    changed = True
+                    break
+            break
+    if changed:
+        save_server_qgroups(groups)
+        return {"status": "success", "isPinned": is_pinned}
+    return {"status": "error", "message": "Không tìm thấy tin nhắn"}
+
+@app.post("/friends/unfriend")
+@app.post("/documents/friends/unfriend")
+async def unfriend_endpoint(request: Request):
+    """Hủy kết bạn giữa 2 tài khoản, dọn dẹp lời mời và phòng trò chuyện 1-1"""
+    payload = await request.json()
+    my_email = str(payload.get("myEmail") or "").strip().lower()
+    target_email = str(payload.get("targetEmail") or "").strip().lower()
+    if not my_email or not target_email:
+        return {"status": "error", "message": "myEmail và targetEmail là bắt buộc"}
+    
+    # 1. Xóa trong friend_requests.json
+    reqs = load_friend_requests()
+    reqs = [r for r in reqs if not (
+        {r.get("senderEmail", "").strip().lower(), r.get("targetEmail", "").strip().lower()} == {my_email, target_email}
+    )]
+    save_friend_requests(reqs)
+
+    # 2. Xóa phòng chat 1-1 trong qgroups.json
+    groups = load_server_qgroups()
+    groups = [g for g in groups if not (
+        (g.get("isDirect") or g.get("type") == "direct") and
+        {my_email, target_email}.issubset({str(m).strip().lower() for m in g.get("members", [])})
+    )]
+    save_server_qgroups(groups)
+    return {"status": "success", "message": "Đã hủy kết bạn thành công."}
 
 @app.post("/qgroups/{group_id}/join-by-code")
 @app.post("/documents/qgroups/{group_id}/join-by-code")
@@ -1261,7 +1664,10 @@ def get_dashboard_summary(
     target_uid = user_id or (current_user_info.get("sub") if current_user_info else None)
     my_docs_count = 0
     if target_uid:
-        my_docs_count = db.query(DocumentDB).filter(DocumentDB.user_id == target_uid).count()
+        target_uids = [target_uid]
+        if target_uid in ["usr-lec-001", "usr-lec-003", "lec-001"]:
+            target_uids = ["usr-lec-001", "usr-lec-003", "lec-001"]
+        my_docs_count = db.query(DocumentDB).filter(DocumentDB.user_id.in_(target_uids)).count()
     shared_docs = db.query(DocumentDB).filter(DocumentDB.is_shared == 1).all()
 
     return {
@@ -1286,16 +1692,29 @@ def get_dashboard_summary(
 
 @app.get("/qgroups/invitations")
 @app.get("/documents/qgroups/invitations")
-def get_qgroup_invitations(email: Optional[str] = None):
+def get_qgroup_invitations(email: Optional[str] = None, type: Optional[str] = None, role: Optional[str] = None):
     invs = load_server_invitations()
+    query_type = type or role or "received"
     if email:
         clean_email = email.strip().lower()
-        invs = [
-            i for i in invs
-            if i.get("targetEmail", "").strip().lower() == clean_email or
-               i.get("targetEmail", "").strip().lower().replace("@gmai.com", "@gmail.com") == clean_email or
-               clean_email.replace("@gmai.com", "@gmail.com") in i.get("targetEmail", "").strip().lower()
-        ]
+        if query_type == "sent":
+            invs = [
+                i for i in invs
+                if i.get("inviterEmail", "").strip().lower() == clean_email
+            ]
+        elif query_type == "all":
+            invs = [
+                i for i in invs
+                if i.get("targetEmail", "").strip().lower() == clean_email or
+                   i.get("inviterEmail", "").strip().lower() == clean_email
+            ]
+        else:
+            invs = [
+                i for i in invs
+                if i.get("targetEmail", "").strip().lower() == clean_email or
+                   i.get("targetEmail", "").strip().lower().replace("@gmai.com", "@gmail.com") == clean_email or
+                   clean_email.replace("@gmai.com", "@gmail.com") in i.get("targetEmail", "").strip().lower()
+            ]
     return invs
 
 @app.post("/qgroups/invitations")
@@ -1340,13 +1759,14 @@ async def respond_qgroup_invitation(inv_id: str, request: Request):
                 target_group["members"] = members
                 target_group["memberCount"] = len(members)
                 msgs = target_group.get("messages", [])
+                inviter_name = target_inv.get("inviterName") or "Trưởng nhóm"
                 msgs.append({
                     "id": f"msg-{int(time.time()*1000)}",
                     "senderEmail": "system",
                     "senderName": "Hệ Thống Q-Group",
                     "isSystem": True,
                     "timestamp": time.strftime("%H:%M"),
-                    "text": f"🎉 {user_name} ({eff_email}) đã chấp nhận lời mời và chính thức gia nhập nhóm làm việc!"
+                    "text": f"🎉 {user_name} ({eff_email}) đã chấp nhận lời mời của {inviter_name} và chính thức tham gia kênh #{target_group.get('name', 'kênh')}!"
                 })
                 target_group["messages"] = msgs
                 save_server_qgroups(groups)
@@ -1923,12 +2343,12 @@ async def delete_document(
         current_uid and doc.user_id and (
             doc.user_id == current_uid or
             (current_email and doc.user_id == current_email) or
-            {doc.user_id, current_uid}.issubset({"lec-001", "usr-lec-001", "usr-lec-005"})
+            {doc.user_id, current_uid}.issubset({"lec-001", "usr-lec-001", "usr-lec-003", "usr-lec-005"})
         )
     )
     is_dev_sample = (
         not doc.user_id or 
-        doc.user_id in ["lec-001", "usr-lec-001", "usr-lec-005", "admin"] or
+        doc.user_id in ["lec-001", "usr-lec-001", "usr-lec-003", "usr-lec-005", "admin"] or
         os.getenv("ENVIRONMENT", "development").lower() in ["development", "dev", "local"]
     )
 

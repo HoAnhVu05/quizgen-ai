@@ -81,11 +81,13 @@ export interface QGroupMessage {
   isPinned?: boolean;
   reactions?: Record<string, string[]>;
   attachment?: {
-    type: 'textbook' | 'exam';
+    type: 'textbook' | 'exam' | 'file' | 'image' | 'video' | 'audio';
     id: string;
     name: string;
     subject?: string;
     size?: string;
+    fileUrl?: string;
+    fileType?: string;
     totalPages?: number;
     questionCount?: number;
     durationMinutes?: number;
@@ -133,7 +135,7 @@ export interface QGroupInvitation {
   status: 'pending' | 'accepted' | 'rejected';
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 const formatUploadedAt = (input?: string): string => {
   if (!input) return 'N/A';
@@ -662,7 +664,7 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     try {
       // 1. Giáo trình cá nhân (scope=my)
       const resMy = await apiClient.fetch(
-        `${API_BASE}/documents/documents?scope=my${currentUser?.id ? `&user_id=${currentUser.id}` : ''}`
+        `${API_BASE}/documents/documents?scope=my${currentUser?.id ? `&user_id=${currentUser.id}` : ''}${currentUser?.email ? `&email=${encodeURIComponent(currentUser.email)}` : ''}`
       );
       if (resMy.ok) {
         const payloadMy = await resMy.json();
@@ -680,14 +682,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
         const listShared = Array.isArray(payloadShared) ? payloadShared.map(normalizeTextbook) : [];
         setLibraryTextbooks(listShared);
       }
-    } catch {
-      const savedLocal: TextbookFile[] = JSON.parse(
-        localStorage.getItem(userStorageKey) || '[]'
-      ).filter((d: any) => d && d.id !== 'doc-kinh-te-vi-mo-2025' && d.id !== 'doc-tri-tue-nhan-tao-2026');
-      const unique = savedLocal.filter(
-        (doc, idx, arr) => idx === arr.findIndex((d) => d.id === doc.id)
-      );
-      setTextbooks(unique);
+    } catch (err) {
+      console.warn('[DOCUMENTS] Lỗi khi tải danh sách giáo trình từ máy chủ:', err);
     } finally {
       if (!silent) {
         setIsLoadingDocuments(false);
@@ -739,83 +735,173 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     return () => clearInterval(interval);
   }, [textbooks, fetchDocuments, API_BASE]);
 
-  const handleUploadFile = async (file: File) => {
-    if (!file) return;
+  const handleUploadFiles = async (files: File[]) => {
+    if (!files || files.length === 0) return;
 
-    if (!isPro && activeDocsCount >= 3) {
-      onShowToast(
-        'warning',
-        'Đã Đạt Hạn Mức Gói Miễn Phí',
-        'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
-      );
-      onOpenPricingModal?.();
-      return;
+    // 1. Kiểm tra định dạng & dung lượng từng tệp
+    const validFiles: File[] = [];
+    for (const f of files) {
+      const ext = f.name.split('.').pop()?.toLowerCase();
+      if (ext !== 'pdf' && ext !== 'docx') {
+        onShowToast('error', 'Định dạng không hỗ trợ', `Tệp "${f.name}" không hợp lệ. Hệ thống chỉ chấp nhận .pdf hoặc .docx.`);
+        continue;
+      }
+      if (f.size > maxUploadMb * 1024 * 1024) {
+        onShowToast('error', 'Tệp quá lớn', `Tệp "${f.name}" vượt quá dung lượng tối đa (${maxUploadMb}MB) của ${subscriptionInfo?.plan_name || 'Gói hiện tại'}.`);
+        continue;
+      }
+      validFiles.push(f);
     }
 
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    if (ext !== 'pdf' && ext !== 'docx') {
-      onShowToast('error', 'Định dạng không hỗ trợ', 'Hệ thống chỉ chấp nhận tệp .pdf hoặc .docx.');
-      return;
-    }
+    if (validFiles.length === 0) return;
 
-    if (file.size > maxUploadMb * 1024 * 1024) {
-      onShowToast('error', 'Tệp quá lớn', `Dung lượng tệp tối đa cho phép của ${subscriptionInfo?.plan_name || 'Gói hiện tại'} là ${maxUploadMb}MB.`);
-      return;
+    // 2. Kiểm tra hạn mức tài khoản
+    if (!isPro) {
+      const remainingQuota = Math.max(0, 3 - activeDocsCount);
+      if (remainingQuota <= 0) {
+        onShowToast(
+          'warning',
+          'Đã Đạt Hạn Mức Gói Miễn Phí',
+          'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
+        );
+        onOpenPricingModal?.();
+        return;
+      }
+      if (validFiles.length > remainingQuota) {
+        onShowToast(
+          'warning',
+          'Giới hạn số lượng nạp',
+          `Gói Miễn Phí chỉ còn nạp thêm được ${remainingQuota} tài liệu. Hệ thống sẽ tiếp nhận ${remainingQuota} tệp đầu tiên.`
+        );
+        validFiles.splice(remainingQuota);
+      }
     }
 
     setIsUploading(true);
-    setUploadProgressState({
-      fileName: file.name,
-      fileSize: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-      progress: 5,
-      stage: 'Đang tải lên máy chủ...',
-    });
+    const totalFiles = validFiles.length;
+    let successCount = 0;
+
+    const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (currentUser?.id) headers['X-User-Id'] = currentUser.id;
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('subject_code', 'GEN001');
+      for (let idx = 0; idx < totalFiles; idx++) {
+        const file = validFiles[idx];
+        const totalBytes = file.size;
+        const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
 
-      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      if (currentUser?.id) {
-        headers['X-User-Id'] = currentUser.id;
+        setUploadProgressState({
+          fileName: totalFiles > 1 ? `[${idx + 1}/${totalFiles}] ${file.name}` : file.name,
+          fileSize: `${totalMB} MB`,
+          progress: totalFiles > 1 ? Math.round((idx / totalFiles) * 100) : 0,
+          stage: totalFiles > 1 ? `Đang chuẩn bị tệp ${idx + 1}/${totalFiles}...` : `Chuẩn bị tải lên... 0/${totalMB} MB`,
+        });
+
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('subject_code', 'GEN001');
+
+        await new Promise<any>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const filePercent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+              const loadedMB = (event.loaded / (1024 * 1024)).toFixed(1);
+              const elapsedSec = Math.max(0.1, (Date.now() - startTime) / 1000);
+              const speedMBs = (event.loaded / (1024 * 1024) / elapsedSec).toFixed(1);
+
+              const overallPercent = totalFiles > 1
+                ? Math.min(100, Math.round(((idx + event.loaded / event.total) / totalFiles) * 100))
+                : filePercent;
+
+              setUploadProgressState({
+                fileName: totalFiles > 1 ? `[${idx + 1}/${totalFiles}] ${file.name}` : file.name,
+                fileSize: `${totalMB} MB`,
+                progress: overallPercent,
+                stage: totalFiles > 1
+                  ? `Tệp ${idx + 1}/${totalFiles}: ${loadedMB}/${totalMB} MB (${speedMBs} MB/s)`
+                  : (filePercent < 100
+                    ? `Đang truyền tệp: ${loadedMB}/${totalMB} MB (${speedMBs} MB/s)`
+                    : `Đã truyền xong 100%! Đang kết nối máy chủ tiếp nhận...`),
+              });
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const resData = JSON.parse(xhr.responseText);
+                const doc = resData?.document || resData;
+                if (doc?.id) {
+                  localStorage.setItem('quizgen_selected_book_id', doc.id);
+                  localStorage.setItem('quizgen_selected_book_name', doc.name || file.name);
+                }
+              } catch {}
+              setUploadProgressState({
+                fileName: totalFiles > 1 ? `[${idx + 1}/${totalFiles}] ${file.name}` : file.name,
+                fileSize: `${totalMB} MB`,
+                progress: 100,
+                stage: 'Máy chủ đã tiếp nhận xong (100%)! Đang đồng bộ danh sách...',
+              });
+              resolve(null);
+            } else {
+              let errorMsg = `Không thể nạp tệp "${file.name}".`;
+              try {
+                const errData = JSON.parse(xhr.responseText);
+                if (errData?.detail) errorMsg = errData.detail;
+              } catch {}
+              reject(new Error(errorMsg));
+            }
+          };
+
+          xhr.onerror = () => {
+            reject(new Error(`Lỗi kết nối mạng khi tải tệp "${file.name}". Vui lòng kiểm tra đường truyền.`));
+          };
+
+          xhr.ontimeout = () => {
+            reject(new Error(`Quá thời gian kết nối (Timeout) tệp "${file.name}".`));
+          };
+
+          xhr.open('POST', `${API_BASE}/documents/upload`);
+          Object.entries(headers).forEach(([k, v]) => {
+            xhr.setRequestHeader(k, v);
+          });
+          xhr.send(formData);
+        });
+
+        successCount++;
+        await fetchDocuments(true);
       }
 
-      const res = await apiClient.fetch(`${API_BASE}/documents/upload`, {
-        method: 'POST',
-        headers,
-        body: formData,
+      setUploadProgressState({
+        fileName: totalFiles > 1 ? `Hoàn tất ${successCount}/${totalFiles} giáo trình` : validFiles[0].name,
+        fileSize: '',
+        progress: 100,
+        stage: 'Đã tải lên xong! Máy chủ đang phân tích và bóc tách nội dung...',
       });
 
-      if (!res.ok) {
-        let errorMsg = 'Không thể nạp giáo trình lên máy chủ.';
-        try {
-          const errData = await res.json();
-          if (errData?.detail) errorMsg = errData.detail;
-        } catch {}
-        throw new Error(errorMsg);
-      }
-
-      const uploadedDoc = await res.json();
-      setUploadProgressState((prev) => (prev ? { ...prev, progress: 30, stage: 'Đang trích xuất văn bản & mục lục...' } : null));
-
-      try {
-        localStorage.setItem('quizgen_selected_book_id', uploadedDoc.id);
-        localStorage.setItem('quizgen_selected_book_name', uploadedDoc.name);
-      } catch {}
-
-      await fetchDocuments(true);
-      onShowToast('success', 'Nạp Giáo Trình Thành Công', `Giáo trình ${file.name} đã được nạp thành công và sẵn sàng để sinh đề.`);
+      onShowToast(
+        'success',
+        'Nạp Giáo Trình Thành Công',
+        totalFiles > 1
+          ? `Đã tải lên thành công ${successCount}/${totalFiles} giáo trình. Máy chủ đang bóc tách và lập chỉ mục.`
+          : `Giáo trình ${validFiles[0].name} đã được tải lên thành công và đang bóc tách nội dung.`
+      );
     } catch (err: any) {
       onShowToast('error', 'Nạp Giáo Trình Thất Bại', err.message || 'Lỗi không xác định.');
     } finally {
       setIsUploading(false);
-      setTimeout(() => setUploadProgressState(null), 1200);
+      setTimeout(() => setUploadProgressState(null), 1600);
+      await fetchDocuments(true);
     }
+  };
+
+  const handleUploadFile = async (file: File) => {
+    return handleUploadFiles([file]);
   };
 
   const handleToggleShare = async (book: TextbookFile) => {
@@ -831,9 +917,16 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
 
     try {
       const targetState = !book.isShared;
+      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (currentUser?.id) headers['X-User-Id'] = currentUser.id;
+      if (currentUser?.email) headers['X-User-Email'] = currentUser.email;
+      if (currentUser?.role) headers['X-User-Role'] = currentUser.role;
+
       const res = await apiClient.fetch(`${API_BASE}/documents/documents/${book.id}/share`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           is_shared: targetState,
           sharing_scope: targetState ? 'department' : 'private',
@@ -883,8 +976,16 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     } catch {}
 
     try {
+      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (currentUser?.id) headers['X-User-Id'] = currentUser.id;
+      if (currentUser?.email) headers['X-User-Email'] = currentUser.email;
+      if (currentUser?.role) headers['X-User-Role'] = currentUser.role;
+
       const res = await apiClient.fetch(`${API_BASE}/documents/documents/${id}`, {
         method: 'DELETE',
+        headers,
       });
       if (!res.ok && res.status !== 404) {
         throw new Error(await parseErrorMessage(res));
@@ -1831,9 +1932,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
           <input
             type="file"
             ref={fileInputRef}
+            multiple
             onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                void handleUploadFile(e.target.files[0]);
+              if (e.target.files && e.target.files.length > 0) {
+                void handleUploadFiles(Array.from(e.target.files));
                 e.target.value = '';
               }
             }}
@@ -1878,8 +1980,8 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
               onDrop={(e) => {
                 e.preventDefault();
                 setIsDragging(false);
-                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                  void handleUploadFile(e.dataTransfer.files[0]);
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                  void handleUploadFiles(Array.from(e.dataTransfer.files));
                 }
               }}
               onClick={() => {
@@ -1907,10 +2009,10 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                   <UploadCloud className="w-5 h-5" />
                 </div>
                 <p className="text-xs font-bold text-slate-800">
-                  Kéo thả tệp giáo trình (.pdf, .docx) vào đây hoặc bấm để chọn tệp
+                  Kéo thả một hoặc nhiều tệp giáo trình (.pdf, .docx) vào đây hoặc bấm để chọn tệp
                 </p>
                 <span className="text-[11px] text-slate-400">
-                  Tài liệu được bảo vệ riêng tư 100% cho tài khoản của bạn (Tối đa {maxUploadMb}MB)
+                  Hỗ trợ nạp hàng loạt • Tài liệu được bảo vệ riêng tư 100% (Tối đa {maxUploadMb}MB/tệp)
                 </span>
               </div>
             </div>
@@ -2019,23 +2121,34 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                             <div className="flex items-center justify-between text-[10px]">
                               <span className="text-[#008689] font-bold flex items-center gap-1">
                                 <Cpu className="w-3 h-3 animate-spin" />
-                                Đang xử lý nội dung...
+                                Đang lập chỉ mục vector...
                               </span>
-                              <span className="font-mono text-[#008689]">{book.progress}%</span>
+                              <span className="font-mono text-[#008689] font-bold">{book.progress}%</span>
                             </div>
                             <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
                               <div
-                                className="bg-[#008689] h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${book.progress}%` }}
+                                className="bg-gradient-to-r from-teal-500 to-cyan-500 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.min(100, Math.max(5, book.progress))}%` }}
                               />
                             </div>
                           </div>
                         )}
                         {book.status === 'extracting' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            <Clock className="w-3 h-3 animate-spin text-amber-600" />
-                            Đang bóc tách văn bản...
-                          </span>
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-amber-700 font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3 animate-spin text-amber-600" />
+                                Đang bóc tách văn bản...
+                              </span>
+                              <span className="font-mono text-amber-700 font-bold">{book.progress || 25}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                              <div
+                                className="bg-amber-500 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${Math.min(100, Math.max(5, book.progress || 25))}%` }}
+                              />
+                            </div>
+                          </div>
                         )}
                         {book.status === 'error' && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">

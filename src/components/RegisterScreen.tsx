@@ -259,7 +259,7 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
     };
 
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
       // 1. Gửi đăng ký tới Backend Auth Service qua Mock Gateway hoặc Service thực tế
       try {
@@ -279,21 +279,19 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
 
         if (res.ok) {
           const data = await res.json();
-          if (data.id) newUser.id = data.id;
+          if (data.id) {
+            newUser.id = data.id;
+          }
+          if (data.access_token) {
+            localStorage.setItem('quizgen_token', data.access_token);
+            localStorage.setItem('quizgen_auth_token', data.access_token);
+          }
         } else {
           const errData = await res.json().catch(() => ({}));
           const errMsg = errData.detail || 'Không thể tạo tài khoản trên máy chủ.';
           setErrors({ general: errMsg });
           setIsLoading(false);
           return;
-        }
-        const data = await res.json();
-        if (data.id) {
-          newUser.id = data.id;
-        }
-        if (data.access_token) {
-          localStorage.setItem('quizgen_token', data.access_token);
-          localStorage.setItem('quizgen_auth_token', data.access_token);
         }
       } catch (netErr) {
         // Backend offline, fallback lưu cục bộ

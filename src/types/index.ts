@@ -202,14 +202,18 @@ export interface QGroupMessage {
   readBy?: string[];
   reactions?: Record<string, string[]>;
   attachment?: {
-    type: 'textbook' | 'exam';
+    type: 'textbook' | 'exam' | 'file' | 'image' | 'video' | 'audio';
     id: string;
     name: string;
     subject?: string;
     size?: string;
+    fileUrl?: string;
+    fileType?: string;
     totalPages?: number;
     questionCount?: number;
     durationMinutes?: number;
+    duration?: number;
+    waveform?: number[];
     authorName?: string;
   };
   sharedPost?: {
@@ -250,6 +254,9 @@ export interface QGroup {
   pendingRequests: QGroupPendingRequest[];
   messages: QGroupMessage[];
   pinnedMessageId?: string;
+  isPinned?: boolean;
+  pinnedBy?: string[];
+  type?: 'direct' | 'channel' | string;
   isDirect?: boolean;
   directPartnerEmail?: string;
   directPartnerName?: string;
@@ -263,12 +270,13 @@ export interface QGroupInvitation {
   groupId: string;
   groupName: string;
   groupCode: string;
-  department: string;
+  department?: string;
   inviterName: string;
   inviterEmail: string;
   targetEmail: string;
+  targetName?: string;
   invitedAt: string;
-  status: 'pending' | 'accepted' | 'declined';
+  status: 'pending' | 'accepted' | 'declined' | 'rejected';
 }
 
 export interface FriendRequest {

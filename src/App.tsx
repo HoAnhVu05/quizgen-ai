@@ -31,7 +31,7 @@ const AppContent: React.FC = () => {
   // ─── Authentication State ────────────────────────────────────────────────
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
-      const saved = localStorage.getItem('quizgen_user');
+      const saved = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -40,7 +40,12 @@ const AppContent: React.FC = () => {
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return !!(localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_user'));
+      return !!(
+        sessionStorage.getItem('quizgen_token') ||
+        sessionStorage.getItem('quizgen_user') ||
+        localStorage.getItem('quizgen_token') ||
+        localStorage.getItem('quizgen_user')
+      );
     } catch {
       return false;
     }
@@ -78,8 +83,48 @@ const AppContent: React.FC = () => {
   }, [currentUser?.id, fetchSubscription]);
 
   // ─── App State ────────────────────────────────────────────────────────────
-  const [currentScreen, setCurrentScreen] = useState<ScreenId>('dashboard');
-  const [adminTab, setAdminTab] = useState<string>('overview');
+  const [currentScreen, setCurrentScreen] = useState<ScreenId>(() => {
+    try {
+      const saved =
+        sessionStorage.getItem('quizgen_active_screen') ||
+        localStorage.getItem('quizgen_active_screen');
+      const validScreens: ScreenId[] = [
+        'dashboard',
+        'review',
+        'generate',
+        'bank',
+        'upload',
+        'forum',
+        'qgroup',
+        'admin_portal',
+      ];
+      if (saved && validScreens.includes(saved as ScreenId)) {
+        return saved as ScreenId;
+      }
+    } catch {}
+    return 'dashboard';
+  });
+
+  const [adminTab, setAdminTab] = useState<string>(() => {
+    try {
+      return sessionStorage.getItem('quizgen_admin_tab') || 'overview';
+    } catch {
+      return 'overview';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('quizgen_active_screen', currentScreen);
+      localStorage.setItem('quizgen_active_screen', currentScreen);
+    } catch {}
+  }, [currentScreen]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem('quizgen_admin_tab', adminTab);
+    } catch {}
+  }, [adminTab]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isLuckyMoneyOpen, setIsLuckyMoneyOpen] = useState(() => {
@@ -206,19 +251,36 @@ const AppContent: React.FC = () => {
 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
-  // ─── Khởi động: Đọc quizgen_token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
+  // ─── Khởi động: Đọc token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
   useEffect(() => {
-    const token = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+    const token =
+      sessionStorage.getItem('quizgen_token') ||
+      sessionStorage.getItem('quizgen_auth_token') ||
+      localStorage.getItem('quizgen_token') ||
+      localStorage.getItem('quizgen_auth_token');
     if (!token) return;
 
     const verifySession = async () => {
+      const savedUserStr = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
+      let currentSavedEmail = '';
+      let currentSavedId = '';
+      if (savedUserStr) {
+        try {
+          const parsed = JSON.parse(savedUserStr);
+          currentSavedEmail = parsed.email || '';
+          currentSavedId = parsed.id || '';
+        } catch {}
+      }
+
       try {
         const res = await fetch(`${API_BASE}/auth/me`, {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
+            'X-User-Email': currentSavedEmail,
+            'X-User-Id': currentSavedId,
             'Content-Type': 'application/json',
           },
         });
@@ -231,6 +293,9 @@ const AppContent: React.FC = () => {
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_refresh_token');
           localStorage.removeItem('quizgen_user');
+          sessionStorage.removeItem('quizgen_token');
+          sessionStorage.removeItem('quizgen_auth_token');
+          sessionStorage.removeItem('quizgen_user');
           setCurrentUser(null);
           setIsAuthenticated(false);
           setAuthScreen('login');
@@ -249,6 +314,9 @@ const AppContent: React.FC = () => {
             localStorage.removeItem('quizgen_auth_token');
             localStorage.removeItem('quizgen_refresh_token');
             localStorage.removeItem('quizgen_user');
+            sessionStorage.removeItem('quizgen_token');
+            sessionStorage.removeItem('quizgen_auth_token');
+            sessionStorage.removeItem('quizgen_user');
             setCurrentUser(null);
             setIsAuthenticated(false);
             setAuthScreen('login');
@@ -256,27 +324,22 @@ const AppContent: React.FC = () => {
             return;
           }
 
-          const normalizedEmail = String(data.email || '').toLowerCase();
-          let savedGoogleProfile: { fullName?: string; academicTitle?: string; department?: string } | null = null;
-          try {
-            const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
-            savedGoogleProfile = profiles[normalizedEmail] || null;
-          } catch {}
+          // Bảo vệ tài khoản: Nếu máy chủ trả về tài khoản mẫu/fallback nhưng trên máy đang có email thật, không ghi đè
+          if (data.email === 'lecturer@quizgen.ai' && currentSavedEmail && currentSavedEmail !== 'lecturer@quizgen.ai') {
+            console.warn('[AUTH] Bỏ qua fallback guest để bảo toàn tài khoản người dùng thực tế:', currentSavedEmail);
+            return;
+          }
 
-          const resolvedAcademicTitle =
-            savedGoogleProfile !== null && savedGoogleProfile.academicTitle !== undefined
-              ? savedGoogleProfile.academicTitle
-              : data.academic_title !== undefined
-              ? data.academic_title
-              : (data.academicTitle ?? '');
+          // Lấy dữ liệu hồ sơ chuẩn trực tiếp từ cơ sở dữ liệu auth.db của hệ thống
+          const resolvedAcademicTitle = data.academic_title || data.academicTitle || '';
 
           const profile: UserProfile = {
             id: data.id || `usr-${Date.now()}`,
-            fullName: savedGoogleProfile?.fullName || data.full_name || data.fullName || 'Giảng viên',
+            fullName: data.full_name || data.fullName || 'Giảng viên',
             email: data.email,
             academicTitle: resolvedAcademicTitle,
-            department: savedGoogleProfile?.department || data.department || data.faculty || 'Khoa Công nghệ Thông tin',
-            faculty: savedGoogleProfile?.department || data.department || data.faculty || 'Khoa Công nghệ Thông tin',
+            department: data.department || data.faculty || 'Khoa Công nghệ Thông tin',
+            faculty: data.department || data.faculty || 'Khoa Công nghệ Thông tin',
             university: data.university || 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
             role: (data.role as UserRole) || 'lecturer',
             roleLabel:
@@ -290,30 +353,43 @@ const AppContent: React.FC = () => {
           };
           setCurrentUser(profile);
           setIsAuthenticated(true);
-          localStorage.setItem('quizgen_user', JSON.stringify(profile));
+          const isRemembered = localStorage.getItem('quizgen_remember_me') === 'true';
+          if (isRemembered) {
+            localStorage.setItem('quizgen_user', JSON.stringify(profile));
+          } else {
+            sessionStorage.setItem('quizgen_user', JSON.stringify(profile));
+          }
         } else if (res.status === 401) {
-          // Chỉ thu hồi phiên nếu không còn thông tin người dùng trong bộ nhớ cục bộ
-          const savedUserStr = localStorage.getItem('quizgen_user');
+          // Chỉ dọn dẹp phiên nếu thực sự không có thông tin người dùng trong storage
           if (savedUserStr) {
             try {
               const savedUser = JSON.parse(savedUserStr);
-              if (savedUser && savedUser.id) {
-                console.warn('[AUTH] Phiên backend cần gia hạn, tiếp tục duy trì đăng nhập từ bộ nhớ cục bộ');
-                setCurrentUser(savedUser);
-                setIsAuthenticated(true);
-                return;
-              }
-            } catch {}
+              // Bảo lưu phiên cho người dùng, không đá văng ra login khi kéo tải lại trang trên di động
+              setCurrentUser(savedUser);
+              setIsAuthenticated(true);
+              console.warn('[AUTH] Token máy chủ chưa đồng bộ, bảo lưu phiên đăng nhập hiện tại trên thiết bị.');
+              return;
+            } catch (e) {}
           }
           localStorage.removeItem('quizgen_token');
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_user');
+          sessionStorage.removeItem('quizgen_token');
+          sessionStorage.removeItem('quizgen_auth_token');
+          sessionStorage.removeItem('quizgen_user');
           setCurrentUser(null);
           setIsAuthenticated(false);
         }
       } catch (err) {
-        // Fallback duy trì session offline nếu còn dữ liệu trong localStorage
-        console.warn('[AUTH] Không thể kết nối /auth/me, duy trì phiên từ bộ nhớ cục bộ');
+        console.warn('[AUTH] Kiểm tra phiên qua /auth/me thất bại (mạng/tunnel):', err);
+        // Khi mạng chập chờn hoặc reload qua Cloudflare Tunnel, vẫn giữ phiên từ storage
+        if (savedUserStr) {
+          try {
+            const savedUser = JSON.parse(savedUserStr);
+            setCurrentUser(savedUser);
+            setIsAuthenticated(true);
+          } catch (e) {}
+        }
       }
     };
 
@@ -325,7 +401,12 @@ const AppContent: React.FC = () => {
     if (!isAuthenticated) return;
 
     const checkLockStatus = async () => {
-      const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+      const token =
+        sessionStorage.getItem('quizgen_token') ||
+        sessionStorage.getItem('quizgen_auth_token') ||
+        localStorage.getItem('quizgen_token') ||
+        localStorage.getItem('quizgen_auth_token') ||
+        apiClient.getAccessToken();
       if (!token) return;
 
       try {
@@ -333,6 +414,8 @@ const AppContent: React.FC = () => {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${token}`,
+            'X-User-Email': currentUser?.email || '',
+            'X-User-Id': currentUser?.id || '',
             'Content-Type': 'application/json',
           },
         });
@@ -364,7 +447,7 @@ const AppContent: React.FC = () => {
             setIsAuthenticated(false);
             setAuthScreen('login');
             setLockedAlert({ isOpen: true, message: lockMsg });
-          } else if (data.role && currentUser && data.role !== currentUser.role) {
+          } else if (data.email !== 'lecturer@quizgen.ai' && data.role && currentUser && data.role !== currentUser.role) {
             const newRole = data.role as UserRole;
             const updatedUser: UserProfile = {
               ...currentUser,
@@ -601,15 +684,39 @@ const AppContent: React.FC = () => {
   const handleLogin = (user: UserProfile) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
+    const savedScreen =
+      sessionStorage.getItem('quizgen_active_screen') ||
+      localStorage.getItem('quizgen_active_screen');
+    const validScreens: ScreenId[] = [
+      'dashboard',
+      'review',
+      'generate',
+      'bank',
+      'upload',
+      'forum',
+      'qgroup',
+      'admin_portal',
+    ];
+
     if (user.role === 'admin') {
-      setCurrentScreen('admin_portal');
+      setCurrentScreen(
+        savedScreen && validScreens.includes(savedScreen as ScreenId)
+          ? (savedScreen as ScreenId)
+          : 'admin_portal'
+      );
       handleShowToast(
         'success',
         'Xác thực 2FA Thành công — Mở Cổng Admin',
         `Chào mừng Quản trị viên ${user.fullName} vào Trung tâm Quản trị Hệ thống!`
       );
     } else {
-      setCurrentScreen('dashboard');
+      setCurrentScreen(
+        savedScreen &&
+          validScreens.includes(savedScreen as ScreenId) &&
+          savedScreen !== 'admin_portal'
+          ? (savedScreen as ScreenId)
+          : 'dashboard'
+      );
       const title = user.academicTitle ? `${user.academicTitle} ` : '';
       handleShowToast(
         'success',
@@ -653,6 +760,14 @@ const AppContent: React.FC = () => {
     localStorage.removeItem('quizgen_token');
     localStorage.removeItem('quizgen_auth_token');
     localStorage.removeItem('quizgen_user');
+    localStorage.removeItem('quizgen_remember_me');
+    localStorage.removeItem('quizgen_active_screen');
+    localStorage.removeItem('qgroup_selected_group_id');
+    sessionStorage.removeItem('quizgen_token');
+    sessionStorage.removeItem('quizgen_auth_token');
+    sessionStorage.removeItem('quizgen_user');
+    sessionStorage.removeItem('quizgen_active_screen');
+    sessionStorage.removeItem('qgroup_selected_group_id');
     setCurrentUser(null);
     setIsAuthenticated(false);
     setAuthScreen('login');

@@ -34,7 +34,7 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
             "user_id": uid,
             "role": role_part,
             "sub": uid,
-            "email": "quizgen.ai.team@gmail.com" if role_part == "admin" else "nguyentann0804@gmail.com"
+            "email": "quizgen.ai.team@gmail.com" if role_part == "admin" else ""
         }
 
     parts = token.strip().split(".")
@@ -195,12 +195,8 @@ def get_current_user_info(
     if not user_info["id"]:
         env = os.getenv("ENVIRONMENT", "development").lower()
         if env in ["development", "dev", "local"]:
-            user_info["id"] = "usr-lec-001"
-            user_info["user_id"] = "usr-lec-001"
             if not user_info["role"]:
                 user_info["role"] = "lecturer"
-            if not user_info["email"]:
-                user_info["email"] = "nguyentann0804@gmail.com"
 
     return user_info
 
