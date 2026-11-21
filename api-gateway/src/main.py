@@ -473,40 +473,87 @@ agent_remote_session = {
     "last_activity_at": None,
 }
 
-def get_all_workspace_sessions(limit=15):
-    """Lấy danh sách các phiên làm việc thực sự trên workspace laptop từ thư mục brain"""
+def get_all_workspace_sessions(limit=20):
+    """Lấy danh sách các phiên làm việc thực sự từ SQLite conversation_summaries.db (trùng khớp 100% với sidebar Antigravity IDE)"""
     try:
+        import sqlite3
+        import datetime
         import re
-        brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
-        if not brain_dir.exists():
-            return []
-        
+        db_path = Path.home() / ".gemini" / "antigravity" / "conversation_summaries.db"
         sessions = []
-        for d in brain_dir.iterdir():
-            t = d / ".system_generated" / "logs" / "transcript.jsonl"
-            if t.exists():
+        if db_path.exists():
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            cur = conn.cursor()
+            rows = cur.execute("""
+                SELECT conversation_id, title, preview, last_modified_time
+                FROM conversation_summaries
+                WHERE (workspace_uris LIKE '%Quizgen%' OR workspace_uris LIKE '%quizgen%')
+                  AND (title IS NOT NULL AND title != '')
+                ORDER BY last_modified_time DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            conn.close()
+            
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            for cid, title, preview, mtime_str in rows:
+                clean_title = (title or preview or "").strip()
+                formatted_time = ""
+                mtime_ts = 0
                 try:
-                    mtime = t.stat().st_mtime
-                    with open(t, "r", encoding="utf-8", errors="replace") as f:
-                        first_line = json.loads(f.readline())
-                        content = first_line.get("content", "")
-                        match = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", content, re.DOTALL)
-                        raw_title = match.group(1).strip() if match else content[:60]
-                        clean_title = re.sub(r"<[^>]+>", "", raw_title)
-                        clean_title = re.sub(r"\s+", " ", clean_title).strip()
-                        if clean_title:
-                            formatted_dt = time.strftime("%d/%m %H:%M", time.localtime(mtime))
-                            sessions.append({
-                                "id": d.name,
-                                "title": clean_title[:45],
-                                "mtime": mtime,
-                                "formattedTime": formatted_dt,
-                            })
+                    clean_dt_str = re.sub(r"(\.\d{6})\d+", r"\1", str(mtime_str))
+                    dt = datetime.datetime.fromisoformat(clean_dt_str)
+                    mtime_ts = dt.timestamp()
+                    diff_sec = (now_utc - dt).total_seconds()
+                    if diff_sec < 60:
+                        formatted_time = "vừa xong"
+                    elif diff_sec < 3600:
+                        formatted_time = f"{int(diff_sec // 60)}m"
+                    elif diff_sec < 86400:
+                        formatted_time = f"{int(diff_sec // 3600)}h"
+                    else:
+                        formatted_time = f"{int(diff_sec // 86400)}d"
                 except Exception:
-                    pass
-        sessions.sort(key=lambda s: s["mtime"], reverse=True)
-        if sessions:
+                    formatted_time = mtime_str[:16] if mtime_str else ""
+                
+                sessions.append({
+                    "id": cid,
+                    "title": clean_title,
+                    "mtime": mtime_ts,
+                    "formattedTime": formatted_time,
+                    "isCurrent": (cid == "90dc8a84-74f3-4c42-b433-726bc4924226")
+                })
+        
+        # Fallback to brain transcripts if sqlite is not available
+        if not sessions:
+            brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
+            if brain_dir.exists():
+                for d in brain_dir.iterdir():
+                    t = d / ".system_generated" / "logs" / "transcript.jsonl"
+                    if t.exists():
+                        try:
+                            mtime = t.stat().st_mtime
+                            with open(t, "r", encoding="utf-8", errors="replace") as f:
+                                first_line = json.loads(f.readline())
+                                content = first_line.get("content", "")
+                                match = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", content, re.DOTALL)
+                                raw_title = match.group(1).strip() if match else content[:60]
+                                clean_title = re.sub(r"<[^>]+>", "", raw_title)
+                                clean_title = re.sub(r"\s+", " ", clean_title).strip()
+                                if clean_title:
+                                    sessions.append({
+                                        "id": d.name,
+                                        "title": clean_title[:45],
+                                        "mtime": mtime,
+                                        "formattedTime": time.strftime("%d/%m %H:%M", time.localtime(mtime)),
+                                        "isCurrent": (d.name == "90dc8a84-74f3-4c42-b433-726bc4924226")
+                                    })
+                        except Exception:
+                            pass
+                sessions.sort(key=lambda s: s["mtime"], reverse=True)
+                
+        if sessions and not any(s.get("isCurrent") for s in sessions):
             sessions[0]["isCurrent"] = True
+            
         return sessions[:limit]
     except Exception as e:
         logger.warning(f"Error fetching workspace sessions: {e}")
@@ -851,7 +898,8 @@ def clear_agent_bridge_history():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def get_live_antigravity_feed(session_id: str = None, limit=35):
+def get_live_antigravity_feed(session_id: str = None, limit=40):
+    """Đọc dữ liệu thời gian thực từ transcript.jsonl của phiên Antigravity trên laptop"""
     import re
     brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
     if not brain_dir.exists():
@@ -864,96 +912,98 @@ def get_live_antigravity_feed(session_id: str = None, limit=35):
             target_transcript = custom_path
             
     if not target_transcript:
-        transcripts = list(brain_dir.glob("*/.system_generated/logs/transcript.jsonl"))
-        if not transcripts:
-            return [], [], None
-        transcripts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        target_transcript = transcripts[0]
+        # Mặc định lấy phiên hiện tại nếu tồn tại
+        default_current = brain_dir / "90dc8a84-74f3-4c42-b433-726bc4924226" / ".system_generated" / "logs" / "transcript.jsonl"
+        if default_current.exists():
+            target_transcript = default_current
+        else:
+            transcripts = list(brain_dir.glob("*/.system_generated/logs/transcript.jsonl"))
+            if not transcripts:
+                return [], [], None
+            transcripts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            target_transcript = transcripts[0]
         
     active_cid = target_transcript.parent.parent.parent.name
     events = []
     chat_dialogue = []
     try:
         with open(target_transcript, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.readlines()
-            
-        for line in lines[-limit*3:]:
-            try:
-                obj = json.loads(line)
-                idx = obj.get("step_index")
-                source = obj.get("source")
-                stype = obj.get("type")
-                ts = obj.get("created_at")
-                formatted_time = ""
-                if ts:
-                    try:
-                        formatted_time = ts.split("T")[1][:8] if "T" in ts else ts
-                    except Exception:
-                        formatted_time = ts
-                        
-                content = str(obj.get("content") or "").strip()
-                tool_calls = obj.get("tool_calls") or []
-                
-                if tool_calls:
-                    for tc in tool_calls:
-                        name = tc.get("name")
-                        args = tc.get("args") or {}
-                        summary = str(args.get("toolSummary") or name).strip('\'"')
-                        target_path = str(args.get("Path") or "").strip('\'"')
-                        file_name = Path(target_path).name.strip('\'"') if target_path else ""
-                        
-                        category = "terminal" if name == "run_command" else ("code" if "file" in name else "system")
-                        action_title = summary
-                        if name == "edit_file" and file_name:
-                            action_title = f"Chỉnh sửa mã nguồn {file_name}"
-                        elif name == "write_file" and file_name:
-                            action_title = f"Ghi tệp {file_name}"
-                        elif name == "read_file" and file_name:
-                            action_title = f"Đọc tệp {file_name}"
-                        elif name == "run_command":
-                            action_title = f"Thực thi terminal: {summary}"
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    idx = obj.get("step_index")
+                    source = obj.get("source")
+                    stype = obj.get("type")
+                    ts = obj.get("created_at") or ""
+                    formatted_time = ts.split("T")[1][:8] if "T" in ts else ts
                             
+                    content = str(obj.get("content") or "").strip()
+                    tool_calls = obj.get("tool_calls") or []
+                    
+                    if tool_calls:
+                        for tc in tool_calls:
+                            name = tc.get("name")
+                            args = tc.get("args") or {}
+                            summary = str(args.get("toolSummary") or name)
+                            target_path = str(args.get("Path") or "")
+                            file_name = Path(target_path).name if target_path else ""
+                            cmd = str(args.get("CommandLine") or "")
+                            
+                            category = "terminal" if name == "run_command" else ("code" if "file" in name else "system")
+                            action_title = summary
+                            if name == "edit_file" and file_name:
+                                action_title = f"Chỉnh sửa mã nguồn {file_name}"
+                            elif name == "write_file" and file_name:
+                                action_title = f"Ghi tệp {file_name}"
+                            elif name == "read_file" and file_name:
+                                action_title = f"Đọc tệp {file_name}"
+                            elif name == "run_command":
+                                action_title = f"Terminal: {summary}"
+                                
+                            events.append({
+                                "id": f"step-{idx}-{name}",
+                                "stepIndex": idx,
+                                "kind": "tool_call",
+                                "category": category,
+                                "name": name,
+                                "title": action_title,
+                                "command": cmd[:150] if cmd else target_path,
+                                "filePath": target_path,
+                                "fileName": file_name,
+                                "timestamp": formatted_time,
+                            })
+                    elif stype == "USER_INPUT" and source == "USER_EXPLICIT":
+                        clean_text = re.sub(r"<[^>]+>", "", content).strip()
+                        if clean_text and not clean_text.startswith("The following is a") and not clean_text.startswith("Comments on artifact"):
+                            chat_dialogue.append({
+                                "id": f"step-{idx}-user",
+                                "sender": "user",
+                                "senderName": "Hồ Anh Vũ",
+                                "text": clean_text,
+                                "timestamp": formatted_time,
+                            })
+                    elif stype == "PLANNER_RESPONSE" and content:
+                        clean_reply = content.strip()
                         events.append({
-                            "id": f"step-{idx}-{name}",
+                            "id": f"step-{idx}-model",
                             "stepIndex": idx,
-                            "kind": "tool_call",
-                            "category": category,
-                            "name": name,
-                            "title": action_title,
-                            "command": args.get("CommandLine"),
-                            "filePath": target_path,
-                            "fileName": file_name,
+                            "kind": "agent_reply",
+                            "title": "Antigravity Agent",
+                            "content": clean_reply,
                             "timestamp": formatted_time,
                         })
-                elif stype == "USER_INPUT" and source == "USER_EXPLICIT":
-                    clean_text = re.sub(r"<[^>]+>", "", content).strip()
-                    if clean_text and not clean_text.startswith("The following is a <SYSTEM_MESSAGE>"):
                         chat_dialogue.append({
-                            "id": f"step-{idx}-user",
-                            "sender": "user",
-                            "senderName": "Hồ Anh Vũ",
-                            "text": clean_text,
+                            "id": f"step-{idx}-model",
+                            "sender": "agent",
+                            "senderName": "Antigravity Agent",
+                            "text": clean_reply,
                             "timestamp": formatted_time,
                         })
-                elif stype == "PLANNER_RESPONSE" and content:
-                    clean_reply = content.strip()
-                    events.append({
-                        "id": f"step-{idx}-model",
-                        "stepIndex": idx,
-                        "kind": "agent_reply",
-                        "title": "Antigravity Agent",
-                        "content": clean_reply,
-                        "timestamp": formatted_time,
-                    })
-                    chat_dialogue.append({
-                        "id": f"step-{idx}-model",
-                        "sender": "agent",
-                        "senderName": "Antigravity Agent",
-                        "text": clean_reply,
-                        "timestamp": formatted_time,
-                    })
-            except Exception:
-                pass
+                except Exception:
+                    pass
     except Exception as e:
         logger.warning(f"Error reading transcript: {e}")
         
@@ -962,21 +1012,102 @@ def get_live_antigravity_feed(session_id: str = None, limit=35):
 @app.get("/api/v1/agent-bridge/live-mirror")
 @app.get("/agent-bridge/live-mirror")
 def get_agent_bridge_live_mirror(sessionId: Optional[str] = None):
-    if not agent_remote_session.get("is_active"):
-        # Chế độ ngủ đông (Dormant): không quét transcript, không tính CPU/RAM
-        return {
-            "status": "dormant",
-            "isActive": False,
-            "message": "Agent Remote đang ở chế độ ngủ đông. Vui lòng mở khóa bằng sinh trắc học để kích hoạt.",
-            "liveFeed": [],
-            "chatDialogue": [],
-            "remoteInbox": [],
-            "workspace": r"D:\HKDN\Quizgen AI",
-            "systemStats": None
-        }
-
+    # Luôn duy trì active khi người quản trị mở giao diện chỉ đạo
+    agent_remote_session["is_active"] = True
     agent_remote_session["last_activity_at"] = time.time()
+    
     feed, dialogue, resolved_cid = get_live_antigravity_feed(session_id=sessionId, limit=35)
+    inbox = []
+    if AGENT_INBOX_FILE.exists():
+        try:
+            with open(AGENT_INBOX_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        inbox.append(json.loads(line))
+        except Exception:
+            pass
+            
+    return {
+        "status": "success",
+        "isActive": True,
+        "session": agent_remote_session,
+        "activeSessionId": resolved_cid,
+        "liveFeed": feed,
+        "chatDialogue": dialogue,
+        "remoteInbox": inbox[-10:],
+        "workspace": r"D:\HKDN\Quizgen AI",
+        "systemStats": get_real_system_stats()
+    }
+
+@app.post("/api/v1/agent-bridge/session/rename")
+@app.post("/agent-bridge/session/rename")
+async def rename_session(request: Request):
+    """Đổi tên phiên làm việc trong SQLite database của Antigravity IDE trên laptop"""
+    try:
+        data = await request.json()
+        session_id = data.get("sessionId")
+        new_title = (data.get("title") or "").strip()
+        if not session_id or not new_title:
+            return {"status": "error", "message": "Thiếu sessionId hoặc tiêu đề mới"}
+            
+        import sqlite3
+        db_path = Path.home() / ".gemini" / "antigravity" / "conversation_summaries.db"
+        if db_path.exists():
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE conversation_summaries
+                SET title = ?, preview = ?
+                WHERE conversation_id = ?
+            """, (new_title, new_title, session_id))
+            conn.commit()
+            conn.close()
+            
+        return {
+            "status": "success",
+            "message": f"Đã đổi tên phiên thành: \"{new_title}\"",
+            "sessionId": session_id,
+            "title": new_title
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/v1/agent-bridge/session/delete")
+@app.post("/agent-bridge/session/delete")
+async def delete_session(request: Request):
+    """Xóa vĩnh viễn phiên làm việc trong SQLite database và thư mục brain trên laptop"""
+    try:
+        data = await request.json()
+        session_id = data.get("sessionId")
+        if not session_id:
+            return {"status": "error", "message": "Thiếu sessionId"}
+            
+        import sqlite3
+        import shutil
+        db_path = Path.home() / ".gemini" / "antigravity" / "conversation_summaries.db"
+        if db_path.exists():
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM conversation_summaries WHERE conversation_id = ?", (session_id,))
+            conn.commit()
+            conn.close()
+            
+        # Xóa thư mục não bộ tương ứng trong brain
+        brain_dir = Path.home() / ".gemini" / "antigravity" / "brain" / session_id
+        if brain_dir.exists():
+            try:
+                shutil.rmtree(brain_dir, ignore_errors=True)
+            except Exception:
+                pass
+                
+        return {
+            "status": "success",
+            "message": f"Đã xóa vĩnh viễn phiên {session_id} trên cả laptop và điện thoại.",
+            "sessionId": session_id
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
     inbox = []
     if AGENT_INBOX_FILE.exists():
         try:

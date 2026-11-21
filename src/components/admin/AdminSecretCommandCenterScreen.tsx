@@ -26,6 +26,7 @@ import {
   ChevronUp,
   ChevronDown,
   Plus,
+  Pencil,
 } from 'lucide-react';
 import apiClient, { API_BASE } from '../../services/apiClient';
 
@@ -117,8 +118,19 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
   // Quản lý phiên làm việc thực tế từ workspace laptop
   const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
   const [showSessionDrawer, setShowSessionDrawer] = useState(false);
   const [isCreatingNewSession, setIsCreatingNewSession] = useState(false);
+
+  // Chỉnh sửa & Xóa phiên
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitleText, setEditingTitleText] = useState<string>('');
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [isDeletingSessionId, setIsDeletingSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
 
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -169,8 +181,9 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
         const data = await res.json();
         if (Array.isArray(data.sessions)) {
           setSessions(data.sessions);
-          if (!selectedSessionId && data.currentSessionId) {
+          if (!selectedSessionIdRef.current && data.currentSessionId) {
             setSelectedSessionId(data.currentSessionId);
+            selectedSessionIdRef.current = data.currentSessionId;
           }
         }
       }
@@ -183,7 +196,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
   // Fetch Live Mirror Feed (Cập nhật cho Tivi cuộn băng và thông số phần cứng theo đúng phiên được chọn)
   const fetchLiveMirror = async (overrideSessionId?: string) => {
-    const targetId = overrideSessionId || selectedSessionId;
+    const targetId = overrideSessionId || selectedSessionIdRef.current || selectedSessionId;
     try {
       const url = targetId
         ? `${API_BASE}/agent-bridge/live-mirror?sessionId=${encodeURIComponent(targetId)}`
@@ -195,8 +208,9 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
           setSysStats(data.systemStats);
         }
 
-        if (data.activeSessionId && !selectedSessionId) {
+        if (data.activeSessionId && !selectedSessionIdRef.current) {
           setSelectedSessionId(data.activeSessionId);
+          selectedSessionIdRef.current = data.activeSessionId;
         }
 
         // Đồng bộ câu thoại thực tế từ phiên làm việc trên laptop vào khung chat
@@ -231,7 +245,58 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
     } catch {}
   };
 
-  // Polling chu kỳ 2.5 giây cho cuộn băng khi phiên đang ACTIVE
+  // Đổi tên phiên trên cả laptop & mobile
+  const handleRenameSession = async (sessionId: string, newTitle: string) => {
+    if (!newTitle.trim()) {
+      setEditingSessionId(null);
+      return;
+    }
+    setIsRenaming(true);
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/agent-bridge/session/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, title: newTitle.trim() }),
+      });
+      if (res.ok) {
+        setEditingSessionId(null);
+        await fetchSessions();
+      }
+    } catch {} finally {
+      setIsRenaming(false);
+    }
+  };
+
+  // Xóa vĩnh viễn phiên trên cả laptop & mobile
+  const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const s = sessions.find((item) => item.id === sessionId);
+    const sTitle = s?.title || sessionId;
+    if (!window.confirm(`Anh có chắc muốn XÓA VĨNH VIỄN phiên "${sTitle}" trên cả laptop và điện thoại không?`)) {
+      return;
+    }
+    setIsDeletingSessionId(sessionId);
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/agent-bridge/session/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (res.ok) {
+        if (selectedSessionIdRef.current === sessionId) {
+          setSelectedSessionId(null);
+          selectedSessionIdRef.current = null;
+          setChatMessages([]);
+          setLiveActions([]);
+        }
+        await fetchSessions();
+      }
+    } catch {} finally {
+      setIsDeletingSessionId(null);
+    }
+  };
+
+  // Polling chu kỳ 2.5 giây cho cuộn băng khi người dùng mở giao diện
   useEffect(() => {
     void fetchLiveMirror();
     const interval = setInterval(() => {
@@ -239,8 +304,6 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
     }, 2500);
     return () => {
       clearInterval(interval);
-      // Đảm bảo đưa Agent Remote về chế độ ngủ đông (Dormant) khi unmount
-      void apiClient.fetch(`${API_BASE}/agent-bridge/session/stop`, { method: 'POST' }).catch(() => null);
     };
   }, []);
 
@@ -401,7 +464,8 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
   };
 
   const latestAction = liveActions[liveActions.length - 1];
-  const isAgentWorking = isSubmitting || (latestAction && (latestAction.category === 'code' || latestAction.category === 'terminal'));
+  const lastMsg = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
+  const isAgentWorking = isSubmitting || (lastMsg !== null && lastMsg.sender === 'user');
 
   return (
     <div className="fixed inset-0 z-[200] bg-black text-zinc-100 flex flex-col font-sans select-none overflow-hidden">
@@ -524,7 +588,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
                   isAgentWorking ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-zinc-800 text-zinc-400'
                 }`}
               >
-                {isAgentWorking ? '⚡ EXECUTING' : 'IDLE'}
+                {isAgentWorking ? '⚡ EXECUTING' : '🟢 SẴN SÀNG'}
               </span>
 
               {/* Mode switch buttons */}
@@ -861,12 +925,16 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
             <div className="overflow-y-auto flex-1 divide-y divide-zinc-900 py-1 space-y-1">
               {sessions.map((s) => {
                 const isSelected = s.id === selectedSessionId;
+                const isEditing = editingSessionId === s.id;
+                const isDeleting = isDeletingSessionId === s.id;
+
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    type="button"
                     onClick={() => {
+                      if (isEditing) return;
                       setSelectedSessionId(s.id);
+                      selectedSessionIdRef.current = s.id;
                       setShowSessionDrawer(false);
                       setIsCreatingNewSession(false);
                       setChatMessages([]);
@@ -876,7 +944,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
                       isSelected
                         ? 'bg-emerald-500/10 border border-emerald-500/30 text-white'
                         : 'hover:bg-zinc-900/60 text-zinc-300'
-                    }`}
+                    } ${isDeleting ? 'opacity-40 pointer-events-none' : ''}`}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 mb-1">
@@ -892,17 +960,82 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
                           </span>
                         )}
                       </div>
-                      <div className="text-xs font-medium line-clamp-2 leading-relaxed">
-                        {s.title}
-                      </div>
+
+                      {isEditing ? (
+                        <div
+                          className="flex items-center gap-1.5 mt-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="text"
+                            value={editingTitleText}
+                            onChange={(e) => setEditingTitleText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') void handleRenameSession(s.id, editingTitleText);
+                              if (e.key === 'Escape') setEditingSessionId(null);
+                            }}
+                            autoFocus
+                            placeholder="Tên phiên mới..."
+                            className="flex-1 bg-zinc-900 border border-emerald-500/50 rounded-lg px-2 py-1 text-xs text-white focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            disabled={isRenaming}
+                            onClick={() => void handleRenameSession(s.id, editingTitleText)}
+                            className="p-1 rounded-lg bg-emerald-500 text-black hover:bg-emerald-400 cursor-pointer"
+                            title="Lưu tên phiên"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingSessionId(null)}
+                            className="p-1 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white cursor-pointer"
+                            title="Hủy"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-xs font-medium line-clamp-2 leading-relaxed">
+                          {s.title}
+                        </div>
+                      )}
+
                       <div className="text-[10px] font-mono text-zinc-600 mt-1 truncate">
                         ID: {s.id}
                       </div>
                     </div>
-                    {isSelected && (
-                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-1" />
+
+                    {/* Actions: Edit, Delete, Selected Check */}
+                    {!isEditing && (
+                      <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSessionId(s.id);
+                            setEditingTitleText(s.title);
+                          }}
+                          className="p-1.5 rounded-lg text-zinc-500 hover:text-emerald-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                          title="Đổi tên phiên này trên cả laptop"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSession(s.id, e)}
+                          className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-zinc-800/80 transition-colors cursor-pointer"
+                          title="Xóa phiên này trên cả laptop"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        {isSelected && (
+                          <Check className="w-4 h-4 text-emerald-400 shrink-0 ml-1" />
+                        )}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
