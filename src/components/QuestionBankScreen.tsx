@@ -387,7 +387,17 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       return;
     }
 
-    // Gắn class in chuyên dụng cho body để ẩn triệt để 100% giao diện lặt vặt (sidebar, header, buttons, quanta AI)
+    // Tạo container độc lập đặt trực tiếp ở root của body để trình duyệt phân trang (pagination) chuẩn xác 100% không bị cắt ở trang 1
+    let printMount = document.getElementById('quizgen-dedicated-print-mount');
+    if (!printMount) {
+      printMount = document.createElement('div');
+      printMount.id = 'quizgen-dedicated-print-mount';
+      document.body.appendChild(printMount);
+    }
+    // Sao chép toàn bộ HTML của tờ đề vào mount chuyên dụng
+    printMount.innerHTML = printElement.innerHTML;
+
+    // Gắn class in chuyên dụng cho body
     document.body.classList.add('quizgen-printing-exam');
 
     let cleaned = false;
@@ -395,17 +405,20 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       if (cleaned) return;
       cleaned = true;
       document.body.classList.remove('quizgen-printing-exam');
+      if (printMount && printMount.parentNode) {
+        printMount.parentNode.removeChild(printMount);
+      }
       window.removeEventListener('afterprint', cleanUp);
     };
 
     window.addEventListener('afterprint', cleanUp);
 
-    // Kích hoạt lệnh in trực tiếp của trình duyệt (Hiển thị 100% tờ đề chuẩn A4 + Phiếu OMR)
+    // Đợi 150ms để DOM cập nhật và MathJax/KaTeX ổn định trước khi mở hộp thoại in
     setTimeout(() => {
       window.print();
       // Dự phòng trường hợp trình duyệt không kích hoạt afterprint
       setTimeout(cleanUp, 3000);
-    }, 100);
+    }, 150);
   };
 
   const buildFallbackBlob = (format: 'docx' | 'pdf' | 'qti') => {
