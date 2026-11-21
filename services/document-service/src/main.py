@@ -1363,19 +1363,22 @@ def delete_message_endpoint(group_id: str, message_id: str):
 @app.patch("/qgroups/{group_id}/messages/{message_id}")
 @app.patch("/documents/qgroups/{group_id}/messages/{message_id}")
 async def edit_message_endpoint(group_id: str, message_id: str, request: Request):
-    """Cập nhật nội dung tin nhắn đã chỉnh sửa vào CSDL máy chủ"""
+    """Cập nhật nội dung hoặc danh sách tệp đính kèm tin nhắn vào CSDL máy chủ"""
     payload = await request.json()
-    new_text = str(payload.get("text") or "").strip()
-    if not new_text:
-        return {"status": "error", "message": "Nội dung tin nhắn không được rỗng"}
+    new_text = payload.get("text")
+    attachments = payload.get("attachments")
     groups = load_server_qgroups()
     changed = False
     for g in groups:
         if str(g.get("id")) == str(group_id) or str(g.get("code")) == str(group_id):
             for m in g.get("messages", []):
                 if str(m.get("id")) == str(message_id):
-                    m["text"] = new_text
-                    m["isEdited"] = True
+                    if new_text is not None:
+                        m["text"] = str(new_text).strip()
+                        m["isEdited"] = True
+                    if attachments is not None:
+                        m["attachments"] = attachments
+                        m["attachment"] = attachments[0] if len(attachments) > 0 else None
                     changed = True
                     break
             break
@@ -1504,6 +1507,24 @@ async def join_qgroup_by_code(group_id: str, request: Request):
         reqs.append(req_item)
         target["pendingRequests"] = reqs
         target["updatedAt"] = now_ms
+
+        # Tạo tin nhắn thông báo ra ngoài kênh chat cho Trưởng nhóm biết và duyệt
+        msgs = target.get("messages", [])
+        msgs.append({
+            "id": f"msg-req-{now_ms}",
+            "senderEmail": "system",
+            "senderName": "Hệ Thống Phê Duyệt",
+            "isSystem": True,
+            "isJoinRequest": True,
+            "joinRequestId": req_id,
+            "joinUserEmail": user_email,
+            "joinUserName": user_name,
+            "joinUserTitle": user_title,
+            "timestamp": time.strftime("%H:%M"),
+            "text": f"🔔 {user_title} {user_name} ({user_email}) vừa gửi yêu cầu tham gia phòng qua mã liên kết. Trưởng nhóm vui lòng xét duyệt.",
+        })
+        target["messages"] = msgs
+
         save_server_qgroups(groups)
         return {
             "status": "pending_approval",
@@ -1553,10 +1574,18 @@ async def respond_join_request(group_id: str, request: Request):
     if not matched_req:
         return {"status": "error", "message": "Không tìm thấy yêu cầu tham gia"}
     
-    target["pendingRequests"] = [r for r in reqs if r.get("id") != matched_req.get("id")]
+    target["pendingRequests"] = [r for r in reqs if r.get("id") != matched_req.get("id") and r.get("email", "").lower() != target_email]
     now_ms = int(time.time() * 1000)
     target["updatedAt"] = now_ms
     
+    # Cập nhật trạng thái tin nhắn yêu cầu tham gia
+    msgs = target.get("messages", [])
+    for m in msgs:
+        if m.get("isJoinRequest") and (m.get("joinRequestId") == matched_req.get("id") or m.get("joinUserEmail", "").lower() == target_email):
+            m["isJoinRequestHandled"] = True
+            m["joinRequestStatus"] = action
+            m["text"] = f"{'✓ Đã phê duyệt' if action == 'approve' else '✕ Đã từ chối'} yêu cầu của {matched_req.get('name', target_email)} ({target_email}) gia nhập nhóm bởi {admin_name}."
+
     if action == "approve":
         members = target.get("members", [])
         eff_email = matched_req.get("email", "").lower()
@@ -1565,7 +1594,6 @@ async def respond_join_request(group_id: str, request: Request):
             target["members"] = members
             target["memberCount"] = len(members)
         
-        msgs = target.get("messages", [])
         msgs.append({
             "id": f"msg-{now_ms}",
             "senderEmail": "system",
@@ -1574,8 +1602,7 @@ async def respond_join_request(group_id: str, request: Request):
             "timestamp": time.strftime("%H:%M"),
             "text": f"🎉 Trưởng nhóm {admin_name} đã phê duyệt cho {matched_req.get('name', 'Thành viên')} ({eff_email}) gia nhập nhóm!"
         })
-        target["messages"] = msgs
-    
+    target["messages"] = msgs
     save_server_qgroups(groups)
     return {"status": "success", "action": action, "group": target}
 

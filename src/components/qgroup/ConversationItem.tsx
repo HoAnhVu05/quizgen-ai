@@ -126,6 +126,14 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
               Trưởng nhóm
             </span>
           )}
+          {isOwner && (group.pendingRequests || []).length > 0 && (
+            <span
+              className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[9px] font-bold shrink-0 animate-pulse shadow-2xs"
+              title={`Có ${(group.pendingRequests || []).length} yêu cầu xin gia nhập cần duyệt`}
+            >
+              {(group.pendingRequests || []).length}
+            </span>
+          )}
           {group.muted && <BellOff className="w-3 h-3 text-slate-400 shrink-0" />}
         </div>
 

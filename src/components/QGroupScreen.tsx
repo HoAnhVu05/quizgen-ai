@@ -3209,6 +3209,81 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     [activeGroup, qgroups, applyGroups, onShowToast]
   );
 
+  // ── Delete Single Attachment / Xóa riêng lẻ 1 ảnh hoặc 1 file khỏi chùm tệp ──
+  const handleDeleteSingleAttachment = useCallback(
+    async (msgId: string, attIdentifier: string | number) => {
+      if (!activeGroup) return;
+
+      const targetMsg = (activeGroup.messages || []).find((m) => m.id === msgId);
+      if (!targetMsg) return;
+
+      const currentAttachments: any[] =
+        targetMsg.attachments && targetMsg.attachments.length > 0
+          ? targetMsg.attachments
+          : targetMsg.attachment
+          ? [targetMsg.attachment]
+          : [];
+
+      // Lọc bỏ file/ảnh được chọn
+      const remaining = currentAttachments.filter(
+        (att, idx) =>
+          att.id !== attIdentifier &&
+          idx !== attIdentifier &&
+          `${targetMsg.id}-att-${idx}` !== attIdentifier
+      );
+
+      // Nếu không còn tệp nào và văn bản cũng rỗng -> thu hồi toàn bộ tin nhắn
+      const shouldRecall =
+        remaining.length === 0 && (!targetMsg.text || targetMsg.text.trim() === '');
+
+      const updated = qgroups.map((g) => {
+        if (g.id !== activeGroup.id) return g;
+        const msgs = (g.messages || []).map((m) => {
+          if (m.id !== msgId) return m;
+          if (shouldRecall) {
+            return {
+              ...m,
+              text: 'Tin nhắn đã được thu hồi',
+              isRecalled: true,
+              attachment: undefined,
+              attachments: undefined,
+            };
+          }
+          return {
+            ...m,
+            attachments: remaining,
+            attachment: remaining[0] || undefined,
+          };
+        });
+        return { ...g, messages: msgs };
+      });
+
+      applyGroups(updated);
+      onShowToast('info', 'Đã xóa ảnh', 'Đã xóa 1 tệp hình ảnh khỏi tin nhắn.');
+
+      try {
+        if (shouldRecall) {
+          await apiClient.fetch(
+            `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}/messages/${encodeURIComponent(msgId)}/recall`,
+            { method: 'POST' }
+          );
+        } else {
+          await apiClient.fetch(
+            `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}/messages/${encodeURIComponent(msgId)}`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ attachments: remaining }),
+            }
+          );
+        }
+      } catch (err) {
+        console.error('Failed to sync deleted attachment to server:', err);
+      }
+    },
+    [activeGroup, qgroups, applyGroups, onShowToast]
+  );
+
   // ── Pin / Ghim tin nhắn (Persistent to DB) ────────────────────────────────
   const handleTogglePinMessage = useCallback(
     async (msgId: string) => {
@@ -3600,6 +3675,50 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       targetEmail: string,
       action: 'approve' | 'reject'
     ) => {
+      const cleanEmail = targetEmail.trim().toLowerCase();
+      const updatedPending = (group.pendingRequests || []).filter(
+        (r) => r.id !== requestId && r.email.toLowerCase() !== cleanEmail
+      );
+      const updatedMembers =
+        action === 'approve'
+          ? Array.from(new Set([...(group.members || []), cleanEmail]))
+          : group.members || [];
+
+      // 1. Optimistic Update ngay lập tức để yêu cầu biến mất tức thì trên modal & giao diện
+      const optimisticGroup: QGroup = {
+        ...group,
+        pendingRequests: updatedPending,
+        members: updatedMembers,
+        memberCount: updatedMembers.length,
+        messages: (group.messages || []).map((m: any) => {
+          if (
+            m.isJoinRequest &&
+            (m.joinRequestId === requestId || m.joinUserEmail?.toLowerCase() === cleanEmail)
+          ) {
+            return {
+              ...m,
+              isJoinRequestHandled: true,
+              joinRequestStatus: action,
+              text: `${action === 'approve' ? '✓ Đã phê duyệt' : '✕ Đã từ chối'} yêu cầu tham gia của ${
+                m.joinUserName || cleanEmail
+              }.`,
+            };
+          }
+          return m;
+        }),
+      };
+
+      const updated = qgroups.map((g) => (g.id === group.id ? optimisticGroup : g));
+      applyGroups(updated);
+      setDetailsGroup(optimisticGroup);
+
+      if (action === 'approve') {
+        onShowToast('success', 'Đã phê duyệt', 'Thành viên mới đã được thêm vào nhóm.');
+      } else {
+        onShowToast('info', 'Đã từ chối', 'Đã từ chối yêu cầu tham gia.');
+      }
+
+      // 2. Đồng bộ lên máy chủ
       try {
         const res = await apiClient
           .fetch(`${API_BASE}/documents/qgroups/${group.id}/respond-join-request`, {
@@ -3607,7 +3726,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               requestId,
-              targetEmail,
+              targetEmail: cleanEmail,
               action,
               adminName: myName,
             }),
@@ -3615,16 +3734,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           .then((r) => r.json());
 
         if (res.status === 'success' && res.group) {
-          const updated = qgroups.map((g) => (g.id === group.id ? res.group : g));
-          applyGroups(updated);
-          if (action === 'approve') {
-            onShowToast('success', 'Đã phê duyệt', 'Thành viên mới đã được thêm vào nhóm.');
-          } else {
-            onShowToast('info', 'Đã từ chối', 'Đã từ chối yêu cầu tham gia.');
-          }
+          const synced = qgroups.map((g) => (g.id === group.id ? res.group : g));
+          applyGroups(synced);
+          setDetailsGroup(res.group);
         }
       } catch {
-        onShowToast('error', 'Lỗi', 'Không thể xử lý yêu cầu tham gia.');
+        // Giữ trạng thái optimistic
       }
     },
     [myName, qgroups, applyGroups, onShowToast]
@@ -4200,6 +4315,33 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               onJoinHuddle={handleOpenHuddleWithAudioPrime}
             />
 
+            {/* Pending Join Requests Alert Banner for Group Owner */}
+            {(activeGroup.ownerEmail || '').toLowerCase() === myEmail.toLowerCase() &&
+              (activeGroup.pendingRequests || []).length > 0 && (
+                <div className="bg-amber-50 border-b border-amber-300 px-4 py-2 flex items-center justify-between text-xs animate-fade-in shadow-2xs">
+                  <div className="flex items-center gap-2 text-amber-900 font-semibold min-w-0">
+                    <span className="flex h-2.5 w-2.5 relative shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-600" />
+                    </span>
+                    <span className="truncate">
+                      Có <strong className="text-amber-950 font-extrabold">{(activeGroup.pendingRequests || []).length}</strong> yêu cầu xin gia nhập kênh <strong>#{activeGroup.name}</strong> cần duyệt.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailsGroup(activeGroup);
+                      setChannelDetailsTab('members');
+                      setIsChannelDetailsOpen(true);
+                    }}
+                    className="px-2.5 py-1 rounded-md bg-amber-700 hover:bg-amber-800 text-white font-bold text-[11px] shrink-0 transition-colors cursor-pointer shadow-2xs"
+                  >
+                    Xem & Duyệt ngay
+                  </button>
+                </div>
+              )}
+
             {/* Pinned Messages Bar */}
             <PinnedMessagesBar
               pinnedMessages={pinnedMessages}
@@ -4296,6 +4438,74 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 const isMe = msg.senderEmail?.toLowerCase() === myEmail;
                 const isOwner = (activeGroup.ownerEmail || '').toLowerCase() === myEmail;
                 if (msg.isSystem) {
+                  const isJoinReq = (msg as any).isJoinRequest;
+                  const isHandled = (msg as any).isJoinRequestHandled;
+
+                  if (isJoinReq) {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-3 px-2">
+                        <div className="max-w-md w-full p-3.5 rounded-2xl bg-amber-50/95 border border-amber-300 shadow-xs space-y-2.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-extrabold text-amber-950 flex items-center gap-1.5 uppercase tracking-wide text-[11px]">
+                              <Shield className="w-3.5 h-3.5 text-amber-700" />
+                              <span>Yêu cầu xin gia nhập kênh</span>
+                            </span>
+                            <span className="text-[10px] text-amber-800 font-mono">{msg.timestamp}</span>
+                          </div>
+                          <p className="text-xs text-slate-800 leading-relaxed font-medium">
+                            {msg.text}
+                          </p>
+                          {isOwner && !isHandled ? (
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-200">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleRespondJoinRequest(
+                                    activeGroup,
+                                    (msg as any).joinRequestId,
+                                    (msg as any).joinUserEmail,
+                                    'approve'
+                                  )
+                                }
+                                className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Duyệt ngay</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void handleRespondJoinRequest(
+                                    activeGroup,
+                                    (msg as any).joinRequestId,
+                                    (msg as any).joinUserEmail,
+                                    'reject'
+                                  )
+                                }
+                                className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-semibold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Từ chối</span>
+                              </button>
+                            </div>
+                          ) : isHandled ? (
+                            <div className="pt-1.5 border-t border-amber-200/70 text-[11px] font-bold flex items-center gap-1.5">
+                              {(msg as any).joinRequestStatus === 'approve' ? (
+                                <span className="text-emerald-700 flex items-center gap-1">
+                                  <Check className="w-3.5 h-3.5" /> Đã được Trưởng nhóm phê duyệt
+                                </span>
+                              ) : (
+                                <span className="text-rose-600 flex items-center gap-1">
+                                  <X className="w-3.5 h-3.5" /> Đã từ chối yêu cầu
+                                </span>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div key={msg.id} className="flex justify-center my-2">
                       <span className="px-3.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-medium flex items-center gap-1.5 border border-slate-200">
@@ -4605,6 +4815,19 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                       >
                                         <Download className="w-3.5 h-3.5" />
                                       </button>
+                                      {isMe && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
+                                          }}
+                                          className="w-8 h-8 rounded-full bg-rose-600/85 hover:bg-rose-700 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
+                                          title="Xóa riêng ảnh này khỏi tin nhắn"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 ) : attItem.type === 'video' && attItem.fileUrl ? (
@@ -4652,17 +4875,32 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                       </div>
                                     </div>
                                     {attItem.fileUrl && (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          downloadFileSafely(attItem.name, attItem.fileUrl, onShowToast);
-                                        }}
-                                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
-                                        title="Tải tệp về máy"
-                                      >
-                                        <Download className="w-3.5 h-3.5" />
-                                      </button>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            downloadFileSafely(attItem.name, attItem.fileUrl, onShowToast);
+                                          }}
+                                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
+                                          title="Tải tệp về máy"
+                                        >
+                                          <Download className="w-3.5 h-3.5" />
+                                        </button>
+                                        {isMe && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              void handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
+                                            }}
+                                            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-rose-600 text-slate-500 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
+                                            title="Xóa riêng tệp này khỏi tin nhắn"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
                                     )}
                                   </div>
                                 ) : (
