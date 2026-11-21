@@ -15,7 +15,12 @@ import {
   Clock,
   Check,
   BookOpen,
-  EyeOff,
+  Settings,
+  Copy,
+  AlertCircle,
+  Save,
+  CheckCircle2,
+  UserPlus,
 } from 'lucide-react';
 import { QGroup } from '../../types';
 import { resolveChatDisplayInfo } from './chatUtils';
@@ -37,6 +42,10 @@ export interface ChannelDetailsModalProps {
   onUnfriend?: (email: string, name?: string) => void;
   onKickMember?: (email: string, name: string) => void;
   onRespondJoinRequest?: (requestId: string, email: string, action: 'approve' | 'reject') => void;
+  onOpenProfile?: (email: string, name?: string) => void;
+  onTransferOwnershipToMember?: (email: string) => void;
+  onSaveSettings?: (name: string, department: string, description: string, joinPolicy: 'open' | 'approval_required' | 'invite_only') => void;
+  onDisbandGroup?: () => void;
 }
 
 export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
@@ -45,20 +54,34 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
   activeTab,
   onTabChange,
   inviteEmail,
-  onInviteEmailChange: _onInviteEmailChange,
-  onInvite: _onInvite,
+  onInviteEmailChange,
+  onInvite,
   onClose,
   onLeaveGroup,
   onDeleteChat,
   onUnfriend,
   onKickMember,
   onRespondJoinRequest,
+  onOpenProfile,
+  onTransferOwnershipToMember,
+  onSaveSettings,
+  onDisbandGroup,
 }) => {
   const isDirect = Boolean(group.isDirect || group.type === 'direct');
   const dmInfo = resolveChatDisplayInfo(group, myEmail);
   const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
   const members = group.members || [];
   const pendingRequests = group.pendingRequests || [];
+
+  // Trạng thái chỉnh sửa cấu hình kênh (dành cho Trưởng nhóm)
+  const [editName, setEditName] = useState(group.name || '');
+  const [editDept, setEditDept] = useState(group.department || '');
+  const [editDesc, setEditDesc] = useState(group.description || '');
+  const [editJoinPolicy, setEditJoinPolicy] = useState<'open' | 'approval_required' | 'invite_only'>(
+    (group.joinPolicy as any) || 'open'
+  );
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Extract shared files from messages
   const sharedFiles = useMemo(() => {
@@ -71,8 +94,59 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
     return list;
   }, [group.messages]);
 
-  const [_modalLookupStatus, setModalLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
-  const [_modalLookedUpUser, setModalLookedUpUser] = useState<any>(null);
+  const [modalLookupStatus, setModalLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+  const [modalLookedUpUser, setModalLookedUpUser] = useState<any>(null);
+
+  const localRegistered: Record<
+    string,
+    { fullName: string; academicTitle: string; department: string }
+  > = useMemo(() => ({
+    'mr.av1222005@gmail.com': {
+      fullName: 'Mr. AV',
+      academicTitle: 'ThS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'avanimechannel@gmail.com': {
+      fullName: 'Vũ Anh',
+      academicTitle: 'ThS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'hieuhieu22112005@gmail.com': {
+      fullName: 'Hieu Huynh',
+      academicTitle: 'ThS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'daipqps37469@gmail.com': {
+      fullName: 'Đại Phạm Quang',
+      academicTitle: 'ThS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'vuha3608@ut.edu.vn': {
+      fullName: 'Vũ Hồ Anh',
+      academicTitle: 'ThS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'nguyentann0804@gmail.com': {
+      fullName: 'Nguyễn Văn Tân',
+      academicTitle: 'TS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'quizgen.ai.team@gmail.com': {
+      fullName: 'Ban Quản trị QuizGen AI',
+      academicTitle: 'Admin',
+      department: 'Hệ thống Khảo thí UTH',
+    },
+    'hod.cntt@uth.edu.vn': {
+      fullName: 'PGS. TS. Trưởng Khoa CNTT',
+      academicTitle: 'PGS. TS.',
+      department: 'Khoa Công nghệ Thông tin',
+    },
+    'gv.kinhte@uth.edu.vn': {
+      fullName: 'TS. Giảng viên Kinh tế',
+      academicTitle: 'TS.',
+      department: 'Khoa Kinh tế Vận tải',
+    },
+  }), []);
 
   useEffect(() => {
     const clean = inviteEmail.trim().toLowerCase();
@@ -98,56 +172,6 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
         }
       } catch {}
 
-      const localRegistered: Record<
-        string,
-        { fullName: string; academicTitle: string; department: string }
-      > = {
-        'mr.av1222005@gmail.com': {
-          fullName: 'Mr. AV',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'avanimechannel@gmail.com': {
-          fullName: 'Vũ Anh',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'hieuhieu22112005@gmail.com': {
-          fullName: 'Hieu Huynh',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'daipqps37469@gmail.com': {
-          fullName: 'Đại Phạm Quang',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'vuha3608@ut.edu.vn': {
-          fullName: 'Vũ Hồ Anh',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'nguyentann0804@gmail.com': {
-          fullName: 'Nguyễn Văn Tân',
-          academicTitle: 'TS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'quizgen.ai.team@gmail.com': {
-          fullName: 'Ban Quản trị QuizGen AI',
-          academicTitle: 'Admin',
-          department: 'Hệ thống Khảo thí UTH',
-        },
-        'hod.cntt@uth.edu.vn': {
-          fullName: 'PGS. TS. Trưởng Khoa CNTT',
-          academicTitle: 'PGS. TS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'gv.kinhte@uth.edu.vn': {
-          fullName: 'TS. Giảng viên Kinh tế',
-          academicTitle: 'TS.',
-          department: 'Khoa Kinh tế Vận tải',
-        },
-      };
       if (localRegistered[clean]) {
         setModalLookedUpUser({ email: clean, ...localRegistered[clean] });
         setModalLookupStatus('found');
@@ -158,7 +182,20 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [inviteEmail]);
+  }, [inviteEmail, localRegistered]);
+
+  const handleSaveChannelSettings = async () => {
+    if (!editName.trim() || !onSaveSettings) return;
+    setIsSaving(true);
+    try {
+      await onSaveSettings(editName.trim(), editDept.trim(), editDesc.trim(), editJoinPolicy);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch {
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const joinPolicyLabel = {
     open: 'Công khai (Mọi giảng viên đều có thể tham gia)',
@@ -172,10 +209,10 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-fade-in"
+        className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[88vh] animate-fade-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header (Clean Slack Header) */}
+        {/* Header */}
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-sm">
@@ -184,10 +221,10 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1">
-                  <span>{isDirect ? `Thông tin: ${dmInfo.displayName}` : `Chi tiết kênh #${group.name}`}</span>
+                  <span>{isDirect ? `Thông tin: ${dmInfo.displayName}` : `Chi tiết & Cài đặt kênh #${group.name}`}</span>
                 </h3>
                 {isOwner && !isDirect && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-200 text-slate-700 border border-slate-300">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
                     Trưởng nhóm
                   </span>
                 )}
@@ -210,7 +247,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
           </button>
         </div>
 
-        {/* Slack Minimal Underline Tabs */}
+        {/* Tabs */}
         <div className="flex items-center gap-4 px-5 pt-1 border-b border-slate-200 bg-white">
           {(isDirect
             ? [
@@ -218,7 +255,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                 { id: 'files' as const, label: `Tệp & Học liệu (${sharedFiles.length})`, icon: FileText },
               ]
             : [
-                { id: 'about' as const, label: 'Giới thiệu', icon: Info },
+                { id: 'about' as const, label: 'Thông tin & Cài đặt', icon: Settings },
                 {
                   id: 'members' as const,
                   label: `Thành viên (${members.length})`,
@@ -254,7 +291,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
 
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
-          {/* TAB 1: ABOUT */}
+          {/* TAB 1: ABOUT & SETTINGS */}
           {activeTab === 'about' && (
             isDirect ? (
               <div className="space-y-4">
@@ -284,61 +321,140 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
 
                 {/* Direct Message Actions */}
                 <div className="space-y-2 pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={onDeleteChat}
-                    className="w-full py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4 text-slate-500" />
-                    <span>Xóa toàn bộ tin nhắn đoạn chat</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onUnfriend?.(dmInfo.partnerEmail || '', dmInfo.displayName)}
-                    className="w-full py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <UserMinus className="w-4 h-4 text-rose-600" />
-                    <span>Hủy kết bạn với đồng nghiệp</span>
-                  </button>
+                  {onDeleteChat && (
+                    <button
+                      type="button"
+                      onClick={onDeleteChat}
+                      className="w-full py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4 text-slate-500" />
+                      <span>Xóa toàn bộ tin nhắn đoạn chat</span>
+                    </button>
+                  )}
+                  {onUnfriend && (
+                    <button
+                      type="button"
+                      onClick={() => onUnfriend(dmInfo.partnerEmail || '', dmInfo.displayName)}
+                      className="w-full py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <UserMinus className="w-4 h-4 text-rose-600" />
+                      <span>Hủy kết bạn với đồng nghiệp</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="space-y-3.5">
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-                  <span className="font-semibold text-slate-500 uppercase text-[10px] tracking-wide">Mục đích kênh</span>
-                  <p className="text-slate-800 leading-relaxed font-normal">
-                    {group.description || 'Không gian làm việc chung: trao đổi câu hỏi, chia sẻ giáo trình và thống nhất ma trận đề thi.'}
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Khoa / Bộ môn</span>
-                    <p className="text-slate-900 font-bold mt-0.5">{group.department || 'Chung'}</p>
+              <div className="space-y-4">
+                {/* FORM THÔNG TIN & CẤU HÌNH KÊNH */}
+                <div className="space-y-3 bg-slate-50/60 p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Settings className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Thông tin kênh học thuật</span>
+                    </span>
+                    {!isOwner && (
+                      <span className="text-[10px] text-slate-500 italic">Chế độ chỉ xem</span>
+                    )}
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Trưởng nhóm</span>
-                    <p className="text-slate-900 font-bold mt-0.5 truncate">{group.ownerName || 'TS. Hồ Anh Vũ'}</p>
-                  </div>
-                </div>
 
-                {/* Chế độ tham gia */}
-                <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                   <div>
-                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Chế độ tham gia</span>
-                    <p className="text-slate-900 font-semibold mt-0.5">{joinPolicyLabel}</p>
+                    <label className="font-semibold text-slate-700 block mb-1">Tên kênh học thuật</label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      disabled={!isOwner}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-900 text-xs disabled:opacity-60 font-medium text-slate-800"
+                    />
                   </div>
-                  {group.joinPolicy === 'invite_only' ? (
-                    <Lock className="w-4 h-4 text-slate-600 shrink-0" />
-                  ) : group.joinPolicy === 'approval_required' ? (
-                    <ShieldCheck className="w-4 h-4 text-slate-600 shrink-0" />
-                  ) : (
-                    <Globe className="w-4 h-4 text-slate-600 shrink-0" />
+
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Khoa / Bộ môn</label>
+                      <input
+                        type="text"
+                        value={editDept}
+                        onChange={(e) => setEditDept(e.target.value)}
+                        disabled={!isOwner}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-900 text-xs disabled:opacity-60 text-slate-800"
+                        placeholder="Chung"
+                      />
+                    </div>
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Trưởng nhóm</label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={group.ownerName || group.ownerEmail || 'Hồ Anh Vũ'}
+                        className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Mục đích & Nội dung hoạt động</label>
+                    <textarea
+                      rows={2}
+                      value={editDesc}
+                      onChange={(e) => setEditDesc(e.target.value)}
+                      disabled={!isOwner}
+                      className="w-full p-2.5 bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-900 resize-none text-xs disabled:opacity-60 leading-relaxed text-slate-800"
+                      placeholder="Trao đổi câu hỏi, chia sẻ giáo trình và ma trận đề thi..."
+                    />
+                  </div>
+
+                  {/* Chế độ phê duyệt */}
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Chế độ tham gia</label>
+                    {isOwner ? (
+                      <select
+                        value={editJoinPolicy}
+                        onChange={(e) => setEditJoinPolicy(e.target.value as any)}
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-900 text-xs text-slate-800 font-medium"
+                      >
+                        <option value="open">Công khai (Mọi giảng viên đều có thể tham gia)</option>
+                        <option value="approval_required">Cần phê duyệt (Yêu cầu Trưởng nhóm duyệt trước)</option>
+                        <option value="invite_only">Riêng tư (Chỉ khi được mời trực tiếp)</option>
+                      </select>
+                    ) : (
+                      <div className="p-2.5 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-slate-800 font-medium">
+                        <span>{joinPolicyLabel}</span>
+                        {group.joinPolicy === 'invite_only' ? (
+                          <Lock className="w-4 h-4 text-slate-500" />
+                        ) : group.joinPolicy === 'approval_required' ? (
+                          <ShieldCheck className="w-4 h-4 text-slate-500" />
+                        ) : (
+                          <Globe className="w-4 h-4 text-slate-500" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Nút lưu cấu hình nếu là Trưởng nhóm */}
+                  {isOwner && (
+                    <div className="pt-1 flex items-center justify-between">
+                      {saveSuccess ? (
+                        <span className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Đã lưu thành công!</span>
+                        </span>
+                      ) : <span />}
+                      <button
+                        type="button"
+                        onClick={handleSaveChannelSettings}
+                        disabled={isSaving || !editName.trim()}
+                        className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        <span>{isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</span>
+                      </button>
+                    </div>
                   )}
                 </div>
 
-                <div className="p-3.5 rounded-xl border border-slate-200 space-y-2">
-                  <span className="font-semibold text-slate-700">Mã liên kết phòng học thuật</span>
+                {/* Mã liên kết kênh */}
+                <div className="p-3.5 rounded-xl border border-slate-200 space-y-2 bg-white">
+                  <span className="font-semibold text-slate-700 block">Mã liên kết phòng học thuật</span>
                   <div className="flex items-center gap-2">
                     <input
                       type="text"
@@ -351,65 +467,89 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                       onClick={() => {
                         navigator.clipboard.writeText(group.code);
                       }}
-                      className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold cursor-pointer transition-colors"
+                      className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold cursor-pointer transition-colors flex items-center gap-1"
                     >
-                      Sao chép
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Sao chép</span>
                     </button>
                   </div>
-                  {group.joinPolicy === 'invite_only' && (
-                    <p className="text-[11px] text-amber-700">
-                      * Nhóm đang ở chế độ Riêng tư: người ngoài cần có thư mời trực tiếp qua email để tham gia.
-                    </p>
-                  )}
                 </div>
 
-                <div className="flex flex-col gap-2 pt-2">
-                  {onDeleteChat && (
+                {/* Tác vụ Rời nhóm / Giải tán nhóm */}
+                <div className="pt-2 border-t border-slate-200 space-y-2">
+                  {isOwner ? (
+                    onDisbandGroup && (
+                      <button
+                        type="button"
+                        onClick={onDisbandGroup}
+                        className="w-full py-2.5 rounded-xl border border-rose-200 bg-rose-50/60 hover:bg-rose-100 text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-600" />
+                        <span>Giải tán nhóm vĩnh viễn</span>
+                      </button>
+                    )
+                  ) : (
                     <button
                       type="button"
-                      onClick={() => {
-                        onDeleteChat();
-                        onClose();
-                      }}
-                      className="w-full py-2.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      onClick={onLeaveGroup}
+                      className="w-full py-2.5 rounded-xl border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
                     >
-                      <EyeOff className="w-4 h-4 text-slate-500" />
-                      <span>Ẩn cuộc trò chuyện nhóm này</span>
+                      <LogOut className="w-4 h-4" />
+                      <span>Rời khỏi kênh này</span>
                     </button>
                   )}
-
-                  <button
-                    type="button"
-                    onClick={onLeaveGroup}
-                    className="w-full py-2.5 rounded-lg border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                  >
-                    <LogOut className="w-4 h-4" />
-                    <span>Rời khỏi kênh này</span>
-                  </button>
                 </div>
               </div>
             )
           )}
 
-          {/* TAB 2: MEMBERS */}
+          {/* TAB 2: MEMBERS & MANAGEMENT */}
           {activeTab === 'members' && (
             <div className="space-y-4">
+              {/* Thêm / Mời thành viên */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <span className="font-semibold text-slate-700 block">Mời đồng nghiệp vào kênh</span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => onInviteEmailChange(e.target.value)}
+                    placeholder="Nhập email giảng viên (@gmail.com, @ut.edu.vn)..."
+                    className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg outline-none focus:border-slate-900 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={onInvite}
+                    disabled={!inviteEmail.trim()}
+                    className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Mời</span>
+                  </button>
+                </div>
+                {modalLookupStatus === 'found' && modalLookedUpUser && (
+                  <p className="text-[11px] text-emerald-700 font-medium">
+                    ✓ Tìm thấy: <strong>{modalLookedUpUser.fullName}</strong> ({modalLookedUpUser.academicTitle} - {modalLookedUpUser.department})
+                  </p>
+                )}
+              </div>
+
               {/* Khối yêu cầu phê duyệt tham gia (Chỉ Trưởng nhóm thấy) */}
               {isOwner && pendingRequests.length > 0 && (
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-300 space-y-2">
+                <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-300 space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-slate-600" />
+                    <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
                       <span>Yêu cầu xin gia nhập ({pendingRequests.length})</span>
                     </span>
-                    <span className="text-[10px] text-slate-600 font-semibold">Chờ duyệt</span>
+                    <span className="text-[10px] text-amber-800 font-semibold">Chờ duyệt</span>
                   </div>
 
                   <div className="space-y-1.5">
                     {pendingRequests.map((req) => (
                       <div
                         key={req.id}
-                        className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 gap-2"
+                        className="flex items-center justify-between p-2 rounded-lg bg-white border border-amber-200 gap-2"
                       >
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-900 truncate">
@@ -445,49 +585,89 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
 
               {/* Danh sách thành viên */}
               <div className="space-y-2">
-                <span className="font-semibold text-slate-700 text-xs block">
-                  Thành viên trong kênh ({members.length})
-                </span>
-                <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 text-xs">
+                    Danh sách thành viên ({members.length})
+                  </span>
+                  <span className="text-[10.5px] text-slate-400">
+                    Bấm vào tên để xem hồ sơ cá nhân
+                  </span>
+                </div>
+
+                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                   {members.map((memEmail, idx) => {
                     const isMemOwner = (group.ownerEmail || '').toLowerCase() === memEmail.toLowerCase();
                     const isSelf = memEmail.toLowerCase() === myEmail.toLowerCase();
+                    const info = localRegistered[memEmail.toLowerCase()];
+                    const displayName = info?.fullName || memEmail.split('@')[0];
+                    const subtitle = info ? `${info.academicTitle || ''} • ${info.department || ''}`.trim() : memEmail;
+
                     return (
                       <div
                         key={idx}
-                        className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200 gap-2"
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-all gap-2 group"
                       >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <div className="w-7 h-7 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0">
+                        {/* Member Identity & Profile Trigger */}
+                        <div
+                          className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                          onClick={() => onOpenProfile?.(memEmail, displayName)}
+                          title="Bấm để xem thông tin cá nhân của giảng viên"
+                        >
+                          <div className="w-8 h-8 rounded-lg bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs shrink-0 group-hover:bg-slate-900 group-hover:text-white transition-colors">
                             {memEmail.slice(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <p className="font-semibold text-slate-800 truncate">{memEmail}</p>
+                              <p className="font-semibold text-slate-900 truncate group-hover:text-teal-700 transition-colors">
+                                {displayName}
+                              </p>
                               {isMemOwner && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 text-slate-700">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
                                   Trưởng nhóm
                                 </span>
                               )}
                               {isSelf && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-medium bg-emerald-100 text-emerald-800">
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
                                   Bạn
                                 </span>
                               )}
                             </div>
+                            <p className="text-[10px] text-slate-500 truncate">{subtitle}</p>
                           </div>
                         </div>
 
-                        {/* Kick Member Action (Trưởng nhóm kick thành viên khác) */}
-                        {isOwner && !isMemOwner && !isSelf && onKickMember && (
-                          <button
-                            type="button"
-                            onClick={() => onKickMember(memEmail, memEmail)}
-                            className="p-1 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
-                            title="Xóa thành viên khỏi nhóm"
-                          >
-                            <UserMinus className="w-3.5 h-3.5" />
-                          </button>
+                        {/* Admin Action Buttons on Members */}
+                        {isOwner && !isMemOwner && !isSelf && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {onTransferOwnershipToMember && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onTransferOwnershipToMember(memEmail);
+                                }}
+                                className="px-2 py-1 rounded-md text-[10.5px] font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Chỉ định thành viên này làm Trưởng nhóm mới"
+                              >
+                                <ShieldCheck className="w-3 h-3 text-amber-600" />
+                                <span>Chuyển quyền</span>
+                              </button>
+                            )}
+
+                            {onKickMember && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onKickMember(memEmail, displayName);
+                                }}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                title="Mời thành viên ra khỏi nhóm"
+                              >
+                                <UserMinus className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
@@ -522,17 +702,10 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                       <div className="min-w-0">
                         <p className="font-bold text-slate-800 truncate">{file.name}</p>
                         <p className="text-[10px] text-slate-500">
-                          {file.totalPages} trang • Gửi bởi {file.senderName} ({file.sentAt})
+                          {file.totalPages ? `${file.totalPages} trang • ` : ''}Gửi bởi {file.senderName} ({file.sentAt})
                         </p>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => alert(`Đã kích hoạt giáo trình ${file.name} để sinh đề trắc nghiệm!`)}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] shrink-0 cursor-pointer"
-                    >
-                      Sinh Đề
-                    </button>
                   </div>
                 ))
               )}

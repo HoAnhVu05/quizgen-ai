@@ -339,8 +339,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                   className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
                 >
                   <span className="flex items-center gap-2.5">
-                    {activeGroup.isDirect ? <User className="w-3.5 h-3.5 text-slate-400" /> : <Info className="w-3.5 h-3.5 text-slate-400" />}
-                    <span>{activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết kênh'}</span>
+                    {activeGroup.isDirect ? <User className="w-3.5 h-3.5 text-slate-400" /> : <Settings className="w-3.5 h-3.5 text-slate-400" />}
+                    <span>{activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết & Cài đặt kênh'}</span>
                   </span>
                   <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
                 </button>
@@ -385,62 +385,19 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
                 </button>
               </div>
 
-              {!activeGroup.isDirect && (
+              {!activeGroup.isDirect && isGroupOwner && (
                 <div className="py-1">
                   <button
                     type="button"
                     onClick={() => {
                       setIsHeaderMenuOpen(false);
-                      onOpenSummarize();
+                      onOpenTransferOwnership(activeGroup);
                     }}
                     className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
                   >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Tóm tắt hội thoại bằng AI</span>
+                    <UserCheck className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Chuyển quyền Trưởng nhóm</span>
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsHeaderMenuOpen(false);
-                      onOpenCanvas();
-                    }}
-                    className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-teal-600" />
-                    <span>Mở Bảng ghi nhớ Canvas</span>
-                  </button>
-
-                  {isGroupOwner && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsHeaderMenuOpen(false);
-                          onOpenChannelSettings();
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <Settings className="w-3.5 h-3.5 text-slate-400" />
-                          <span>Cài đặt kênh</span>
-                        </span>
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsHeaderMenuOpen(false);
-                          onOpenTransferOwnership(activeGroup);
-                        }}
-                        className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
-                      >
-                        <UserCheck className="w-3.5 h-3.5 text-slate-600" />
-                        <span>Chuyển quyền Trưởng nhóm</span>
-                      </button>
-                    </>
-                  )}
                 </div>
               )}
 

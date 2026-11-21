@@ -685,6 +685,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [isTransferOwnerModalOpen, setIsTransferOwnerModalOpen] = useState(false);
   const [transferGroup, setTransferGroup] = useState<QGroup | null>(null);
   const [selectedNewOwner, setSelectedNewOwner] = useState<string>('');
+  const [transferAlsoLeave, setTransferAlsoLeave] = useState<boolean>(false);
   const [isTransferringOwner, setIsTransferringOwner] = useState(false);
 
   // Context menu
@@ -3322,6 +3323,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         // Trường hợp 2: Có các thành viên khác -> Mở Modal Nhượng quyền Trưởng nhóm
         setTransferGroup(group);
         setSelectedNewOwner(otherMembers[0] || '');
+        setTransferAlsoLeave(true); // Khi bấm rời nhóm thì mặc định là chuyển quyền & rời
         setIsTransferOwnerModalOpen(true);
         return;
       }
@@ -3361,7 +3363,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   );
 
   const handleOpenTransferOwnership = useCallback(
-    (group: QGroup) => {
+    (group: QGroup, preselectedEmail?: string) => {
       const otherMembers = (group.members || []).filter(
         (m) => m.toLowerCase() !== myEmail.toLowerCase()
       );
@@ -3374,7 +3376,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         return;
       }
       setTransferGroup(group);
-      setSelectedNewOwner(otherMembers[0] || '');
+      setSelectedNewOwner(
+        preselectedEmail && otherMembers.some((m) => m.toLowerCase() === preselectedEmail.toLowerCase())
+          ? preselectedEmail
+          : otherMembers[0] || ''
+      );
+      setTransferAlsoLeave(false); // Mặc định chỉ chuyển quyền và vẫn ở lại nhóm
       setIsTransferOwnerModalOpen(true);
     },
     [myEmail, onShowToast]
@@ -3394,26 +3401,42 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             currentOwnerName: myName,
             newOwnerEmail: selectedNewOwner,
             newOwnerName: selectedNewOwner.split('@')[0],
-            alsoLeave: true,
+            alsoLeave: transferAlsoLeave,
           }),
         }
       );
       if (res.ok) {
-        addToBlacklist(myEmail, transferGroup.id, transferGroup.code);
-        const next = qgroups.filter(
-          (g) => g.id !== transferGroup.id && g.code !== transferGroup.code
-        );
-        applyGroups(next);
-        if (selectedGroupId === transferGroup.id) {
-          setSelectedGroupId(next[0]?.id || '');
+        if (transferAlsoLeave) {
+          addToBlacklist(myEmail, transferGroup.id, transferGroup.code);
+          const next = qgroups.filter(
+            (g) => g.id !== transferGroup.id && g.code !== transferGroup.code
+          );
+          applyGroups(next);
+          if (selectedGroupId === transferGroup.id) {
+            setSelectedGroupId(next[0]?.id || '');
+          }
+          onShowToast(
+            'success',
+            'Chuyển quyền thành công',
+            `Đã chuyển quyền Trưởng nhóm cho ${selectedNewOwner} và rời khỏi nhóm.`
+          );
+        } else {
+          // Vẫn ở lại nhóm với tư cách thành viên bình thường
+          const next = qgroups.map((g) => {
+            if (g.id === transferGroup.id || g.code === transferGroup.code) {
+              return { ...g, ownerEmail: selectedNewOwner, ownerName: selectedNewOwner.split('@')[0] };
+            }
+            return g;
+          });
+          applyGroups(next);
+          onShowToast(
+            'success',
+            'Chuyển quyền thành công',
+            `Đã chuyển giao vai trò Trưởng nhóm cho ${selectedNewOwner}. Bạn vẫn là thành viên của nhóm.`
+          );
         }
         setIsTransferOwnerModalOpen(false);
         setTransferGroup(null);
-        onShowToast(
-          'success',
-          'Chuyển quyền thành công',
-          `Đã chuyển quyền Trưởng nhóm cho ${selectedNewOwner} và rời khỏi nhóm.`
-        );
       } else {
         onShowToast('error', 'Lỗi', 'Không thể chuyển quyền trưởng nhóm.');
       }
@@ -3422,7 +3445,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     } finally {
       setIsTransferringOwner(false);
     }
-  }, [transferGroup, selectedNewOwner, myEmail, myName, qgroups, applyGroups, selectedGroupId, onShowToast]);
+  }, [transferGroup, selectedNewOwner, transferAlsoLeave, myEmail, myName, qgroups, applyGroups, selectedGroupId, onShowToast]);
 
   const handleKickMember = useCallback(
     async (group: QGroup, targetEmail: string, targetName: string) => {
@@ -4792,6 +4815,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             onRespondJoinRequest={(reqId, email, action) => {
               void handleRespondJoinRequest(targetGroup, reqId, email, action);
             }}
+            onOpenProfile={(email, name) => {
+              setProfileEmail(email);
+              setProfileName(name);
+            }}
+            onTransferOwnershipToMember={(email) => {
+              handleOpenTransferOwnership(targetGroup, email);
+            }}
+            onSaveSettings={(name, dept, desc, joinPolicy) => {
+              void handleSaveGroupSettings(targetGroup, name, dept, desc, joinPolicy);
+            }}
+            onDisbandGroup={() => {
+              setIsChannelDetailsOpen(false);
+              setDetailsGroup(null);
+              void handleDisbandGroup(targetGroup);
+            }}
           />
         );
       })()}
@@ -4844,7 +4882,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 <span>Bạn đang là Trưởng nhóm của "#{transferGroup.name}"</span>
               </p>
               <p className="text-[11px] text-amber-800 leading-relaxed">
-                Để đảm bảo nhóm học thuật tiếp tục vận hành ổn định, bạn cần chỉ định một giảng viên kế nhiệm làm Trưởng nhóm trước khi rời đi.
+                Chỉ định một giảng viên trong nhóm tiếp nhận vai trò Trưởng nhóm học thuật. Bạn có thể chọn tiếp tục ở lại nhóm hoặc rời nhóm.
               </p>
             </div>
 
@@ -4880,6 +4918,24 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               </div>
             </div>
 
+            {/* Checkbox tùy chọn rời nhóm hoặc ở lại */}
+            <label className="flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer transition-colors">
+              <input
+                type="checkbox"
+                checked={transferAlsoLeave}
+                onChange={(e) => setTransferAlsoLeave(e.target.checked)}
+                className="w-4 h-4 rounded text-slate-900 border-slate-300 focus:ring-0 cursor-pointer mt-0.5"
+              />
+              <div className="text-xs">
+                <span className="font-semibold text-slate-800">Đồng thời rời khỏi nhóm sau khi chuyển quyền</span>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {transferAlsoLeave
+                    ? 'Bạn sẽ chuyển quyền và rút khỏi kênh học thuật này.'
+                    : 'Mặc định: Bạn vẫn ở lại nhóm với tư cách thành viên bình thường sau khi chuyển quyền.'}
+                </p>
+              </div>
+            </label>
+
             <div className="flex items-center justify-between pt-3 border-t border-slate-200">
               <button
                 type="button"
@@ -4904,9 +4960,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   type="button"
                   disabled={!selectedNewOwner || isTransferringOwner}
                   onClick={handleTransferOwnerAndLeave}
-                  className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
+                  className={`px-4 py-2 rounded-lg disabled:opacity-40 font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors ${
+                    transferAlsoLeave
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-slate-900 hover:bg-slate-800 text-white'
+                  }`}
                 >
-                  {isTransferringOwner ? 'Đang chuyển quyền...' : 'Chuyển quyền & Rời'}
+                  {isTransferringOwner
+                    ? 'Đang xử lý...'
+                    : transferAlsoLeave
+                    ? 'Chuyển quyền & Rời nhóm'
+                    : 'Xác nhận Chuyển quyền Trưởng nhóm'}
                 </button>
               </div>
             </div>
