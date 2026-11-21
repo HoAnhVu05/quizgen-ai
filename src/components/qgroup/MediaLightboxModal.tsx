@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { ArrowLeft, X, Download, ZoomIn, ZoomOut, RotateCcw, Move } from 'lucide-react';
 import { usePinchZoom } from '../../hooks/usePinchZoom';
+import { downloadFileSafely } from '../../utils/fileDownloadHelper';
 
 export interface PreviewMedia {
   url: string;
@@ -150,14 +151,14 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({
       >
         <span className="font-medium truncate max-w-[120px] sm:max-w-sm">{previewMedia.name}</span>
         <div className="h-3 w-[1px] bg-white/20 mx-1" />
-        <a
-          href={previewMedia.url}
-          download={previewMedia.name}
+        <button
+          type="button"
+          onClick={() => downloadFileSafely(previewMedia.name, previewMedia.url)}
           className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 font-bold cursor-pointer hover:underline"
         >
           <Download className="w-4 h-4" />
           <span>Tải về</span>
-        </a>
+        </button>
         <button
           type="button"
           onClick={onClose}

@@ -1089,8 +1089,11 @@ async def upload_qgroup_attachment(file: UploadFile = File(...)):
                 detail=f"Dung lượng tệp vượt quá giới hạn tối đa 25MB ({len(content) / (1024*1024):.1f} MB)."
             )
         orig_name = file.filename or "file"
-        clean_name = "".join(c for c in orig_name if c.isalnum() or c in "._- ")
-        disk_name = f"{uuid.uuid4().hex[:8]}_{clean_name}"
+        safe_base = "".join(c if (c.isalnum() or c in "._-") else "_" for c in orig_name)
+        safe_base = re.sub(r'_+', '_', safe_base).strip('._')
+        if not safe_base:
+            safe_base = "attachment"
+        disk_name = f"{uuid.uuid4().hex[:8]}_{safe_base}"
         disk_path = QGROUP_ATTACHMENTS_DIR / disk_name
         with open(disk_path, "wb") as f:
             f.write(content)
@@ -1119,10 +1122,21 @@ async def upload_qgroup_attachment(file: UploadFile = File(...)):
 @app.get("/documents/qgroups/attachments/{filename}")
 @app.get("/qgroups/attachments/{filename}")
 async def get_qgroup_attachment(filename: str, download: bool = False):
-    file_path = QGROUP_ATTACHMENTS_DIR / filename
+    import urllib.parse
+    raw_name = filename
+    unquoted_name = urllib.parse.unquote(filename)
+    
+    file_path = QGROUP_ATTACHMENTS_DIR / unquoted_name
+    if not file_path.exists():
+        file_path = QGROUP_ATTACHMENTS_DIR / raw_name
+    if not file_path.exists():
+        file_path = FORUM_ATTACHMENTS_DIR / unquoted_name
+    if not file_path.exists():
+        file_path = FORUM_ATTACHMENTS_DIR / raw_name
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Attachment not found")
-    orig_name = filename.split("_", 1)[1] if "_" in filename else filename
+    
+    orig_name = unquoted_name.split("_", 1)[1] if "_" in unquoted_name else unquoted_name
     import mimetypes
     content_type, _ = mimetypes.guess_type(orig_name)
 
@@ -2426,10 +2440,30 @@ async def upload_forum_attachment(file: UploadFile = File(...)):
 @app.get("/forum/attachments/{file_name}")
 @app.get("/documents/forum/attachments/{file_name}")
 def download_forum_attachment(file_name: str):
-    target_path = FORUM_ATTACHMENTS_DIR / file_name
+    import urllib.parse
+    raw_name = file_name
+    unquoted = urllib.parse.unquote(file_name)
+    target_path = FORUM_ATTACHMENTS_DIR / unquoted
+    if not target_path.exists() or not target_path.is_file():
+        target_path = FORUM_ATTACHMENTS_DIR / raw_name
+    if not target_path.exists() or not target_path.is_file():
+        target_path = QGROUP_ATTACHMENTS_DIR / unquoted
+    if not target_path.exists() or not target_path.is_file():
+        target_path = QGROUP_ATTACHMENTS_DIR / raw_name
     if not target_path.exists() or not target_path.is_file():
         raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại trên máy chủ")
-    return FileResponse(target_path, filename=file_name)
+    
+    orig_name = unquoted.split("_", 1)[1] if "_" in unquoted else unquoted
+    import mimetypes
+    content_type, _ = mimetypes.guess_type(orig_name)
+    content_type = content_type or "application/octet-stream"
+    encoded_filename = urllib.parse.quote(orig_name)
+    ascii_filename = orig_name.encode("ascii", "ignore").decode("ascii").strip() or "attachment"
+    headers = {
+        "Content-Disposition": f"attachment; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}",
+        "Access-Control-Allow-Origin": "*",
+    }
+    return FileResponse(target_path, media_type=content_type, headers=headers)
 
 
 @app.get("/{document_id}")

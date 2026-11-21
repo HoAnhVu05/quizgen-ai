@@ -16,6 +16,7 @@ import {
   Check,
 } from 'lucide-react';
 import type { QGroup, QGroupMessage } from '../../types';
+import { downloadFileSafely } from '../../utils/fileDownloadHelper';
 
 export interface SharedMediaDrawerProps {
   isOpen: boolean;
@@ -345,13 +346,7 @@ export const SharedMediaDrawer: React.FC<SharedMediaDrawerProps> = ({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const a = document.createElement('a');
-                              a.href = item.url + (item.url.includes('?') ? '&' : '?') + 'download=true';
-                              a.download = item.name;
-                              document.body.appendChild(a);
-                              a.click();
-                              document.body.removeChild(a);
-                              onShowToast('info', 'Đang tải về...', item.name);
+                              downloadFileSafely(item.name, item.url, onShowToast);
                             }}
                             className="w-7 h-7 rounded-lg bg-white/90 text-slate-800 hover:bg-white flex items-center justify-center cursor-pointer shadow-md"
                             title="Tải về máy"
@@ -398,13 +393,7 @@ export const SharedMediaDrawer: React.FC<SharedMediaDrawerProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          const a = document.createElement('a');
-                          a.href = item.url + (item.url.includes('?') ? '&' : '?') + 'download=true';
-                          a.download = item.name;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          onShowToast('info', 'Đang tải tệp về máy...', item.name);
+                          downloadFileSafely(item.name, item.url, onShowToast);
                         }}
                         className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-teal-600 hover:text-white text-slate-600 flex items-center justify-center transition-colors cursor-pointer shrink-0"
                         title="Tải về"

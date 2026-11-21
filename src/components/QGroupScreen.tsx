@@ -108,6 +108,7 @@ import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
 import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
 import { openUserProfile } from '../utils/userProfileModalHelper';
+import { downloadFileSafely } from '../utils/fileDownloadHelper';
 import {
   getOptimalAudioDeviceId,
   cycleToNextMicrophone,
@@ -4446,6 +4447,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         const content = post?.content || legacy?.content || '';
                         const attachmentName = post?.attachmentFileName || legacy?.attachmentFileName;
                         const attachmentSize = post?.attachmentFileSize || legacy?.attachmentFileSize;
+                        const attachmentUrl = post?.attachmentUrl;
+                        const imageUrl = post?.imageUrl;
+                        const postTitle = post?.title;
                         const postId = post?.id || legacy?.id;
 
                         return (
@@ -4465,6 +4469,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
                             {/* Card Body */}
                             <div className="p-3.5 space-y-2.5">
+                              {/* Post Title if available */}
+                              {postTitle && (
+                                <h4 className="text-xs font-bold text-slate-900 line-clamp-2 leading-snug">
+                                  {postTitle}
+                                </h4>
+                              )}
+
                               {/* Author metadata */}
                               <div className="flex items-center gap-2">
                                 <div className="w-7 h-7 rounded-lg bg-slate-800 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
@@ -4494,20 +4505,48 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                 &ldquo;{content}&rdquo;
                               </div>
 
+                              {/* Shared post image preview */}
+                              {imageUrl && (
+                                <div
+                                  className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 max-h-48 cursor-pointer hover:opacity-95 transition-opacity"
+                                  onClick={() => setPreviewMediaUrl({ url: imageUrl, name: postTitle || 'Ảnh bài viết' })}
+                                  title="Bấm để xem ảnh phóng to"
+                                >
+                                  <img
+                                    src={imageUrl}
+                                    alt={postTitle || 'Ảnh đính kèm'}
+                                    className="w-full h-auto max-h-48 object-cover block"
+                                  />
+                                </div>
+                              )}
+
                               {/* Attached document inside shared post */}
                               {attachmentName && (
-                                <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                                  <FileText className="w-4 h-4 text-teal-600 shrink-0" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="font-bold text-slate-800 truncate text-[11px]">
-                                      {attachmentName}
-                                    </p>
-                                    {attachmentSize && (
-                                      <p className="text-[9px] text-slate-400 font-mono">
-                                        {attachmentSize} • Tệp học thuật đính kèm
+                                <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText className="w-4 h-4 text-teal-600 shrink-0" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="font-bold text-slate-800 truncate text-[11px]">
+                                        {attachmentName}
                                       </p>
-                                    )}
+                                      {attachmentSize && (
+                                        <p className="text-[9px] text-slate-400 font-mono">
+                                          {attachmentSize} • Tệp học thuật đính kèm
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      downloadFileSafely(attachmentName, attachmentUrl, onShowToast);
+                                    }}
+                                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 hover:bg-teal-600 hover:text-white text-slate-600 flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                                    title="Tải tệp đính kèm về máy"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               )}
 
@@ -4559,15 +4598,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          const rawUrl = attItem.fileUrl!;
-                                          const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
-                                          const a = document.createElement('a');
-                                          a.href = dlUrl;
-                                          a.download = attItem.name || 'image.png';
-                                          document.body.appendChild(a);
-                                          a.click();
-                                          document.body.removeChild(a);
-                                          onShowToast('info', 'Đang tải ảnh xuống...', attItem.name || 'Ảnh');
+                                          downloadFileSafely(attItem.name || 'image.png', attItem.fileUrl, onShowToast);
                                         }}
                                         className="w-8 h-8 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
                                         title="Tải ảnh về máy"
@@ -4625,15 +4656,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          const rawUrl = attItem.fileUrl!;
-                                          const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
-                                          const a = document.createElement('a');
-                                          a.href = dlUrl;
-                                          a.download = attItem.name;
-                                          document.body.appendChild(a);
-                                          a.click();
-                                          document.body.removeChild(a);
-                                          onShowToast('info', 'Đang tải tệp xuống...', attItem.name);
+                                          downloadFileSafely(attItem.name, attItem.fileUrl, onShowToast);
                                         }}
                                         className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
                                         title="Tải tệp về máy"
@@ -5298,15 +5321,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           fileType={previewFile.type}
           onClose={() => setPreviewFile(null)}
           onDownload={() => {
-            const rawUrl = previewFile.url;
-            const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
-            const a = document.createElement('a');
-            a.href = dlUrl;
-            a.download = previewFile.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            onShowToast('info', 'Đang tải tệp xuống...', previewFile.name);
+            downloadFileSafely(previewFile.name, previewFile.url, onShowToast);
           }}
         />
       )}

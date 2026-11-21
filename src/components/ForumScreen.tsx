@@ -28,10 +28,13 @@ import {
   CornerDownRight,
   Clock,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { UserProfile, ScreenId } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
 import { openUserProfile } from '../utils/userProfileModalHelper';
+import { ImageLightboxModal } from './ImageLightboxModal';
+import { downloadFileSafely } from '../utils/fileDownloadHelper';
 
 interface ForumScreenProps {
   currentUser?: UserProfile | null;
@@ -234,6 +237,52 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'exam' | 'qa' | 'textbook'>('all');
   const [filterWithFileOnly, setFilterWithFileOnly] = useState(false);
 
+  // Focus Deep-link & Lightbox State
+  const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; title?: string } | null>(null);
+
+  // Tự động kiểm tra và cuộn tới bài viết được điều hướng từ Q-Group
+  useEffect(() => {
+    const focusPostId = sessionStorage.getItem('quizgen_focus_post_id');
+    if (!focusPostId) return;
+
+    // Reset bộ lọc về 'all' và xóa search để bài viết chắc chắn được render trong DOM
+    setSelectedCategory('all');
+    setSearchQuery('');
+    setFilterWithFileOnly(false);
+    setHighlightedPostId(focusPostId);
+
+    const scrollToTarget = () => {
+      const el =
+        document.getElementById(`post-${focusPostId}`) ||
+        document.getElementById(`forum-post-${focusPostId}`) ||
+        document.getElementById(focusPostId);
+
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        sessionStorage.removeItem('quizgen_focus_post_id');
+        return true;
+      }
+      return false;
+    };
+
+    // Cuộn ngay hoặc chờ render DOM
+    if (!scrollToTarget()) {
+      const t1 = setTimeout(scrollToTarget, 200);
+      const t2 = setTimeout(scrollToTarget, 600);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }
+
+    const tHighlight = setTimeout(() => {
+      setHighlightedPostId(null);
+    }, 5000);
+
+    return () => clearTimeout(tHighlight);
+  }, [posts]);
+
   // Comments Visibility State (Mặc định ẩn, bấm vào mới sổ ra)
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -410,27 +459,9 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     }
   };
 
-  // Real File Download Handler (Tải file nguyên bản, KHÔNG sinh file 1KB rác)
-  const handleDownloadFile = (fileName: string, fileUrl?: string) => {
-    if (!fileUrl) {
-      onShowToast('warning', 'Không tìm thấy tệp', `Tệp "${fileName}" chưa được khởi tạo trên máy chủ.`);
-      return;
-    }
-
-    const fullUrl =
-      fileUrl.startsWith('http') || fileUrl.startsWith('blob:')
-        ? fileUrl
-        : `${API_BASE}${fileUrl}`;
-
-    const link = document.createElement('a');
-    link.href = fullUrl;
-    link.download = fileName;
-    link.target = '_blank';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    onShowToast('success', 'Đang tải tệp', `Đang tải xuống "${fileName}"...`);
+  // Real Safe File Download Handler (Tải file nguyên bản, không mở about:blank, không lặp prefix)
+  const handleDownloadFile = async (fileName: string, fileUrl?: string) => {
+    await downloadFileSafely(fileName, fileUrl, onShowToast);
   };
 
   // Like Toggle
@@ -600,12 +631,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       sharedPost: {
         id: sharingPost.id,
         tag: (sharingPost.tags && sharingPost.tags.filter((t) => t && t !== 'Chung')[0]) || 'Chuyên môn',
+        title: sharingPost.title,
         authorName: `${sharingPost.authorTitle ? sharingPost.authorTitle + ' ' : ''}${sharingPost.authorName}`,
         department: sharingPost.department,
         content: sharingPost.content.slice(0, 150) + '...',
         fullContent: sharingPost.content,
         attachmentFileName: sharingPost.attachmentFileName,
         attachmentFileSize: sharingPost.attachmentFileSize,
+        attachmentUrl: sharingPost.attachmentUrl,
+        imageUrl: sharingPost.imageUrl,
         timestamp: formatTimeAgo(sharingPost.createdAt || sharingPost.timestamp || ''),
         note: shareNote.trim() || undefined,
       }
@@ -1113,13 +1147,25 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
           filteredPosts.map((post) => {
             const isCommentsExpanded = Boolean(expandedComments[post.id]);
             const relativeTime = formatTimeAgo(post.createdAt || post.timestamp || '');
+            const isHighlighted = highlightedPostId === post.id;
 
             return (
               <article
                 key={post.id}
                 id={`post-${post.id}`}
-                className="bg-white rounded-xl p-3.5 sm:p-5 border border-slate-200/90 hover:border-slate-300 transition-all shadow-2xs space-y-2.5 sm:space-y-3"
+                className={`bg-white rounded-xl p-3.5 sm:p-5 border transition-all shadow-2xs space-y-2.5 sm:space-y-3 ${
+                  isHighlighted
+                    ? 'ring-2 ring-teal-500 border-teal-500 bg-teal-50/20 shadow-lg scale-[1.005]'
+                    : 'border-slate-200/90 hover:border-slate-300'
+                }`}
               >
+                {/* Highlight banner khi được chuyển từ Q-Group */}
+                {isHighlighted && (
+                  <div className="px-3 py-1.5 rounded-lg bg-teal-100/90 border border-teal-300 text-teal-800 text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs animate-pulse">
+                    <Sparkles className="w-3.5 h-3.5 text-teal-700" />
+                    <span>Đang xem bài viết được chuyển từ Q-Group</span>
+                  </div>
+                )}
                 {/* 1. Header: Author info & Context Menu (Không bị ép chữ trên mobile) */}
                 <div className="flex items-start justify-between gap-2.5 text-xs">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -1274,7 +1320,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                       src={post.imageUrl}
                       alt="Minh họa"
                       className="w-auto h-auto max-w-full max-h-96 object-contain rounded-lg hover:opacity-95 transition-opacity cursor-pointer block mx-auto"
-                      onClick={() => window.open(post.imageUrl, '_blank')}
+                      onClick={() => setLightboxImage({ url: post.imageUrl!, title: post.title })}
                     />
                   </div>
                 )}
@@ -1676,6 +1722,17 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Lightbox Modal Xem Ảnh Đầy Đủ Nội Bộ (Không mở tab about:blank) */}
+      {lightboxImage && (
+        <ImageLightboxModal
+          isOpen={Boolean(lightboxImage)}
+          imageUrl={lightboxImage.url}
+          imageCaption={lightboxImage.title}
+          title="Minh chứng & Hình ảnh Thảo luận Diễn Đàn"
+          onClose={() => setLightboxImage(null)}
+        />
       )}
     </div>
   );

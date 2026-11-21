@@ -227,6 +227,7 @@ export interface QGroupMessage {
   sharedPost?: {
     id: string;
     tag: string;
+    title?: string;
     authorName: string;
     authorTitle?: string;
     department?: string;
@@ -234,6 +235,8 @@ export interface QGroupMessage {
     fullContent?: string;
     attachmentFileName?: string;
     attachmentFileSize?: string;
+    attachmentUrl?: string;
+    imageUrl?: string;
     videoUrl?: string;
     timestamp?: string;
     note?: string;
