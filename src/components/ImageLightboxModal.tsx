@@ -175,7 +175,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
               <span className="font-semibold text-teal-400 shrink-0">Chú thích:</span>
               <span className="italic truncate">{imageCaption}</span>
             </div>
-            <span className="text-[10px] sm:text-[11px] text-slate-500 font-mono shrink-0">Multimodal RAG Asset</span>
+            <span className="text-[10px] sm:text-[11px] text-slate-500 font-mono shrink-0">Học liệu trích xuất</span>
           </div>
         )}
       </div>

@@ -1259,11 +1259,11 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
                 {/* 5. Attached Image */}
                 {post.imageUrl && (
-                  <div className="rounded-lg overflow-hidden border border-slate-200 max-h-80 bg-slate-100">
+                  <div className="rounded-xl overflow-hidden border border-slate-200/90 max-h-96 bg-slate-50 flex items-center justify-center p-1 shadow-2xs">
                     <img
                       src={post.imageUrl}
                       alt="Minh họa"
-                      className="w-full h-full object-cover max-h-80 hover:opacity-95 transition-opacity cursor-pointer"
+                      className="w-auto h-auto max-w-full max-h-96 object-contain rounded-lg hover:opacity-95 transition-opacity cursor-pointer block mx-auto"
                       onClick={() => window.open(post.imageUrl, '_blank')}
                     />
                   </div>

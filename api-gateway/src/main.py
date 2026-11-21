@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+from typing import Optional
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect, Query
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +22,11 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
     và tự động đính kèm thông tin định danh (x-user-id, x-user-role, x-user-email)
     chuyển tiếp tới các microservices nội bộ.
     """
+    for k in ["x-user-id", "x-user-email", "x-user-role", "x-user-tier"]:
+        val = request.headers.get(k) or request.headers.get(k.title())
+        if val and k not in headers:
+            headers[k] = val.strip()
+
     auth_header = request.headers.get("authorization")
     if not auth_header:
         return
@@ -127,7 +133,8 @@ def health_check():
             "ai-service",
             "exam-service",
             "admin-service",
-            "payment-service"
+            "payment-service",
+            "support-service"
         ]
     }
 
@@ -145,6 +152,12 @@ async def auth_proxy(path: str, request: Request):
 async def document_proxy(request: Request, path: str = ""):
     target = f"/{path}".rstrip("/") if not path else f"/{path}"
     return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/documents", request)
+
+@app.api_route("/api/v1/forum", methods=METHODS)
+@app.api_route("/api/v1/forum/{path:path}", methods=METHODS)
+async def forum_proxy(request: Request, path: str = ""):
+    target = f"/forum/{path}".rstrip("/") if not path else f"/forum/{path}"
+    return await proxy_request(settings.DOCUMENT_SERVICE_URL, target or "/forum/posts", request)
 
 @app.api_route("/api/v1/rag", methods=METHODS)
 @app.api_route("/api/v1/rag/{path:path}", methods=METHODS)
@@ -217,7 +230,6 @@ async def dashboard_proxy(request: Request, path: str = ""):
 async def theme_proxy(request: Request, path: str = ""):
     target = f"/theme/{path}" if path else "/theme/current"
     return await proxy_request(settings.ADMIN_SERVICE_URL, target, request)
-
 
 # ── WebRTC Signaling & Active State for Huddle Audio Call ─────────────────────
 # room_id -> { peer_id: { "ws": WebSocket, "name": str, "joined_at": float } }
@@ -648,7 +660,7 @@ def get_academic_stats():
         "orders": count(pay_db, "orders"),
     }
 
-async def execute_remote_agent_command(prompt: str, caller_name: str, has_image: bool = False, image_data: str = None) -> str:
+async def execute_remote_agent_command(prompt: str, caller_name: str, has_image: bool = False, image_data: str = None, session_id: str = None, create_new: bool = False) -> tuple:
     p = prompt.strip().lower()
     stats = get_academic_stats()
     
@@ -663,7 +675,8 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
             f"• Phiên sinh đề AI (Generation Jobs): {stats['jobs']} phiên thành công\n"
             f"• Giảng viên & Quản trị viên: {stats['users']} tài khoản RBAC\n"
             f"• Giao dịch tài chính & VietQR: {stats['orders']} đơn hàng tự động\n"
-            f"=> Toàn bộ dữ liệu phân tán microservices đang vận hành toàn vẹn và đồng bộ an toàn trên workspace laptop."
+            f"=> Toàn bộ dữ liệu phân tán microservices đang vận hành toàn vẹn và đồng bộ an toàn trên workspace laptop.",
+            session_id
         )
         
     # 2. Kiểm tra toàn diện hệ thống / microservices
@@ -685,7 +698,8 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
             f"• Tài nguyên: CPU {cpu}% | RAM {ram_used}GB / {ram_total}GB ({ram_pct}%)\n"
             f"• Trạng thái 8 Microservices:\n{status_lines}\n"
             f"• Kênh từ xa: Cloudflare Tunnel WSS (Đang kết nối di động ổn định)\n"
-            f"=> Toàn bộ các dịch vụ phân tán đang sẵn sàng xử lý yêu cầu."
+            f"=> Toàn bộ các dịch vụ phân tán đang sẵn sàng xử lý yêu cầu.",
+            session_id
         )
 
     # 3. Lệnh điều khiển trực tiếp terminal / workspace trên laptop
@@ -694,22 +708,24 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
             "⚠️ [CẢNH BÁO TỪ HỆ THỐNG]\n"
             "Giao diện điều khiển trên điện thoại của anh đang kết nối trực tiếp qua Cloudflare Tunnel đến máy chủ Web (Port 3000) trên laptop.\n"
             "Nếu thực hiện dừng Port 3000, toàn bộ kết nối từ xa trên điện thoại sẽ bị NGẮT NGAY LẬP TỨC và anh sẽ không thể thao tác tiếp từ xa!\n"
-            "Nếu anh chắc chắn muốn dừng máy chủ web, vui lòng gõ chính xác: 'Xác nhận tắt web 3000'."
+            "Nếu anh chắc chắn muốn dừng máy chủ web, vui lòng gõ chính xác: 'Xác nhận tắt web 3000'.",
+            session_id
         )
 
     if "xác nhận tắt web 3000" in p:
         try:
             import subprocess
             subprocess.run(["powershell", "-Command", "$p = Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force }"], capture_output=True, timeout=5)
-            return "🛑 Đã thực thi lệnh dừng máy chủ giao diện Web (Port 3000) trên laptop theo chỉ đạo của anh!"
+            return "🛑 Đã thực thi lệnh dừng máy chủ giao diện Web (Port 3000) trên laptop theo chỉ đạo của anh!", session_id
         except Exception as e:
-            return f"Lỗi khi dừng web: {e}"
+            return f"Lỗi khi dừng web: {e}", session_id
 
     if any(k in p for k in ["tắt máy", "shutdown", "tắt laptop"]):
         return (
             "⚠️ [CẢNH BÁO BẢO VỆ PHẦN CỨNG LAPTOP]\n"
             "Lệnh tắt máy tính Windows (Shutdown) sẽ ngắt toàn bộ nguồn điện laptop, đồng thời làm dừng 8 microservices và kết nối di động.\n"
-            "Để bảo toàn mã nguồn và các file đang chỉnh sửa, anh vui lòng lưu việc và tắt máy trực tiếp trên laptop."
+            "Để bảo toàn mã nguồn và các file đang chỉnh sửa, anh vui lòng lưu việc và tắt máy trực tiếp trên laptop.",
+            session_id
         )
 
     if any(k in p for k in ["git status", "git diff", "git log"]):
@@ -717,69 +733,45 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
             import subprocess
             res = subprocess.run(["git", "status", "-s"], cwd=r"D:\HKDN\Quizgen AI", capture_output=True, text=True, timeout=5)
             output = res.stdout.strip() or "Trạng thái git sạch (Working tree clean)."
-            return f"💻 [GIT STATUS WORKSPACE LAPTOP]\n{output}"
+            return f"💻 [GIT STATUS WORKSPACE LAPTOP]\n{output}", session_id
         except Exception as e:
-            return f"Lỗi git: {e}"
+            return f"Lỗi git: {e}", session_id
 
-    # 4. KÍCH HOẠT ANTIGRAVITY AGENT THỰC THI TRỰC TIẾP TRÊN WORKSPACE LAPTOP
+    # 4. KÍCH HOẠT HOẶC TRUYỀN LỆNH VÀO ĐÚNG PHIÊN ĐÃ CHỈ ĐỊNH (NGẮN GỌN, KHÔNG VĂN MẪU)
     agentapi_path = Path.home() / ".gemini" / "antigravity" / "bin" / "agentapi.bat"
     if agentapi_path.exists():
         try:
             import subprocess
-            instruction = (
-                f"Chỉ đạo từ xa của anh Hồ Anh Vũ: {prompt}. "
-                f"Mục tiêu: Thực hiện trực tiếp trên workspace D:\\HKDN\\Quizgen AI. "
-                f"Hãy đọc file, chỉnh sửa mã nguồn hoặc chạy terminal theo đúng yêu cầu."
-            )
-            res = subprocess.run([str(agentapi_path), "new-conversation", instruction], capture_output=True, text=True, timeout=15)
-            if res.returncode == 0:
-                try:
-                    data = json.loads(res.stdout)
-                    new_cid = data.get("response", {}).get("newConversation", {}).get("conversationId", "")
-                    logger.info(f"Launched Antigravity Agent. ConvId: {new_cid}")
-                except Exception:
-                    pass
+            if create_new or not session_id:
+                # Tạo phiên mới trên workspace với câu lệnh sạch sẽ
+                res = subprocess.run([str(agentapi_path), "new-conversation", prompt], capture_output=True, text=True, timeout=15)
+                target_cid = session_id
+                if res.returncode == 0:
+                    try:
+                        data = json.loads(res.stdout)
+                        target_cid = data.get("response", {}).get("newConversation", {}).get("conversationId", "") or target_cid
+                    except Exception:
+                        pass
                 return (
-                    f"🚀 Đã kích hoạt Antigravity Agent trên laptop!\n"
-                    f"Agent đang bắt đầu làm việc theo chỉ đạo của anh: \"{prompt}\".\n"
-                    f"Anh nhìn lên chiếc Tivi cuộn băng ở trên: toàn bộ file đang mở và lệnh terminal đang chạy sẽ hiển thị trực tiếp 100%!"
+                    f"🚀 Đã tạo phiên mới trên laptop và bắt đầu thực thi: \"{prompt}\".\n"
+                    f"Toàn bộ hành động đọc file, sửa code và terminal đang truyền trực tiếp lên Tivi!",
+                    target_cid
                 )
             else:
-                logger.warning(f"agentapi new-conversation error: {res.stderr}")
+                # Gửi lệnh trực tiếp vào đúng phiên anh đã chọn trong workspace (ngắn gọn, không văn mẫu)
+                res = subprocess.run([str(agentapi_path), "send-message", session_id, prompt], capture_output=True, text=True, timeout=12)
+                return (
+                    f"📡 Đã chuyển lệnh vào phiên: \"{prompt}\".\n"
+                    f"Tiến trình đang cập nhật trực tiếp trên chiếc Tivi cuộn băng!",
+                    session_id
+                )
         except Exception as exc:
-            logger.warning(f"agentapi invocation failed: {exc}")
+            logger.warning(f"agentapi execution failed: {exc}")
 
-    # 5. Fallback qua AI Service nếu Antigravity CLI bận
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.post(
-                f"{settings.AI_SERVICE_URL}/chat",
-                json={
-                    "message": prompt,
-                    "context": {
-                        "userName": caller_name,
-                        "currentScreen": "admin_secret_command_center",
-                        "isRemoteCommander": True,
-                        "isAntigravityRemote": True,
-                        "workspace": r"D:\HKDN\Quizgen AI",
-                        "branch": "develop",
-                        "systemStats": stats,
-                    }
-                }
-            )
-            if resp.status_code == 200:
-                res_json = resp.json()
-                reply = res_json.get("reply") or res_json.get("response") or ""
-                if reply.strip():
-                    return reply.strip()
-    except Exception as exc:
-        logger.warning(f"AI service call failed: {exc}")
-
-    photo_info = " (Có đính kèm hình ảnh)" if has_image else ""
     return (
-        f"Dạ em đã nhận chỉ đạo của anh: \"{prompt}\"{photo_info}. "
-        f"Em đang tiến hành nạp lệnh và thực thi trực tiếp trên workspace máy tính. "
-        f"Anh theo dõi tiến trình các file và terminal đang chạy trực tiếp trên chiếc TV cuộn băng ở trên nhé!"
+        f"Dạ em đã nhận chỉ đạo của anh: \"{prompt}\". "
+        f"Em đang tiến hành nạp lệnh và thực thi trực tiếp trên workspace máy tính.",
+        session_id
     )
 
 @app.get("/api/v1/agent-bridge/system-status")
@@ -797,9 +789,13 @@ async def post_agent_remote_command(request: Request):
         caller_name = str(data.get("callerName") or "Hồ Anh Vũ").strip()
         caller_email = str(data.get("callerEmail") or "admin@quizgen.ai").strip()
         has_image = bool(data.get("image"))
+        session_id = data.get("sessionId")
+        create_new = bool(data.get("createNew"))
         
-        # Execute command asynchronously and obtain rich response from Gemini AI
-        output_reply = await execute_remote_agent_command(prompt, caller_name, has_image, data.get("image"))
+        # Execute command and obtain target session ID
+        output_reply, resolved_session_id = await execute_remote_agent_command(
+            prompt, caller_name, has_image, data.get("image"), session_id=session_id, create_new=create_new
+        )
         
         record = {
             "id": cmd_id,
@@ -809,20 +805,23 @@ async def post_agent_remote_command(request: Request):
             "callerEmail": caller_email,
             "prompt": prompt,
             "hasImage": has_image,
+            "sessionId": resolved_session_id,
             "status": "completed",
             "output": output_reply
         }
         
-        # Save to scratch inbox file on laptop workspace
         with open(AGENT_INBOX_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
         return {
             "status": "success",
             "id": cmd_id,
+            "sessionId": resolved_session_id,
             "output": output_reply,
             "timestamp": time.time()
         }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -852,23 +851,33 @@ def clear_agent_bridge_history():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def get_live_antigravity_feed(limit=35):
+def get_live_antigravity_feed(session_id: str = None, limit=35):
     import re
     brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
     if not brain_dir.exists():
-        return []
-    transcripts = list(brain_dir.glob("*/.system_generated/logs/transcript.jsonl"))
-    if not transcripts:
-        return []
-    transcripts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    latest_transcript = transcripts[0]
-    
+        return [], [], None
+        
+    target_transcript = None
+    if session_id:
+        custom_path = brain_dir / session_id / ".system_generated" / "logs" / "transcript.jsonl"
+        if custom_path.exists():
+            target_transcript = custom_path
+            
+    if not target_transcript:
+        transcripts = list(brain_dir.glob("*/.system_generated/logs/transcript.jsonl"))
+        if not transcripts:
+            return [], [], None
+        transcripts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        target_transcript = transcripts[0]
+        
+    active_cid = target_transcript.parent.parent.parent.name
     events = []
+    chat_dialogue = []
     try:
-        with open(latest_transcript, "r", encoding="utf-8", errors="replace") as f:
+        with open(target_transcript, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
             
-        for line in lines[-limit*2:]:
+        for line in lines[-limit*3:]:
             try:
                 obj = json.loads(line)
                 idx = obj.get("step_index")
@@ -918,22 +927,29 @@ def get_live_antigravity_feed(limit=35):
                         })
                 elif stype == "USER_INPUT" and source == "USER_EXPLICIT":
                     clean_text = re.sub(r"<[^>]+>", "", content).strip()
-                    if clean_text:
-                        events.append({
+                    if clean_text and not clean_text.startswith("The following is a <SYSTEM_MESSAGE>"):
+                        chat_dialogue.append({
                             "id": f"step-{idx}-user",
-                            "stepIndex": idx,
-                            "kind": "user_prompt",
-                            "title": "Chỉ đạo từ Hồ Anh Vũ",
-                            "content": clean_text,
+                            "sender": "user",
+                            "senderName": "Hồ Anh Vũ",
+                            "text": clean_text,
                             "timestamp": formatted_time,
                         })
                 elif stype == "PLANNER_RESPONSE" and content:
+                    clean_reply = content.strip()
                     events.append({
                         "id": f"step-{idx}-model",
                         "stepIndex": idx,
                         "kind": "agent_reply",
                         "title": "Antigravity Agent",
-                        "content": content,
+                        "content": clean_reply,
+                        "timestamp": formatted_time,
+                    })
+                    chat_dialogue.append({
+                        "id": f"step-{idx}-model",
+                        "sender": "agent",
+                        "senderName": "Antigravity Agent",
+                        "text": clean_reply,
                         "timestamp": formatted_time,
                     })
             except Exception:
@@ -941,11 +957,11 @@ def get_live_antigravity_feed(limit=35):
     except Exception as e:
         logger.warning(f"Error reading transcript: {e}")
         
-    return events[-limit:]
+    return events[-limit:], chat_dialogue[-35:], active_cid
 
 @app.get("/api/v1/agent-bridge/live-mirror")
 @app.get("/agent-bridge/live-mirror")
-def get_agent_bridge_live_mirror():
+def get_agent_bridge_live_mirror(sessionId: Optional[str] = None):
     if not agent_remote_session.get("is_active"):
         # Chế độ ngủ đông (Dormant): không quét transcript, không tính CPU/RAM
         return {
@@ -953,13 +969,14 @@ def get_agent_bridge_live_mirror():
             "isActive": False,
             "message": "Agent Remote đang ở chế độ ngủ đông. Vui lòng mở khóa bằng sinh trắc học để kích hoạt.",
             "liveFeed": [],
+            "chatDialogue": [],
             "remoteInbox": [],
             "workspace": r"D:\HKDN\Quizgen AI",
             "systemStats": None
         }
 
     agent_remote_session["last_activity_at"] = time.time()
-    feed = get_live_antigravity_feed(30)
+    feed, dialogue, resolved_cid = get_live_antigravity_feed(session_id=sessionId, limit=35)
     inbox = []
     if AGENT_INBOX_FILE.exists():
         try:
@@ -975,7 +992,9 @@ def get_agent_bridge_live_mirror():
         "status": "success",
         "isActive": True,
         "session": agent_remote_session,
+        "activeSessionId": resolved_cid,
         "liveFeed": feed,
+        "chatDialogue": dialogue,
         "remoteInbox": inbox[-10:],
         "workspace": r"D:\HKDN\Quizgen AI",
         "systemStats": get_real_system_stats()
@@ -1274,4 +1293,8 @@ async def verify_agent_pin(request: Request):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-
+@app.api_route("/api/v1/support", methods=METHODS)
+@app.api_route("/api/v1/support/{path:path}", methods=METHODS)
+async def support_proxy(request: Request, path: str = ""):
+    target = f"/{path}".rstrip("/") if not path else f"/{path}"
+    return await proxy_request(settings.SUPPORT_SERVICE_URL, target or "/tickets", request)

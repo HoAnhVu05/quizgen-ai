@@ -13,6 +13,7 @@ import {
   Activity,
   Layers,
   Pencil,
+  UserCog,
   X,
   CreditCard,
   Crown,
@@ -38,6 +39,7 @@ import {
   ChevronRight,
   Zap,
   Gauge,
+  LifeBuoy,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -147,6 +149,14 @@ const NAV_ITEM_STYLES: Record<ScreenId, NavItemStyle> = {
     activeIconBox: 'bg-[#da1c2d] text-white shadow-xs',
     inactiveIconBox: 'bg-rose-50 text-[#da1c2d] border border-rose-200 group-hover:bg-rose-100',
     activeText: 'text-[#da1c2d]',
+  },
+  support: {
+    stepTagClass: 'text-emerald-600',
+    activeContainer: 'bg-emerald-50/90 text-emerald-900 font-bold border border-emerald-200/90 shadow-2xs',
+    inactiveContainer: 'text-slate-600 hover:text-slate-900 hover:bg-emerald-50/40 font-medium border border-transparent',
+    activeIconBox: 'bg-emerald-600 text-white shadow-xs',
+    inactiveIconBox: 'bg-emerald-50 text-emerald-600 border border-emerald-200/60 group-hover:bg-emerald-100/70',
+    activeText: 'text-emerald-900',
   },
 };
 
@@ -290,6 +300,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           adminSubTab: 'themes',
           label: 'Tùy biến Giao diện Hệ thống',
           icon: Palette,
+        },
+        {
+          id: 'admin_portal',
+          adminSubTab: 'support',
+          label: 'Tiếp nhận & CSKH Kỹ thuật',
+          icon: LifeBuoy,
         },
       ];
     }
@@ -629,72 +645,78 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3 relative z-10">
         {/* Chibi Festive Mascot Sticker (Tương tự ảnh mẫu người dùng) */}
         <ThemeChibiMascot themeId={activeThemeId} />
-        <div className="p-2.5 rounded-2xl bg-white border border-slate-200/80 shadow-xs flex items-center justify-between gap-2">
+        <div className="p-2.5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 group hover:border-[#008689]/60 transition-all">
           <div
-            onClick={() => openProfileEditor('profile')}
-            className="flex items-center space-x-2.5 min-w-0 cursor-pointer group"
-            title="Nhấn để xem thông tin tài khoản & gói cước"
+            onClick={() => {
+              if (onOpenProfileModal) {
+                onOpenProfileModal();
+              } else {
+                openProfileEditor('profile');
+              }
+            }}
+            className="flex items-center space-x-2.5 min-w-0 cursor-pointer group/prof flex-1"
+            title="Nhấp để xem & cập nhật hồ sơ tài khoản (Học vị, Họ tên, Đơn vị)"
           >
             {currentUser?.avatarUrl ? (
               <img
                 src={currentUser.avatarUrl}
                 alt={displayName}
                 referrerPolicy="no-referrer"
-                className="w-9 h-9 rounded-full object-cover border border-[#E5EDF5] shrink-0 bg-white group-hover:border-[#008F95] transition-colors"
+                className="w-9 h-9 rounded-xl object-cover border border-[#E5EDF5] shrink-0 bg-white group-hover/prof:border-[#008F95] transition-colors shadow-2xs"
               />
             ) : (
               <div
-                className={`w-9 h-9 rounded-full ${
-                  isSystemAdmin ? 'bg-[#da1c2d]' : 'bg-[#008689]'
-                } flex items-center justify-center font-bold text-white text-xs shrink-0 shadow-xs group-hover:opacity-90 transition-opacity`}
+                className={`w-9 h-9 rounded-xl ${
+                  isSystemAdmin 
+                    ? 'bg-gradient-to-tr from-[#da1c2d] to-rose-400' 
+                    : 'bg-gradient-to-tr from-[#008689] to-teal-400'
+                } flex items-center justify-center font-black text-white text-xs shrink-0 shadow-xs group-hover/prof:scale-105 transition-transform`}
               >
                 {initials}
               </div>
             )}
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-[#142B45] truncate group-hover:text-[#008F95] transition-colors">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-bold text-[#142B45] truncate group-hover/prof:text-[#008F95] transition-colors leading-tight">
                 {displayName}
               </div>
-              <div className="text-[10px] text-[#91A2B8] truncate">
-                {isSystemAdmin ? 'Quản trị hệ thống' : 'Giảng viên Học thuật'}
+              <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                {currentUser?.department || (isSystemAdmin ? 'Quản trị hệ thống' : 'Khoa Công nghệ thông tin')}
               </div>
             </div>
           </div>
 
-          <div className="flex items-center space-x-1 shrink-0">
+          <div className="flex items-center space-x-0.5 shrink-0">
             {currentUser && !isSystemAdmin && (
               <>
                 <button
                   type="button"
                   onClick={() => openProfileEditor('billing')}
                   title="Xem gói cước & lịch sử mua"
-                  className="text-slate-400 hover:text-amber-600 transition-colors p-1.5 rounded-lg hover:bg-amber-50"
+                  className="text-slate-400 hover:text-amber-600 transition-colors p-1.5 rounded-lg hover:bg-amber-50 cursor-pointer"
                 >
                   <Crown className="w-3.5 h-3.5" />
                 </button>
-                {onUpdateProfile && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (onOpenProfileModal) {
-                        onOpenProfileModal();
-                      } else {
-                        openProfileEditor('profile');
-                      }
-                    }}
-                    title="Đổi học vị & tên hiển thị"
-                    className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa]"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onOpenProfileModal) {
+                      onOpenProfileModal();
+                    } else {
+                      openProfileEditor('profile');
+                    }
+                  }}
+                  title="Nhấp để chỉnh sửa hồ sơ tài khoản"
+                  className="text-slate-400 hover:text-[#008689] transition-colors p-1.5 rounded-lg hover:bg-[#e0f7fa] cursor-pointer"
+                >
+                  <UserCog className="w-3.5 h-3.5" />
+                </button>
               </>
             )}
             <button
               id="sidebar-logout-btn"
               onClick={onLogout}
-              title="Đăng xuất"
-              className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0"
+              title="Đăng xuất khỏi hệ thống"
+              className="text-slate-400 hover:text-[#da1c2d] transition-colors p-1.5 rounded-lg hover:bg-rose-50 shrink-0 cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
             </button>

@@ -25,8 +25,17 @@ import {
   Maximize2,
   ChevronUp,
   ChevronDown,
+  Plus,
 } from 'lucide-react';
 import apiClient, { API_BASE } from '../../services/apiClient';
+
+export interface WorkspaceSession {
+  id: string;
+  title: string;
+  mtime: number;
+  formattedTime: string;
+  isCurrent?: boolean;
+}
 
 interface LiveFeedEvent {
   id: string;
@@ -105,6 +114,12 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
   const [sysStats, setSysStats] = useState<SystemStats | null>(null);
 
+  // Quản lý phiên làm việc thực tế từ workspace laptop
+  const [sessions, setSessions] = useState<WorkspaceSession[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [showSessionDrawer, setShowSessionDrawer] = useState(false);
+  const [isCreatingNewSession, setIsCreatingNewSession] = useState(false);
+
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const tapeScrollRef = useRef<HTMLDivElement | null>(null);
@@ -146,18 +161,58 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
     }
   }, [liveActions]);
 
-  // Fetch Live Mirror Feed (Cập nhật cho Tivi cuộn băng và thông số phần cứng)
-  const fetchLiveMirror = async () => {
+  // Fetch danh sách phiên làm việc thực sự từ workspace laptop
+  const fetchSessions = async () => {
     try {
-      const res = await apiClient.fetch(`${API_BASE}/agent-bridge/live-mirror`);
+      const res = await apiClient.fetch(`${API_BASE}/agent-bridge/sessions`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.sessions)) {
+          setSessions(data.sessions);
+          if (!selectedSessionId && data.currentSessionId) {
+            setSelectedSessionId(data.currentSessionId);
+          }
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    void fetchSessions();
+  }, []);
+
+  // Fetch Live Mirror Feed (Cập nhật cho Tivi cuộn băng và thông số phần cứng theo đúng phiên được chọn)
+  const fetchLiveMirror = async (overrideSessionId?: string) => {
+    const targetId = overrideSessionId || selectedSessionId;
+    try {
+      const url = targetId
+        ? `${API_BASE}/agent-bridge/live-mirror?sessionId=${encodeURIComponent(targetId)}`
+        : `${API_BASE}/agent-bridge/live-mirror`;
+      const res = await apiClient.fetch(url);
       if (res.ok) {
         const data = await res.json();
         if (data.systemStats) {
           setSysStats(data.systemStats);
         }
 
+        if (data.activeSessionId && !selectedSessionId) {
+          setSelectedSessionId(data.activeSessionId);
+        }
+
+        // Đồng bộ câu thoại thực tế từ phiên làm việc trên laptop vào khung chat
+        if (Array.isArray(data.chatDialogue) && data.chatDialogue.length > 0) {
+          setChatMessages(
+            data.chatDialogue.map((d: any) => ({
+              id: d.id,
+              sender: d.sender,
+              senderName: d.sender === 'user' ? (currentUser?.fullName || 'Hồ Anh Vũ') : 'Antigravity Agent (Laptop)',
+              text: d.text,
+              timestamp: d.timestamp || 'Vừa xong',
+            }))
+          );
+        }
+
         if (Array.isArray(data.liveFeed) && data.liveFeed.length > 0) {
-          // Lọc ra các hành động kỹ thuật thực sự cho chiếc Tivi (tool calls & terminal results)
           const techActions = data.liveFeed.filter(
             (ev: LiveFeedEvent) => ev.kind === 'tool_call' || ev.kind === 'terminal_result'
           );
@@ -171,34 +226,6 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
             }
             return techActions;
           });
-
-          // Đồng bộ phản hồi thực tế từ phiên Antigravity Agent trên laptop vào khung chat
-          const agentReplies = data.liveFeed.filter(
-            (ev: LiveFeedEvent) => ev.kind === 'agent_reply' && ev.content && ev.content.trim().length > 0
-          );
-          if (agentReplies.length > 0) {
-            setChatMessages((prev) => {
-              let updated = [...prev];
-              let hasChange = false;
-              for (const r of agentReplies) {
-                const text = (r.content || '').trim();
-                // Không thêm nếu đã có tin nhắn trùng id hoặc nội dung trùng khớp
-                if (!updated.some((m) => m.id === r.id || m.text.trim() === text)) {
-                  updated.push({
-                    id: r.id,
-                    sender: 'agent',
-                    senderName: 'Antigravity Agent (Laptop)',
-                    text,
-                    timestamp:
-                      r.timestamp ||
-                      new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-                  });
-                  hasChange = true;
-                }
-              }
-              return hasChange ? updated : prev;
-            });
-          }
         }
       }
     } catch {}
@@ -316,12 +343,15 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
     }
 
     try {
+      const isNew = isCreatingNewSession;
       const res = await apiClient.fetch(`${API_BASE}/agent-bridge/command`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: `cmd-${Date.now()}`,
           prompt: finalPrompt,
+          sessionId: isNew ? undefined : selectedSessionId,
+          createNew: isNew,
           image: userMsg.imageUrl,
           callerName: currentUser?.fullName || 'Hồ Anh Vũ',
           callerEmail: currentUser?.email || 'admin@quizgen.ai',
@@ -331,16 +361,14 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
       if (res.ok) {
         const result = await res.json();
-        const replyMsg: ChatMessage = {
-          id: `agent-${Date.now()}`,
-          sender: 'agent',
-          senderName: 'Antigravity Agent',
-          text:
-            result.output ||
-            'Dạ em đã nhận được yêu cầu của anh và đang tiến hành xử lý trực tiếp trên laptop.',
-          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        };
-        setChatMessages((prev) => [...prev, replyMsg]);
+        if (result.sessionId) {
+          setSelectedSessionId(result.sessionId);
+          setIsCreatingNewSession(false);
+          void fetchSessions();
+        }
+        setTimeout(() => {
+          void fetchLiveMirror(result.sessionId);
+        }, 1000);
       } else {
         throw new Error('Máy chủ phản hồi lỗi');
       }
@@ -434,6 +462,37 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
+      </div>
+
+      {/* ── 1.5 WORKSPACE SESSION SELECTOR (ĐỒNG BỘ 100% TỪ LAPTOP WORKSPACE) ── */}
+      <div className="px-3 py-1.5 bg-zinc-950 border-b border-zinc-900 flex items-center justify-between gap-2 shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            void fetchSessions();
+            setShowSessionDrawer(true);
+          }}
+          className="flex items-center gap-1.5 min-w-0 max-w-[75%] px-2.5 py-1 rounded-lg bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 text-left transition-colors cursor-pointer group"
+          title="Chọn phiên làm việc từ workspace laptop"
+        >
+          <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="font-mono text-[11px] text-zinc-200 truncate">
+            {sessions.find((s) => s.id === selectedSessionId)?.title || sessions[0]?.title || 'Phiên làm việc'}
+          </span>
+          <ChevronDown className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 shrink-0" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setIsCreatingNewSession(true);
+            setShowSessionDrawer(true);
+          }}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium text-[11px] shrink-0 transition-colors cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Phiên mới</span>
+        </button>
       </div>
 
       {/* ── 2. "TIVI CUỘN BĂNG" (LIVE TAPE MONITOR) ─────────────────────────── */}

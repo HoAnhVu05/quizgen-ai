@@ -17,6 +17,7 @@ import { RegisterScreen } from './components/RegisterScreen';
 import { PricingPlansModal } from './components/PricingPlansModal';
 import { PaymentQRModal } from './components/PaymentQRModal';
 import { AIChatCopilot } from './components/AIChatCopilot';
+import { SupportCenterScreen } from './components/SupportCenterScreen';
 import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, QuestionStatus, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -1514,6 +1515,13 @@ const AppContent: React.FC = () => {
                     localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(loadedQs));
                   } catch {}
                 }}
+              />
+            )}
+
+            {currentScreen === 'support' && (
+              <SupportCenterScreen
+                currentUser={currentUser}
+                onNavigateHome={() => setCurrentScreen('dashboard')}
               />
             )}
           </ErrorBoundary>

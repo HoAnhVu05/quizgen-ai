@@ -12,6 +12,96 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls
 
+def clean_latex_to_text(text: str) -> str:
+    """
+    [SCRUM-102] Bộ chuyển đổi và làm sạch ký hiệu LaTeX sang Unicode Toán học trực quan:
+    Hỗ trợ chuyển các công thức $...$ hoặc các lệnh LaTeX thường gặp thành ký tự hiển thị sắc nét trong Word (.docx)
+    """
+    if not text or not isinstance(text, str):
+        return ""
+
+    s = text
+
+    # Thay thế căn bậc hai trước khi làm phân số để xử lý lồng nhau
+    s = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', s)
+    s = re.sub(r'\\sqrt\[([^{}]+)\]\{([^{}]+)\}', r'^\1√(\2)', s)
+
+    # Thay thế phân số \frac{a}{b} -> (a/b) (chạy 3 lần để xử lý phân số lồng nhau)
+    for _ in range(3):
+        s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1/\2)', s)
+
+    # Thay thế lũy thừa số đơn giản ^{2} -> ², ^{3} -> ³, ^2 -> ², v.v.
+    sup_map = {
+        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+        '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+        'n': 'ⁿ', 'i': 'ⁱ'
+    }
+    def replace_sup(match):
+        val = match.group(1)
+        return "".join(sup_map.get(c, c) for c in val)
+
+    s = re.sub(r'\^\{([0-9n\+\-]+)\}', replace_sup, s)
+    s = re.sub(r'\^([0-9n])', replace_sup, s)
+
+    # Thay thế chỉ số dưới _{1} -> ₁, _1 -> ₁
+    sub_map = {
+        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+        '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+        '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+        'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ', 'x': 'ₓ'
+    }
+    def replace_sub(match):
+        val = match.group(1)
+        return "".join(sub_map.get(c, c) for c in val)
+
+    s = re.sub(r'_\{([0-9a-z\+\-]+)\}', replace_sub, s)
+    s = re.sub(r'_([0-9a-z])', replace_sub, s)
+
+    # Ký hiệu toán học & Hy Lạp phổ biến (xếp \\int, \\infty trước \\in)
+    symbols_map = [
+        (r'\\alpha\b', 'α'), (r'\\beta\b', 'β'), (r'\\gamma\b', 'γ'), (r'\\delta\b', 'δ'),
+        (r'\\epsilon\b', 'ε'), (r'\\theta\b', 'θ'), (r'\\lambda\b', 'λ'), (r'\\mu\b', 'μ'),
+        (r'\\pi\b', 'π'), (r'\\sigma\b', 'σ'), (r'\\tau\b', 'τ'), (r'\\omega\b', 'ω'),
+        (r'\\Delta\b', 'Δ'), (r'\\Sigma\b', 'Σ'), (r'\\Omega\b', 'Ω'),
+        (r'\\times\b', '×'), (r'\\div\b', '÷'), (r'\\pm\b', '±'), (r'\\mp\b', '∓'),
+        (r'\\le(q)?\b', '≤'), (r'\\ge(q)?\b', '≥'), (r'\\neq\b', '≠'), (r'\\approx\b', '≈'),
+        (r'\\infty\b', '∞'), (r'\\partial\b', '∂'), (r'\\nabla\b', '∇'),
+        (r'\\int\b', '∫'), (r'\\sum\b', '∑'), (r'\\prod\b', '∏'),
+        (r'\\notin\b', '∉'), (r'\\in\b', '∈'), (r'\\subset\b', '⊂'), (r'\\subseteq\b', '⊆'),
+        (r'\\supset\b', '⊃'), (r'\\supseteq\b', '⊇'), (r'\\setminus\b', '∖'),
+        (r'\\cap\b', '∩'), (r'\\cup\b', '∪'), (r'\\emptyset\b', '∅'),
+        (r'\\forall\b', '∀'), (r'\\exists\b', '∃'),
+        (r'\\land\b', '∧'), (r'\\wedge\b', '∧'), (r'\\lor\b', '∨'), (r'\\vee\b', '∨'),
+        (r'\\neg\b', '¬'), (r'\\lnot\b', '¬'), (r'\\sim\b', '∼'),
+        (r'\\rightarrow\b', '→'), (r'\\leftarrow\b', '←'), (r'\\to\b', '→'),
+        (r'\\Rightarrow\b', '⇒'), (r'\\Leftrightarrow\b', '⇔'), (r'\\leftrightarrow\b', '↔'),
+        (r'\\equiv\b', '≡'), (r'\\oplus\b', '⊕'), (r'\\bot\b', '⊥'), (r'\\top\b', '⊤'),
+        (r'\\vdash\b', '⊢'), (r'\\models\b', '⊨'),
+        (r'\\mathbb\{R\}', 'ℝ'), (r'\\mathbb\{N\}', 'ℕ'), (r'\\mathbb\{Z\}', 'ℤ'), (r'\\mathbb\{Q\}', 'ℚ'), (r'\\mathbb\{C\}', 'ℂ'),
+        (r'\\log\b', 'log'), (r'\\ln\b', 'ln'), (r'\\sin\b', 'sin'), (r'\\cos\b', 'cos'), (r'\\tan\b', 'tan'),
+        (r'\\cdot\b', '·'), (r'\\circ\b', '°')
+    ]
+    for pattern, repl in symbols_map:
+        s = re.sub(pattern, repl, s)
+
+    # Thay thế phân số \frac{a}{b} -> (a/b) (chạy 3 lần để xử lý phân số lồng nhau)
+    for _ in range(3):
+        s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1/\2)', s)
+
+    # Xóa bỏ các ký tự dấu $ bao quanh công thức (loại bỏ tất cả dấu $)
+    s = s.replace('$$', '').replace('$', '')
+
+    # Xóa các lệnh định dạng thừa trong LaTeX (\text{...}, \mathbf{...}, \mathit{...})
+    s = re.sub(r'\\(text|mathbf|mathit|mathrm|mathbb)\{([^{}]+)\}', r'\2', s)
+
+    # Làm sạch khoảng trắng thừa
+    s = re.sub(r'\\,', ' ', s)
+    s = re.sub(r'\\;', ' ', s)
+    s = re.sub(r'\\quad', '   ', s)
+
+    return s.strip()
+
 class WordExamExporter:
     @classmethod
     def _resolve_image_stream(cls, img_source: Any) -> Optional[Tuple[io.BytesIO, float, float]]:
@@ -476,7 +566,8 @@ class WordExamExporter:
             
             r_num = p_q.add_run(f"Câu {idx}: ")
             r_num.bold = True
-            q_text = q.get("question") or q.get("question_text") or ""
+            raw_q_text = q.get("question") or q.get("question_text") or ""
+            q_text = clean_latex_to_text(raw_q_text)
             p_q.add_run(q_text)
 
             # Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi
@@ -488,7 +579,8 @@ class WordExamExporter:
                 p_opt = doc.add_paragraph()
                 p_opt.paragraph_format.left_indent = Inches(0.3)
                 p_opt.paragraph_format.space_after = Pt(2)
-                p_opt.add_run(f"{opt.get('label')}. {opt.get('text')}")
+                opt_text = clean_latex_to_text(str(opt.get('text', '')))
+                p_opt.add_run(f"{opt.get('label')}. {opt_text}")
 
             # Xác định đáp án đúng
             correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
@@ -536,7 +628,8 @@ class WordExamExporter:
                         p_item_exp = doc.add_paragraph()
                         r_item_title = p_item_exp.add_run(f"Câu {item['idx']} (Đáp án {item['label']}): ")
                         r_item_title.bold = True
-                        p_item_exp.add_run(item["explanation"])
+                        exp_text = clean_latex_to_text(str(item["explanation"]))
+                        p_item_exp.add_run(exp_text)
 
         # Phiếu trả lời trắc nghiệm chuẩn OMR 50 câu (giống file PDF)
         if include_omr_sheet:

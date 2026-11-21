@@ -2161,6 +2161,277 @@ async def respond_friend_request(req_id: str, request: Request):
     return {"status": "success", "request": target_req}
 
 
+# =========================================================================
+# ACADEMIC FORUM PERSISTENCE & MULTI-USER COLLABORATION
+# =========================================================================
+FORUM_POSTS_FILE = STORAGE_DIR.parent / "forum_posts.json"
+FORUM_ATTACHMENTS_DIR = STORAGE_DIR.parent / "forum_attachments"
+FORUM_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+_CACHED_FORUM_POSTS = None
+
+def load_server_forum_posts() -> list:
+    global _CACHED_FORUM_POSTS
+    if _CACHED_FORUM_POSTS is not None:
+        return _CACHED_FORUM_POSTS
+    if not FORUM_POSTS_FILE.exists():
+        _CACHED_FORUM_POSTS = []
+        return _CACHED_FORUM_POSTS
+    try:
+        with open(FORUM_POSTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                _CACHED_FORUM_POSTS = data
+                return _CACHED_FORUM_POSTS
+    except Exception as e:
+        logger.error(f"Error loading forum posts from server storage: {e}")
+    _CACHED_FORUM_POSTS = []
+    return _CACHED_FORUM_POSTS
+
+def save_server_forum_posts(posts: list):
+    global _CACHED_FORUM_POSTS
+    _CACHED_FORUM_POSTS = posts
+    try:
+        FORUM_POSTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(FORUM_POSTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(posts, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving forum posts to server storage: {e}")
+
+@app.get("/forum/posts")
+@app.get("/documents/forum/posts")
+def get_forum_posts(
+    tag: Optional[str] = Query(None, description="Lọc theo tag môn học"),
+    search: Optional[str] = Query(None, description="Tìm kiếm từ khóa"),
+    author_email: Optional[str] = Query(None, description="Lọc theo email tác giả"),
+    department: Optional[str] = Query(None, description="Lọc theo khoa"),
+):
+    posts = load_server_forum_posts()
+    result = posts
+    if tag and tag.lower() != "all":
+        result = [p for p in result if str(p.get("tag", "")).lower() == tag.lower()]
+    if author_email:
+        result = [p for p in result if str(p.get("authorEmail", "")).lower() == author_email.lower()]
+    if department:
+        result = [p for p in result if department.lower() in str(p.get("department", "")).lower()]
+    if search:
+        kw = search.strip().lower()
+        result = [
+            p for p in result
+            if kw in str(p.get("content", "")).lower()
+            or kw in str(p.get("authorName", "")).lower()
+            or kw in str(p.get("tag", "")).lower()
+            or kw in str(p.get("attachmentFileName", "")).lower()
+        ]
+    return result
+
+@app.post("/forum/posts")
+@app.post("/documents/forum/posts")
+async def create_forum_post(request: Request):
+    payload = await request.json()
+    content = str(payload.get("content", "")).strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Nội dung bài viết không được để trống")
+    
+    posts = load_server_forum_posts()
+    now_ms = int(time.time() * 1000)
+    post_id = payload.get("id") or f"post-{now_ms}"
+    
+    new_post = {
+        "id": post_id,
+        "authorEmail": payload.get("authorEmail", "").strip().lower(),
+        "authorName": payload.get("authorName", "Giảng viên UTH"),
+        "authorTitle": payload.get("authorTitle", "TS."),
+        "authorRole": payload.get("authorRole", "Giảng viên"),
+        "department": payload.get("department", "Khoa Công nghệ Thông tin"),
+        "timestamp": payload.get("timestamp", "Vừa xong"),
+        "createdAt": datetime.now().isoformat(),
+        "tag": payload.get("tag", "Hệ Điều Hành"),
+        "privacy": payload.get("privacy", "public"),
+        "content": content,
+        "imageUrl": payload.get("imageUrl"),
+        "attachmentFileName": payload.get("attachmentFileName"),
+        "attachmentFileSize": payload.get("attachmentFileSize"),
+        "attachmentDownloadUrl": payload.get("attachmentDownloadUrl"),
+        "videoUrl": payload.get("videoUrl"),
+        "likes": 0,
+        "likedByEmails": [],
+        "bookmarkedByEmails": [],
+        "comments": []
+    }
+    
+    posts.insert(0, new_post)
+    save_server_forum_posts(posts)
+    return {"status": "success", "post": new_post}
+
+@app.put("/forum/posts/{post_id}")
+@app.put("/documents/forum/posts/{post_id}")
+async def update_forum_post(post_id: str, request: Request):
+    payload = await request.json()
+    posts = load_server_forum_posts()
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+    
+    if "content" in payload:
+        post["content"] = str(payload["content"]).strip()
+    if "tag" in payload:
+        post["tag"] = payload["tag"]
+    if "privacy" in payload:
+        post["privacy"] = payload["privacy"]
+    if "imageUrl" in payload:
+        post["imageUrl"] = payload["imageUrl"]
+    if "videoUrl" in payload:
+        post["videoUrl"] = payload["videoUrl"]
+    if "updatedAt" not in post:
+        post["updatedAt"] = datetime.now().isoformat()
+        
+    save_server_forum_posts(posts)
+    return {"status": "success", "post": post}
+
+@app.delete("/forum/posts/{post_id}")
+@app.delete("/documents/forum/posts/{post_id}")
+def delete_forum_post(post_id: str):
+    posts = load_server_forum_posts()
+    idx = next((i for i, p in enumerate(posts) if p.get("id") == post_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết để xóa")
+    
+    deleted = posts.pop(idx)
+    save_server_forum_posts(posts)
+    return {"status": "success", "deletedPostId": post_id}
+
+@app.post("/forum/posts/{post_id}/like")
+@app.post("/documents/forum/posts/{post_id}/like")
+async def toggle_forum_post_like(post_id: str, request: Request):
+    payload = await request.json()
+    user_email = (payload.get("userEmail") or "").strip().lower()
+    if not user_email:
+        user_email = "guest@uth.edu.vn"
+    
+    posts = load_server_forum_posts()
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+    
+    liked_by = post.get("likedByEmails", [])
+    if user_email in liked_by:
+        liked_by.remove(user_email)
+        has_liked = False
+    else:
+        liked_by.append(user_email)
+        has_liked = True
+        
+    post["likedByEmails"] = liked_by
+    post["likes"] = len(liked_by)
+    save_server_forum_posts(posts)
+    return {"status": "success", "likes": post["likes"], "hasLiked": has_liked}
+
+@app.post("/forum/posts/{post_id}/bookmark")
+@app.post("/documents/forum/posts/{post_id}/bookmark")
+async def toggle_forum_post_bookmark(post_id: str, request: Request):
+    payload = await request.json()
+    user_email = (payload.get("userEmail") or "").strip().lower()
+    if not user_email:
+        user_email = "guest@uth.edu.vn"
+    
+    posts = load_server_forum_posts()
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+    
+    bookmarks = post.get("bookmarkedByEmails", [])
+    if user_email in bookmarks:
+        bookmarks.remove(user_email)
+        is_bookmarked = False
+    else:
+        bookmarks.append(user_email)
+        is_bookmarked = True
+        
+    post["bookmarkedByEmails"] = bookmarks
+    save_server_forum_posts(posts)
+    return {"status": "success", "isBookmarked": is_bookmarked}
+
+@app.post("/forum/posts/{post_id}/comments")
+@app.post("/documents/forum/posts/{post_id}/comments")
+async def add_forum_comment(post_id: str, request: Request):
+    payload = await request.json()
+    content = str(payload.get("content", "")).strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Nội dung bình luận không được rỗng")
+        
+    posts = load_server_forum_posts()
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+        
+    comments = post.get("comments", [])
+    comment_id = f"c-{int(time.time() * 1000)}"
+    new_comment = {
+        "id": comment_id,
+        "authorEmail": (payload.get("authorEmail") or "").strip().lower(),
+        "authorName": payload.get("authorName", "Giảng viên"),
+        "authorTitle": payload.get("authorTitle", "ThS."),
+        "content": content,
+        "timestamp": payload.get("timestamp", time.strftime("%H:%M Hôm nay")),
+        "createdAt": datetime.now().isoformat()
+    }
+    comments.append(new_comment)
+    post["comments"] = comments
+    save_server_forum_posts(posts)
+    return {"status": "success", "comment": new_comment, "totalComments": len(comments)}
+
+@app.delete("/forum/posts/{post_id}/comments/{comment_id}")
+@app.delete("/documents/forum/posts/{post_id}/comments/{comment_id}")
+def delete_forum_comment(post_id: str, comment_id: str):
+    posts = load_server_forum_posts()
+    post = next((p for p in posts if p.get("id") == post_id), None)
+    if not post:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài viết")
+        
+    comments = post.get("comments", [])
+    idx = next((i for i, c in enumerate(comments) if c.get("id") == comment_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bình luận")
+        
+    deleted = comments.pop(idx)
+    post["comments"] = comments
+    save_server_forum_posts(posts)
+    return {"status": "success", "deletedCommentId": comment_id, "totalComments": len(comments)}
+
+@app.post("/forum/upload")
+@app.post("/documents/forum/upload")
+async def upload_forum_attachment(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Tên tệp không hợp lệ")
+    
+    clean_name = f"{int(time.time()*1000)}_{file.filename.replace(' ', '_')}"
+    target_path = FORUM_ATTACHMENTS_DIR / clean_name
+    
+    content = await file.read()
+    target_path.write_bytes(content)
+    file_size_mb = f"{len(content) / (1024 * 1024):.1f} MB" if len(content) >= 1024 * 1024 else f"{max(1, len(content) // 1024)} KB"
+    
+    download_url = f"/api/v1/documents/forum/attachments/{clean_name}"
+    is_image = file.content_type.startswith("image/") if file.content_type else False
+    
+    return {
+        "status": "success",
+        "fileName": file.filename,
+        "savedName": clean_name,
+        "fileSize": file_size_mb,
+        "downloadUrl": download_url,
+        "isImage": is_image
+    }
+
+@app.get("/forum/attachments/{file_name}")
+@app.get("/documents/forum/attachments/{file_name}")
+def download_forum_attachment(file_name: str):
+    target_path = FORUM_ATTACHMENTS_DIR / file_name
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại trên máy chủ")
+    return FileResponse(target_path, filename=file_name)
+
+
 @app.get("/{document_id}")
 @app.get("/documents/{document_id}")
 def get_document(document_id: str, db: Session = Depends(get_db)):

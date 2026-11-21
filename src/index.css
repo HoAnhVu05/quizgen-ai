@@ -466,8 +466,94 @@
   transform: scaleX(0.95);
 }
 
-/* High-contrast clarity for Print Mode (A4 Exam Papers) */
+/* ==========================================================================
+   PRINTING STYLES: In Đề Thi & Phiếu Trả Lời Trắc Nghiệm Chuẩn A4 Khảo Thí
+   ========================================================================== */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 12mm 12mm;
+  }
+
+  html, body, #root, main, .quizgen-print-wrapper {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 100% !important;
+    background: #ffffff !important;
+  }
+
+  /* Ẩn triệt để tất cả thành phần UI lặt vặt của website khi in */
+  nav,
+  aside,
+  header,
+  footer,
+  .no-print,
+  button,
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  #quanta-copilot-container,
+  .toast,
+  .sidebar,
+  .top-header,
+  [role="dialog"]:not(.printable-modal) {
+    display: none !important;
+  }
+
+  /* Chế độ in chuyên dụng khi kích hoạt in tờ đề thi */
+  body.quizgen-printing-exam {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.quizgen-printing-exam * {
+    visibility: hidden;
+  }
+
+  body.quizgen-printing-exam #printable-exam-paper,
+  body.quizgen-printing-exam #printable-exam-paper * {
+    visibility: visible !important;
+  }
+
+  body.quizgen-printing-exam #printable-exam-paper {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: block !important;
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .page-break-always {
+    break-before: page !important;
+    page-break-before: always !important;
+  }
+
+  .exam-question-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 12px !important;
+  }
+
+  .exam-header-box {
+    border: 2px solid #0f172a !important;
+    padding: 12px !important;
+    border-radius: 6px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .exam-footer-note {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* High-contrast clarity for Print Mode (A4 Exam Papers & KaTeX) */
   .katex,
   .katex * {
     color: #000000 !important;

@@ -383,114 +383,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
     const printElement = document.getElementById('printable-exam-paper');
     if (!printElement) {
-      window.print();
+      onShowToast('error', 'Lỗi bản in', 'Không tìm thấy khung nội dung tờ đề thi.');
       return;
     }
 
-    // Xóa iframe in cũ nếu có
-    const oldFrame = document.getElementById('quizgen-exam-print-frame');
-    if (oldFrame) oldFrame.remove();
+    // Gắn class in chuyên dụng cho body để ẩn triệt để 100% giao diện lặt vặt (sidebar, header, buttons, quanta AI)
+    document.body.classList.add('quizgen-printing-exam');
 
-    // Tạo iframe ẩn độc lập để chỉ in toàn bộ nội dung tờ đề A4
-    const printFrame = document.createElement('iframe');
-    printFrame.id = 'quizgen-exam-print-frame';
-    printFrame.style.position = 'fixed';
-    printFrame.style.right = '0';
-    printFrame.style.bottom = '0';
-    printFrame.style.width = '0';
-    printFrame.style.height = '0';
-    printFrame.style.border = '0';
-    printFrame.style.zIndex = '-9999';
-    document.body.appendChild(printFrame);
+    let cleaned = false;
+    const cleanUp = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.body.classList.remove('quizgen-printing-exam');
+      window.removeEventListener('afterprint', cleanUp);
+    };
 
-    const frameDoc = printFrame.contentWindow?.document || printFrame.contentDocument;
-    if (!frameDoc) {
-      window.print();
-      return;
-    }
+    window.addEventListener('afterprint', cleanUp);
 
-    // Thu thập stylesheet hiện hành của trang
-    const styleTags = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
-      .map((el) => el.outerHTML)
-      .join('\n');
-
-    frameDoc.open();
-    frameDoc.write(`
-      <!DOCTYPE html>
-      <html lang="vi">
-        <head>
-          <meta charset="utf-8" />
-          <title>${examTitle || 'Đề thi'} - Mã đề ${activeExamCode}</title>
-          ${styleTags}
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 15mm 15mm 15mm 15mm;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body {
-              background: #ffffff !important;
-              color: #0f172a !important;
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
-              margin: 0 !important;
-              padding: 0 !important;
-              line-height: 1.5 !important;
-            }
-            .no-print {
-              display: none !important;
-            }
-            .exam-paper-container {
-              width: 100% !important;
-              max-width: 100% !important;
-              margin: 0 auto !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-            }
-            .exam-header-box {
-              border: 2px solid #0f172a !important;
-              padding: 12px 16px !important;
-              border-radius: 6px !important;
-              margin-bottom: 20px !important;
-            }
-            .exam-question-item {
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-              margin-bottom: 14px !important;
-            }
-            .exam-footer-note {
-              margin-top: 24px !important;
-              padding-top: 12px !important;
-              border-top: 1px solid #cbd5e1 !important;
-              text-align: center !important;
-              font-size: 11px !important;
-              font-weight: bold !important;
-              color: #64748b !important;
-              text-transform: uppercase !important;
-              break-inside: avoid !important;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="exam-paper-container">
-            ${printElement.innerHTML}
-          </div>
-        </body>
-      </html>
-    `);
-    frameDoc.close();
-
-    // Mở hộp thoại in và tự dọn dẹp
+    // Kích hoạt lệnh in trực tiếp của trình duyệt (Hiển thị 100% tờ đề chuẩn A4 + Phiếu OMR)
     setTimeout(() => {
-      printFrame.contentWindow?.focus();
-      printFrame.contentWindow?.print();
-      setTimeout(() => {
-        printFrame.remove();
-      }, 2000);
-    }, 300);
+      window.print();
+      // Dự phòng trường hợp trình duyệt không kích hoạt afterprint
+      setTimeout(cleanUp, 3000);
+    }, 100);
   };
 
   const buildFallbackBlob = (format: 'docx' | 'pdf' | 'qti') => {
