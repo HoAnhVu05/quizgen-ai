@@ -84,6 +84,55 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
 }
 
 /**
+ * Flatten multi-attachment messages so each image/file acts as an independent message
+ * with full Slack actions (reactions, reply, pin, delete) and clean per-item management.
+ */
+export function flattenGroupMessages(messages: any[]): any[] {
+  if (!messages || !Array.isArray(messages)) return [];
+  const flattened: any[] = [];
+  for (const m of messages) {
+    if (!m) continue;
+    if (m.attachments && Array.isArray(m.attachments) && m.attachments.length > 1 && !m.isRecalled) {
+      const hasText = !!(m.text && m.text.trim());
+      if (hasText) {
+        flattened.push({
+          ...m,
+          attachments: undefined,
+          attachment: undefined,
+        });
+        m.attachments.forEach((att: any, idx: number) => {
+          flattened.push({
+            ...m,
+            id: `${m.id}-att-${idx}`,
+            text: '',
+            replyTo: undefined,
+            attachment: att,
+            attachments: [att],
+            reactions: undefined,
+            isPinned: false,
+          });
+        });
+      } else {
+        m.attachments.forEach((att: any, idx: number) => {
+          flattened.push({
+            ...m,
+            id: idx === 0 ? m.id : `${m.id}-att-${idx}`,
+            text: '',
+            attachment: att,
+            attachments: [att],
+            reactions: idx === 0 ? m.reactions : undefined,
+            isPinned: idx === 0 ? m.isPinned : false,
+          });
+        });
+      }
+    } else {
+      flattened.push(m);
+    }
+  }
+  return flattened;
+}
+
+/**
  * Deduplicates and merges direct messages between the same pair of participants.
  * Combines all messages from duplicate DM channels into a single room.
  */
@@ -116,20 +165,20 @@ export function deduplicateDMsAndChannels(groups: QGroup[]): QGroup[] {
             existingIds.add(m.id);
           }
         }
-        target.messages = newMsgs;
+        target.messages = flattenGroupMessages(newMsgs);
         target.updatedAt = Math.max(target.updatedAt || 0, g.updatedAt || 0);
       } else if (pairKey) {
-        const clone = { ...g, isDirect: true, messages: [...(g.messages || [])] };
+        const clone = { ...g, isDirect: true, messages: flattenGroupMessages(g.messages || []) };
         dmMap.set(pairKey, clone);
         result.push(clone);
       } else {
-        result.push(g);
+        result.push({ ...g, messages: flattenGroupMessages(g.messages || []) });
       }
     } else {
       const key = (g.code || g.id || '').trim();
       if (!key || seenChannels.has(key)) continue;
       seenChannels.add(key);
-      result.push(g);
+      result.push({ ...g, messages: flattenGroupMessages(g.messages || []) });
     }
   }
 

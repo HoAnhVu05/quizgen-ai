@@ -2411,35 +2411,106 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     }
 
     const now = Date.now();
-    const newMsg: QGroupMessage = {
-      id: `msg-${now}`,
-      senderEmail: myEmail,
-      senderName: myName,
-      senderTitle: currentUser?.academicTitle || 'GV',
-      avatarColor: 'bg-slate-700',
-      text: chatInput.trim(),
-      attachment: selectedAttachments.length > 0 ? (selectedAttachments[0] as any) : undefined,
-      attachments: selectedAttachments.length > 0 ? (selectedAttachments as any) : undefined,
-      replyTo: replyingToMessage
-        ? {
-            id: replyingToMessage.id,
-            senderName: replyingToMessage.senderName,
-            text: (replyingToMessage.text || 'Tệp đính kèm').slice(0, 80),
-          }
-        : undefined,
-      timestamp: new Date().toLocaleTimeString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-      readBy: [myEmail],
-    };
+    const newMessages: QGroupMessage[] = [];
+    const hasText = !!chatInput.trim();
+    const hasAttachments = selectedAttachments.length > 0;
+
+    if (hasText && !hasAttachments) {
+      newMessages.push({
+        id: `msg-${now}`,
+        senderEmail: myEmail,
+        senderName: myName,
+        senderTitle: currentUser?.academicTitle || 'GV',
+        avatarColor: 'bg-slate-700',
+        text: chatInput.trim(),
+        replyTo: replyingToMessage
+          ? {
+              id: replyingToMessage.id,
+              senderName: replyingToMessage.senderName,
+              text: (replyingToMessage.text || 'Tệp đính kèm').slice(0, 80),
+            }
+          : undefined,
+        timestamp: new Date().toLocaleTimeString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        readBy: [myEmail],
+      });
+    } else if (hasText && hasAttachments) {
+      // Tin nhắn văn bản đi trước
+      newMessages.push({
+        id: `msg-${now}`,
+        senderEmail: myEmail,
+        senderName: myName,
+        senderTitle: currentUser?.academicTitle || 'GV',
+        avatarColor: 'bg-slate-700',
+        text: chatInput.trim(),
+        replyTo: replyingToMessage
+          ? {
+              id: replyingToMessage.id,
+              senderName: replyingToMessage.senderName,
+              text: (replyingToMessage.text || 'Tệp đính kèm').slice(0, 80),
+            }
+          : undefined,
+        timestamp: new Date().toLocaleTimeString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        readBy: [myEmail],
+      });
+      // Mỗi ảnh/tệp là 1 tin nhắn độc lập có đầy đủ action bar (Cảm xúc, Trả lời, Ghim, Sửa, Xóa)
+      selectedAttachments.forEach((att, idx) => {
+        newMessages.push({
+          id: `msg-${now + idx + 1}`,
+          senderEmail: myEmail,
+          senderName: myName,
+          senderTitle: currentUser?.academicTitle || 'GV',
+          avatarColor: 'bg-slate-700',
+          text: '',
+          attachment: att as any,
+          attachments: [att as any],
+          timestamp: new Date().toLocaleTimeString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          readBy: [myEmail],
+        });
+      });
+    } else if (!hasText && hasAttachments) {
+      // Mỗi tệp/ảnh là 1 tin nhắn độc lập
+      selectedAttachments.forEach((att, idx) => {
+        newMessages.push({
+          id: `msg-${now + idx}`,
+          senderEmail: myEmail,
+          senderName: myName,
+          senderTitle: currentUser?.academicTitle || 'GV',
+          avatarColor: 'bg-slate-700',
+          text: '',
+          attachment: att as any,
+          attachments: [att as any],
+          replyTo: idx === 0 && replyingToMessage
+            ? {
+                id: replyingToMessage.id,
+                senderName: replyingToMessage.senderName,
+                text: (replyingToMessage.text || 'Tệp đính kèm').slice(0, 80),
+              }
+            : undefined,
+          timestamp: new Date().toLocaleTimeString('vi-VN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          readBy: [myEmail],
+        });
+      });
+    }
 
     const updated = qgroups.map((g) =>
       g.id === activeGroup.id
-        ? { ...g, updatedAt: now, messages: [...(g.messages || []), newMsg] }
+        ? { ...g, updatedAt: now, messages: [...(g.messages || []), ...newMessages] }
         : g
     );
     applyGroups(updated);
+    void syncGroupsToBackend(updated);
     setChatInput('');
     setSelectedAttachments([]);
     setReplyingToMessage(null);
@@ -2451,16 +2522,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
 
     const targetId = activeGroup.id || activeGroup.code;
-    apiClient
-      .fetch(
-        `${API_BASE}/documents/qgroups/${encodeURIComponent(targetId)}/messages`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(newMsg),
-        }
-      )
-      .catch(() => {});
+    newMessages.forEach((mItem) => {
+      apiClient
+        .fetch(
+          `${API_BASE}/documents/qgroups/${encodeURIComponent(targetId)}/messages`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mItem),
+          }
+        )
+        .catch(() => {});
+    });
   };
 
   // ── Hàm tra cứu danh tính tài khoản trên toàn hệ thống QuizGen / UTH ────
@@ -3170,7 +3243,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         console.error('Failed to sync recalled message to backend:', err);
       }
     },
-    [activeGroup, qgroups, applyGroups, onShowToast]
+    [activeGroup, qgroups, applyGroups, syncGroupsToBackend, onShowToast]
   );
 
   // ── Delete / Xóa tin nhắn (In-App Confirm & Persistent to DB) ──────────────
@@ -3190,6 +3263,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             return { ...g, messages: msgs };
           });
           applyGroups(updated);
+          void syncGroupsToBackend(updated);
           onShowToast(
             'info',
             'Đã xóa tin nhắn',
@@ -3206,7 +3280,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         },
       });
     },
-    [activeGroup, qgroups, applyGroups, onShowToast]
+    [activeGroup, qgroups, applyGroups, syncGroupsToBackend, onShowToast]
   );
 
   // ── Delete Single Attachment / Xóa riêng lẻ 1 ảnh hoặc 1 file khỏi chùm tệp ──
@@ -3274,6 +3348,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           });
 
           applyGroups(updated);
+          void syncGroupsToBackend(updated);
           onShowToast('info', 'Đã xóa tệp', `Đã xóa 1 tệp đính kèm khỏi tin nhắn.`);
 
           try {
@@ -3298,7 +3373,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         },
       });
     },
-    [activeGroup, qgroups, applyGroups, onShowToast]
+    [activeGroup, qgroups, applyGroups, syncGroupsToBackend, onShowToast]
   );
 
   // ── Pin / Ghim tin nhắn (Persistent to DB) ────────────────────────────────
@@ -3333,7 +3408,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         console.error('Failed to sync pin status to backend:', err);
       }
     },
-    [activeGroup, qgroups, applyGroups, onShowToast]
+    [activeGroup, qgroups, applyGroups, syncGroupsToBackend, onShowToast]
   );
 
   const handleTogglePinConversation = useCallback(
@@ -4819,7 +4894,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                         }
                                       }}
                                     />
-                                    {/* Hover Action Overlay (Chuẩn Slack Floating Action Toolbar) */}
+                                    {/* Hover Action Overlay (Nút tải ảnh về máy gọn gàng) */}
                                     <div className="absolute top-2 right-2 hidden group-hover:flex items-center bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-lg px-1.5 py-1 gap-1 z-20 animate-fade-in">
                                       <button
                                         type="button"
@@ -4832,19 +4907,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                       >
                                         <Download className="w-3.5 h-3.5" />
                                       </button>
-                                      {(isMe || isOwner) && (
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
-                                          }}
-                                          className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center text-xs cursor-pointer transition-colors"
-                                          title="Xóa riêng ảnh này"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
-                                      )}
                                     </div>
                                   </div>
                                 ) : attItem.type === 'video' && attItem.fileUrl ? (
@@ -4904,19 +4966,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                         >
                                           <Download className="w-3.5 h-3.5" />
                                         </button>
-                                        {isMe && (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
-                                            }}
-                                            className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition-colors shrink-0 flex items-center justify-center text-xs cursor-pointer"
-                                            title="Xóa riêng tệp này"
-                                          >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
-                                        )}
                                       </div>
                                     )}
                                   </div>
