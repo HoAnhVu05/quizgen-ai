@@ -3211,7 +3211,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   // ── Delete Single Attachment / Xóa riêng lẻ 1 ảnh hoặc 1 file khỏi chùm tệp ──
   const handleDeleteSingleAttachment = useCallback(
-    async (msgId: string, attIdentifier: string | number) => {
+    (msgId: string, attIdentifier: string | number) => {
       if (!activeGroup) return;
 
       const targetMsg = (activeGroup.messages || []).find((m) => m.id === msgId);
@@ -3224,62 +3224,79 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           ? [targetMsg.attachment]
           : [];
 
-      // Lọc bỏ file/ảnh được chọn
-      const remaining = currentAttachments.filter(
+      const targetAtt = currentAttachments.find(
         (att, idx) =>
-          att.id !== attIdentifier &&
-          idx !== attIdentifier &&
-          `${targetMsg.id}-att-${idx}` !== attIdentifier
+          att.id === attIdentifier ||
+          idx === attIdentifier ||
+          `${targetMsg.id}-att-${idx}` === attIdentifier
       );
+      const attName = targetAtt?.name || 'tệp này';
 
-      // Nếu không còn tệp nào và văn bản cũng rỗng -> thu hồi toàn bộ tin nhắn
-      const shouldRecall =
-        remaining.length === 0 && (!targetMsg.text || targetMsg.text.trim() === '');
-
-      const updated = qgroups.map((g) => {
-        if (g.id !== activeGroup.id) return g;
-        const msgs = (g.messages || []).map((m) => {
-          if (m.id !== msgId) return m;
-          if (shouldRecall) {
-            return {
-              ...m,
-              text: 'Tin nhắn đã được thu hồi',
-              isRecalled: true,
-              attachment: undefined,
-              attachments: undefined,
-            };
-          }
-          return {
-            ...m,
-            attachments: remaining,
-            attachment: remaining[0] || undefined,
-          };
-        });
-        return { ...g, messages: msgs };
-      });
-
-      applyGroups(updated);
-      onShowToast('info', 'Đã xóa ảnh', 'Đã xóa 1 tệp hình ảnh khỏi tin nhắn.');
-
-      try {
-        if (shouldRecall) {
-          await apiClient.fetch(
-            `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}/messages/${encodeURIComponent(msgId)}/recall`,
-            { method: 'POST' }
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Xóa tệp đính kèm',
+        message: `Bạn có chắc chắn muốn xóa "${attName}" khỏi tin nhắn này?`,
+        confirmText: 'Xóa tệp',
+        variant: 'danger',
+        onConfirm: async () => {
+          // Lọc bỏ file/ảnh được chọn
+          const remaining = currentAttachments.filter(
+            (att, idx) =>
+              att.id !== attIdentifier &&
+              idx !== attIdentifier &&
+              `${targetMsg.id}-att-${idx}` !== attIdentifier
           );
-        } else {
-          await apiClient.fetch(
-            `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}/messages/${encodeURIComponent(msgId)}`,
-            {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ attachments: remaining }),
+
+          // Nếu không còn tệp nào và văn bản cũng rỗng -> thu hồi toàn bộ tin nhắn
+          const shouldRecall =
+            remaining.length === 0 && (!targetMsg.text || targetMsg.text.trim() === '');
+
+          const updated = qgroups.map((g) => {
+            if (g.id !== activeGroup.id) return g;
+            const msgs = (g.messages || []).map((m) => {
+              if (m.id !== msgId) return m;
+              if (shouldRecall) {
+                return {
+                  ...m,
+                  text: 'Tin nhắn đã được thu hồi',
+                  isRecalled: true,
+                  attachment: undefined,
+                  attachments: undefined,
+                };
+              }
+              return {
+                ...m,
+                attachments: remaining,
+                attachment: remaining[0] || undefined,
+              };
+            });
+            return { ...g, messages: msgs };
+          });
+
+          applyGroups(updated);
+          onShowToast('info', 'Đã xóa tệp', `Đã xóa 1 tệp đính kèm khỏi tin nhắn.`);
+
+          try {
+            if (shouldRecall) {
+              await apiClient.fetch(
+                `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}/messages/${encodeURIComponent(msgId)}/recall`,
+                { method: 'POST' }
+              );
+            } else {
+              await apiClient.fetch(
+                `${API_BASE}/documents/qgroups/${encodeURIComponent(activeGroup.id)}/messages/${encodeURIComponent(msgId)}`,
+                {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ attachments: remaining }),
+                }
+              );
             }
-          );
-        }
-      } catch (err) {
-        console.error('Failed to sync deleted attachment to server:', err);
-      }
+          } catch (err) {
+            console.error('Failed to sync deleted attachment to server:', err);
+          }
+        },
+      });
     },
     [activeGroup, qgroups, applyGroups, onShowToast]
   );
@@ -4802,28 +4819,28 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                         }
                                       }}
                                     />
-                                    {/* Hover Action Overlay */}
-                                    <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {/* Hover Action Overlay (Chuẩn Slack Floating Action Toolbar) */}
+                                    <div className="absolute top-2 right-2 hidden group-hover:flex items-center bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-xl shadow-lg px-1.5 py-1 gap-1 z-20 animate-fade-in">
                                       <button
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           downloadFileSafely(attItem.name || 'image.png', attItem.fileUrl, onShowToast);
                                         }}
-                                        className="w-8 h-8 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
+                                        className="w-6 h-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-800 flex items-center justify-center text-xs cursor-pointer transition-colors"
                                         title="Tải ảnh về máy"
                                       >
                                         <Download className="w-3.5 h-3.5" />
                                       </button>
-                                      {isMe && (
+                                      {(isMe || isOwner) && (
                                         <button
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
-                                            void handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
+                                            handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
                                           }}
-                                          className="w-8 h-8 rounded-full bg-rose-600/85 hover:bg-rose-700 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
-                                          title="Xóa riêng ảnh này khỏi tin nhắn"
+                                          className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 flex items-center justify-center text-xs cursor-pointer transition-colors"
+                                          title="Xóa riêng ảnh này"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -4875,14 +4892,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                       </div>
                                     </div>
                                     {attItem.fileUrl && (
-                                      <div className="flex items-center gap-1 shrink-0">
+                                      <div className="flex items-center gap-1 shrink-0 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5">
                                         <button
                                           type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             downloadFileSafely(attItem.name, attItem.fileUrl, onShowToast);
                                           }}
-                                          className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
+                                          className="w-6 h-6 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors shrink-0 flex items-center justify-center text-xs cursor-pointer"
                                           title="Tải tệp về máy"
                                         >
                                           <Download className="w-3.5 h-3.5" />
@@ -4892,10 +4909,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                                             type="button"
                                             onClick={(e) => {
                                               e.stopPropagation();
-                                              void handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
+                                              handleDeleteSingleAttachment(msg.id, attItem.id || attIdx);
                                             }}
-                                            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-rose-600 text-slate-500 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
-                                            title="Xóa riêng tệp này khỏi tin nhắn"
+                                            className="w-6 h-6 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition-colors shrink-0 flex items-center justify-center text-xs cursor-pointer"
+                                            title="Xóa riêng tệp này"
                                           >
                                             <Trash2 className="w-3.5 h-3.5" />
                                           </button>
