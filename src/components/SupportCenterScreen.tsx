@@ -116,6 +116,9 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   const [selectedArticle, setSelectedArticle] = useState<FAQArticle | null>(null);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+  const selectedTicketIdRef = useRef<string | null>(null);
+  const isFetchingDetailRef = useRef<boolean>(false);
+  const isFetchingTicketsRef = useRef<boolean>(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshingTickets, setIsRefreshingTickets] = useState(false);
@@ -277,32 +280,41 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     fetchTickets();
   }, [currentUser?.email, currentUser?.id]);
 
-  // Fast Smart Polling: Khi ở tab "my_tickets", tự động cập nhật danh sách mỗi 2.5s
+  // Smart Polling: Khi ở tab "my_tickets" và KHÔNG mở phiếu, cập nhật danh sách mỗi 5s
   useEffect(() => {
-    if (activeTab === 'my_tickets') {
-      fetchTickets(true);
+    if (activeTab === 'my_tickets' && !selectedTicket) {
+      void fetchTickets(true);
       const interval = setInterval(() => {
-        fetchTickets(true);
-      }, 2500);
+        void fetchTickets(true);
+      }, 5000);
       return () => clearInterval(interval);
     }
-  }, [activeTab, currentUser?.email, currentUser?.id]);
+  }, [activeTab, !selectedTicket, currentUser?.email, currentUser?.id]);
 
-  // Fast Smart Polling: Khi đang mở một ticket, tự động cập nhật mỗi 2.5s
+  // Smart Polling: Khi đang mở một ticket, tự động cập nhật tin nhắn & trạng thái mỗi 4s
   useEffect(() => {
-    if (!selectedTicket) return;
+    if (!selectedTicket?.id) {
+      selectedTicketIdRef.current = null;
+      return;
+    }
     const ticketId = selectedTicket.id;
+    selectedTicketIdRef.current = ticketId;
 
-    fetchTicketDetail(ticketId);
+    void fetchTicketDetail(ticketId, true);
 
     const interval = setInterval(() => {
-      fetchTicketDetail(ticketId, true);
-    }, 2500);
+      if (selectedTicketIdRef.current === ticketId) {
+        void fetchTicketDetail(ticketId, true);
+      }
+    }, 4000);
 
     return () => clearInterval(interval);
   }, [selectedTicket?.id]);
 
   const fetchTicketDetail = async (ticketId: string, silent = false) => {
+    if (selectedTicketIdRef.current !== ticketId) return;
+    if (isFetchingDetailRef.current) return;
+    isFetchingDetailRef.current = true;
     try {
       const headers: Record<string, string> = {
         'x-user-id': currentUser?.id || 'usr-lec-001',
@@ -316,9 +328,10 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
       }
       const res = await fetch(`${API_BASE}/support/tickets/${ticketId}`, { headers });
       if (res.ok) {
+        if (selectedTicketIdRef.current !== ticketId) return; // Loại bỏ phản hồi trễ nếu người dùng đã đổi phiếu
         const data: SupportTicket = await res.json();
         setSelectedTicket((prev) => {
-          if (!prev) return data;
+          if (!prev || selectedTicketIdRef.current !== data.id) return prev; // Không ghi đè hoặc tự chọn nếu đã quay lại danh sách
           const oldMsgCount = prev.messages?.length || 0;
           const newMsgCount = data.messages?.length || 0;
           if (newMsgCount > oldMsgCount) {
@@ -331,7 +344,20 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
           prevList.map((t) => (t.id === data.id ? { ...t, status: data.status, updated_at: data.updated_at } : t))
         );
       }
-    } catch {}
+    } catch {} finally {
+      isFetchingDetailRef.current = false;
+    }
+  };
+
+  const handleSelectTicket = (t: SupportTicket) => {
+    selectedTicketIdRef.current = t.id;
+    setSelectedTicket(t); // Mở ngay lập tức (Optimistic), xóa độ trễ lag
+    void fetchTicketDetail(t.id, false);
+  };
+
+  const handleBackToList = () => {
+    selectedTicketIdRef.current = null;
+    setSelectedTicket(null);
   };
 
   // Gợi ý AI khi nhập mô tả
@@ -379,6 +405,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   };
 
   const fetchTickets = async (silent = false) => {
+    if (isFetchingTicketsRef.current) return;
+    isFetchingTicketsRef.current = true;
     if (!silent) setIsRefreshingTickets(true);
     try {
       const headers: Record<string, string> = {
@@ -400,6 +428,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
       // Giữ nguyên danh sách hiện tại nếu polling gặp lỗi tạm thời
     } finally {
       if (!silent) setIsRefreshingTickets(false);
+      isFetchingTicketsRef.current = false;
     }
   };
 
@@ -482,8 +511,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         // Đưa phiếu mới vào danh sách ngay tức thì để hiển thị ngay
         setTickets((prev) => [newTicket, ...prev.filter((t) => t.id !== newTicket.id)]);
         setActiveTab('my_tickets');
-        setSelectedTicket(null);
-        fetchTickets(false);
+        handleBackToList();
+        void fetchTickets(false);
       } else {
         const errJson = await res.json().catch(() => null);
         setSubmitErrorMessage(formatApiErrorMessage(errJson?.detail));
@@ -622,7 +651,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
             <button
               onClick={() => {
                 setActiveTab('faq');
-                setSelectedTicket(null);
+                handleBackToList();
               }}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'faq'
@@ -637,8 +666,8 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
             <button
               onClick={() => {
                 setActiveTab('my_tickets');
-                setSelectedTicket(null);
-                fetchTickets();
+                handleBackToList();
+                void fetchTickets();
               }}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative cursor-pointer ${
                 activeTab === 'my_tickets'
@@ -658,7 +687,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
             <button
               onClick={() => {
                 setActiveTab('create_ticket');
-                setSelectedTicket(null);
+                handleBackToList();
               }}
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'create_ticket'
@@ -801,7 +830,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
               <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-2xs flex flex-col gap-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                   <button
-                    onClick={() => setSelectedTicket(null)}
+                    onClick={handleBackToList}
                     className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-[#008689] transition-colors cursor-pointer"
                   >
                     <ArrowLeft className="w-4 h-4" />
@@ -1223,7 +1252,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     {tickets.map((t) => (
                       <div
                         key={t.id}
-                        onClick={() => setSelectedTicket(t)}
+                        onClick={() => handleSelectTicket(t)}
                         className="bg-white hover:bg-slate-50 border border-slate-200/90 hover:border-[#008689]/60 rounded-xl p-4.5 cursor-pointer transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 group shadow-2xs"
                       >
                         <div className="flex items-start gap-3.5">

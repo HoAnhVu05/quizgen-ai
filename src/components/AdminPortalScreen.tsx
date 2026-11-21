@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   Users,
@@ -303,6 +303,9 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [adminSupportStatusFilter, setAdminSupportStatusFilter] = useState<string>('all');
   const [adminSupportPriorityFilter, setAdminSupportPriorityFilter] = useState<string>('all');
   const [adminSelectedTicket, setAdminSelectedTicket] = useState<any | null>(null);
+  const adminSelectedTicketIdRef = useRef<string | null>(null);
+  const isFetchingAdminDetailRef = useRef<boolean>(false);
+  const isFetchingAdminSupportRef = useRef<boolean>(false);
   const [adminReplyText, setAdminReplyText] = useState('');
   const [adminIsSendingReply, setAdminIsSendingReply] = useState(false);
   const [adminStatusUpdate, setAdminStatusUpdate] = useState<string>('');
@@ -324,6 +327,8 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   };
 
   const fetchAdminSupportData = async (silent = false) => {
+    if (isFetchingAdminSupportRef.current) return;
+    isFetchingAdminSupportRef.current = true;
     if (!silent) setIsLoadingSupport(true);
     try {
       const headers: Record<string, string> = {
@@ -348,10 +353,14 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       console.warn('[ADMIN SUPPORT] Lỗi tải dữ liệu hỗ trợ:', err);
     } finally {
       if (!silent) setIsLoadingSupport(false);
+      isFetchingAdminSupportRef.current = false;
     }
   };
 
   const fetchAdminTicketDetail = async (ticketId: string) => {
+    if (adminSelectedTicketIdRef.current !== ticketId) return;
+    if (isFetchingAdminDetailRef.current) return;
+    isFetchingAdminDetailRef.current = true;
     try {
       const headers: Record<string, string> = {
         'x-user-role': 'ADMIN',
@@ -360,13 +369,28 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       };
       const res = await apiClient.fetch(`${API_BASE}/support/tickets/${ticketId}`, { headers });
       if (res.ok) {
+        if (adminSelectedTicketIdRef.current !== ticketId) return; // Loại bỏ phản hồi trễ của phiếu khác
         const detail = await res.json();
         setAdminSelectedTicket(detail);
         setAdminStatusUpdate(detail.status);
       }
     } catch (err) {
       console.error('[ADMIN SUPPORT] Lỗi tải chi tiết ticket:', err);
+    } finally {
+      isFetchingAdminDetailRef.current = false;
     }
+  };
+
+  const handleAdminSelectTicket = (t: any) => {
+    adminSelectedTicketIdRef.current = t.id;
+    setAdminSelectedTicket(t); // Chọn tức thì (Optimistic UI), không bị lag
+    setAdminStatusUpdate(t.status);
+    void fetchAdminTicketDetail(t.id);
+  };
+
+  const handleAdminDeselectTicket = () => {
+    adminSelectedTicketIdRef.current = null;
+    setAdminSelectedTicket(null);
   };
 
   const handleAdminSendReply = async () => {
@@ -451,23 +475,33 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     }
   };
 
+  // Smart Polling: Khi ở tab "support" và KHÔNG mở phiếu, cập nhật hàng đợi mỗi 5s
   useEffect(() => {
-    if (activeTab === 'support') {
+    if (activeTab === 'support' && !adminSelectedTicket) {
       void fetchAdminSupportData(false);
       const interval = setInterval(() => {
         void fetchAdminSupportData(true);
-      }, 2500);
+      }, 5000);
       return () => clearInterval(interval);
     }
-  }, [activeTab]);
+  }, [activeTab, !adminSelectedTicket]);
 
+  // Smart Polling: Khi đang mở một ticket, tự động cập nhật chi tiết & tin nhắn phiếu đó mỗi 4s
   useEffect(() => {
-    if (activeTab === 'support' && adminSelectedTicket?.id) {
-      const interval = setInterval(() => {
-        void fetchAdminTicketDetail(adminSelectedTicket.id);
-      }, 2500);
-      return () => clearInterval(interval);
+    if (!adminSelectedTicket?.id) {
+      adminSelectedTicketIdRef.current = null;
+      return;
     }
+    const ticketId = adminSelectedTicket.id;
+    adminSelectedTicketIdRef.current = ticketId;
+
+    const interval = setInterval(() => {
+      if (adminSelectedTicketIdRef.current === ticketId) {
+        void fetchAdminTicketDetail(ticketId);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
   }, [activeTab, adminSelectedTicket?.id]);
 
   // ─── Live Pipeline & Performance Monitor State (NOC Command Center) ──────────
@@ -3229,7 +3263,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                       return (
                         <div
                           key={t.id}
-                          onClick={() => fetchAdminTicketDetail(t.id)}
+                          onClick={() => handleAdminSelectTicket(t)}
                           className={`p-4 rounded-2xl border transition-all cursor-pointer text-left ${
                             isSelected
                               ? 'bg-teal-50/60 border-[#008689] shadow-sm ring-1 ring-[#008689]/40'
@@ -3322,6 +3356,14 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                           className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold transition-all cursor-pointer"
                         >
                           {adminIsUpdatingStatus ? 'Đang lưu...' : 'Lưu'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAdminDeselectTicket}
+                          className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                          title="Đóng chi tiết phiếu (Trở về hàng đợi)"
+                        >
+                          <X className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
