@@ -104,6 +104,7 @@ import { PinnedMessagesBar } from './qgroup/PinnedMessagesBar';
 import { ChatComposer } from './qgroup/ChatComposer';
 import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
 import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
+import { TextbookPickerModal } from './qgroup/TextbookPickerModal';
 import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
 import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
 import { openUserProfile } from '../utils/userProfileModalHelper';
@@ -835,44 +836,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // @Mention state
   const [isMentionOpen, setIsMentionOpen] = useState(false);
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
-
-  // Available Textbooks for Attachment
-  const [availableTextbooks, setAvailableTextbooks] = useState<Array<{
-    id: string;
-    name: string;
-    size: string;
-    totalPages: number;
-    authorName: string;
-  }>>([
-    {
-      id: 'tb-001',
-      name: '3000.pdf',
-      size: '12.4 MB',
-      totalPages: 128,
-      authorName: 'TS. Hồ Anh Vũ',
-    },
-    {
-      id: 'tb-002',
-      name: '2018-Operating System Concepts-10th.pdf',
-      size: '29.7 MB',
-      totalPages: 1278,
-      authorName: 'TS. Hồ Anh Vũ',
-    },
-    {
-      id: 'tb-003',
-      name: 'BAI GIANG Tu tuong HCM - LLCT.pdf',
-      size: '15.2 MB',
-      totalPages: 182,
-      authorName: 'ThS. Hân Bích',
-    },
-    {
-      id: 'tb-004',
-      name: 'GiaoTrinh_KinhTeViMo_2025.pdf',
-      size: '22.1 MB',
-      totalPages: 412,
-      authorName: 'Bộ Môn Kinh Tế',
-    },
-  ]);
 
   // Basic Modals
   const [isAddFriendOpen, setIsAddFriendOpen] = useState(false);
@@ -5611,63 +5574,28 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         />
       )}
 
-      {/* Textbook Picker Modal */}
-      {isTextbookModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
-          onClick={() => setIsTextbookModalOpen(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-3.5 border-b border-slate-200 flex items-center justify-between">
-              <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-teal-700" />
-                Kho Giáo Trình Thư Viện UTH
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsTextbookModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-3 max-h-72 overflow-y-auto space-y-2">
-              {availableTextbooks.map((tb) => (
-                <div
-                  key={tb.id}
-                  onClick={() => {
-                    setSelectedAttachments((prev) => [
-                      ...prev,
-                      {
-                        type: 'textbook',
-                        id: tb.id,
-                        name: tb.name,
-                        size: tb.size,
-                        totalPages: tb.totalPages,
-                        authorName: tb.authorName,
-                      },
-                    ]);
-                    setIsTextbookModalOpen(false);
-                    onShowToast('info', 'Đã chọn giáo trình', tb.name);
-                  }}
-                  className="p-3 rounded-xl border border-slate-200 hover:border-teal-500 hover:bg-teal-50/30 cursor-pointer transition-all space-y-0.5"
-                >
-                  <p className="font-semibold text-slate-900 text-xs truncate">{tb.name}</p>
-                  <p className="text-[10px] text-slate-500">
-                    {tb.totalPages} trang • {tb.size} • Tác giả: {tb.authorName}
-                  </p>
-                </div>
-              ))}
-              {availableTextbooks.length === 0 && (
-                <p className="text-center text-xs text-slate-400 py-6">Chưa có giáo trình nào trong thư viện.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Dynamic Textbook Library Picker Modal */}
+      <TextbookPickerModal
+        isOpen={isTextbookModalOpen}
+        onClose={() => setIsTextbookModalOpen(false)}
+        onSelectTextbook={(tb) => {
+          setSelectedAttachments((prev) => [
+            ...prev,
+            {
+              type: 'textbook',
+              id: tb.id,
+              name: tb.name,
+              size: tb.size || '15.0 MB',
+              totalPages: tb.totalPages,
+              authorName: tb.authorName,
+              fileUrl: tb.fileUrl,
+            },
+          ]);
+        }}
+        currentUser={currentUser}
+        onNavigateUpload={() => onNavigate('upload')}
+        onShowToast={onShowToast}
+      />
     </div>
   );
 };
