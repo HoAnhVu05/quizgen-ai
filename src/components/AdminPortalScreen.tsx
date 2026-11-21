@@ -324,7 +324,11 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       ]);
       if (ticketsRes.ok) {
         const data = await ticketsRes.json();
-        setAdminSupportTickets(Array.isArray(data) ? data : []);
+        const list = Array.isArray(data) ? data : [];
+        setAdminSupportTickets(list);
+        if (list.length > 0 && !adminSelectedTicket) {
+          void fetchAdminTicketDetail(list[0].id);
+        }
       }
       if (metricsRes.ok) {
         const metrics = await metricsRes.json();

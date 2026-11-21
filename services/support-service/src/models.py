@@ -18,7 +18,7 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class SupportFAQCategory(Base):
     __tablename__ = "support_faq_categories"

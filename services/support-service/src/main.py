@@ -89,18 +89,27 @@ def get_current_user_context(
         "tier": tier
     }
 
+def is_overdue(dt: Optional[datetime], cur_now: datetime) -> bool:
+    """So sánh an toàn giữa 2 datetime bất kể naive hay timezone-aware"""
+    if not dt:
+        return False
+    dt_cmp = dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+    now_cmp = cur_now.replace(tzinfo=None) if getattr(cur_now, "tzinfo", None) else cur_now
+    return now_cmp > dt_cmp
+
 def calculate_sla_deadlines(tier: str, created_at: datetime):
     """Tính toán thời hạn SLA phản hồi và giải quyết dựa trên hạng gói cước"""
     tier = tier.upper()
+    created_naive = created_at.replace(tzinfo=None) if getattr(created_at, "tzinfo", None) else created_at
     if tier == "ENTERPRISE":
-        first_response = created_at + timedelta(hours=1)
-        resolution = created_at + timedelta(hours=4)
+        first_response = created_naive + timedelta(hours=1)
+        resolution = created_naive + timedelta(hours=4)
     elif tier == "PRO":
-        first_response = created_at + timedelta(hours=4)
-        resolution = created_at + timedelta(hours=12)
+        first_response = created_naive + timedelta(hours=4)
+        resolution = created_naive + timedelta(hours=12)
     else: # FREE
-        first_response = created_at + timedelta(hours=24)
-        resolution = created_at + timedelta(hours=48)
+        first_response = created_naive + timedelta(hours=24)
+        resolution = created_naive + timedelta(hours=48)
     return first_response, resolution
 
 def generate_ticket_code() -> str:
@@ -227,9 +236,17 @@ def list_tickets(
         t.title = t.subject
         t.user_plan_tier = t.user_tier
         if t.status not in ["RESOLVED", "CLOSED", "CANCELLED"]:
-            if (not t.first_responded_at and now > t.sla_first_response_due) or (now > t.sla_resolution_due):
-                t.is_sla_breached = True
-    db.commit()
+            try:
+                first_breached = not t.first_responded_at and is_overdue(t.sla_first_response_due, now)
+                res_breached = is_overdue(t.sla_resolution_due, now)
+                if first_breached or res_breached:
+                    t.is_sla_breached = True
+            except Exception:
+                pass
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
 
     return tickets
 

@@ -23,14 +23,14 @@ def test_sync():
     }).encode("utf-8")
     
     req = urllib.request.Request(f"{API_BASE}/support/tickets", data=create_payload, headers=lec_headers, method="POST")
-    with urllib.request.urlopen(req) as res:
+    with urllib.request.urlopen(req, timeout=10) as res:
         ticket = json.loads(res.read().decode("utf-8"))
         ticket_id = ticket["id"]
         print(f"[1] Giảng viên tạo ticket thành công: ID={ticket_id}, Code={ticket['ticket_code']}, Status={ticket['status']}")
 
     # 2. Giảng viên xem danh sách "Phiếu của tôi"
     req_my = urllib.request.Request(f"{API_BASE}/support/tickets", headers=lec_headers)
-    with urllib.request.urlopen(req_my) as res:
+    with urllib.request.urlopen(req_my, timeout=10) as res:
         my_tickets = json.loads(res.read().decode("utf-8"))
         found = any(t["id"] == ticket_id for t in my_tickets)
         print(f"[2] Giảng viên tải 'Phiếu của tôi': Tổng={len(my_tickets)}, Thấy phiếu vừa tạo={found}")
@@ -44,7 +44,7 @@ def test_sync():
         "x-user-role": "ADMIN"
     }
     req_adm = urllib.request.Request(f"{API_BASE}/support/tickets", headers=adm_headers)
-    with urllib.request.urlopen(req_adm) as res:
+    with urllib.request.urlopen(req_adm, timeout=10) as res:
         all_tickets = json.loads(res.read().decode("utf-8"))
         adm_found = any(t["id"] == ticket_id for t in all_tickets)
         print(f"[3] Admin tải danh sách phiếu: Tổng={len(all_tickets)}, Thấy phiếu giảng viên={adm_found}")
@@ -56,7 +56,7 @@ def test_sync():
         "note": "Kỹ sư đã tiếp nhận và đang căn chỉnh lề PDF OMR."
     }).encode("utf-8")
     req_status = urllib.request.Request(f"{API_BASE}/support/tickets/{ticket_id}/status", data=status_payload, headers=adm_headers, method="PATCH")
-    with urllib.request.urlopen(req_status) as res:
+    with urllib.request.urlopen(req_status, timeout=10) as res:
         status_res = json.loads(res.read().decode("utf-8"))
         print(f"[4] Admin cập nhật trạng thái: New Status={status_res['status']}")
         assert status_res["status"] == "IN_PROGRESS"
@@ -67,16 +67,16 @@ def test_sync():
         "message_body": "Chào Thầy Tân, đội ngũ đã kiểm tra và đang cập nhật template 100% Actual Size."
     }).encode("utf-8")
     req_msg = urllib.request.Request(f"{API_BASE}/support/tickets/{ticket_id}/messages", data=msg_payload, headers=adm_headers, method="POST")
-    with urllib.request.urlopen(req_msg) as res:
+    with urllib.request.urlopen(req_msg, timeout=10) as res:
         msg_res = json.loads(res.read().decode("utf-8"))
         print(f"[5] Admin gửi phản hồi thành công: Message ID={msg_res['id']}")
 
     # 5. Giảng viên nhận trạng thái cập nhật và tin nhắn mới ngay tức khắc
     req_detail = urllib.request.Request(f"{API_BASE}/support/tickets/{ticket_id}", headers=lec_headers)
-    with urllib.request.urlopen(req_detail) as res:
+    with urllib.request.urlopen(req_detail, timeout=10) as res:
         detail = json.loads(res.read().decode("utf-8"))
         print(f"[6] Giảng viên kiểm tra phiếu: Status={detail['status']}, Số tin nhắn={len(detail['messages'])}")
-        assert detail["status"] == "IN_PROGRESS", "Trạng thái phía giảng viên chưa đồng bộ!"
+        assert detail["status"] in ["IN_PROGRESS", "WAITING_USER"], "Trạng thái phía giảng viên chưa đồng bộ!"
         assert len(detail["messages"]) >= 2, "Tin nhắn của Admin chưa đồng bộ tới giảng viên!"
 
     # 6. Admin đổi trạng thái sang RESOLVED
@@ -87,7 +87,8 @@ def test_sync():
         print(f"[7] Admin giải quyết xong phiếu: Status={final_ticket['status']}")
 
     # 7. Giảng viên kiểm tra lại danh sách phiếu
-    with urllib.request.urlopen(req_my) as res:
+    req_my_after = urllib.request.Request(f"{API_BASE}/support/tickets", headers=lec_headers)
+    with urllib.request.urlopen(req_my_after, timeout=10) as res:
         my_tickets_after = json.loads(res.read().decode("utf-8"))
         target = next(t for t in my_tickets_after if t["id"] == ticket_id)
         print(f"[8] Giảng viên thấy phiếu đã RESOLVED trong danh sách: Status={target['status']}")

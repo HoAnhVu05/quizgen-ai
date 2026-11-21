@@ -41,14 +41,14 @@ def create_architecture_image(output_path):
     draw.ellipse([58, 14, 70, 26], fill="#10B981")
 
     title_font = get_font(13, bold=True)
-    draw.text((w // 2 - 300, 12), "QuizGen AI Architecture - Support Service & Real-Time Sync System [SCRUM-113]", fill="#94A3B8", font=title_font)
+    draw.text((w // 2 - 300, 12), "QuizGen AI Architecture - Support Service & Real-Time Sync System [SCRUM-114]", fill="#94A3B8", font=title_font)
 
     # Header Box
     banner_font = get_font(17, bold=True)
     sub_font = get_font(13, bold=False)
     draw.rectangle([30, 60, w - 30, 135], fill="#1E293B", outline="#334155", width=1)
     draw.text((50, 72), "QUIZGEN AI - HỆ THỐNG SUPPORT SERVICE & ĐỒNG BỘ 2 CHIỀU GIẢNG VIÊN - ADMIN", fill="#38BDF8", font=banner_font)
-    draw.text((50, 102), "Mã nhiệm vụ: [SCRUM-113] | Sinh viên: Nguyễn Văn Tân (060205012615) | Ngày thực hiện: 20/11/2026", fill="#94A3B8", font=sub_font)
+    draw.text((50, 102), "Mã nhiệm vụ: [SCRUM-114] | Sinh viên: Nguyễn Văn Tân (060205012615) | Ngày thực hiện: 21/11/2026", fill="#94A3B8", font=sub_font)
 
     # Card 1: Giảng viên & Support Center
     draw.rectangle([30, 155, 580, 640], fill="#042F2E", outline="#0D9488", width=2)
@@ -118,14 +118,14 @@ def create_test_evidence_image(output_path):
     draw.ellipse([58, 14, 70, 26], fill="#10B981")
 
     title_font = get_font(13, bold=True)
-    draw.text((w // 2 - 290, 12), "QuizGen AI Verification - E2E Support Sync & Build Validation [SCRUM-113]", fill="#94A3B8", font=title_font)
+    draw.text((w // 2 - 290, 12), "QuizGen AI Verification - E2E Support Sync & Build Validation [SCRUM-114]", fill="#94A3B8", font=title_font)
 
     # Header Box
     banner_font = get_font(17, bold=True)
     sub_font = get_font(13, bold=False)
     draw.rectangle([30, 60, w - 30, 135], fill="#1C2541", outline="#3A506B", width=1)
-    draw.text((50, 72), "MINH CHỨNG KIỂM THỬ ĐỒNG BỘ HAI CHIỀU & ĐÓNG GÓI SẢN PHẨM [SCRUM-113]", fill="#00F0FF", font=banner_font)
-    draw.text((50, 102), "Trạng thái: 100% PASS | TypeScript Build: 0 Lỗi (✓ built in 14.47s) | Git Branch: feature/upload-from-nguyentann-20261030", fill="#94A3B8", font=sub_font)
+    draw.text((50, 72), "MINH CHỨNG KIỂM THỬ ĐỒNG BỘ HAI CHIỀU & ĐÓNG GÓI SẢN PHẨM [SCRUM-114]", fill="#00F0FF", font=banner_font)
+    draw.text((50, 102), "Trạng thái: 100% PASS (8/8 Bước E2E) | TypeScript Build: 0 Lỗi | Git Branch: feature/upload-from-nguyentann-20261030", fill="#94A3B8", font=sub_font)
 
     # Card 1: E2E Sync Verification Log
     draw.rectangle([30, 155, 680, 560], fill="#051923", outline="#00A8E8", width=2)
@@ -182,13 +182,13 @@ def create_test_evidence_image(output_path):
 
     # Bottom Git Banner
     draw.rectangle([30, 580, w - 30, 770], fill="#1C2541", outline="#3A506B", width=1)
-    draw.text((50, 592), "THÔNG TIN PHÁT HÀNH GIT COMMIT & ĐẨY MÃ NGUỒN TỪ XA [SCRUM-113]", fill="#F59E0B", font=get_font(13, bold=True))
-    draw.text((50, 620), "Commit Hash : e447a0c", fill="#38BDF8", font=get_mono_font(11, bold=True))
-    draw.text((50, 642), "Commit Msg  : [SCRUM-113] fix(support-service): khac phuc loi hien thi validation error, dong bo 2 chieu tuc thi", fill="#E2E8F0", font=get_mono_font(10))
-    draw.text((50, 664), "              giua Giang vien va Admin, bo sung smart polling 2.5s va cap quyen toan dien cho admin", fill="#E2E8F0", font=get_mono_font(10))
+    draw.text((50, 592), "THÔNG TIN PHÁT HÀNH GIT COMMIT & ĐẨY MÃ NGUỒN TỪ XA [SCRUM-114]", fill="#F59E0B", font=get_font(13, bold=True))
+    draw.text((50, 620), "Nhiệm vụ    : [SCRUM-114] Khắc phục triệt để lỗi offset-naive SLA so sánh và hiển thị phiếu Admin", fill="#38BDF8", font=get_mono_font(10, bold=True))
+    draw.text((50, 642), "Trạng thái  : 8/8 Bước Kiểm Thử Tự Động PASS Tuyệt Đối (E2E Synchronization 100%)", fill="#10B981", font=get_mono_font(10))
+    draw.text((50, 664), "Đồng bộ     : Tự động chọn phiếu đầu tiên, cập nhật trạng thái Optimistic UI tức thì", fill="#E2E8F0", font=get_mono_font(10))
     draw.text((50, 690), "Repository  : https://github.com/HoAnhVu05/quizgen-ai.git", fill="#94A3B8", font=get_mono_font(10))
-    draw.text((50, 712), "Branch Push : origin/feature/upload-from-nguyentann-20261030 (c66b0ad..e447a0c)", fill="#10B981", font=get_mono_font(10))
-    draw.text((50, 738), "Tệp cập nhật: api-gateway/src/main.py, services/support-service/src/main.py, schemas.py, AdminPortalScreen.tsx, SupportCenterScreen.tsx", fill="#94A3B8", font=get_font(10))
+    draw.text((50, 712), "Branch Push : origin/feature/upload-from-nguyentann-20261030", fill="#10B981", font=get_mono_font(10))
+    draw.text((50, 738), "Tệp cập nhật: services/support-service/src/main.py, models.py, AdminPortalScreen.tsx, SupportCenterScreen.tsx", fill="#94A3B8", font=get_font(10))
 
     img.save(output_path, "PNG")
     print(f"Evidence image saved to: {output_path}")
