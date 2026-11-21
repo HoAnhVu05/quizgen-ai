@@ -783,6 +783,132 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
           </button>
         </div>
       </div>
+
+      {/* ── MODAL CHỌN / TẠO PHIÊN WORKSPACE LAPTOP ─────────────────────────── */}
+      {showSessionDrawer && (
+        <div className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm flex flex-col justify-end">
+          <div
+            className="fixed inset-0 cursor-pointer"
+            onClick={() => {
+              setShowSessionDrawer(false);
+              setIsCreatingNewSession(false);
+            }}
+          />
+          <div className="relative bg-zinc-950 border-t border-zinc-800 rounded-t-3xl p-4 max-h-[82vh] flex flex-col shadow-2xl z-10 select-none">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-900">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs font-bold text-white tracking-wide uppercase">
+                  Phiên làm việc Workspace ({sessions.length})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSessionDrawer(false);
+                  setIsCreatingNewSession(false);
+                }}
+                className="p-1 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-900 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Tạo phiên mới input */}
+            {isCreatingNewSession ? (
+              <div className="py-3 border-b border-zinc-900 flex flex-col gap-2">
+                <label className="text-[11px] text-zinc-400 font-medium">
+                  Nhập yêu cầu để mở phiên làm việc mới trên laptop:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={promptText}
+                    onChange={(e) => setPromptText(e.target.value)}
+                    placeholder="VD: Sửa thanh menu, Tối ưu database..."
+                    className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500 font-sans"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (promptText.trim()) {
+                        setShowSessionDrawer(false);
+                        void handleSendMessage();
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-500 text-black font-semibold text-xs hover:bg-emerald-400 cursor-pointer shrink-0"
+                  >
+                    Tạo & Chạy
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="py-3">
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingNewSession(true)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-medium transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>➕ Bắt đầu phiên mới trên laptop</span>
+                </button>
+              </div>
+            )}
+
+            {/* Danh sách phiên thực tế từ laptop workspace */}
+            <div className="overflow-y-auto flex-1 divide-y divide-zinc-900 py-1 space-y-1">
+              {sessions.map((s) => {
+                const isSelected = s.id === selectedSessionId;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSessionId(s.id);
+                      setShowSessionDrawer(false);
+                      setIsCreatingNewSession(false);
+                      setChatMessages([]);
+                      void fetchLiveMirror(s.id);
+                    }}
+                    className={`w-full text-left p-3 rounded-xl transition-all flex items-start justify-between gap-3 cursor-pointer ${
+                      isSelected
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-white'
+                        : 'hover:bg-zinc-900/60 text-zinc-300'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-mono text-zinc-500">{s.formattedTime}</span>
+                        {s.isCurrent && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+                            ĐANG MỞ TRÊN LAPTOP
+                          </span>
+                        )}
+                        {isSelected && !s.isCurrent && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-medium bg-blue-500/20 text-blue-400 border border-blue-500/40">
+                            ĐANG CHỌN
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs font-medium line-clamp-2 leading-relaxed">
+                        {s.title}
+                      </div>
+                      <div className="text-[10px] font-mono text-zinc-600 mt-1 truncate">
+                        ID: {s.id}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-1" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
