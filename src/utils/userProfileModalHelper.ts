@@ -4,9 +4,16 @@
 export interface OpenUserProfileDetail {
   email?: string;
   name?: string;
+  isFriend?: boolean;
+  hasSentRequest?: boolean;
 }
 
-export const openUserProfile = (email?: string, name?: string): void => {
+export const openUserProfile = (
+  email?: string,
+  name?: string,
+  isFriend?: boolean,
+  hasSentRequest?: boolean
+): void => {
   if (!email && !name) return;
   const cleanEmail = (email || '').trim();
   const cleanName = (name || '').trim();
@@ -16,6 +23,8 @@ export const openUserProfile = (email?: string, name?: string): void => {
         detail: {
           email: cleanEmail || undefined,
           name: cleanName || undefined,
+          isFriend,
+          hasSentRequest,
         },
       })
     );

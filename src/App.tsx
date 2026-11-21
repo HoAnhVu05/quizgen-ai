@@ -192,8 +192,16 @@ const AppContent: React.FC = () => {
     const handleOpenProfileEvent = (e: CustomEvent<any>) => {
       const email = e.detail?.email;
       const name = e.detail?.name;
+      const explicitIsFriend = e.detail?.isFriend;
+      const explicitHasSentRequest = e.detail?.hasSentRequest;
       if (email || name) {
         setInspectedProfileUser({ email: email || '', name: name || '' });
+        if (typeof explicitIsFriend === 'boolean') {
+          setInspectedIsFriend(explicitIsFriend);
+        }
+        if (typeof explicitHasSentRequest === 'boolean') {
+          setInspectedHasSentRequest(explicitHasSentRequest);
+        }
       }
     };
     window.addEventListener('quizgen:open-profile', handleOpenProfileEvent as EventListener);
@@ -216,8 +224,10 @@ const AppContent: React.FC = () => {
     }
 
     try {
-      // 1. Kiểm tra bạn bè từ qgroups cache
-      const rawGroups = localStorage.getItem('quizgen_qgroups');
+      // 1. Kiểm tra bạn bè từ qgroups cache (user-specific hoặc global)
+      const rawGroups =
+        localStorage.getItem(`quizgen_qgroups_${myClean}`) ||
+        localStorage.getItem('quizgen_qgroups');
       if (rawGroups) {
         const groups = JSON.parse(rawGroups);
         const isFr = Array.isArray(groups) && groups.some((g: any) => {
@@ -226,21 +236,24 @@ const AppContent: React.FC = () => {
           const owner = (g.ownerEmail || '').toLowerCase().trim();
           const partner = (g.directPartnerEmail || '').toLowerCase().trim();
           return (
-            (owner === targetClean || partner === targetClean || members.includes(targetClean)) &&
-            (owner === myClean || partner === myClean || members.includes(myClean))
+            (owner === targetClean && partner === myClean) ||
+            (partner === targetClean && owner === myClean) ||
+            (members.includes(targetClean) && members.includes(myClean))
           );
         });
         setInspectedIsFriend(isFr);
       }
 
       // 2. Kiểm tra lời mời đã gửi
-      const rawReqs = localStorage.getItem('quizgen_friend_requests');
+      const rawReqs =
+        localStorage.getItem(`quizgen_friend_requests_${myClean}`) ||
+        localStorage.getItem('quizgen_friend_requests');
       if (rawReqs) {
         const reqs = JSON.parse(rawReqs);
         const hasSent = Array.isArray(reqs) && reqs.some(
           (r: any) =>
             r.senderEmail?.toLowerCase().trim() === myClean &&
-            r.targetEmail?.toLowerCase().trim() === targetClean &&
+            (r.targetEmail?.toLowerCase().trim() === targetClean || r.recipientEmail?.toLowerCase().trim() === targetClean) &&
             r.status === 'pending'
         );
         setInspectedHasSentRequest(hasSent);
@@ -1692,7 +1705,7 @@ const AppContent: React.FC = () => {
                 method: 'POST',
                 body: JSON.stringify({ myEmail, targetEmail: cleanTarget }),
               });
-              const raw = localStorage.getItem('quizgen_qgroups');
+              const raw = localStorage.getItem(`quizgen_qgroups_${myEmail}`) || localStorage.getItem('quizgen_qgroups');
               if (raw) {
                 const list = JSON.parse(raw);
                 const next = list.filter((g: any) => {
@@ -1705,6 +1718,7 @@ const AppContent: React.FC = () => {
                     (owner === myEmail || partner === myEmail || members.includes(myEmail));
                   return !isThisPair;
                 });
+                localStorage.setItem(`quizgen_qgroups_${myEmail}`, JSON.stringify(next));
                 localStorage.setItem('quizgen_qgroups', JSON.stringify(next));
               }
               setInspectedIsFriend(false);

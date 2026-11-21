@@ -85,7 +85,6 @@ import {
   UserSubscriptionInfo,
 } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
-import { PublicProfileModal } from './PublicProfileModal';
 import { SlackEmojiPicker } from './SlackEmojiPicker';
 import { AudioMessagePlayer } from './AudioMessagePlayer';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
@@ -925,10 +924,6 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     Array<{ email: string; fullName: string; academicTitle?: string; department?: string }>
   >([]);
 
-  // Public profile modal
-  const [profileEmail, setProfileEmail] = useState<string | null>(null);
-  const [profileName, setProfileName] = useState<string | undefined>(undefined);
-
   // Micro thu âm thoại thông minh
   const [activeMicLabel, setActiveMicLabel] = useState<string>('');
 
@@ -957,10 +952,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
-  // Kiểm tra quan hệ bạn bè / đồng nghiệp theo profile đang mở
-  const isTargetFriend = useMemo(() => {
-    if (!profileEmail || !myEmail) return false;
-    const target = profileEmail.trim().toLowerCase();
+  // Kiểm tra quan hệ bạn bè / đồng nghiệp theo email chính xác
+  const checkIsFriend = useCallback((emailVal?: string | null) => {
+    if (!emailVal || !myEmail) return false;
+    const target = emailVal.trim().toLowerCase();
+    if (target === myEmail) return false;
     return qgroups.some((g) => {
       if (!g.isDirect) return false;
       const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
@@ -972,13 +968,20 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         (members.includes(target) && members.includes(myEmail))
       );
     });
-  }, [profileEmail, myEmail, qgroups]);
+  }, [myEmail, qgroups]);
 
-  const hasTargetPendingRequest = useMemo(() => {
-    if (!profileEmail) return false;
-    const target = profileEmail.trim().toLowerCase();
+  const checkHasPendingRequest = useCallback((emailVal?: string | null) => {
+    if (!emailVal) return false;
+    const target = emailVal.trim().toLowerCase();
     return sentFriendRequests.some((r) => r.targetEmail?.trim().toLowerCase() === target && r.status === 'pending');
-  }, [profileEmail, sentFriendRequests]);
+  }, [sentFriendRequests]);
+
+  const handleOpenUserProfile = useCallback((email?: string | null, name?: string | null) => {
+    if (!email && !name) return;
+    const isFr = checkIsFriend(email);
+    const hasReq = checkHasPendingRequest(email);
+    openUserProfile(email || undefined, name || undefined, isFr, hasReq);
+  }, [checkIsFriend, checkHasPendingRequest]);
 
   // Danh sách bạn bè & đồng nghiệp kết nối (để thêm nhanh vào kênh 1 chạm)
   const connectedFriends = useMemo(() => {
@@ -1872,8 +1875,15 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   // ── File Selection & Paste Support ─────────────────────────────────────────
   const MAX_ATTACHMENTS_COUNT = 5;
-  const MAX_SINGLE_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-  const MAX_TOTAL_BATCH_SIZE = 50 * 1024 * 1024; // 50MB
+  const userPlanCode = (subscriptionInfo?.plan_code || currentUser?.planTier || 'FREE').toUpperCase();
+  const isEnterpriseUser = userPlanCode === 'ENTERPRISE';
+  const isProUser = isEnterpriseUser || userPlanCode === 'PRO_MONTH' || userPlanCode === 'PRO_YEAR' || userPlanCode === 'PRO';
+
+  // Hạn mức tải tệp linh hoạt theo gói: Enterprise 100MB, Pro 50MB, Free 25MB
+  const MAX_SINGLE_FILE_SIZE_MB = isEnterpriseUser ? 100 : isProUser ? 50 : 25;
+  const MAX_SINGLE_FILE_SIZE = MAX_SINGLE_FILE_SIZE_MB * 1024 * 1024;
+  const MAX_TOTAL_BATCH_SIZE_MB = isEnterpriseUser ? 200 : isProUser ? 100 : 50;
+  const MAX_TOTAL_BATCH_SIZE = MAX_TOTAL_BATCH_SIZE_MB * 1024 * 1024;
 
   const handleFilesSelect = async (files: File[]) => {
     if (!files || files.length === 0) return;
@@ -1888,27 +1898,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       return;
     }
 
-    // 2. Giới hạn dung lượng từng tệp (tối đa 25MB mỗi tệp)
+    // 2. Giới hạn dung lượng từng tệp theo gói cước người dùng
     for (const f of files) {
       if (f.size > MAX_SINGLE_FILE_SIZE) {
         const mb = (f.size / (1024 * 1024)).toFixed(1);
         onShowToast(
           'error',
-          'Tệp vượt quá giới hạn 25MB',
-          `Tệp "${f.name}" (${mb}MB) vượt quá dung lượng tối đa cho phép là 25MB.`
+          `Tệp vượt quá giới hạn ${MAX_SINGLE_FILE_SIZE_MB}MB`,
+          `Tệp "${f.name}" (${mb}MB) vượt quá dung lượng tối đa cho phép là ${MAX_SINGLE_FILE_SIZE_MB}MB của gói ${userPlanCode}.`
         );
         return;
       }
     }
 
-    // 3. Giới hạn tổng dung lượng cả đợt (tối đa 50MB)
+    // 3. Giới hạn tổng dung lượng cả đợt
     const totalNewSize = files.reduce((acc, f) => acc + f.size, 0);
     if (totalNewSize > MAX_TOTAL_BATCH_SIZE) {
       const mbTotal = (totalNewSize / (1024 * 1024)).toFixed(1);
       onShowToast(
         'error',
         'Tổng dung lượng quá lớn',
-        `Tổng dung lượng các tệp tải lên là ${mbTotal}MB, vượt quá mức tối đa 50MB mỗi đợt.`
+        `Tổng dung lượng các tệp tải lên là ${mbTotal}MB, vượt quá mức tối đa ${MAX_TOTAL_BATCH_SIZE_MB}MB mỗi đợt của gói ${userPlanCode}.`
       );
       return;
     }
@@ -4307,8 +4317,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           }}
           onViewProfile={(group) => {
             const info = resolveChatDisplayInfo(group, myEmail);
-            setProfileEmail(info.partnerEmail || null);
-            setProfileName(info.displayName);
+            handleOpenUserProfile(info.partnerEmail, info.displayName);
             setMenuGroupId(null);
           }}
           onViewDetails={(group) => {
@@ -4370,8 +4379,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               }}
               onOpenMobileMenu={onOpenMobileMenu}
               onOpenProfile={(email, name) => {
-                setProfileEmail(email);
-                setProfileName(name);
+                handleOpenUserProfile(email, name);
               }}
               onOpenDetails={(group, tab) => {
                 setDetailsGroup(group);
@@ -4494,9 +4502,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        setProfileEmail(activeInfo.partnerEmail || null);
-                        setProfileName(activeInfo.displayName);
-                        openUserProfile(activeInfo.partnerEmail, activeInfo.displayName);
+                        handleOpenUserProfile(activeInfo.partnerEmail, activeInfo.displayName);
                       }}
                       className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer flex items-center gap-1.5 transition-colors border border-slate-200"
                     >
@@ -4619,9 +4625,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       onClick={() => {
                         const targetEmail = msg.senderEmail || (isMe ? myEmail : activeInfo?.partnerEmail);
                         const targetName = msg.senderName || (isMe ? myName : activeInfo?.displayName);
-                        setProfileEmail(targetEmail || null);
-                        setProfileName(targetName);
-                        openUserProfile(targetEmail, targetName);
+                        handleOpenUserProfile(targetEmail, targetName);
                       }}
                       className={`w-8 h-8 rounded-md text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 cursor-pointer hover:opacity-90 transition-opacity shadow-2xs ${
                         isMe ? 'bg-slate-800' : 'bg-teal-700'
@@ -4637,9 +4641,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           onClick={() => {
                             const targetEmail = msg.senderEmail || (isMe ? myEmail : activeInfo?.partnerEmail);
                             const targetName = msg.senderName || (isMe ? myName : activeInfo?.displayName);
-                            setProfileEmail(targetEmail || null);
-                            setProfileName(targetName);
-                            openUserProfile(targetEmail, targetName);
+                            handleOpenUserProfile(targetEmail, targetName);
                           }}
                           className="font-bold text-[13px] text-slate-900 hover:text-[#008689] hover:underline cursor-pointer transition-colors"
                           title={isMe ? 'Xem hồ sơ của bạn' : `Xem trang cá nhân của ${msg.senderName}`}
@@ -4677,7 +4679,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                           <Reply className="w-3 h-3 text-teal-600 shrink-0" />
                           <button
                             type="button"
-                            onClick={() => openUserProfile(undefined, msg.replyTo?.senderName)}
+                            onClick={() => handleOpenUserProfile(undefined, msg.replyTo?.senderName)}
                             className="font-semibold text-slate-700 hover:text-[#008689] hover:underline cursor-pointer transition-colors"
                             title={`Xem hồ sơ của ${msg.replyTo.senderName}`}
                           >
@@ -5281,8 +5283,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               void handleRespondJoinRequest(targetGroup, reqId, email, action);
             }}
             onOpenProfile={(email, name) => {
-              setProfileEmail(email);
-              setProfileName(name);
+              handleOpenUserProfile(email, name);
             }}
             onTransferOwnershipToMember={(email) => {
               handleOpenTransferOwnership(targetGroup, email);
@@ -5479,57 +5480,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       ==================================================================== */}
 
       {/* ====================================================================
-          OTHER MODALS: PUBLIC PROFILE, ADD FRIEND, CREATE GROUP
+          OTHER MODALS: ADD FRIEND, CREATE GROUP
       ==================================================================== */}
-      <PublicProfileModal
-        isOpen={Boolean(profileEmail || profileName)}
-        userEmail={profileEmail}
-        userName={profileName}
-        isFriend={isTargetFriend}
-        hasSentRequest={hasTargetPendingRequest}
-        onClose={() => {
-          setProfileEmail(null);
-          setProfileName(undefined);
-        }}
-        currentUser={currentUser}
-        onStartDirectChat={(targetEmail) => {
-          setProfileEmail(null);
-          setProfileName(undefined);
-          const target = (targetEmail || '').trim().toLowerCase();
-          const dm = qgroups.find((g) => {
-            if (!g.isDirect) return false;
-            const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
-            const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
-            const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
-            return cleanOwner === target || cleanPartner === target || members.includes(target);
-          });
-          if (dm) {
-            setSelectedGroupId(dm.id);
-            setShowMobileChat(true);
-            setFilterTab('all');
-          } else {
-            onShowToast('info', 'Bắt đầu trò chuyện', `Chưa có đoạn chat riêng với ${targetEmail}`);
-          }
-        }}
-        onSendFriendRequest={(email) => {
-          void handleSendFriendRequest(email);
-        }}
-        onUnfriend={(email, name) => {
-          setProfileEmail(null);
-          setProfileName(undefined);
-          handleUnfriend(email, name);
-        }}
-        onCancelFriendRequest={(email) => {
-          const req = friendRequests.find(
-            (r) =>
-              r.senderEmail?.toLowerCase() === myEmail.toLowerCase() &&
-              r.targetEmail?.toLowerCase() === email.toLowerCase()
-          );
-          if (req) {
-            handleRejectFriendRequest(req);
-          }
-        }}
-      />
 
       {isAddFriendOpen && (
         <FriendModal
