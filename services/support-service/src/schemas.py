@@ -74,10 +74,12 @@ class TicketResponse(BaseModel):
     user_email: str
     user_role: str
     user_tier: str
+    user_plan_tier: Optional[str] = None
     category: str
     priority: str
     status: str
     subject: str
+    title: Optional[str] = None
     description: str
     error_context_json: Optional[str] = None
     assigned_admin_id: Optional[str] = None

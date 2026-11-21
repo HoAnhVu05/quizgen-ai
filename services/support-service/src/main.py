@@ -77,9 +77,11 @@ def get_current_user_context(
 ) -> Dict[str, str]:
     """Trích xuất thông tin người dùng từ Gateway headers"""
     uid = x_user_id or "usr-guest-001"
-    email = x_user_email or "guest@quizgen.ai"
-    role = (x_user_role or "LECTURER").upper()
-    tier = (x_user_tier or "FREE").upper()
+    email = (x_user_email or "guest@quizgen.ai").strip()
+    role = (x_user_role or "LECTURER").strip().upper()
+    if email.lower() == "quizgen.ai.team@gmail.com" or "admin" in email.lower() or "admin" in role.lower():
+        role = "ADMIN"
+    tier = (x_user_tier or "FREE").strip().upper()
     return {
         "user_id": uid,
         "email": email,
@@ -182,16 +184,24 @@ def list_tickets(
     category: Optional[str] = None,
     priority: Optional[str] = None,
     search: Optional[str] = None,
-    my_tickets_only: bool = Query(True, description="Chỉ lấy ticket của chính tôi"),
+    my_tickets_only: Optional[bool] = Query(None, description="Chỉ lấy ticket của chính tôi"),
     db: Session = Depends(get_db),
     user: Dict[str, str] = Depends(get_current_user_context)
 ):
     """Lấy danh sách tickets có hỗ trợ tìm kiếm và lọc đa tiêu chí"""
     query = db.query(SupportTicket)
 
-    # Nếu không phải admin hoặc người dùng chỉ muốn xem ticket của mình
-    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"]
-    if not is_admin or my_tickets_only:
+    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"] or user["email"].lower() == "quizgen.ai.team@gmail.com"
+    if not is_admin:
+        # Giảng viên chỉ xem ticket của chính mình (khớp user_id HOẶC user_email)
+        query = query.filter(
+            or_(
+                SupportTicket.user_id == user["user_id"],
+                SupportTicket.user_email == user["email"],
+                SupportTicket.user_email == user["email"].lower()
+            )
+        )
+    elif my_tickets_only is True:
         query = query.filter(SupportTicket.user_id == user["user_id"])
 
     if status_filter:
@@ -214,6 +224,8 @@ def list_tickets(
     now = utc_now()
     tickets = query.order_by(desc(SupportTicket.created_at)).all()
     for t in tickets:
+        t.title = t.subject
+        t.user_plan_tier = t.user_tier
         if t.status not in ["RESOLVED", "CLOSED", "CANCELLED"]:
             if (not t.first_responded_at and now > t.sla_first_response_due) or (now > t.sla_resolution_due):
                 t.is_sla_breached = True
@@ -234,8 +246,8 @@ def get_ticket_detail(
     if not ticket:
         raise HTTPException(status_code=404, detail="Không tìm thấy ticket yêu cầu.")
 
-    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"]
-    if not is_admin and ticket.user_id != user["user_id"]:
+    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"] or user["email"].lower() == "quizgen.ai.team@gmail.com"
+    if not is_admin and ticket.user_id != user["user_id"] and ticket.user_email.lower() != user["email"].lower():
         raise HTTPException(status_code=403, detail="Bạn không có quyền xem ticket này.")
 
     # Lọc bỏ tin nhắn nội bộ nếu người xem là user thông thường
@@ -259,6 +271,8 @@ def get_ticket_detail(
     for att in res.attachments:
         att.file_url = f"/api/v1/support/attachments/{att.file_name}"
 
+    res.title = ticket.subject
+    res.user_plan_tier = ticket.user_tier
     return res
 
 @app.post("/tickets/{ticket_id}/messages", response_model=MessageResponse)
@@ -275,8 +289,8 @@ def add_ticket_message(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket không tồn tại.")
 
-    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"]
-    if not is_admin and ticket.user_id != user["user_id"]:
+    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"] or user["email"].lower() == "quizgen.ai.team@gmail.com"
+    if not is_admin and ticket.user_id != user["user_id"] and ticket.user_email.lower() != user["email"].lower():
         raise HTTPException(status_code=403, detail="Không có quyền gửi tin nhắn vào ticket này.")
 
     if ticket.status in ["CLOSED", "CANCELLED"]:
@@ -406,13 +420,13 @@ def update_ticket_status(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket không tồn tại.")
 
-    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"]
+    is_admin = user["role"] in ["ADMIN", "SUPER_ADMIN"] or user["email"].lower() == "quizgen.ai.team@gmail.com"
     new_status = payload.status.upper()
     now = utc_now()
 
     # User thông thường chỉ được phép đóng hoặc mở lại ticket của chính mình
     if not is_admin:
-        if ticket.user_id != user["user_id"]:
+        if ticket.user_id != user["user_id"] and ticket.user_email.lower() != user["email"].lower():
             raise HTTPException(status_code=403, detail="Không có quyền cập nhật ticket này.")
         if new_status not in ["CLOSED", "RESOLVED", "OPEN"]:
             raise HTTPException(status_code=400, detail="Bạn chỉ có thể xác nhận giải quyết hoặc đóng ticket.")

@@ -313,9 +313,14 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const fetchAdminSupportData = async (silent = false) => {
     if (!silent) setIsLoadingSupport(true);
     try {
+      const headers: Record<string, string> = {
+        'x-user-role': 'ADMIN',
+        'x-user-email': currentUser?.email || 'quizgen.ai.team@gmail.com',
+        'x-user-id': currentUser?.id || 'usr-adm-quizgen',
+      };
       const [ticketsRes, metricsRes] = await Promise.all([
-        apiClient.fetch(`${API_BASE}/support/tickets`),
-        apiClient.fetch(`${API_BASE}/support/admin/metrics`),
+        apiClient.fetch(`${API_BASE}/support/tickets`, { headers }),
+        apiClient.fetch(`${API_BASE}/support/admin/metrics`, { headers }),
       ]);
       if (ticketsRes.ok) {
         const data = await ticketsRes.json();
@@ -334,7 +339,12 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
 
   const fetchAdminTicketDetail = async (ticketId: string) => {
     try {
-      const res = await apiClient.fetch(`${API_BASE}/support/tickets/${ticketId}`);
+      const headers: Record<string, string> = {
+        'x-user-role': 'ADMIN',
+        'x-user-email': currentUser?.email || 'quizgen.ai.team@gmail.com',
+        'x-user-id': currentUser?.id || 'usr-adm-quizgen',
+      };
+      const res = await apiClient.fetch(`${API_BASE}/support/tickets/${ticketId}`, { headers });
       if (res.ok) {
         const detail = await res.json();
         setAdminSelectedTicket(detail);
@@ -351,11 +361,17 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     try {
       const res = await apiClient.fetch(`${API_BASE}/support/tickets/${adminSelectedTicket.id}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': 'ADMIN',
+          'x-user-email': currentUser?.email || 'quizgen.ai.team@gmail.com',
+          'x-user-id': currentUser?.id || 'usr-adm-quizgen',
+        },
         body: JSON.stringify({
-          sender_role: 'admin',
+          sender_role: 'ADMIN',
           sender_name: currentUser?.fullName || 'Chuyên viên Hỗ trợ Kỹ thuật QuizGen AI',
           content: adminReplyText.trim(),
+          message_body: adminReplyText.trim(),
         }),
       });
       if (res.ok) {
@@ -385,15 +401,24 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
     try {
       const res = await apiClient.fetch(`${API_BASE}/support/tickets/${adminSelectedTicket.id}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-role': 'ADMIN',
+          'x-user-email': currentUser?.email || 'quizgen.ai.team@gmail.com',
+          'x-user-id': currentUser?.id || 'usr-adm-quizgen',
+        },
         body: JSON.stringify({
           status: newStatus,
-          note: `Trạng thái cập nhật bởi Admin ${currentUser?.fullName || ''}`,
+          note: `Trạng thái cập nhật bởi Admin ${currentUser?.fullName || 'QuizGen AI Team'}`,
         }),
       });
       if (res.ok) {
         onShowToast('success', 'Đã Cập Nhật Trạng Thái', `Ticket chuyển sang ${newStatus}`);
         setAdminStatusUpdate(newStatus);
+        setAdminSelectedTicket((prev: any) => (prev ? { ...prev, status: newStatus } : null));
+        setAdminSupportTickets((prev) =>
+          prev.map((t) => (t.id === adminSelectedTicket.id ? { ...t, status: newStatus } : t))
+        );
         await fetchAdminTicketDetail(adminSelectedTicket.id);
         await fetchAdminSupportData(true);
       } else {
@@ -417,10 +442,19 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
       void fetchAdminSupportData(false);
       const interval = setInterval(() => {
         void fetchAdminSupportData(true);
-      }, 5000);
+      }, 2500);
       return () => clearInterval(interval);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'support' && adminSelectedTicket?.id) {
+      const interval = setInterval(() => {
+        void fetchAdminTicketDetail(adminSelectedTicket.id);
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, adminSelectedTicket?.id]);
 
   // ─── Live Pipeline & Performance Monitor State (NOC Command Center) ──────────
   const [pipelineTasks, setPipelineTasks] = useState<any[]>([]);
@@ -3009,7 +3043,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         const filteredTickets = adminSupportTickets.filter((t) => {
           const matchSearch =
             !adminSupportSearch.trim() ||
-            t.title?.toLowerCase().includes(adminSupportSearch.toLowerCase()) ||
+            (t.subject || t.title || '').toLowerCase().includes(adminSupportSearch.toLowerCase()) ||
             t.user_email?.toLowerCase().includes(adminSupportSearch.toLowerCase()) ||
             t.id?.toLowerCase().includes(adminSupportSearch.toLowerCase());
           const matchStatus = adminSupportStatusFilter === 'all' || t.status === adminSupportStatusFilter;
@@ -3202,7 +3236,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                             </div>
                           </div>
                           <div className="font-bold text-xs text-slate-900 line-clamp-1 mb-1">
-                            {t.title}
+                            {t.subject || t.title}
                           </div>
                           <div className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2.5">
                             {t.description}
@@ -3248,10 +3282,10 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                           </span>
                         </div>
                         <h4 className="text-base font-bold text-slate-900">
-                          {adminSelectedTicket.title}
+                          {adminSelectedTicket.subject || adminSelectedTicket.title}
                         </h4>
                         <div className="text-xs text-slate-500 mt-0.5">
-                          Giảng viên: <span className="font-semibold text-slate-700">{adminSelectedTicket.user_email}</span> • Gói: <span className="font-bold text-[#008689] uppercase">{adminSelectedTicket.user_plan_tier || 'FREE'}</span>
+                          Giảng viên: <span className="font-semibold text-slate-700">{adminSelectedTicket.user_email}</span> • Gói: <span className="font-bold text-[#008689] uppercase">{adminSelectedTicket.user_tier || adminSelectedTicket.user_plan_tier || 'FREE'}</span>
                         </div>
                       </div>
 

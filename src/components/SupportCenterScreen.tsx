@@ -92,6 +92,7 @@ interface SupportTicket {
   sla_first_response_due: string;
   sla_resolution_due: string;
   created_at: string;
+  updated_at?: string;
   error_context_json?: string;
   messages?: TicketMessage[];
   attachments?: TicketAttachment[];
@@ -246,9 +247,20 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   useEffect(() => {
     fetchFAQData();
     fetchTickets();
-  }, []);
+  }, [currentUser?.email, currentUser?.id]);
 
-  // Fast Smart Polling: Khi đang mở một ticket, tự động cập nhật mỗi 3.5s
+  // Fast Smart Polling: Khi ở tab "my_tickets", tự động cập nhật danh sách mỗi 2.5s
+  useEffect(() => {
+    if (activeTab === 'my_tickets') {
+      fetchTickets(true);
+      const interval = setInterval(() => {
+        fetchTickets(true);
+      }, 2500);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab, currentUser?.email, currentUser?.id]);
+
+  // Fast Smart Polling: Khi đang mở một ticket, tự động cập nhật mỗi 2.5s
   useEffect(() => {
     if (!selectedTicket) return;
     const ticketId = selectedTicket.id;
@@ -257,7 +269,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
 
     const interval = setInterval(() => {
       fetchTicketDetail(ticketId, true);
-    }, 3500);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [selectedTicket?.id]);
@@ -266,10 +278,14 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     try {
       const headers: Record<string, string> = {
         'x-user-id': currentUser?.id || 'usr-lec-001',
-        'x-user-email': currentUser?.email || 'lecturer@uth.edu.vn',
+        'x-user-email': currentUser?.email || 'nguyentann0804@gmail.com',
         'x-user-role': (currentUser?.role || 'lecturer').toUpperCase(),
         'x-user-tier': currentUser?.planTier || 'PRO'
       };
+      const token = localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`${API_BASE}/support/tickets/${ticketId}`, { headers });
       if (res.ok) {
         const data: SupportTicket = await res.json();
@@ -282,6 +298,10 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
           }
           return data;
         });
+        // Đồng bộ trạng thái tức thời sang danh sách tickets
+        setTickets((prevList) =>
+          prevList.map((t) => (t.id === data.id ? { ...t, status: data.status, updated_at: data.updated_at } : t))
+        );
       }
     } catch {}
   };
@@ -330,26 +350,28 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     }
   };
 
-  const fetchTickets = async () => {
-    setIsRefreshingTickets(true);
+  const fetchTickets = async (silent = false) => {
+    if (!silent) setIsRefreshingTickets(true);
     try {
       const headers: Record<string, string> = {
         'x-user-id': currentUser?.id || 'usr-lec-001',
-        'x-user-email': currentUser?.email || 'lecturer@uth.edu.vn',
+        'x-user-email': currentUser?.email || 'nguyentann0804@gmail.com',
         'x-user-role': (currentUser?.role || 'lecturer').toUpperCase(),
         'x-user-tier': currentUser?.planTier || 'PRO'
       };
+      const token = localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
       const res = await fetch(`${API_BASE}/support/tickets`, { headers });
       if (res.ok) {
         const data = await res.json();
-        setTickets(data);
-      } else {
-        setTickets([]);
+        setTickets(Array.isArray(data) ? data : []);
       }
     } catch {
-      setTickets([]);
+      // Giữ nguyên danh sách hiện tại nếu polling gặp lỗi tạm thời
     } finally {
-      setIsRefreshingTickets(false);
+      if (!silent) setIsRefreshingTickets(false);
     }
   };
 
@@ -429,11 +451,10 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         setFormDescription('');
         setCreateFiles([]);
         setCreatePreviews([]);
-        setTimeout(() => {
-          setSubmitSuccess(false);
-          setActiveTab('my_tickets');
-          fetchTickets();
-        }, 1200);
+        // Đưa phiếu mới vào danh sách ngay tức thì để hiển thị ngay
+        setTickets((prev) => [newTicket, ...prev.filter((t) => t.id !== newTicket.id)]);
+        setActiveTab('my_tickets');
+        fetchTickets(false);
       } else {
         const errJson = await res.json().catch(() => null);
         setSubmitErrorMessage(formatApiErrorMessage(errJson?.detail));
@@ -969,7 +990,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                   <div className="flex items-center gap-2">
                     <h3 className="text-sm font-bold text-slate-900">Danh sách phiếu hỗ trợ của bạn</h3>
                     <button
-                      onClick={fetchTickets}
+                      onClick={() => fetchTickets(false)}
                       disabled={isRefreshingTickets}
                       className="p-1 text-slate-400 hover:text-[#008689] transition-colors rounded-lg hover:bg-slate-100 cursor-pointer"
                       title="Làm mới danh sách"

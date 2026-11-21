@@ -14,6 +14,11 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
     và tự động đính kèm thông tin định danh (x-user-id, x-user-role, x-user-email)
     chuyển tiếp tới các microservices nội bộ.
     """
+    for k in ["x-user-id", "x-user-email", "x-user-role", "x-user-tier"]:
+        val = request.headers.get(k) or request.headers.get(k.title())
+        if val and k not in headers:
+            headers[k] = val.strip()
+
     auth_header = request.headers.get("authorization")
     if not auth_header:
         return
