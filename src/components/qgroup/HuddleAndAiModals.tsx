@@ -3,6 +3,11 @@ import { Sparkles, X, Mic, MicOff, LogOut, Radio, Volume2, Users, AlertCircle, P
 import { QGroup, UserProfile } from '../../types';
 import apiClient, { API_BASE } from '../../services/apiClient';
 import { ringtoneManager } from '../../utils/huddleRingtone';
+import {
+  getAvailableMicrophones,
+  getOptimalAudioDeviceId,
+  setPreferredAudioDeviceId,
+} from '../../utils/audioDeviceManager';
 
 // Helper chèn tham số chống vọng tiếng và triệt tiêu tạp âm phòng Opus DTX vào SDP
 const setOpusDtx = (sdp?: string) => {
@@ -124,31 +129,15 @@ export const HuddleCallModal: React.FC<{
     [myEmail]
   );
 
-  // Liệt kê danh sách micro trên thiết bị để hỗ trợ chọn đúng driver (như Realtek Audio)
+  // Liệt kê danh sách micro trên thiết bị với bộ lọc thông minh (ưu tiên Realtek / Mic Array, loại bỏ Stereo Mix)
   useEffect(() => {
     const listDevices = async () => {
       try {
-        if (!navigator.mediaDevices?.enumerateDevices) return;
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const inputs = devices
-          .filter((d) => d.kind === 'audioinput')
-          .map((d, i) => ({
-            deviceId: d.deviceId,
-            label: d.label || `Microphone ${i + 1}`,
-          }));
+        const inputs = await getAvailableMicrophones();
         if (inputs.length > 0) {
           setAudioDevices(inputs);
-          setSelectedDeviceId((prev) => {
-            if (prev) return prev;
-            const preferred = inputs.find(
-              (d) =>
-                d.label.toLowerCase().includes('realtek') ||
-                d.label.toLowerCase().includes('microphone') ||
-                d.label.toLowerCase().includes('mặc định') ||
-                d.label.toLowerCase().includes('default')
-            );
-            return preferred ? preferred.deviceId : inputs[0].deviceId;
-          });
+          const optimal = await getOptimalAudioDeviceId();
+          setSelectedDeviceId(optimal.deviceId || inputs[0].deviceId);
         }
       } catch (e) {
         console.warn('Lỗi liệt kê microphone:', e);
@@ -715,7 +704,10 @@ export const HuddleCallModal: React.FC<{
               value={selectedDeviceId}
               onChange={(e) => {
                 unlockAudio();
-                setSelectedDeviceId(e.target.value);
+                const newId = e.target.value;
+                setSelectedDeviceId(newId);
+                const matched = audioDevices.find((d) => d.deviceId === newId);
+                setPreferredAudioDeviceId(newId, matched?.label);
               }}
               className="bg-transparent text-slate-200 text-xs font-medium focus:outline-none w-full truncate cursor-pointer"
               title="Chọn thiết bị Microphone đầu vào"

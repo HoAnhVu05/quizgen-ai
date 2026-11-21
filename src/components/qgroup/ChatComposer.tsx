@@ -70,6 +70,8 @@ interface ChatComposerProps {
   isRecording: boolean;
   recordingSeconds: number;
   liveMicLevels: number[];
+  activeMicLabel?: string;
+  onCycleMic?: () => void;
   onCancelRecording: () => void;
   onStopAndSendRecording: () => void;
   onStartRecording: () => void;
@@ -100,6 +102,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   isRecording,
   recordingSeconds,
   liveMicLevels,
+  activeMicLabel,
+  onCycleMic,
   onCancelRecording,
   onStopAndSendRecording,
   onStartRecording,
@@ -351,6 +355,20 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                     />
                   ))}
                 </div>
+
+                {/* Nhãn Micro thông minh (tinh gọn, 1 click đổi nhanh không cồng kềnh) */}
+                {activeMicLabel && (
+                  <button
+                    type="button"
+                    onClick={onCycleMic}
+                    className="hidden md:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100/80 hover:bg-rose-200 text-rose-800 text-[10px] font-medium border border-rose-200 transition-all cursor-pointer"
+                    title="Đang dùng micro này. Bấm vào đây để chuyển đổi nhanh sang micro khác nếu âm thanh chưa vào."
+                  >
+                    <Mic className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                    <span className="max-w-[120px] truncate">{activeMicLabel}</span>
+                    <span className="text-[9px] text-rose-600 font-bold ml-0.5">↻ Đổi</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2">

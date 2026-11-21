@@ -108,6 +108,11 @@ import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
 import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
 import { openUserProfile } from '../utils/userProfileModalHelper';
+import {
+  getOptimalAudioDeviceId,
+  cycleToNextMicrophone,
+  setPreferredAudioDeviceId,
+} from '../utils/audioDeviceManager';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -922,6 +927,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // Public profile modal
   const [profileEmail, setProfileEmail] = useState<string | null>(null);
   const [profileName, setProfileName] = useState<string | undefined>(undefined);
+
+  // Micro thu âm thoại thông minh
+  const [activeMicLabel, setActiveMicLabel] = useState<string>('');
 
   // Collapsible Sections cho Sidebar Slack/Teams
   const [isChannelsOpen, setIsChannelsOpen] = useState(true);
@@ -2027,18 +2035,37 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const startVoiceRecording = async () => {
     try {
+      // Tự động nhận diện Driver Micro tốt nhất (Realtek / USB / Mic Array, loại trừ Stereo Mix)
+      const optimal = await getOptimalAudioDeviceId();
+      if (optimal.label) {
+        setActiveMicLabel(optimal.label);
+      }
+
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      if (optimal.deviceId) {
+        audioConstraints.deviceId = { exact: optimal.deviceId };
+      }
+
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-          },
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       } catch {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       mediaStreamRef.current = stream;
+
+      // Cập nhật nhãn thực tế sau khi được cấp quyền
+      const activeTrack = stream.getAudioTracks()[0];
+      if (activeTrack?.label) {
+        setActiveMicLabel(activeTrack.label);
+        if (optimal.deviceId) {
+          setPreferredAudioDeviceId(optimal.deviceId, activeTrack.label);
+        }
+      }
 
       // Ensure all audio tracks are active
       stream.getAudioTracks().forEach((track) => {
@@ -2295,6 +2322,42 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       }
     } catch (e) {}
     recorder.stop();
+  };
+
+  // Đổi nhanh sang micro tiếp theo (chỉ 1 click, không giao diện cồng kềnh)
+  const handleCycleMic = async () => {
+    try {
+      const nextMic = await cycleToNextMicrophone();
+      if (nextMic) {
+        setActiveMicLabel(nextMic.label);
+        onShowToast('info', 'Thiết bị âm thanh', `Đã chuyển sang: ${nextMic.label}`);
+        // Nếu đang trong lúc ghi âm, kết nối tức thì sang micro mới
+        if (isRecording) {
+          try {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: { exact: nextMic.deviceId },
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              },
+            });
+            if (mediaStreamRef.current) {
+              mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+            }
+            mediaStreamRef.current = newStream;
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+              try {
+                const newSource = audioContextRef.current.createMediaStreamSource(newStream);
+                if (analyserRef.current) {
+                  newSource.connect(analyserRef.current);
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+      }
+    } catch {}
   };
 
   // ── @Mention Candidate List ───────────────────────────────────────────────
@@ -4787,6 +4850,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 isRecording={isRecording}
                 recordingSeconds={recordingSeconds}
                 liveMicLevels={liveMicLevels}
+                activeMicLabel={activeMicLabel}
+                onCycleMic={handleCycleMic}
                 onCancelRecording={cancelVoiceRecording}
                 onStopAndSendRecording={stopAndSendVoiceRecording}
                 onStartRecording={startVoiceRecording}
