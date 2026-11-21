@@ -46,7 +46,7 @@ interface ChatHeaderProps {
   onBackToMobileList: () => void;
   onOpenMobileMenu?: () => void;
   onOpenProfile: (email: string | null, name: string) => void;
-  onOpenDetails: (group: QGroup, tab?: 'about' | 'members' | 'files') => void;
+  onOpenDetails: (group: QGroup, tab?: 'about' | 'members') => void;
   onOpenDirectAddMember: () => void;
   onOpenHuddle: () => void;
   onToggleMute: (group: QGroup) => void;

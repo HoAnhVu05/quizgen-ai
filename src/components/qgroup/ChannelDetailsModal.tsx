@@ -4,8 +4,6 @@ import {
   Hash,
   User,
   Users,
-  FileText,
-  Info,
   Trash2,
   UserMinus,
   Lock,
@@ -14,10 +12,8 @@ import {
   LogOut,
   Clock,
   Check,
-  BookOpen,
   Settings,
   Copy,
-  AlertCircle,
   Save,
   CheckCircle2,
   UserPlus,
@@ -31,8 +27,8 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 export interface ChannelDetailsModalProps {
   group: QGroup;
   myEmail: string;
-  activeTab: 'about' | 'members' | 'files';
-  onTabChange: (t: 'about' | 'members' | 'files') => void;
+  activeTab: 'about' | 'members';
+  onTabChange: (t: 'about' | 'members') => void;
   inviteEmail: string;
   onInviteEmailChange: (v: string) => void;
   onInvite: () => void;
@@ -70,8 +66,13 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
   const isDirect = Boolean(group.isDirect || group.type === 'direct');
   const dmInfo = resolveChatDisplayInfo(group, myEmail);
   const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
-  const members = group.members || [];
   const pendingRequests = group.pendingRequests || [];
+
+  // Danh sách thành viên quản lý nội bộ để cập nhật tức thì (0ms) khi bấm kick
+  const [membersList, setMembersList] = useState<string[]>(group.members || []);
+  useEffect(() => {
+    setMembersList(group.members || []);
+  }, [group.members]);
 
   // Trạng thái chỉnh sửa cấu hình kênh (dành cho Trưởng nhóm)
   const [editName, setEditName] = useState(group.name || '');
@@ -82,17 +83,6 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
   );
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
-
-  // Extract shared files from messages
-  const sharedFiles = useMemo(() => {
-    const list: any[] = [];
-    (group.messages || []).forEach((m) => {
-      if (m.attachment) {
-        list.push({ ...m.attachment, sentAt: m.timestamp, senderName: m.senderName });
-      }
-    });
-    return list;
-  }, [group.messages]);
 
   const [modalLookupStatus, setModalLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
   const [modalLookedUpUser, setModalLookedUpUser] = useState<any>(null);
@@ -197,6 +187,12 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
     }
   };
 
+  const handleKick = (memEmail: string, displayName: string) => {
+    // Biến mất khỏi giao diện ngay tức khắc (0ms optimistic UI update)
+    setMembersList((prev) => prev.filter((m) => m.toLowerCase() !== memEmail.toLowerCase()));
+    onKickMember?.(memEmail, displayName);
+  };
+
   const joinPolicyLabel = {
     open: 'Công khai (Mọi giảng viên đều có thể tham gia)',
     approval_required: 'Cần phê duyệt (Yêu cầu Trưởng nhóm duyệt trước)',
@@ -247,22 +243,20 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* Tabs: Chỉ giữ 2 tab chuẩn mực (Thông tin & Cài đặt, Thành viên) */}
         <div className="flex items-center gap-4 px-5 pt-1 border-b border-slate-200 bg-white">
           {(isDirect
             ? [
                 { id: 'about' as const, label: 'Thông tin đồng nghiệp', icon: User },
-                { id: 'files' as const, label: `Tệp & Học liệu (${sharedFiles.length})`, icon: FileText },
               ]
             : [
                 { id: 'about' as const, label: 'Thông tin & Cài đặt', icon: Settings },
                 {
                   id: 'members' as const,
-                  label: `Thành viên (${members.length})`,
+                  label: `Thành viên (${membersList.length})`,
                   icon: Users,
                   badge: isOwner && pendingRequests.length > 0 ? pendingRequests.length : undefined,
                 },
-                { id: 'files' as const, label: `Tệp & Học liệu (${sharedFiles.length})`, icon: FileText },
               ]
           ).map((tab) => {
             const Icon = tab.icon;
@@ -587,7 +581,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-slate-700 text-xs">
-                    Danh sách thành viên ({members.length})
+                    Danh sách thành viên ({membersList.length})
                   </span>
                   <span className="text-[10.5px] text-slate-400">
                     Bấm vào tên để xem hồ sơ cá nhân
@@ -595,7 +589,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                 </div>
 
                 <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {members.map((memEmail, idx) => {
+                  {membersList.map((memEmail, idx) => {
                     const isMemOwner = (group.ownerEmail || '').toLowerCase() === memEmail.toLowerCase();
                     const isSelf = memEmail.toLowerCase() === myEmail.toLowerCase();
                     const info = localRegistered[memEmail.toLowerCase()];
@@ -659,7 +653,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onKickMember(memEmail, displayName);
+                                  handleKick(memEmail, displayName);
                                 }}
                                 className="p-1.5 rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                                 title="Mời thành viên ra khỏi nhóm"
@@ -674,41 +668,6 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                   })}
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* TAB 3: SHARED FILES */}
-          {activeTab === 'files' && (
-            <div className="space-y-2">
-              <span className="font-semibold text-slate-700 text-xs block">
-                Tài liệu &amp; Học liệu đã đính kèm ({sharedFiles.length})
-              </span>
-              {sharedFiles.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 space-y-1">
-                  <FileText className="w-8 h-8 mx-auto text-slate-300" />
-                  <p className="font-semibold text-slate-600">Chưa có tệp nào được gửi</p>
-                  <p className="text-[11px]">Dùng biểu tượng ghim ở thanh soạn thảo để đính kèm giáo trình chia sẻ cho nhóm.</p>
-                </div>
-              ) : (
-                sharedFiles.map((file, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
-                        <BookOpen className="w-4 h-4 text-teal-700" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-bold text-slate-800 truncate">{file.name}</p>
-                        <p className="text-[10px] text-slate-500">
-                          {file.totalPages ? `${file.totalPages} trang • ` : ''}Gửi bởi {file.senderName} ({file.sentAt})
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
             </div>
           )}
         </div>

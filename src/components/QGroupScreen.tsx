@@ -695,7 +695,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [detailsGroup, setDetailsGroup] = useState<QGroup | null>(null);
   const [isChannelDetailsOpen, setIsChannelDetailsOpen] = useState(false);
   const [isChannelSettingsOpen, setIsChannelSettingsOpen] = useState(false);
-  const [channelDetailsTab, setChannelDetailsTab] = useState<'about' | 'members' | 'files'>('about');
+  const [channelDetailsTab, setChannelDetailsTab] = useState<'about' | 'members'>('about');
   const [isSummarizeModalOpen, setIsSummarizeModalOpen] = useState(false);
   const [isHuddleOpen, setIsHuddleOpen] = useState(false);
   const [isStarred, setIsStarred] = useState(false);
@@ -3456,6 +3456,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         confirmText: 'Loại khỏi kênh',
         variant: 'danger',
         onConfirm: async () => {
+          // Cập nhật tức thì trên giao diện (Optimistic update 0ms)
+          const filteredMembers = (group.members || []).filter(
+            (m) => m.toLowerCase() !== targetEmail.toLowerCase()
+          );
+          const optimisticGroup = { ...group, members: filteredMembers };
+          setDetailsGroup(optimisticGroup);
+          applyGroups(qgroups.map((g) => (g.id === group.id ? optimisticGroup : g)));
+
           try {
             const res = await apiClient
               .fetch(`${API_BASE}/documents/qgroups/${group.id}/kick-member`, {
@@ -3472,11 +3480,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             if (res.status === 'success' && res.group) {
               const updated = qgroups.map((g) => (g.id === group.id ? res.group : g));
               applyGroups(updated);
+              setDetailsGroup(res.group);
               onShowToast('success', 'Đã loại thành viên', `${targetName} đã rời khỏi nhóm.`);
             } else {
+              // Khôi phục lại nếu máy chủ từ chối
+              applyGroups(qgroups);
+              setDetailsGroup(group);
               onShowToast('warning', 'Không thể loại thành viên', res.message || 'Lỗi thao tác');
             }
           } catch {
+            applyGroups(qgroups);
+            setDetailsGroup(group);
             onShowToast('error', 'Lỗi kết nối', 'Không thể gửi yêu cầu loại thành viên.');
           }
         },
