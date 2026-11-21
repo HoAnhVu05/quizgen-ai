@@ -155,7 +155,6 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   const [csatHover, setCsatHover] = useState<number>(0);
   const [csatComment, setCsatComment] = useState<string>('');
   const [isSubmittingCsat, setIsSubmittingCsat] = useState<boolean>(false);
-  const [csatSuccess, setCsatSuccess] = useState<boolean>(false);
 
   const formatVnDateTime = (dtStr?: string) => {
     if (!dtStr) return '';
@@ -352,12 +351,18 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   const handleSelectTicket = (t: SupportTicket) => {
     selectedTicketIdRef.current = t.id;
     setSelectedTicket(t); // Mở ngay lập tức (Optimistic), xóa độ trễ lag
+    setCsatRating(5);
+    setCsatHover(0);
+    setCsatComment('');
     void fetchTicketDetail(t.id, false);
   };
 
   const handleBackToList = () => {
     selectedTicketIdRef.current = null;
     setSelectedTicket(null);
+    setCsatRating(5);
+    setCsatHover(0);
+    setCsatComment('');
   };
 
   // Gợi ý AI khi nhập mô tả
@@ -605,8 +610,11 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
       });
       if (res.ok) {
         const fbData = await res.json();
-        setCsatSuccess(true);
         setSelectedTicket((prev) => (prev ? { ...prev, feedback: fbData } : null));
+        setTickets((prev) =>
+          prev.map((t) => (t.id === selectedTicket.id ? { ...t, feedback: fbData } : t))
+        );
+        setCsatComment('');
       }
     } catch (e) {
       console.error('Lỗi gửi đánh giá CSAT:', e);
@@ -1017,118 +1025,124 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                   </div>
 
                   {/* ─── KHỐI ĐÁNH GIÁ CHẤT LƯỢNG HỖ TRỢ (CSAT 5 SAO) KHI PHIẾU ĐÃ GIẢI QUYẾT ─── */}
-                  {(selectedTicket.status === 'RESOLVED' || selectedTicket.status === 'CLOSED') && (
-                    <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200 shadow-2xs space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-                            Đánh giá chất lượng xử lý sự cố (CSAT)
-                          </h4>
-                        </div>
-                        <span className="text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full">
-                          {csatSuccess || selectedTicket.feedback ? 'Đã hoàn tất đánh giá' : 'Tối đa 5 sao'}
-                        </span>
-                      </div>
+                  {(selectedTicket.status === 'RESOLVED' || selectedTicket.status === 'CLOSED') && (() => {
+                    const hasTicketFeedback = Boolean(selectedTicket.feedback && typeof selectedTicket.feedback.rating_stars === 'number');
 
-                      {csatSuccess || selectedTicket.feedback ? (
-                        <div className="p-3.5 bg-white border border-amber-200 rounded-xl space-y-1.5">
+                    return (
+                      <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200 shadow-2xs space-y-3">
+                        <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-800">Điểm đánh giá:</span>
-                            <div className="flex items-center gap-1 text-amber-500">
-                              {[1, 2, 3, 4, 5].map((star) => (
-                                <Star
-                                  key={star}
-                                  className={`w-4 h-4 ${
-                                    star <= ((selectedTicket.feedback?.rating_stars) || csatRating)
-                                      ? 'fill-amber-400 text-amber-500'
-                                      : 'text-slate-300'
-                                  }`}
-                                />
-                              ))}
-                            </div>
-                            <span className="text-xs font-bold text-amber-600">
-                              ({(selectedTicket.feedback?.rating_stars) || csatRating}/5 sao)
-                            </span>
+                            <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900">
+                              Đánh giá chất lượng xử lý sự cố (CSAT)
+                            </h4>
                           </div>
-                          <p className="text-xs text-slate-600 italic">
-                            "{selectedTicket.feedback?.feedback_text || csatComment || 'Hài lòng với tốc độ giải quyết sự cố của kỹ thuật viên QuizGen AI.'}"
-                          </p>
-                          <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 pt-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Cảm ơn Thầy/Cô đã đánh giá, ý kiến giúp QuizGen AI nâng cao chất lượng phục vụ!
-                          </p>
+                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            hasTicketFeedback ? 'text-emerald-700 bg-emerald-100/80 border border-emerald-200' : 'text-amber-700 bg-amber-100/80'
+                          }`}>
+                            {hasTicketFeedback ? 'Đã hoàn tất đánh giá' : 'Chờ Thầy/Cô đánh giá (Tối đa 5 sao)'}
+                          </span>
                         </div>
-                      ) : (
-                        <div className="space-y-3 bg-white p-3.5 rounded-xl border border-amber-200/90">
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                              Thầy/Cô hài lòng thế nào với sự hỗ trợ của kỹ thuật viên?
-                            </label>
+
+                        {hasTicketFeedback ? (
+                          <div className="p-3.5 bg-white border border-amber-200 rounded-xl space-y-1.5">
                             <div className="flex items-center gap-2">
-                              {[1, 2, 3, 4, 5].map((star) => {
-                                const active = star <= (csatHover || csatRating);
-                                return (
-                                  <button
+                              <span className="text-xs font-bold text-slate-800">Điểm đánh giá của Thầy/Cô:</span>
+                              <div className="flex items-center gap-1 text-amber-500">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                  <Star
                                     key={star}
-                                    type="button"
-                                    onClick={() => setCsatRating(star)}
-                                    onMouseEnter={() => setCsatHover(star)}
-                                    onMouseLeave={() => setCsatHover(0)}
-                                    className="p-1 transition-transform hover:scale-125 cursor-pointer"
-                                  >
-                                    <Star
-                                      className={`w-6 h-6 transition-colors ${
-                                        active
-                                          ? 'text-amber-500 fill-amber-400'
-                                          : 'text-slate-300 hover:text-amber-300'
-                                      }`}
-                                    />
-                                  </button>
-                                );
-                              })}
-                              <span className="text-xs font-bold text-amber-700 ml-2">
-                                {csatRating === 5
-                                  ? 'Rất hài lòng (5 sao)'
-                                  : csatRating === 4
-                                  ? 'Hài lòng (4 sao)'
-                                  : csatRating === 3
-                                  ? 'Bình thường (3 sao)'
-                                  : csatRating === 2
-                                  ? 'Chưa hài lòng (2 sao)'
-                                  : 'Rất không hài lòng (1 sao)'}
+                                    className={`w-4 h-4 ${
+                                      star <= (selectedTicket.feedback?.rating_stars || 5)
+                                        ? 'fill-amber-400 text-amber-500'
+                                        : 'text-slate-300'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                              <span className="text-xs font-bold text-amber-600">
+                                ({selectedTicket.feedback?.rating_stars}/5 sao)
                               </span>
                             </div>
+                            <p className="text-xs text-slate-600 italic">
+                              "{selectedTicket.feedback?.feedback_text || '(Không có nhận xét bổ sung)'}"
+                            </p>
+                            <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 pt-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              Cảm ơn Thầy/Cô đã gửi đánh giá, ý kiến giúp QuizGen AI nâng cao chất lượng phục vụ!
+                            </p>
                           </div>
+                        ) : (
+                          <div className="space-y-3 bg-white p-3.5 rounded-xl border border-amber-200/90">
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                                Thầy/Cô hài lòng thế nào với sự hỗ trợ của kỹ thuật viên?
+                              </label>
+                              <div className="flex items-center gap-2">
+                                {[1, 2, 3, 4, 5].map((star) => {
+                                  const active = star <= (csatHover || csatRating);
+                                  return (
+                                    <button
+                                      key={star}
+                                      type="button"
+                                      onClick={() => setCsatRating(star)}
+                                      onMouseEnter={() => setCsatHover(star)}
+                                      onMouseLeave={() => setCsatHover(0)}
+                                      className="p-1 transition-transform hover:scale-125 cursor-pointer"
+                                    >
+                                      <Star
+                                        className={`w-6 h-6 transition-colors ${
+                                          active
+                                            ? 'text-amber-500 fill-amber-400'
+                                            : 'text-slate-300 hover:text-amber-300'
+                                        }`}
+                                      />
+                                    </button>
+                                  );
+                                })}
+                                <span className="text-xs font-bold text-amber-700 ml-2">
+                                  {csatRating === 5
+                                    ? 'Rất hài lòng (5 sao)'
+                                    : csatRating === 4
+                                    ? 'Hài lòng (4 sao)'
+                                    : csatRating === 3
+                                    ? 'Bình thường (3 sao)'
+                                    : csatRating === 2
+                                    ? 'Chưa hài lòng (2 sao)'
+                                    : 'Rất không hài lòng (1 sao)'}
+                                </span>
+                              </div>
+                            </div>
 
-                          <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">
-                              Nhận xét đóng góp ý kiến:
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={csatComment}
-                              onChange={(e) => setCsatComment(e.target.value)}
-                              placeholder="Nhập cảm nhận của Thầy/Cô về tốc độ hỗ trợ, độ chính xác của giải pháp..."
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white resize-none"
-                            />
-                          </div>
+                            <div>
+                              <label className="block text-xs font-bold text-slate-700 mb-1">
+                                Nhận xét đóng góp ý kiến:
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={csatComment}
+                                onChange={(e) => setCsatComment(e.target.value)}
+                                placeholder="Nhập cảm nhận của Thầy/Cô về tốc độ hỗ trợ, độ chính xác của giải pháp..."
+                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white resize-none"
+                              />
+                            </div>
 
-                          <div className="flex items-center justify-end">
-                            <button
-                              type="button"
-                              onClick={handleSubmitCsatFeedback}
-                              disabled={isSubmittingCsat}
-                              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
-                            >
-                              <Star className="w-3.5 h-3.5 fill-white" />
-                              <span>{isSubmittingCsat ? 'Đang gửi...' : 'Gửi Đánh Giá CSAT'}</span>
-                            </button>
+                            <div className="flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={handleSubmitCsatFeedback}
+                                disabled={isSubmittingCsat}
+                                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                              >
+                                <Star className="w-3.5 h-3.5 fill-white" />
+                                <span>{isSubmittingCsat ? 'Đang gửi...' : 'Gửi Đánh Giá CSAT'}</span>
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Khay xem trước ảnh lỗi sắp gửi trong phản hồi */}

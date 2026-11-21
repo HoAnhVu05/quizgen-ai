@@ -56,6 +56,7 @@ import {
   Send,
   Paperclip,
   Maximize2,
+  Star,
 } from 'lucide-react';
 import { UserProfile, SecurityAuditLog, ScreenId, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
@@ -3180,17 +3181,31 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
               <div className="p-4 bg-white border border-slate-200/90 rounded-2xl shadow-2xs">
                 <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tỷ lệ đạt SLA</div>
                 <div className="text-2xl font-black text-[#008689] mt-1">
-                  {adminSupportMetrics?.sla_compliance_rate != null ? `${adminSupportMetrics.sla_compliance_rate}%` : '98.5%'}
+                  {adminSupportMetrics?.sla_compliance_rate_percent != null
+                    ? `${adminSupportMetrics.sla_compliance_rate_percent}%`
+                    : adminSupportMetrics?.sla_compliance_rate != null
+                    ? `${adminSupportMetrics.sla_compliance_rate}%`
+                    : '100%'}
                 </div>
                 <div className="text-[10px] text-teal-600 mt-0.5 font-medium">Cam kết &lt; 30 phút</div>
               </div>
               <div className="p-4 bg-white border border-slate-200/90 rounded-2xl shadow-2xs col-span-2 sm:col-span-1">
                 <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Hài lòng CSAT</div>
                 <div className="text-2xl font-black text-amber-500 mt-1 flex items-center gap-1">
-                  <span>{adminSupportMetrics?.average_csat ? adminSupportMetrics.average_csat.toFixed(1) : '4.9'}</span>
-                  <span className="text-sm text-slate-400">/ 5.0</span>
+                  {adminSupportMetrics?.average_csat_stars != null ? (
+                    <>
+                      <span>{Number(adminSupportMetrics.average_csat_stars).toFixed(1)}</span>
+                      <span className="text-sm text-slate-400">/ 5.0</span>
+                    </>
+                  ) : (
+                    <span className="text-base text-slate-400 font-bold">Chưa có</span>
+                  )}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">Đánh giá từ Giảng viên</div>
+                <div className="text-[10px] text-slate-400 mt-0.5 font-medium">
+                  {adminSupportMetrics?.total_feedbacks != null
+                    ? `${adminSupportMetrics.total_feedbacks} lượt đánh giá thực tế`
+                    : 'Đánh giá từ Giảng viên'}
+                </div>
               </div>
             </div>
 
@@ -3462,6 +3477,62 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                           })}
                         </div>
                       </div>
+                    )}
+
+                    {/* CSAT Real Feedback from Teacher */}
+                    {adminSelectedTicket.feedback ? (
+                      <div className="p-4 bg-amber-50/70 border border-amber-200/90 rounded-2xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Star className="w-4 h-4 text-amber-500 fill-amber-400" />
+                            <span className="text-xs font-bold text-slate-800">Đánh giá từ Giảng viên (CSAT Thực tế)</span>
+                          </div>
+                          <span className="text-xs font-black text-amber-700 bg-amber-100/90 border border-amber-200 px-2.5 py-0.5 rounded-full">
+                            {adminSelectedTicket.feedback.rating_stars} / 5 ⭐
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star
+                              key={star}
+                              className={`w-3.5 h-3.5 ${
+                                star <= adminSelectedTicket.feedback.rating_stars
+                                  ? 'text-amber-500 fill-amber-400'
+                                  : 'text-slate-300'
+                              }`}
+                            />
+                          ))}
+                          <span className="text-[11px] font-bold text-amber-800 ml-1.5">
+                            {adminSelectedTicket.feedback.rating_stars === 5
+                              ? 'Rất hài lòng (5 sao)'
+                              : adminSelectedTicket.feedback.rating_stars === 4
+                              ? 'Hài lòng (4 sao)'
+                              : adminSelectedTicket.feedback.rating_stars === 3
+                              ? 'Bình thường (3 sao)'
+                              : adminSelectedTicket.feedback.rating_stars === 2
+                              ? 'Chưa hài lòng (2 sao)'
+                              : 'Rất không hài lòng (1 sao)'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-700 bg-white p-3 rounded-xl border border-amber-200/60 italic leading-relaxed">
+                          "{adminSelectedTicket.feedback.feedback_text || '(Giảng viên không để lại lời bình luận)'}"
+                        </p>
+                        {adminSelectedTicket.feedback.created_at && (
+                          <div className="text-[10px] text-slate-400 text-right">
+                            Đã đánh giá: {formatVnDateTime(adminSelectedTicket.feedback.created_at)}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      (adminSelectedTicket.status === 'RESOLVED' || adminSelectedTicket.status === 'CLOSED') && (
+                        <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-500">
+                          <span className="flex items-center gap-1.5">
+                            <Star className="w-3.5 h-3.5 text-slate-400" />
+                            Giảng viên chưa gửi đánh giá CSAT cho phiếu này.
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-mono">Chưa đánh giá</span>
+                        </div>
+                      )
                     )}
 
                     {/* Conversation History Thread */}

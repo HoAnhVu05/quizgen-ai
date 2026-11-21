@@ -670,8 +670,10 @@ def get_support_metrics(
     # Tính tỷ lệ tuân thủ SLA
     compliance = 100.0 if total == 0 else round(((total - breached) / total) * 100, 1)
 
-    # Tính điểm CSAT trung bình
-    avg_csat = db.query(func.avg(SupportFeedback.rating_stars)).scalar() or 5.0
+    # Tính điểm CSAT trung bình từ dữ liệu thực tế
+    total_feedbacks = db.query(SupportFeedback).count()
+    avg_csat_val = db.query(func.avg(SupportFeedback.rating_stars)).scalar()
+    avg_csat = round(float(avg_csat_val), 1) if avg_csat_val is not None else None
 
     # Phân bổ theo phân hệ
     cats = db.query(SupportTicket.category, func.count(SupportTicket.id)).group_by(SupportTicket.category).all()
@@ -689,7 +691,8 @@ def get_support_metrics(
         closed_tickets=closed,
         sla_breached_count=breached,
         sla_compliance_rate_percent=compliance,
-        average_csat_stars=round(float(avg_csat), 2),
+        average_csat_stars=avg_csat,
+        total_feedbacks=total_feedbacks,
         category_distribution=cat_dist,
         priority_distribution=pri_dist
     )

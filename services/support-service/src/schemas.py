@@ -174,6 +174,7 @@ class SupportMetricsResponse(BaseModel):
     closed_tickets: int
     sla_breached_count: int
     sla_compliance_rate_percent: float
-    average_csat_stars: float
+    average_csat_stars: Optional[float] = None
+    total_feedbacks: int = 0
     category_distribution: Dict[str, int]
     priority_distribution: Dict[str, int]
