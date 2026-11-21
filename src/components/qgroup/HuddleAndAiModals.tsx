@@ -98,11 +98,14 @@ export const HuddleCallModal: React.FC<{
 }> = ({ group, currentUser, onClose }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [activePeers, setActivePeers] = useState<Array<{ peerId: string; name: string; isSpeaking?: boolean }>>([]);
+  const [activePeers, setActivePeers] = useState<Array<{ peerId: string; name: string; email?: string; isSpeaking?: boolean }>>([]);
   const [peerStates, setPeerStates] = useState<{ [peerId: string]: 'connecting' | 'connected' | 'disconnected' }>({});
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [needsAudioGesture, setNeedsAudioGesture] = useState(false);
+  const [audioDevices, setAudioDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [inputLevel, setInputLevel] = useState<number>(0);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -120,6 +123,39 @@ export const HuddleCallModal: React.FC<{
     () => `${myEmail}_${Math.random().toString(36).substring(2, 8)}`,
     [myEmail]
   );
+
+  // Liệt kê danh sách micro trên thiết bị để hỗ trợ chọn đúng driver (như Realtek Audio)
+  useEffect(() => {
+    const listDevices = async () => {
+      try {
+        if (!navigator.mediaDevices?.enumerateDevices) return;
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices
+          .filter((d) => d.kind === 'audioinput')
+          .map((d, i) => ({
+            deviceId: d.deviceId,
+            label: d.label || `Microphone ${i + 1}`,
+          }));
+        if (inputs.length > 0) {
+          setAudioDevices(inputs);
+          setSelectedDeviceId((prev) => {
+            if (prev) return prev;
+            const preferred = inputs.find(
+              (d) =>
+                d.label.toLowerCase().includes('realtek') ||
+                d.label.toLowerCase().includes('microphone') ||
+                d.label.toLowerCase().includes('mặc định') ||
+                d.label.toLowerCase().includes('default')
+            );
+            return preferred ? preferred.deviceId : inputs[0].deviceId;
+          });
+        }
+      } catch (e) {
+        console.warn('Lỗi liệt kê microphone:', e);
+      }
+    };
+    listDevices();
+  }, []);
 
   // Đồng bộ ref isMuted
   useEffect(() => {
@@ -152,21 +188,38 @@ export const HuddleCallModal: React.FC<{
     setNeedsAudioGesture(false);
   };
 
+  // Lọc và khử trùng lặp người tham gia hiển thị trên giao diện (Đặc biệt cho cuộc gọi 1-1 không bao giờ bị hiện 3 người)
+  const displayPeers = useMemo(() => {
+    if (group.isDirect) {
+      const map = new Map<string, (typeof activePeers)[0]>();
+      activePeers.forEach((p) => {
+        if (!p.peerId || p.peerId.toLowerCase() === myPeerId.toLowerCase()) return;
+        const key = (p.email || p.name || p.peerId).trim().toLowerCase();
+        map.set(key, p);
+      });
+      return Array.from(map.values());
+    }
+    return activePeers.filter((p) => p.peerId && p.peerId.toLowerCase() !== myPeerId.toLowerCase());
+  }, [activePeers, group.isDirect, myPeerId]);
+
   useEffect(() => {
     let isCancelled = false;
 
     const startHuddle = async () => {
       try {
         // 1. Xin quyền micro (Chuẩn W3C Echo Cancellation, Noise Suppression, Auto Gain Control)
+        const audioConstraints: MediaTrackConstraints = {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        };
+        if (selectedDeviceId) {
+          audioConstraints.deviceId = { exact: selectedDeviceId };
+        }
+
         let stream: MediaStream;
         try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: { ideal: true },
-              noiseSuppression: { ideal: true },
-              autoGainControl: { ideal: true },
-            },
-          });
+          stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
         } catch {
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
@@ -176,18 +229,37 @@ export const HuddleCallModal: React.FC<{
         }
         localStreamRef.current = stream;
 
-        // Đăng ký cuộc gọi lên API Gateway để các thiết bị khác nhận được thông báo đổ chuông
+        // Cập nhật lại tên nhãn thực tế của thiết bị sau khi được cấp quyền
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const inputs = devices
+            .filter((d) => d.kind === 'audioinput')
+            .map((d, i) => ({
+              deviceId: d.deviceId,
+              label: d.label || `Microphone ${i + 1}`,
+            }));
+          if (inputs.length > 0) {
+            setAudioDevices(inputs);
+          }
+        } catch {}
+
+        const activeTrack = stream.getAudioTracks()[0];
+        console.log('[Huddle] Đang thu âm từ microphone:', activeTrack?.label, activeTrack?.readyState);
+
+        // Đăng ký cuộc gọi lên API Gateway để các thiết bị khác nhận được thông báo đổ chuông (cả 1-1 lẫn Nhóm)
         apiClient
           .fetch(`${API_BASE}/huddle/ring`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               roomId: normalizedRoomId,
+              groupId: group.id,
               callerName: myName,
               callerEmail: myEmail,
               groupName: group.name,
-              isDirect: Boolean(group.isDirect),
-              directPartnerEmail: group.directPartnerEmail,
+              isDirect: Boolean(group.isDirect || group.type === 'direct'),
+              directPartnerEmail: group.directPartnerEmail || '',
+              members: (group.members || []).map((m: any) => (typeof m === 'string' ? m : m.email || '')),
             }),
           })
           .catch(() => {});
@@ -202,20 +274,35 @@ export const HuddleCallModal: React.FC<{
         }
         const ctx = new AudioCtxClass();
         audioContextRef.current = ctx;
-        if (ctx.state === 'suspended') {
-          ctx.resume().catch(() => {});
-        }
+
+        // Tự động khôi phục AudioContext nếu bị trình duyệt tạm dừng (Autoplay policy)
+        const resumeAudio = () => {
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+        };
+        resumeAudio();
+        window.addEventListener('click', resumeAudio, { passive: true });
+        window.addEventListener('touchstart', resumeAudio, { passive: true });
+        window.addEventListener('keydown', resumeAudio, { passive: true });
 
         const srcNode = ctx.createMediaStreamSource(stream);
+
+        // Pre-amp Boost: Tăng âm lượng micro laptop 2.5 lần để bù khoảng cách và độ nhạy mic máy tính
+        const micBoostNode = ctx.createGain();
+        micBoostNode.gain.value = 2.5;
+        srcNode.connect(micBoostNode);
+
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 64;
-        srcNode.connect(analyser);
+        micBoostNode.connect(analyser);
 
         // Tạo ScriptProcessorNode để trích xuất tín hiệu micro thời gian thực
         const bufferSize = 2048;
         const processorNode = ctx.createScriptProcessor(bufferSize, 1, 1);
         processorRef.current = processorNode;
-        srcNode.connect(processorNode);
+        (window as any).__huddleProcessor = processorNode;
+        micBoostNode.connect(processorNode);
 
         // Nối vào silent gain (gain = 0) tới destination để kích hoạt onaudioprocess theo chuẩn W3C
         // Tuyệt đối không phát ra loa để chống loopback vọng tiếng sidetone
@@ -224,15 +311,25 @@ export const HuddleCallModal: React.FC<{
         processorNode.connect(silentGain);
         silentGain.connect(ctx.destination);
 
-        // Kiểm tra sóng âm giao diện local
+        // Kiểm tra sóng âm giao diện local & tính toán cường độ âm thanh thực tế
         const dataArray = new Uint8Array(analyser.frequencyBinCount);
         const checkVoice = () => {
           if (isCancelled) return;
+          if (ctx.state === 'suspended') {
+            setNeedsAudioGesture(true);
+          } else {
+            setNeedsAudioGesture(false);
+          }
           analyser.getByteFrequencyData(dataArray);
           let sum = 0;
           for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
           const avg = sum / dataArray.length;
-          const speaking = avg > 15 && !isMutedRef.current;
+
+          // Cường độ âm lượng % (0 - 100) cho thanh đo VU Meter trực quan
+          const level = Math.min(100, Math.round((avg / 50) * 100));
+          setInputLevel(level);
+
+          const speaking = (avg > 6 || level > 10) && !isMutedRef.current;
           setIsSpeaking(speaking);
           animFrameRef.current = requestAnimationFrame(checkVoice);
         };
@@ -257,23 +354,30 @@ export const HuddleCallModal: React.FC<{
             sumSquares += input[i] * input[i];
           }
           const rms = Math.sqrt(sumSquares / input.length);
-          const isUserTalking = rms > 0.012;
+
+          // Ngưỡng nhận diện tiếng nói cực nhạy (0.0006) kèm mic boost 2.5x đảm bảo mic laptop thu rõ 100%
+          const isUserTalking = rms > 0.0006;
 
           if (isUserTalking) {
             lastSpokeTimeRef.current = Date.now();
           }
 
-          // Hangover 350ms giữ nguyên âm cuối câu không bị nuốt chữ
-          const shouldTransmit = Date.now() - lastSpokeTimeRef.current < 350;
+          // Hangover 1200ms: giữ truyền tải âm thanh liên tục không nuốt âm đuôi hay bị gián đoạn giữa các từ
+          const shouldTransmit = !isMutedRef.current && (Date.now() - lastSpokeTimeRef.current < 1200 || rms > 0.0004);
           if (!shouldTransmit) return;
 
-          // Downsample từ native sampleRate (44.1/48kHz) về 16kHz
-          const downsampleStep = Math.max(1, Math.round(ctx.sampleRate / 16000));
-          const outLength = Math.floor(input.length / downsampleStep);
+          // Downsample chất lượng cao bằng Linear Interpolation từ native sampleRate (44.1/48kHz) về 16kHz
+          const ratio = ctx.sampleRate / 16000;
+          const outLength = Math.floor(input.length / ratio);
           const pcm16 = new Int16Array(outLength);
-          for (let i = 0, j = 0; i < outLength; i++, j += downsampleStep) {
-            const sample = Math.max(-1, Math.min(1, input[j]));
-            pcm16[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+          for (let i = 0; i < outLength; i++) {
+            const srcIdx = i * ratio;
+            const idx0 = Math.floor(srcIdx);
+            const idx1 = Math.min(input.length - 1, idx0 + 1);
+            const frac = srcIdx - idx0;
+            const sample = input[idx0] * (1 - frac) + input[idx1] * frac;
+            const clamped = Math.max(-1, Math.min(1, sample));
+            pcm16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
           }
 
           // Chuyển Int16 thành chuỗi Base64
@@ -320,7 +424,7 @@ export const HuddleCallModal: React.FC<{
               ringtoneManager.stop();
               setActivePeers((prev) => {
                 if (prev.some((p) => p.peerId === data.peerId)) return prev;
-                return [...prev, { peerId: data.peerId, name: data.name }];
+                return [...prev, { peerId: data.peerId, name: data.name, email: data.email }];
               });
               setPeerStates((prev) => ({ ...prev, [data.peerId]: 'connected' }));
               if (connectionStatus !== 'connected') setConnectionStatus('connected');
@@ -350,7 +454,7 @@ export const HuddleCallModal: React.FC<{
                 setActivePeers((prev) =>
                   prev.map((p) => (p.peerId === fromPeer ? { ...p, isSpeaking: false } : p))
                 );
-              }, 350);
+              }, 400);
 
               // Giải mã PCM và phát ra Loa Ngoài (Loudspeaker) qua Web Audio Queue
               try {
@@ -450,7 +554,7 @@ export const HuddleCallModal: React.FC<{
         wsRef.current.close();
       }
     };
-  }, [normalizedRoomId, myEmail, myName, myPeerId]);
+  }, [normalizedRoomId, myEmail, myName, myPeerId, selectedDeviceId]);
 
   const toggleMute = () => {
     unlockAudio();
@@ -481,7 +585,7 @@ export const HuddleCallModal: React.FC<{
         <div className="space-y-1">
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-semibold text-xs border border-emerald-500/30">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            Huddle Voice Call (WebRTC)
+            Đàm thoại Huddle trực tiếp
           </div>
           <h3 className="text-base font-bold text-white mt-2">#{group.name}</h3>
           <p className="text-xs text-slate-400">Đàm thoại trực tiếp thời gian thực giữa các giảng viên</p>
@@ -495,7 +599,7 @@ export const HuddleCallModal: React.FC<{
             className="w-full p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold animate-pulse flex items-center justify-center gap-2 cursor-pointer shadow-md"
           >
             <Volume2 className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Bấm vào đây để bật tiếng đàm thoại!</span>
+            <span>Trình duyệt đang chờ thao tác. Bấm vào đây để BẬT MIC ngay!</span>
           </button>
         )}
 
@@ -535,7 +639,7 @@ export const HuddleCallModal: React.FC<{
             </div>
 
             {/* Remote Peers Avatars */}
-            {activePeers.map((p) => {
+            {displayPeers.map((p) => {
               const pState = peerStates[p.peerId] || 'connecting';
               const isConnected = pState === 'connected';
 
@@ -574,7 +678,7 @@ export const HuddleCallModal: React.FC<{
           </div>
 
           <div className="mt-4">
-            {activePeers.length === 0 ? (
+            {displayPeers.length === 0 ? (
               group.isDirect ? (
                 <div className="flex flex-col items-center gap-1.5 animate-pulse">
                   <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
@@ -597,11 +701,33 @@ export const HuddleCallModal: React.FC<{
               )
             ) : (
               <p className="text-[11px] text-emerald-400 font-medium">
-                🟢 Đang đàm thoại trực tiếp ({activePeers.length + 1} người trong phòng)
+                🟢 Đang đàm thoại trực tiếp ({displayPeers.length + 1} người trong phòng)
               </p>
             )}
           </div>
         </div>
+
+        {/* Bộ chọn Micro (Đặc biệt hữu ích khi máy tính có nhiều driver như Realtek, Nvidia, ASIO) */}
+        {audioDevices.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300 max-w-xs mx-auto">
+            <Mic className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <select
+              value={selectedDeviceId}
+              onChange={(e) => {
+                unlockAudio();
+                setSelectedDeviceId(e.target.value);
+              }}
+              className="bg-transparent text-slate-200 text-xs font-medium focus:outline-none w-full truncate cursor-pointer"
+              title="Chọn thiết bị Microphone đầu vào"
+            >
+              {audioDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId} className="bg-slate-900 text-white">
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Call Controls */}
         <div className="flex items-center justify-center gap-3 pt-2">

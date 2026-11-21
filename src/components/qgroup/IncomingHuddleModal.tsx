@@ -15,34 +15,24 @@ interface IncomingHuddleModalProps {
   incomingCall: IncomingHuddleData | null;
   onAccept: (call: IncomingHuddleData) => void;
   onDecline: (call: IncomingHuddleData) => void;
+  isMuted?: boolean;
 }
 
 export const IncomingHuddleModal: React.FC<IncomingHuddleModalProps> = ({
   incomingCall,
   onAccept,
   onDecline,
+  isMuted = false,
 }) => {
   useEffect(() => {
-    if (incomingCall) {
-      // Đổ 1 tiếng bính boong êm dịu duy nhất thông báo có Huddle mới, không đổ chuông reo dồn dập
+    if (incomingCall && !isMuted) {
+      // Đổ 1 tiếng bính boong êm dịu duy nhất thông báo có Huddle mới (nếu chưa tắt chuông)
       ringtoneManager.playSingleNotificationChime();
     }
-    const handleAcceptWithAudioUnlock = () => {
-    // Kích hoạt âm thanh đồng bộ ngay trong cử chỉ tương tác người dùng (User Gesture)
-    try {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtxClass) {
-        const dummyCtx = new AudioCtxClass();
-        dummyCtx.resume().catch(() => {});
-      }
-    } catch {}
-    if (incomingCall) onAccept(incomingCall);
-  };
-
-  return () => {
+    return () => {
       ringtoneManager.stop();
     };
-  }, [incomingCall?.roomId]);
+  }, [incomingCall?.roomId, isMuted]);
 
   if (!incomingCall) return null;
 

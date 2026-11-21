@@ -106,6 +106,7 @@ import { ChatComposer } from './qgroup/ChatComposer';
 import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
 import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
+import { isGroupMuted, toggleGroupMute } from '../utils/notificationPrefs';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -113,7 +114,8 @@ interface QGroupScreenProps {
   onShowToast: (
     type: 'success' | 'info' | 'warning' | 'error',
     title: string,
-    message: string
+    message: string,
+    onClick?: () => void
   ) => void;
   currentUser?: UserProfile | null;
   subscriptionInfo?: UserSubscriptionInfo | null;
@@ -565,21 +567,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   >([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string>(() => {
     try {
-      return (
-        sessionStorage.getItem('qgroup_selected_group_id') ||
-        localStorage.getItem('qgroup_selected_group_id') ||
-        ''
-      );
+      // Chỉ chọn đoạn chat sẵn nếu người dùng vừa bấm "Mở tin nhắn" từ thông báo
+      const isDirectOpen = sessionStorage.getItem('quizgen_direct_open_chat') === 'true';
+      if (isDirectOpen) {
+        return sessionStorage.getItem('qgroup_selected_group_id') || '';
+      }
+      // Khi mới vào Q-Group từ Menu/Sidebar: không chọn đoạn chat nào để cả mobile lẫn desktop hiển thị đúng chuẩn
+      return '';
     } catch {
       return '';
     }
   });
   const [showMobileChat, setShowMobileChat] = useState<boolean>(() => {
     try {
-      const saved =
-        sessionStorage.getItem('qgroup_selected_group_id') ||
-        localStorage.getItem('qgroup_selected_group_id');
-      return Boolean(saved);
+      // Chỉ mở thẳng khung chat trên mobile nếu người dùng vừa bấm "Mở tin nhắn" từ thông báo
+      const isDirectOpen = sessionStorage.getItem('quizgen_direct_open_chat') === 'true';
+      if (isDirectOpen) {
+        sessionStorage.removeItem('quizgen_direct_open_chat');
+        return true;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -590,6 +597,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       try {
         sessionStorage.setItem('qgroup_selected_group_id', selectedGroupId);
         localStorage.setItem('qgroup_selected_group_id', selectedGroupId);
+      } catch {}
+    } else {
+      try {
+        sessionStorage.removeItem('qgroup_selected_group_id');
+        localStorage.removeItem('qgroup_selected_group_id');
       } catch {}
     }
   }, [selectedGroupId]);
@@ -1209,6 +1221,57 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setIsHuddleOpen(true);
   }, []);
 
+  // Lắng nghe sự kiện điều hướng từ bên ngoài (Toast Click / Global Huddle Accept)
+  useEffect(() => {
+    const handleOpenGroup = (e: any) => {
+      const gid = e?.detail?.groupId || sessionStorage.getItem('qgroup_selected_group_id');
+      if (gid) {
+        setSelectedGroupId(gid);
+        setShowMobileChat(true);
+        // Tức thì nhảy đến tin nhắn mới nhất ở cuối trang, triệt tiêu hiệu ứng cuộn từ trên xuống
+        const jumpDirectly = () => {
+          if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+          }
+          if (chatEndRef.current) {
+            try {
+              chatEndRef.current.scrollIntoView({ behavior: 'instant' as any, block: 'end' });
+            } catch {
+              chatEndRef.current.scrollIntoView(false);
+            }
+          }
+        };
+        jumpDirectly();
+        requestAnimationFrame(jumpDirectly);
+      }
+    };
+
+    const handleJoinHuddle = (e: any) => {
+      const gid = e?.detail?.groupId || sessionStorage.getItem('qgroup_selected_group_id');
+      if (gid) {
+        setSelectedGroupId(gid);
+        setShowMobileChat(true);
+      }
+      handleOpenHuddleWithAudioPrime();
+    };
+
+    window.addEventListener('quizgen:open-group', handleOpenGroup);
+    window.addEventListener('quizgen:join-huddle', handleJoinHuddle);
+
+    // Kiểm tra cờ auto-join nếu vừa chuyển màn hình vào
+    try {
+      if (sessionStorage.getItem('quizgen_auto_open_huddle') === 'true') {
+        sessionStorage.removeItem('quizgen_auto_open_huddle');
+        handleOpenHuddleWithAudioPrime();
+      }
+    } catch {}
+
+    return () => {
+      window.removeEventListener('quizgen:open-group', handleOpenGroup);
+      window.removeEventListener('quizgen:join-huddle', handleJoinHuddle);
+    };
+  }, [handleOpenHuddleWithAudioPrime]);
+
   // ── Backend sync & Storage ───────────────────────────────────────────────
   const syncGroupsToBackend = useCallback(async (groups: QGroup[]) => {
     try {
@@ -1401,7 +1464,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
 
         const calculatedTime = getGroupSortTime({ ...g, messages: cleanMsgs });
-        deduped.push({ ...g, messages: cleanMsgs, updatedAt: calculatedTime });
+        const isMuted = isGroupMuted(g.id, myEmail);
+        deduped.push({ ...g, messages: cleanMsgs, updatedAt: calculatedTime, muted: isMuted });
       }
 
       deduped.forEach((g) => {
@@ -1410,6 +1474,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         if (msgs.length > prev) {
           const last = msgs[msgs.length - 1];
           if (last && last.senderEmail?.toLowerCase() !== myEmail && !last.isSystem) {
+            // Nếu người dùng đang mở đúng cuộc trò chuyện này thì không cần bắn Toast nữa (đang xem trực tiếp)
+            if (g.id === selectedGroupId) {
+              prevMsgCount.current[g.id] = msgs.length;
+              return;
+            }
+
             const lastText = (last.text || '').toLowerCase();
             const cleanMyEmail = myEmail.toLowerCase();
             const cleanMyName = (myName || '').toLowerCase();
@@ -1421,21 +1491,37 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               lastText.includes('@kênh')
             );
 
+            const isMuted = isGroupMuted(g.id, myEmail);
+            const isDirectChat = Boolean(g.isDirect || g.type === 'direct');
+            const categoryTag = isDirectChat ? '[Bạn bè]' : `[Nhóm #${g.name}]`;
+            const senderDisplay = last.senderName || 'Đồng nghiệp';
+
             if (isMentioned) {
               // BẮT BUỘC BÁO DÙ CÓ TẮT CHUÔNG (BYPASS MUTE ON TAG)
               playMentionChime();
               onShowToast(
                 'warning',
-                `🔔 ${last.senderName} đã nhắc đến bạn!`,
-                last.text || '[Tệp đính kèm]'
+                `🔔 ${categoryTag} ${senderDisplay} đã nhắc đến bạn!`,
+                last.text || '[Tệp đính kèm]',
+                () => {
+                  setSelectedGroupId(g.id);
+                  setShowMobileChat(true);
+                }
               );
-            } else if (!g.muted) {
-              // Tin nhắn thường: chỉ kêu nếu không bị tắt chuông
-              playBeep();
+            } else {
+              // Tin nhắn thường: nếu không tắt chuông thì phát âm thanh
+              if (!isMuted) {
+                playBeep();
+              }
+              // DÙ CÓ TẮT CHUÔNG HAY KHÔNG, THÔNG BÁO HÌNH ẢNH VẪN LUÔN XUẤT HIỆN ĐẦY ĐỦ (chỉ là trong im lặng)
               onShowToast(
                 'info',
-                `Tin nhắn mới từ ${last.senderName || 'ai đó'}`,
-                last.text || '[Tệp đính kèm]'
+                `${categoryTag} Tin nhắn mới từ ${senderDisplay}`,
+                last.text || '[Tệp đính kèm]',
+                () => {
+                  setSelectedGroupId(g.id);
+                  setShowMobileChat(true);
+                }
               );
             }
           }
@@ -1564,18 +1650,25 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   useLayoutEffect(() => {
     if (selectedGroupId) {
       prevGroupIdRef.current = selectedGroupId;
-      // Nhảy lập tức tới tin nhắn mới nhất, triệt tiêu hoàn toàn hiệu ứng cuộn từ đầu trang xuống
+      // Nhảy lập tức tới tin nhắn mới nhất, không cuộn lướt từ đầu trang xuống
       const jumpToLatestMessage = () => {
         if (chatContainerRef.current) {
           chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
         }
+        if (chatEndRef.current) {
+          try {
+            chatEndRef.current.scrollIntoView({ behavior: 'instant' as any, block: 'end' });
+          } catch {
+            chatEndRef.current.scrollIntoView(false);
+          }
+        }
       };
       jumpToLatestMessage();
       requestAnimationFrame(jumpToLatestMessage);
-      const timer = setTimeout(jumpToLatestMessage, 40);
+      const timer = setTimeout(jumpToLatestMessage, 20);
       return () => clearTimeout(timer);
     }
-  }, [selectedGroupId, showMobileChat]);
+  }, [selectedGroupId, showMobileChat, qgroups]);
 
   useEffect(() => {
     if (selectedGroupId) {
@@ -1641,21 +1734,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       });
   }, [qgroups, searchQuery, filterTab, myEmail]);
 
-  // Tự động chọn nhóm/hội thoại hợp lệ hiển thị cho tài khoản hiện tại (bảo toàn khi tải lại trang)
+  // Chỉ kiểm tra khi đã có nhóm được chọn: nếu nhóm bị xóa/giải tán thì reset về chưa chọn
   useEffect(() => {
-    if (qgroups.length > 0) {
-      if (!selectedGroupId) {
-        setSelectedGroupId(sortedGroups[0]?.id || qgroups[0].id);
-      } else {
-        const existsInAll = qgroups.some(
-          (g) => g.id === selectedGroupId || g.code === selectedGroupId
-        );
-        if (!existsInAll && sortedGroups.length > 0) {
-          setSelectedGroupId(sortedGroups[0].id);
-        }
+    if (selectedGroupId && qgroups.length > 0) {
+      const existsInAll = qgroups.some(
+        (g) => g.id === selectedGroupId || g.code === selectedGroupId
+      );
+      if (!existsInAll) {
+        setSelectedGroupId('');
+        setShowMobileChat(false);
       }
     }
-  }, [sortedGroups, qgroups, selectedGroupId]);
+  }, [qgroups, selectedGroupId]);
 
   const activeGroup = useMemo(
     () => qgroups.find((g) => g.id === selectedGroupId) ?? null,
@@ -3456,18 +3546,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const handleToggleMute = useCallback(
     (group: QGroup) => {
+      const isNowMuted = toggleGroupMute(group.id, myEmail);
       const updated = qgroups.map((g) =>
-        g.id === group.id ? { ...g, muted: !g.muted } : g
+        g.id === group.id ? { ...g, muted: isNowMuted } : g
       );
       applyGroups(updated);
-      void syncGroupsToBackend(updated);
+      // KHÔNG ĐƯỢC syncGroupsToBackend(updated) vì mute là thiết lập cá nhân riêng của từng tài khoản!
       onShowToast(
         'info',
-        'Thông báo',
-        group.muted ? 'Đã bật thông báo' : 'Đã tắt thông báo'
+        'Âm thanh thông báo',
+        isNowMuted
+          ? 'Đã tắt chuông cuộc gọi và tin nhắn hội thoại này (vẫn nhận thông báo im lặng)'
+          : 'Đã bật chuông thông báo hội thoại này'
       );
     },
-    [qgroups, applyGroups, syncGroupsToBackend, onShowToast]
+    [qgroups, applyGroups, onShowToast, myEmail]
   );
 
   const handleSendFriendRequest = async (overrideEmail?: string) => {
@@ -3929,7 +4022,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 setIsStarred(!isStarred);
                 onShowToast('info', isStarred ? 'Bỏ đánh dấu sao' : 'Đã đánh dấu sao kênh', activeGroup.name);
               }}
-              onBackToMobileList={() => setShowMobileChat(false)}
+              onBackToMobileList={() => {
+                setShowMobileChat(false);
+                setSelectedGroupId('');
+                try {
+                  sessionStorage.removeItem('qgroup_selected_group_id');
+                  localStorage.removeItem('qgroup_selected_group_id');
+                } catch {}
+              }}
               onOpenMobileMenu={onOpenMobileMenu}
               onOpenProfile={(email, name) => {
                 setProfileEmail(email);
@@ -4846,30 +4946,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )}
 
       {/* ====================================================================
-          MODAL: INCOMING HUDDLE CALL (THÔNG BÁO CUỘC GỌI ĐẾN TỨC THÌ)
+          MODAL: INCOMING HUDDLE CALL (ĐÃ ĐƯỢC CHUYỂN LÊN ROOT APP ĐỂ BÁO TRÊN MỌI MÀN HÌNH)
       ==================================================================== */}
-      <IncomingHuddleModal
-        incomingCall={incomingHuddleCall}
-        onAccept={(call) => {
-          setIncomingHuddleCall(null);
-          if (call.groupId) {
-            setSelectedGroupId(call.groupId);
-            setShowMobileChat(true);
-          }
-          handleOpenHuddleWithAudioPrime();
-        }}
-        onDecline={(call) => {
-          dismissedCallsRef.current[call.roomId] = Date.now() + 86400000;
-          setIncomingHuddleCall(null);
-          apiClient
-            .fetch(`${API_BASE}/huddle/dismiss`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ roomId: call.roomId }),
-            })
-            .catch(() => {});
-        }}
-      />
 
       {/* ====================================================================
           OTHER MODALS: PUBLIC PROFILE, ADD FRIEND, CREATE GROUP

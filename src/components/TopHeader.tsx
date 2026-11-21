@@ -46,6 +46,7 @@ interface TopHeaderProps {
   ) => void;
   onToggleMobileMenu?: () => void;
   onOpenProfileModal?: () => void;
+  unreadQGroupCount?: number;
 }
 
 interface NavCommand {
@@ -84,6 +85,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   onToggleMobileMenu,
   onOpenProfileModal,
   onShowToast,
+  unreadQGroupCount,
 }) => {
   const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
   const isAdmin = currentUser?.role === 'admin';
@@ -358,10 +360,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {onToggleMobileMenu && (
           <button
             onClick={onToggleMobileMenu}
-            className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 md:hidden transition-colors shrink-0"
+            className="relative p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 md:hidden transition-colors shrink-0"
             title="Mở menu điều hướng"
           >
             <Menu className="w-5 h-5" />
+            {Boolean(unreadQGroupCount && unreadQGroupCount > 0 && currentScreen !== 'qgroup') && (
+              <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+            )}
           </button>
         )}
         <div

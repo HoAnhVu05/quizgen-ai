@@ -2017,8 +2017,17 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         userEmail={currentUser?.email}
         userName={currentUser?.fullName || 'Hồ Anh Vũ'}
         onClose={() => setShowSecretAuthModal(false)}
-        onSuccess={() => {
+        onSuccess={(method) => {
           setShowSecretAuthModal(false);
+          // Đánh thức Agent Remote trên laptop (Chuyển từ DORMANT sang ACTIVE theo yêu cầu của anh Vũ)
+          void apiClient.fetch(`${API_BASE}/agent-bridge/session/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user: currentUser?.email || 'admin@quizgen.ai',
+              authMethod: method || 'biometric',
+            }),
+          });
           setIsSecretCommandCenterOpen(true);
         }}
       />
@@ -2028,6 +2037,8 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         <AdminSecretCommandCenterScreen
           currentUser={currentUser}
           onExit={() => {
+            // Đưa Agent Remote về chế độ ngủ đông (DORMANT) ngay khi đóng giao diện
+            void apiClient.fetch(`${API_BASE}/agent-bridge/session/stop`, { method: 'POST' });
             setIsSecretCommandCenterOpen(false);
           }}
         />

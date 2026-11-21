@@ -171,18 +171,50 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
             }
             return techActions;
           });
+
+          // Đồng bộ phản hồi thực tế từ phiên Antigravity Agent trên laptop vào khung chat
+          const agentReplies = data.liveFeed.filter(
+            (ev: LiveFeedEvent) => ev.kind === 'agent_reply' && ev.content && ev.content.trim().length > 0
+          );
+          if (agentReplies.length > 0) {
+            setChatMessages((prev) => {
+              let updated = [...prev];
+              let hasChange = false;
+              for (const r of agentReplies) {
+                const text = (r.content || '').trim();
+                // Không thêm nếu đã có tin nhắn trùng id hoặc nội dung trùng khớp
+                if (!updated.some((m) => m.id === r.id || m.text.trim() === text)) {
+                  updated.push({
+                    id: r.id,
+                    sender: 'agent',
+                    senderName: 'Antigravity Agent (Laptop)',
+                    text,
+                    timestamp:
+                      r.timestamp ||
+                      new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                  });
+                  hasChange = true;
+                }
+              }
+              return hasChange ? updated : prev;
+            });
+          }
         }
       }
     } catch {}
   };
 
-  // Polling chu kỳ 2.5 giây cho cuộn băng
+  // Polling chu kỳ 2.5 giây cho cuộn băng khi phiên đang ACTIVE
   useEffect(() => {
     void fetchLiveMirror();
     const interval = setInterval(() => {
       void fetchLiveMirror();
     }, 2500);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      // Đảm bảo đưa Agent Remote về chế độ ngủ đông (Dormant) khi unmount
+      void apiClient.fetch(`${API_BASE}/agent-bridge/session/stop`, { method: 'POST' }).catch(() => null);
+    };
   }, []);
 
   // Web Speech Recognition Setup (Nhận diện giọng nói)
@@ -366,7 +398,10 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-white tracking-tight">Antigravity Remote</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-mono font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  ACTIVE
+                </span>
               </div>
 
               {/* Micro-telemetry pill font JetBrains Mono 10px */}

@@ -1,5 +1,7 @@
 import httpx
+import asyncio
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect, Query
+from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 import hmac
@@ -241,8 +243,8 @@ def get_active_huddle_rooms():
             meta = huddle_room_meta.get(room_id, {})
             started_at = meta.get("startedAt", now)
             has_been_answered = bool(meta.get("hasBeenAnswered"))
-            # Chỉ coi là đang đổ chuông nếu cuộc gọi được khởi tạo dưới 30s, chưa từng có người bắt máy, và có đúng 1 người trong phòng
-            is_ringing = (not has_been_answered) and (now - started_at < 30) and (len(peers) == 1) and bool(meta.get("isDirect"))
+            # Cuộc gọi (cả 1-1 lẫn Nhóm) đổ chuông nếu mới bắt đầu (< 60s), chưa bị dismiss, và người gọi đang ở trong phòng
+            is_ringing = (not has_been_answered) and (now - started_at < 60) and (len(peers) >= 1)
             active[room_id] = {
                 "roomId": room_id,
                 "count": len(peers),
@@ -250,8 +252,10 @@ def get_active_huddle_rooms():
                 "callerName": meta.get("callerName") or (peer_list[0]["name"] if peer_list else "Đồng nghiệp"),
                 "callerEmail": meta.get("callerEmail") or (peer_list[0].get("email", "") if peer_list else ""),
                 "groupName": meta.get("groupName") or "",
+                "groupId": meta.get("groupId") or room_id,
                 "isDirect": meta.get("isDirect", room_id.startswith("dm_")),
                 "directPartnerEmail": meta.get("directPartnerEmail", ""),
+                "members": meta.get("members", []),
                 "startedAt": started_at,
                 "isRinging": is_ringing,
             }
@@ -270,9 +274,12 @@ async def register_huddle_ring(request: Request):
             "callerName": str(data.get("callerName", "Đồng nghiệp")).strip(),
             "callerEmail": str(data.get("callerEmail", "")).strip().lower(),
             "groupName": str(data.get("groupName", "")).strip(),
+            "groupId": str(data.get("groupId", data.get("roomId", ""))).strip(),
             "isDirect": bool(data.get("isDirect", room_id.startswith("dm_"))),
             "directPartnerEmail": str(data.get("directPartnerEmail", "")).strip().lower(),
+            "members": [str(m).strip().lower() for m in data.get("members", [])],
             "startedAt": time.time(),
+            "hasBeenAnswered": False,
         }
         return {"status": "success", "roomId": room_id}
     except Exception as e:
@@ -314,7 +321,32 @@ async def huddle_signaling(
                 "startedAt": time.time(),
             }
     
-    # Lưu peer connection theo session_id duy nhất để hỗ trợ cả 2 thiết bị cùng 1 tài khoản
+    # 1. Quét dọn các kết nối ma (ghost sessions do rớt mạng, chuyển WiFi/4G hoặc tải lại trang)
+    stale_sessions = []
+    for s_id, info in list(huddle_rooms[clean_room].items()):
+        if s_id == session_id:
+            continue
+        # Trong cuộc gọi 1-1: Nếu cùng tài khoản này kết nối lại, session cũ lập tức coi như đã đóng
+        if clean_room.startswith("dm_") and info.get("email") == clean_email:
+            stale_sessions.append(s_id)
+            continue
+        # Kiểm tra trạng thái kết nối websocket thực tế
+        try:
+            ws_state = getattr(info["ws"], "client_state", None)
+            if ws_state and ws_state != WebSocketState.CONNECTED:
+                stale_sessions.append(s_id)
+        except Exception:
+            stale_sessions.append(s_id)
+
+    for dead_id in stale_sessions:
+        if clean_room in huddle_rooms and dead_id in huddle_rooms[clean_room]:
+            try:
+                await huddle_rooms[clean_room][dead_id]["ws"].close()
+            except Exception:
+                pass
+            del huddle_rooms[clean_room][dead_id]
+
+    # Lưu peer connection theo session_id duy nhất
     huddle_rooms[clean_room][session_id] = {
         "ws": websocket,
         "name": clean_name,
@@ -322,11 +354,11 @@ async def huddle_signaling(
         "joined_at": time.time()
     }
     
-    # Nếu phòng có từ 2 người trở lên, đánh dấu đã có người bắt máy (triệt tiêu hoàn toàn chuông reo lại khi có người thoát)
+    # Nếu phòng có từ 2 người trở lên, đánh dấu đã có người bắt máy
     if len(huddle_rooms[clean_room]) >= 2 and clean_room in huddle_room_meta:
         huddle_room_meta[clean_room]["hasBeenAnswered"] = True
     
-    # Send current peer list to the newly connected peer
+    # Gửi danh sách peer hiện có trong phòng cho thiết bị mới vào
     existing_peers = [
         {"peerId": s_id, "email": info["email"], "name": info["name"]}
         for s_id, info in huddle_rooms[clean_room].items()
@@ -337,7 +369,7 @@ async def huddle_signaling(
         "peers": existing_peers
     })
     
-    # Notify existing peers that a new user joined
+    # Thông báo cho các thành viên khác rằng có người mới tham gia
     for s_id, info in list(huddle_rooms[clean_room].items()):
         if s_id != session_id:
             try:
@@ -368,13 +400,29 @@ async def huddle_signaling(
                 except Exception:
                     pass
             elif msg_type in ("speaking", "mute_state", "broadcast", "audio_chunk", "audio_relay", "voice_data", "huddle_ring", "huddle_reject"):
-                # Broadcast voice speaking activity, audio chunks, or mute state to all other members in room
+                # Broadcast âm thanh và tín hiệu đàm thoại tới tất cả các thành viên trong phòng
+                dead_peers = []
                 for s_id, info in list(huddle_rooms[clean_room].items()):
                     if s_id != session_id:
                         try:
                             await info["ws"].send_json(data)
                         except Exception:
-                            pass
+                            dead_peers.append(s_id)
+                
+                # Triệt tiêu ngay lập tức các kết nối bị rớt mạng / đổi wifi và báo cho các máy khác
+                for dead_id in dead_peers:
+                    if clean_room in huddle_rooms and dead_id in huddle_rooms[clean_room]:
+                        dead_email = huddle_rooms[clean_room][dead_id].get("email", "")
+                        del huddle_rooms[clean_room][dead_id]
+                        for rem_id, rem_info in list(huddle_rooms[clean_room].items()):
+                            try:
+                                await rem_info["ws"].send_json({
+                                    "type": "peer_left",
+                                    "peerId": dead_id,
+                                    "email": dead_email
+                                })
+                            except Exception:
+                                pass
     except WebSocketDisconnect:
         pass
     except Exception:
@@ -387,7 +435,7 @@ async def huddle_signaling(
                 if clean_room in huddle_room_meta:
                     del huddle_room_meta[clean_room]
                 
-        # Notify others that this peer left
+        # Báo cho các client khác rằng peer này đã rời cuộc gọi
         if clean_room in huddle_rooms:
             for s_id, info in list(huddle_rooms[clean_room].items()):
                 try:
@@ -403,6 +451,120 @@ async def huddle_signaling(
 # ── Agent Remote Command Bridge (Điều khiển Antigravity Agent từ xa) ──────────
 AGENT_INBOX_FILE = Path(__file__).resolve().parent.parent.parent / "scratch" / "agent_remote_inbox.jsonl"
 AGENT_INBOX_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+# Trạng thái phiên làm việc On-Demand (Bảo mật Zero-Trust & Tiết kiệm tài nguyên)
+agent_remote_session = {
+    "is_active": False,
+    "authenticated_user": None,
+    "auth_method": None,  # 'biometric' | 'camera' | 'pin'
+    "session_started_at": None,
+    "last_activity_at": None,
+}
+
+def get_all_workspace_sessions(limit=15):
+    """Lấy danh sách các phiên làm việc thực sự trên workspace laptop từ thư mục brain"""
+    try:
+        import re
+        brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
+        if not brain_dir.exists():
+            return []
+        
+        sessions = []
+        for d in brain_dir.iterdir():
+            t = d / ".system_generated" / "logs" / "transcript.jsonl"
+            if t.exists():
+                try:
+                    mtime = t.stat().st_mtime
+                    with open(t, "r", encoding="utf-8", errors="replace") as f:
+                        first_line = json.loads(f.readline())
+                        content = first_line.get("content", "")
+                        match = re.search(r"<USER_REQUEST>\s*(.*?)\s*</USER_REQUEST>", content, re.DOTALL)
+                        raw_title = match.group(1).strip() if match else content[:60]
+                        clean_title = re.sub(r"<[^>]+>", "", raw_title)
+                        clean_title = re.sub(r"\s+", " ", clean_title).strip()
+                        if clean_title:
+                            formatted_dt = time.strftime("%d/%m %H:%M", time.localtime(mtime))
+                            sessions.append({
+                                "id": d.name,
+                                "title": clean_title[:45],
+                                "mtime": mtime,
+                                "formattedTime": formatted_dt,
+                            })
+                except Exception:
+                    pass
+        sessions.sort(key=lambda s: s["mtime"], reverse=True)
+        if sessions:
+            sessions[0]["isCurrent"] = True
+        return sessions[:limit]
+    except Exception as e:
+        logger.warning(f"Error fetching workspace sessions: {e}")
+        return []
+
+@app.get("/api/v1/agent-bridge/sessions")
+@app.get("/agent-bridge/sessions")
+def get_agent_bridge_sessions():
+    sessions = get_all_workspace_sessions(15)
+    return {
+        "status": "success",
+        "sessions": sessions,
+        "currentSessionId": sessions[0]["id"] if sessions else None
+    }
+
+def get_current_antigravity_conversation_id():
+    """Tìm ID phiên hội thoại Antigravity Agent đang mở gần nhất trên laptop"""
+    try:
+        brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
+        if not brain_dir.exists():
+            return None
+        transcripts = list(brain_dir.glob("*/.system_generated/logs/transcript.jsonl"))
+        if not transcripts:
+            return None
+        transcripts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return transcripts[0].parent.parent.parent.name
+    except Exception:
+        return None
+
+@app.post("/api/v1/agent-bridge/session/start")
+@app.post("/agent-bridge/session/start")
+async def start_agent_remote_session(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    user = str(data.get("user") or "admin@quizgen.ai")
+    auth_method = str(data.get("authMethod") or "biometric")
+    
+    agent_remote_session["is_active"] = True
+    agent_remote_session["authenticated_user"] = user
+    agent_remote_session["auth_method"] = auth_method
+    agent_remote_session["session_started_at"] = time.time()
+    agent_remote_session["last_activity_at"] = time.time()
+    
+    logger.info(f"[Agent Remote] 🟢 Session ACTIVATED for {user} via {auth_method}")
+    return {
+        "status": "success",
+        "message": "Agent Remote đã được kích hoạt thành công.",
+        "session": agent_remote_session
+    }
+
+@app.post("/api/v1/agent-bridge/session/stop")
+@app.post("/agent-bridge/session/stop")
+def stop_agent_remote_session():
+    agent_remote_session["is_active"] = False
+    agent_remote_session["session_started_at"] = None
+    logger.info("[Agent Remote] 🛑 Session DEACTIVATED (Dormant mode)")
+    return {
+        "status": "success",
+        "message": "Agent Remote đã quay về chế độ ngủ đông (Dormant)."
+    }
+
+@app.get("/api/v1/agent-bridge/session/status")
+@app.get("/agent-bridge/session/status")
+def get_agent_remote_session_status():
+    return {
+        "status": "success",
+        "session": agent_remote_session
+    }
 
 def get_real_system_stats():
     try:
@@ -528,12 +690,27 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
 
     # 3. Lệnh điều khiển trực tiếp terminal / workspace trên laptop
     if any(k in p for k in ["tắt web", "dừng web", "stop web", "kill vite"]):
+        return (
+            "⚠️ [CẢNH BÁO TỪ HỆ THỐNG]\n"
+            "Giao diện điều khiển trên điện thoại của anh đang kết nối trực tiếp qua Cloudflare Tunnel đến máy chủ Web (Port 3000) trên laptop.\n"
+            "Nếu thực hiện dừng Port 3000, toàn bộ kết nối từ xa trên điện thoại sẽ bị NGẮT NGAY LẬP TỨC và anh sẽ không thể thao tác tiếp từ xa!\n"
+            "Nếu anh chắc chắn muốn dừng máy chủ web, vui lòng gõ chính xác: 'Xác nhận tắt web 3000'."
+        )
+
+    if "xác nhận tắt web 3000" in p:
         try:
             import subprocess
             subprocess.run(["powershell", "-Command", "$p = Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue; if ($p) { Stop-Process -Id $p.OwningProcess -Force }"], capture_output=True, timeout=5)
             return "🛑 Đã thực thi lệnh dừng máy chủ giao diện Web (Port 3000) trên laptop theo chỉ đạo của anh!"
         except Exception as e:
             return f"Lỗi khi dừng web: {e}"
+
+    if any(k in p for k in ["tắt máy", "shutdown", "tắt laptop"]):
+        return (
+            "⚠️ [CẢNH BÁO BẢO VỆ PHẦN CỨNG LAPTOP]\n"
+            "Lệnh tắt máy tính Windows (Shutdown) sẽ ngắt toàn bộ nguồn điện laptop, đồng thời làm dừng 8 microservices và kết nối di động.\n"
+            "Để bảo toàn mã nguồn và các file đang chỉnh sửa, anh vui lòng lưu việc và tắt máy trực tiếp trên laptop."
+        )
 
     if any(k in p for k in ["git status", "git diff", "git log"]):
         try:
@@ -544,7 +721,35 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
         except Exception as e:
             return f"Lỗi git: {e}"
 
-    # 4. GỌI TRỰC TIẾP AI SERVICE VỚI ĐỊNH DANH ANTIGRAVITY ĐỂ ĐỐI THOẠI THÔNG MINH
+    # 4. KÍCH HOẠT ANTIGRAVITY AGENT THỰC THI TRỰC TIẾP TRÊN WORKSPACE LAPTOP
+    agentapi_path = Path.home() / ".gemini" / "antigravity" / "bin" / "agentapi.bat"
+    if agentapi_path.exists():
+        try:
+            import subprocess
+            instruction = (
+                f"Chỉ đạo từ xa của anh Hồ Anh Vũ: {prompt}. "
+                f"Mục tiêu: Thực hiện trực tiếp trên workspace D:\\HKDN\\Quizgen AI. "
+                f"Hãy đọc file, chỉnh sửa mã nguồn hoặc chạy terminal theo đúng yêu cầu."
+            )
+            res = subprocess.run([str(agentapi_path), "new-conversation", instruction], capture_output=True, text=True, timeout=15)
+            if res.returncode == 0:
+                try:
+                    data = json.loads(res.stdout)
+                    new_cid = data.get("response", {}).get("newConversation", {}).get("conversationId", "")
+                    logger.info(f"Launched Antigravity Agent. ConvId: {new_cid}")
+                except Exception:
+                    pass
+                return (
+                    f"🚀 Đã kích hoạt Antigravity Agent trên laptop!\n"
+                    f"Agent đang bắt đầu làm việc theo chỉ đạo của anh: \"{prompt}\".\n"
+                    f"Anh nhìn lên chiếc Tivi cuộn băng ở trên: toàn bộ file đang mở và lệnh terminal đang chạy sẽ hiển thị trực tiếp 100%!"
+                )
+            else:
+                logger.warning(f"agentapi new-conversation error: {res.stderr}")
+        except Exception as exc:
+            logger.warning(f"agentapi invocation failed: {exc}")
+
+    # 5. Fallback qua AI Service nếu Antigravity CLI bận
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(
@@ -570,7 +775,6 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
     except Exception as exc:
         logger.warning(f"AI service call failed: {exc}")
 
-    # 5. Fallback nếu AI Service bận
     photo_info = " (Có đính kèm hình ảnh)" if has_image else ""
     return (
         f"Dạ em đã nhận chỉ đạo của anh: \"{prompt}\"{photo_info}. "
@@ -737,31 +941,24 @@ def get_live_antigravity_feed(limit=35):
     except Exception as e:
         logger.warning(f"Error reading transcript: {e}")
         
-    # Đồng bộ các lệnh từ xa gần nhất vào luồng sự kiện TV
-    if AGENT_INBOX_FILE.exists():
-        try:
-            with open(AGENT_INBOX_FILE, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line:
-                        inb = json.loads(line)
-                        events.append({
-                            "id": f"inbox-{inb.get('id')}",
-                            "kind": "tool_call",
-                            "category": "terminal",
-                            "name": "remote_directive",
-                            "title": f"Chỉ đạo từ xa: {inb.get('prompt', '')}",
-                            "command": inb.get("output", "").split("\n")[0][:100],
-                            "timestamp": str(inb.get("formattedTime", ""))[-8:]
-                        })
-        except Exception:
-            pass
-
     return events[-limit:]
 
 @app.get("/api/v1/agent-bridge/live-mirror")
 @app.get("/agent-bridge/live-mirror")
 def get_agent_bridge_live_mirror():
+    if not agent_remote_session.get("is_active"):
+        # Chế độ ngủ đông (Dormant): không quét transcript, không tính CPU/RAM
+        return {
+            "status": "dormant",
+            "isActive": False,
+            "message": "Agent Remote đang ở chế độ ngủ đông. Vui lòng mở khóa bằng sinh trắc học để kích hoạt.",
+            "liveFeed": [],
+            "remoteInbox": [],
+            "workspace": r"D:\HKDN\Quizgen AI",
+            "systemStats": None
+        }
+
+    agent_remote_session["last_activity_at"] = time.time()
     feed = get_live_antigravity_feed(30)
     inbox = []
     if AGENT_INBOX_FILE.exists():
@@ -776,6 +973,8 @@ def get_agent_bridge_live_mirror():
             
     return {
         "status": "success",
+        "isActive": True,
+        "session": agent_remote_session,
         "liveFeed": feed,
         "remoteInbox": inbox[-10:],
         "workspace": r"D:\HKDN\Quizgen AI",

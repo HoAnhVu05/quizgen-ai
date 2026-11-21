@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { ShieldCheck, ShieldAlert, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
@@ -23,6 +23,9 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
 import { ThemeLuckyMoneyModal } from './components/ThemeFestiveComponents';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { IncomingHuddleModal, IncomingHuddleData } from './components/qgroup/IncomingHuddleModal';
+import { isGroupMuted } from './utils/notificationPrefs';
+import { ringtoneManager } from './utils/huddleRingtone';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
@@ -100,6 +103,14 @@ const AppContent: React.FC = () => {
   const [subscriptionInfo, setSubscriptionInfo] = useState<UserSubscriptionInfo | null>(null);
   const [isPricingModalOpen, setIsPricingModalOpen] = useState<boolean>(false);
   const [activePaymentOrder, setActivePaymentOrder] = useState<OrderData | null>(null);
+
+  // ─── Q-Group & Huddle Global Notification State ───────────────────────────
+  const [unreadQGroupCount, setUnreadQGroupCount] = useState<number>(0);
+  const [incomingHuddleCall, setIncomingHuddleCall] = useState<IncomingHuddleData | null>(null);
+  const [isIncomingHuddleMuted, setIsIncomingHuddleMuted] = useState<boolean>(false);
+  const prevMsgCountsRef = useRef<Record<string, number>>({});
+  const dismissedCallsRef = useRef<Record<string, number>>({});
+  const isFirstQGroupCheckRef = useRef<boolean>(true);
 
   const fetchSubscription = useCallback(async (userId?: string) => {
     const uid = userId || currentUser?.id;
@@ -646,20 +657,156 @@ const AppContent: React.FC = () => {
   const handleShowToast = useCallback((
     type: 'success' | 'info' | 'warning' | 'error',
     title: string,
-    message: string
+    message: string,
+    onClick?: () => void
   ) => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const newToast: ToastMessage = { id, type, title, message };
+    const newToast: ToastMessage = { id, type, title, message, onClick };
     setToasts((prev) => [newToast, ...prev.slice(0, 3)]); // Giữ tối đa 4 toast mới nhất
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+    }, 5500);
   }, []);
 
   const handleDismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // ─── Global Notification Poller (Tin nhắn QGroup & Cuộc gọi Huddle toàn hệ thống) ─
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser?.email) {
+      setUnreadQGroupCount(0);
+      setIncomingHuddleCall(null);
+      return;
+    }
+
+    const myEmail = currentUser.email.toLowerCase().trim();
+
+    const pollNotifications = async () => {
+      try {
+        // 1. Quét Huddle Active (Cuộc gọi Huddle 1-1 lẫn Nhóm đến tài khoản)
+        const huddleRes = await apiClient.fetch(`${API_BASE}/huddle/active`).catch(() => null);
+        if (huddleRes && huddleRes.ok) {
+          const huddleData = await huddleRes.json().catch(() => null);
+          if (huddleData && huddleData.rooms) {
+            const now = Date.now();
+            const incoming: any = Object.values(huddleData.rooms as Record<string, any>).find((r: any) => {
+              if (r.isRinging === false) return false;
+              if ((r.callerEmail || '').toLowerCase() === myEmail) return false;
+
+              // Người dùng đã có mặt trong cuộc gọi thì không báo chuông
+              const alreadyInCall = (r.peers || []).some(
+                (p: any) => (p.email || '').toLowerCase() === myEmail
+              );
+              if (alreadyInCall) return false;
+
+              const dismissedUntil = dismissedCallsRef.current[r.roomId];
+              if (dismissedUntil && now < dismissedUntil) return false;
+
+              // Kiểm tra người nhận hợp lệ
+              if (r.isDirect) {
+                const partner = (r.directPartnerEmail || '').toLowerCase();
+                const roomStr = (r.roomId || '').toLowerCase();
+                if (partner && partner === myEmail) return true;
+                if (roomStr.includes(myEmail)) return true;
+                return false;
+              } else {
+                // Cuộc gọi Nhóm: kiểm tra danh sách thành viên nhóm
+                const members = (r.members || []).map((m: string) => m.toLowerCase());
+                if (members.length > 0) {
+                  return members.includes(myEmail);
+                }
+                return true;
+              }
+            });
+
+            if (incoming) {
+              const muted = isGroupMuted(incoming.groupId || incoming.roomId, myEmail);
+              setIsIncomingHuddleMuted(muted);
+              setIncomingHuddleCall({
+                roomId: incoming.roomId,
+                callerName: incoming.callerName || 'Đồng nghiệp',
+                callerEmail: incoming.callerEmail,
+                groupName: incoming.groupName,
+                isDirect: Boolean(incoming.isDirect),
+                groupId: incoming.groupId || incoming.roomId,
+              });
+            } else {
+              setIncomingHuddleCall(null);
+            }
+          } else {
+            setIncomingHuddleCall(null);
+          }
+        }
+
+        // 2. Quét QGroups: Tính số lượng unread và báo tin nhắn mới khi ở trang khác
+        const qgRes = await apiClient
+          .fetch(`${API_BASE}/documents/qgroups?email=${encodeURIComponent(myEmail)}`)
+          .catch(() => null);
+        if (qgRes && qgRes.ok) {
+          const groups = await qgRes.json().catch(() => null);
+          if (Array.isArray(groups)) {
+            let totalUnreadGroups = 0;
+
+            for (const g of groups) {
+              const msgs: any[] = Array.isArray(g.messages) ? g.messages : [];
+              // Tính nhóm có tin nhắn chưa đọc
+              const hasUnread = msgs.some((m) => {
+                if (!m || m.isSystem) return false;
+                const sender = (m.senderEmail || '').toLowerCase().trim();
+                if (sender === myEmail) return false;
+                const readBy: string[] = Array.isArray(m.readBy) ? m.readBy.map((r: string) => r.toLowerCase().trim()) : [];
+                return !readBy.includes(myEmail);
+              });
+              if (hasUnread) totalUnreadGroups++;
+
+              // Kiểm tra tin nhắn mới tới: CHỈ BÁO KHI NGƯỜI DÙNG Ở NGOÀI MÀN HÌNH QGROUP
+              // (Nếu đang ở trong màn hình QGroup thì QGroupScreen chịu trách nhiệm để tránh trùng lặp)
+              const prevCount = prevMsgCountsRef.current[g.id] ?? msgs.length;
+              if (!isFirstQGroupCheckRef.current && msgs.length > prevCount) {
+                const last = msgs[msgs.length - 1];
+                if (last && (last.senderEmail || '').toLowerCase().trim() !== myEmail && !last.isSystem) {
+                  if (currentScreen !== 'qgroup') {
+                    const isMuted = isGroupMuted(g.id, myEmail);
+                    if (!isMuted) {
+                      ringtoneManager.playSingleNotificationChime();
+                    }
+                    const isDirectChat = Boolean(g.isDirect || g.type === 'direct');
+                    const categoryTag = isDirectChat ? '[Bạn bè]' : `[Nhóm #${g.name}]`;
+                    const senderDisplay = last.senderName || 'Đồng nghiệp';
+
+                    handleShowToast(
+                      'info',
+                      `${categoryTag} Tin nhắn mới từ ${senderDisplay}`,
+                      last.text || '[Tệp đính kèm]',
+                      () => {
+                        sessionStorage.setItem('qgroup_selected_group_id', g.id);
+                        sessionStorage.setItem('quizgen_direct_open_chat', 'true');
+                        setCurrentScreen('qgroup');
+                        setIsMobileMenuOpen(false);
+                        window.dispatchEvent(new CustomEvent('quizgen:open-group', { detail: { groupId: g.id } }));
+                      }
+                    );
+                  }
+                }
+              }
+              prevMsgCountsRef.current[g.id] = msgs.length;
+            }
+
+            setUnreadQGroupCount(totalUnreadGroups);
+            isFirstQGroupCheckRef.current = false;
+          }
+        }
+      } catch (err) {
+        // Ignored in background polling
+      }
+    };
+
+    void pollNotifications();
+    const intervalId = setInterval(pollNotifications, 2500);
+    return () => clearInterval(intervalId);
+  }, [isAuthenticated, currentUser?.email, currentScreen, handleShowToast]);
 
   // Thông báo nếu phiên trước đó đã hết hạn khi mở trang
   useEffect(() => {
@@ -1153,6 +1300,35 @@ const AppContent: React.FC = () => {
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
+      {/* Global Incoming Huddle Voice Call Modal (Hiển thị tức thì trên mọi màn hình) */}
+      <IncomingHuddleModal
+        incomingCall={incomingHuddleCall}
+        isMuted={isIncomingHuddleMuted}
+        onAccept={(call) => {
+          setIncomingHuddleCall(null);
+          sessionStorage.setItem('qgroup_selected_group_id', call.groupId);
+          sessionStorage.setItem('quizgen_auto_open_huddle', 'true');
+          setCurrentScreen('qgroup');
+          setIsMobileMenuOpen(false);
+          window.dispatchEvent(
+            new CustomEvent('quizgen:join-huddle', {
+              detail: { groupId: call.groupId, roomId: call.roomId },
+            })
+          );
+        }}
+        onDecline={(call) => {
+          dismissedCallsRef.current[call.roomId] = Date.now() + 86400000;
+          setIncomingHuddleCall(null);
+          apiClient
+            .fetch(`${API_BASE}/huddle/dismiss`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId: call.roomId }),
+            })
+            .catch(() => {});
+        }}
+      />
+
       {/* User Profile & Academic Info Settings Modal */}
       <UserProfileModal
         isOpen={isProfileModalOpen}
@@ -1202,10 +1378,14 @@ const AppContent: React.FC = () => {
       <Sidebar
         currentScreen={currentScreen}
         onNavigate={(screen) => {
+          if (screen === 'qgroup') {
+            sessionStorage.removeItem('quizgen_direct_open_chat');
+          }
           setCurrentScreen(screen);
           setIsMobileMenuOpen(false);
         }}
         pendingReviewCount={pendingCount}
+        unreadQGroupCount={unreadQGroupCount}
         currentUser={currentUser}
         onLogout={handleLogout}
         adminTab={adminTab}
@@ -1224,9 +1404,13 @@ const AppContent: React.FC = () => {
           currentScreen={currentScreen}
           currentUser={currentUser}
           subscriptionInfo={subscriptionInfo}
+          unreadQGroupCount={unreadQGroupCount}
           onOpenPricingModal={() => setIsPricingModalOpen(true)}
           onLogout={handleLogout}
           onNavigate={(screen) => {
+            if (screen === 'qgroup') {
+              sessionStorage.removeItem('quizgen_direct_open_chat');
+            }
             setCurrentScreen(screen);
             setIsMobileMenuOpen(false);
           }}

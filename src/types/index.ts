@@ -168,6 +168,7 @@ export interface ToastMessage {
   type: 'success' | 'info' | 'warning' | 'error';
   title: string;
   message: string;
+  onClick?: () => void;
 }
 
 export interface ExamExportConfig {

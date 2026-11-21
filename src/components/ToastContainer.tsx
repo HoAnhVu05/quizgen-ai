@@ -28,16 +28,38 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
         return (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start space-x-3 p-4 rounded-xl border transition-all duration-300 max-w-sm min-w-[280px] animate-slideIn ${bg}`}
+            onClick={() => {
+              if (toast.onClick) {
+                toast.onClick();
+                onDismiss(toast.id);
+              }
+            }}
+            className={`pointer-events-auto flex items-start space-x-3 p-3.5 sm:p-4 rounded-xl border transition-all duration-300 max-w-sm min-w-[280px] animate-slideIn ${bg} ${
+              toast.onClick
+                ? 'cursor-pointer hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] border-teal-500/60 ring-1 ring-teal-500/20'
+                : ''
+            }`}
           >
             {icon}
             <div className="flex-1 min-w-0">
-              <h4 className="text-xs font-bold leading-tight tracking-tight text-slate-900">{toast.title}</h4>
-              <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{toast.message}</p>
+              <div className="flex items-center justify-between gap-1.5">
+                <h4 className="text-xs font-bold leading-tight tracking-tight text-slate-900">{toast.title}</h4>
+                {toast.onClick && (
+                  <span className="text-[10px] text-teal-700 font-bold bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200/80 shrink-0">
+                    Mở tin nhắn →
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-600 mt-1 leading-snug break-words line-clamp-3">{toast.message}</p>
             </div>
             <button
-              onClick={() => onDismiss(toast.id)}
-              className="text-slate-400 hover:text-slate-700 transition-colors p-0.5"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDismiss(toast.id);
+              }}
+              className="text-slate-400 hover:text-slate-700 transition-colors p-0.5 shrink-0"
+              title="Đóng thông báo"
             >
               <X className="w-3.5 h-3.5" />
             </button>

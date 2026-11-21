@@ -58,6 +58,7 @@ interface SidebarProps {
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
   onOpenProfileModal?: () => void;
+  unreadQGroupCount?: number;
 }
 
 interface NavItem {
@@ -162,6 +163,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile,
   onOpenProfileModal,
+  unreadQGroupCount = 0,
 }) => {
   const { currentTheme, activeThemeId } = useTheme();
   const activeRole: UserRole = currentUser?.role || 'lecturer';
@@ -507,6 +509,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       {item.label}
                     </span>
                   </div>
+
+                  {/* Badge số tin nhắn chưa đọc dẫn đường tới Q-Group (ẩn đi khi đang ở trong trang Q-Group) */}
+                  {item.id === 'qgroup' && unreadQGroupCount > 0 && currentScreen !== 'qgroup' && (
+                    <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500 text-white shadow-xs animate-pulse shrink-0">
+                      {unreadQGroupCount > 99 ? '99+' : unreadQGroupCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
