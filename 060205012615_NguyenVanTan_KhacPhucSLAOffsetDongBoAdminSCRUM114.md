@@ -48,21 +48,37 @@ Trong phiên làm việc này, toàn bộ các trục trặc về hiển thị p
   * Kết nối trực tiếp với backend qua endpoint `POST /api/v1/support/tickets/{ticket_id}/feedback`.
   * Sau khi gửi thành công, giao diện chuyển sang trạng thái đã đánh giá kèm lời cảm ơn và bảo lưu điểm đánh giá.
 
-### 1.4. Loại bỏ Hoàn Toàn Cơ Chế Tự Động Trỏ Vào Phiếu (Tự Do Chọn Phiếu)
-- **Trả lại quyền chủ động cho người dùng:**
-  * Xóa bỏ triệt để đoạn mã tự động kích hoạt phiếu đầu tiên (`list[0]`) ở cả phía Admin và Giảng viên.
-  * Khi mở tab "Phiếu của tôi" hoặc Cổng CSKH Admin, hệ thống luôn hiển thị danh sách tổng quan. Chỉ khi người dùng click vào một phiếu cụ thể thì chi tiết phiếu mới được mở ra.
+### 1.4. Loại bỏ Triệt để Race Condition Tự Trỏ Phiếu, Nhấn Phiếu Này Mở Phiếu Kia & Tối Ưu Độ Trễ Mở Phiếu (Optimistic UI)
+- **Cơ chế đối soát ID tức thời qua `useRef`:**
+  * Xây dựng `selectedTicketIdRef` (Giảng viên) và `adminSelectedTicketIdRef` (Admin Portal) để theo dõi ID phiếu đang được kích hoạt.
+  * Trước và sau khi nhận phản hồi từ API, hệ thống luôn kiểm tra `if (ref.current !== ticketId) return;`. Mọi phản hồi mạng bị trễ của phiếu cũ đều bị loại bỏ ngay lập tức, triệt tiêu hoàn toàn hiện tượng "nhấn phiếu này mở phiếu kia".
+  * Khi bấm "Quay lại danh sách phiếu" hoặc "Đóng chi tiết", `ref.current` được gán về `null`, ngăn chặn 100% việc kết quả mạng cũ tự động mở lại phiếu.
+- **Phản hồi giao diện tức thì (Optimistic UI 0ms):**
+  * Khi người dùng nhấp chọn phiếu, component lập tức cập nhật dữ liệu tóm tắt lên giao diện trong 0 mili-giây và highlight viền chọn thay vì phải chờ đợi mạng, loại bỏ hoàn toàn cảm giác đơ lag.
+- **Tách biệt và làm mịn chu kỳ Polling:**
+  * Chế độ danh sách: Polling danh sách mỗi 5 giây (chỉ khi không có phiếu nào mở).
+  * Chế độ xem chi tiết: Polling duy nhất phiếu đang mở mỗi 4 giây, có cờ khóa `isFetchingRef` ngăn chặn request trùng lặp gây nghẽn uvicorn và database.
 
-### 1.5. Kết Quả Kiểm Thử Tự Động E2E 8 Bước Hoàn Hảo (100% PASS)
+### 1.5. Tách Biệt Đánh Giá CSAT Theo Từng Phiếu & Đồng Bộ Dữ Liệu Đánh Giá Thực Tế Sang Admin
+- **Khắc phục lỗi "chưa đánh giá mà báo đã hoàn tất":**
+  * Xóa bỏ biến cờ boolean toàn cục `csatSuccess`, chuyển sang kiểm tra thực thể dữ liệu thực tế `hasTicketFeedback = Boolean(selectedTicket.feedback && typeof selectedTicket.feedback.rating_stars === 'number')`.
+  * Phiếu nào chưa đánh giá trong cơ sở dữ liệu sẽ luôn hiển thị form đánh giá 1-5 sao. Chỉ khi người dùng bấm gửi thành công thì phiếu đó mới chuyển sang trạng thái "Đã hoàn tất đánh giá".
+  * Dọn dẹp sạch toàn bộ dữ liệu feedback kiểm thử tự động trong bảng `support_feedbacks`.
+- **Đồng bộ dữ liệu thật 100% lên Cổng Admin Portal:**
+  * Đồng bộ chuẩn hóa trường `average_csat_stars` và `total_feedbacks` từ backend API `/support/admin/metrics`.
+  * Thẻ CSAT KPI Admin: Hiển thị điểm trung bình thật `${avg.toFixed(1)} / 5.0` kèm số lượt đánh giá thực tế (hoặc "Chưa có" nếu chưa có đánh giá nào).
+  * Khay chi tiết phiếu Admin: Hiển thị thẻ vàng trực quan với số sao đánh giá (⭐⭐⭐⭐⭐), lời nhận xét cụ thể của Giảng viên và mốc thời gian đánh giá theo giờ GMT+7.
+
+### 1.6. Kết Quả Kiểm Thử Tự Động E2E 8 Bước Hoàn Hảo (100% PASS)
 - Chạy test suite `scripts/test_support_e2e_sync.py` mô phỏng toàn bộ hành vi thực tế:
-  1. `[PASS]` Giảng viên tạo ticket lỗi xuất PDF OMR $\rightarrow$ HTTP 201 Created (ID, Ticket Code, Status: OPEN).
-  2. `[PASS]` Giảng viên truy vấn "Phiếu của tôi" $\rightarrow$ Nhận diện ngay phiếu vừa tạo trong danh sách.
-  3. `[PASS]` Admin tải danh sách phiếu $\rightarrow$ Nhận diện đầy đủ 100% phiếu của giảng viên trong trường.
-  4. `[PASS]` Admin cập nhật trạng thái sang `IN_PROGRESS` $\rightarrow$ DB cập nhật thành công.
-  5. `[PASS]` Admin gửi tin nhắn giải pháp kỹ thuật $\rightarrow$ Message khởi tạo thành công.
+  1. `[PASS]` Giảng viên tạo ticket lỗi xuất PDF OMR → HTTP 201 Created (ID, Ticket Code, Status: OPEN).
+  2. `[PASS]` Giảng viên truy vấn "Phiếu của tôi" → Nhận diện ngay phiếu vừa tạo trong danh sách.
+  3. `[PASS]` Admin tải danh sách phiếu → Nhận diện đầy đủ 100% phiếu của giảng viên trong trường.
+  4. `[PASS]` Admin cập nhật trạng thái sang `IN_PROGRESS` → DB cập nhật thành công.
+  5. `[PASS]` Admin gửi tin nhắn giải pháp kỹ thuật → Message khởi tạo thành công.
   6. `[PASS]` Giảng viên nhận diện trạng thái cập nhật và tin nhắn phản hồi mới từ Admin qua Smart Polling.
-  7. `[PASS]` Admin chuyển trạng thái sang `RESOLVED` $\rightarrow$ Trạng thái hoàn tất.
-  8. `[PASS]` Giảng viên đánh giá CSAT 5 sao $\rightarrow$ Hệ thống ghi nhận điểm 5/5 sao vào database.
+  7. `[PASS]` Admin chuyển trạng thái sang `RESOLVED` → Trạng thái hoàn tất.
+  8. `[PASS]` Giảng viên đánh giá CSAT 5 sao → Hệ thống ghi nhận điểm 5/5 sao vào database.
 - **TypeScript & Build:** `npx tsc --noEmit` đạt 0 lỗi, `npm run build` hoàn thành với 2.089 modules transformed.
 
 ---
@@ -86,8 +102,10 @@ Trong phiên làm việc này, toàn bộ các trục trặc về hiển thị p
 ## 3. Minh chứng Git kèm 2 ảnh minh chứng
 
 ### 3.1. Danh sách Cam kết Git (Git Commits) trên nhánh `feature/upload-from-nguyentann-20261030`
-1. **Commit `[SCRUM-114]`**: `[SCRUM-114] fix(support-service): khac phuc loi TypeError offset-naive SLA datetime, giao dien chat 2 ben Zalo Messenger, chuan hoa gio GMT+7, danh gia sao CSAT va huy bo tu dong chon phieu`
-2. **Commit `[SCRUM-113]`**: `[SCRUM-113] fix(support-service): khac phuc loi hien thi validation error, dong bo 2 chieu tuc thi giua Giang vien va Admin, bo sung smart polling 2.5s va cap quyen toan dien cho admin`
+1. **Commit `44c2902`**: `[SCRUM-114] fix: tach biet trang thai danh gia CSAT tung phieu, dong bo du lieu danh gia that sang Admin Portal va hien thi chi tiet review`
+2. **Commit `f3f3a29`**: `[SCRUM-114] fix: loai bo triet de race condition tu dong tro phieu, nhan phieu nay mo phieu kia va toi uu do tre click phieu`
+3. **Commit `21fb5df`**: `[SCRUM-114] feat: hoan thien giao dien chat 2 ben Zalo/Messenger, chuan hoa gio GMT+7, danh gia CSAT 5 sao va loai bo tu chon phieu`
+4. **Commit `ad1afcf`**: `[SCRUM-114] fix(support-service): khac phuc loi TypeError offset-naive SLA datetime lam sap API tickets, mo khoa hang doi tiep nhan Admin va tu dong chon phieu dau tien`
 
 ### 3.2. Ảnh minh chứng 1: Kiến trúc Support Service & Luồng Đồng Bộ Hai Chiều Giảng Viên - Quản Trị Viên [SCRUM-114]
 *(Minh chứng kiến trúc dịch vụ hỗ trợ kỹ thuật Port 8008, 7 phân hệ lỗi học thuật, khay dán ảnh lỗi phím tắt Ctrl+V, nút Hỗ trợ trên TopHeader và cơ chế Smart Polling 2.5s)*
