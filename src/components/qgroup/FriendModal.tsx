@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   UserPlus,
   X,
@@ -10,6 +10,7 @@ import {
   AlertCircle,
   Plus,
 } from 'lucide-react';
+import { isExcludedAdminAccount } from './chatUtils';
 
 interface FriendModalProps {
   isOpen: boolean;
@@ -54,6 +55,18 @@ export const FriendModal: React.FC<FriendModalProps> = ({
   onBatchSendFriendRequests,
   initials,
 }) => {
+  const safeColleagues = useMemo(() => {
+    return (filteredColleaguesForFriend || []).filter(
+      (f) => !isExcludedAdminAccount(f.email, f.name, f.title)
+    );
+  }, [filteredColleaguesForFriend]);
+
+  const safeDropdown = useMemo(() => {
+    return (suggestedFriendsDropdown || []).filter(
+      (sug) => !isExcludedAdminAccount(sug.email, sug.name, sug.title)
+    );
+  }, [suggestedFriendsDropdown]);
+
   if (!isOpen) return null;
 
   return (
@@ -148,8 +161,8 @@ export const FriendModal: React.FC<FriendModalProps> = ({
                   if (e.key === 'Enter') {
                     if (friendLookupStatus === 'found' && friendLookedUpUser) {
                       onQueueFriendInvite(friendLookedUpUser);
-                    } else if (suggestedFriendsDropdown.length > 0) {
-                      const topUser = suggestedFriendsDropdown[0];
+                    } else if (safeDropdown.length > 0) {
+                      const topUser = safeDropdown[0];
                       onFriendEmailInputChange(topUser.email);
                       void onFriendLookup(topUser.email);
                     } else if (friendEmailInput.trim()) {
@@ -177,17 +190,17 @@ export const FriendModal: React.FC<FriendModalProps> = ({
               )}
 
               {/* AUTOCOMPLETE DROPDOWN GỢI Ý TỨC THÌ KHI GÕ TỪ KHÓA */}
-              {suggestedFriendsDropdown.length > 0 && !friendLookedUpUser && (
+              {safeDropdown.length > 0 && !friendLookedUpUser && (
                 <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-xl shadow-xl border border-teal-200/90 z-50 overflow-hidden divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
                   <div className="px-3 py-1.5 bg-gradient-to-r from-teal-50 to-emerald-50/50 text-[10px] font-bold text-teal-800 uppercase tracking-wider flex items-center justify-between border-b border-teal-100">
                     <span className="flex items-center gap-1.5">
                       <Sparkles className="w-3 h-3 text-[#008689]" />
-                      <span>Gợi ý đồng nghiệp phù hợp ({suggestedFriendsDropdown.length})</span>
+                      <span>Gợi ý đồng nghiệp phù hợp ({safeDropdown.length})</span>
                     </span>
                     <span className="text-[9px] font-normal text-teal-600">Nhấp để chọn nhanh</span>
                   </div>
                   <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
-                    {suggestedFriendsDropdown.map((sug) => {
+                    {safeDropdown.map((sug) => {
                       const state = getFriendshipState(sug.email);
                       return (
                         <div
@@ -364,18 +377,18 @@ export const FriendModal: React.FC<FriendModalProps> = ({
           <div className="space-y-2 pt-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Gợi ý Đồng nghiệp & Giảng viên ({filteredColleaguesForFriend.length})
+                Gợi ý Đồng nghiệp & Giảng viên ({safeColleagues.length})
               </span>
               <span className="text-[10px] text-slate-400">Kết nối 1-chạm</span>
             </div>
 
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-              {filteredColleaguesForFriend.length === 0 ? (
+              {safeColleagues.length === 0 ? (
                 <p className="text-center text-xs text-slate-400 py-3 italic">
                   Không tìm thấy đồng nghiệp phù hợp
                 </p>
               ) : (
-                filteredColleaguesForFriend.map((f) => {
+                safeColleagues.map((f) => {
                   const state = getFriendshipState(f.email);
                   const isSelected = selectedFriendsToInvite.some(
                     (m) => m.email.toLowerCase() === f.email.toLowerCase()

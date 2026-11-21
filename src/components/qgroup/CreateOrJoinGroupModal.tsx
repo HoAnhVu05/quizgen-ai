@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Users,
   X,
@@ -13,6 +13,7 @@ import {
   Info,
   UserPlus,
 } from 'lucide-react';
+import { isExcludedAdminAccount } from './chatUtils';
 
 interface CreateOrJoinGroupModalProps {
   isOpen: boolean;
@@ -77,6 +78,18 @@ export const CreateOrJoinGroupModal: React.FC<CreateOrJoinGroupModalProps> = ({
   isJoiningCode,
   initials,
 }) => {
+  const safeColleagues = useMemo(() => {
+    return (filteredColleaguesForNewGroup || []).filter(
+      (f) => !isExcludedAdminAccount(f.email, f.name, f.title)
+    );
+  }, [filteredColleaguesForNewGroup]);
+
+  const safeDropdown = useMemo(() => {
+    return (suggestedCreateGroupDropdown || []).filter(
+      (sug) => !isExcludedAdminAccount(sug.email, sug.name, sug.title)
+    );
+  }, [suggestedCreateGroupDropdown]);
+
   if (!isOpen) return null;
 
   return (
@@ -291,17 +304,17 @@ export const CreateOrJoinGroupModal: React.FC<CreateOrJoinGroupModalProps> = ({
                   )}
 
                   {/* AUTOCOMPLETE DROPDOWN GỢI Ý TỨC THÌ KHI GÕ TỪ KHÓA */}
-                  {suggestedCreateGroupDropdown.length > 0 && !createGroupLookedUpUser && (
+                  {safeDropdown.length > 0 && !createGroupLookedUpUser && (
                     <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-xl shadow-xl border border-teal-200/90 z-50 overflow-hidden divide-y divide-slate-100 animate-in fade-in slide-in-from-top-1 duration-150">
                       <div className="px-3 py-1.5 bg-gradient-to-r from-teal-50 to-emerald-50/50 text-[10px] font-bold text-teal-800 uppercase tracking-wider flex items-center justify-between border-b border-teal-100">
                         <span className="flex items-center gap-1.5">
                           <Sparkles className="w-3 h-3 text-[#008689]" />
-                          <span>Gợi ý tài khoản phù hợp ({suggestedCreateGroupDropdown.length})</span>
+                          <span>Gợi ý tài khoản phù hợp ({safeDropdown.length})</span>
                         </span>
                         <span className="text-[9px] font-normal text-teal-600">Nhấp để chọn nhanh</span>
                       </div>
                       <div className="max-h-56 overflow-y-auto divide-y divide-slate-50">
-                        {suggestedCreateGroupDropdown.map((sug) => {
+                        {safeDropdown.map((sug) => {
                           const state = getFriendshipState(sug.email);
                           return (
                             <div
@@ -442,18 +455,18 @@ export const CreateOrJoinGroupModal: React.FC<CreateOrJoinGroupModalProps> = ({
                 <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                      Gợi ý Đồng nghiệp ({filteredColleaguesForNewGroup.length})
+                      Gợi ý Đồng nghiệp ({safeColleagues.length})
                     </span>
                     <span className="text-[10px] text-slate-400">Bấm để chọn nhanh</span>
                   </div>
 
                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {filteredColleaguesForNewGroup.length === 0 ? (
+                    {safeColleagues.length === 0 ? (
                       <p className="text-center text-xs text-slate-400 py-2.5 italic">
                         Không còn đồng nghiệp nào khác chưa chọn
                       </p>
                     ) : (
-                      filteredColleaguesForNewGroup.map((f) => {
+                      safeColleagues.map((f) => {
                         const isSelected = createGroupSelectedMembers.some((m) => m.email.toLowerCase() === f.email.toLowerCase());
                         return (
                           <div

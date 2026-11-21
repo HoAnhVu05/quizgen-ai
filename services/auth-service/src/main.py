@@ -970,6 +970,14 @@ def search_users(q: str = Query("", min_length=0), db: Session = Depends(get_db)
             )
         )
     users = db.execute(stmt.limit(50)).scalars().all()
+    # Ẩn hoàn toàn tài khoản Quản trị viên hệ thống khỏi gợi ý đồng nghiệp/kết bạn
+    filtered_users = [
+        u for u in users
+        if u.email.lower() != "quizgen.ai.team@gmail.com"
+        and (u.role or "").lower() not in ["admin", "super_admin"]
+        and "admin" not in u.email.lower()
+        and "ban quản trị" not in (u.full_name or "").lower()
+    ]
     return [
         {
             "id": u.id,
@@ -981,7 +989,7 @@ def search_users(q: str = Query("", min_length=0), db: Session = Depends(get_db)
             "role": u.role,
             "is_active": u.is_active,
         }
-        for u in users
+        for u in filtered_users
     ]
 
 

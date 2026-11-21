@@ -184,3 +184,35 @@ export function deduplicateDMsAndChannels(groups: QGroup[]): QGroup[] {
 
   return result;
 }
+
+/**
+ * Helper to identify Admin / Super Admin / System management accounts that should NEVER
+ * be exposed in public teacher colleague suggestions, friend requests, or channel additions.
+ */
+export function isExcludedAdminAccount(
+  email?: string | null,
+  fullName?: string | null,
+  academicTitle?: string | null,
+  role?: string | null
+): boolean {
+  const e = (email || '').trim().toLowerCase();
+  const n = (fullName || '').toLowerCase();
+  const t = (academicTitle || '').toLowerCase();
+  const r = (role || '').toLowerCase();
+
+  if (
+    e === 'quizgen.ai.team@gmail.com' ||
+    e === 'admin@uth.edu.vn' ||
+    e === 'admin@quizgen.ai' ||
+    e.startsWith('admin@') ||
+    e.includes('admin')
+  ) {
+    return true;
+  }
+  if (r === 'admin' || r === 'super_admin' || r === 'root_admin') return true;
+  if (t === 'admin' || t === 'quản trị viên') return true;
+  if (n.includes('ban quản trị') || n.includes('quản trị viên') || n.includes('admin')) return true;
+
+  return false;
+}
+

@@ -105,7 +105,7 @@ import { ChatComposer } from './qgroup/ChatComposer';
 import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
 import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { TextbookPickerModal } from './qgroup/TextbookPickerModal';
-import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
+import { deduplicateDMsAndChannels, isExcludedAdminAccount } from './qgroup/chatUtils';
 import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
 import { openUserProfile } from '../utils/userProfileModalHelper';
 import { downloadFileSafely } from '../utils/fileDownloadHelper';
@@ -625,7 +625,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             setSystemUsersList((prev) => {
               const map = new Map<string, { email: string; fullName: string; academicTitle?: string; department?: string }>();
               list.forEach((u: any) => {
-                if (u.email) {
+                if (u.email && !isExcludedAdminAccount(u.email, u.fullName, u.academicTitle, u.role)) {
                   map.set(u.email.toLowerCase(), {
                     email: u.email,
                     fullName: u.fullName || u.email.split('@')[0],
@@ -637,7 +637,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               try {
                 const localUsers = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
                 localUsers.forEach((lu: any) => {
-                  if (lu.email && !map.has(lu.email.toLowerCase())) {
+                  if (lu.email && !isExcludedAdminAccount(lu.email, lu.fullName || lu.name, lu.academicTitle || lu.title, lu.role) && !map.has(lu.email.toLowerCase())) {
                     map.set(lu.email.toLowerCase(), {
                       email: lu.email,
                       fullName: lu.fullName || lu.name || lu.email.split('@')[0],
@@ -647,7 +647,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   }
                 });
               } catch {}
-              return Array.from(map.values());
+              return Array.from(map.values()).filter((u) => !isExcludedAdminAccount(u.email, u.fullName, u.academicTitle));
             });
             return;
           }
@@ -658,12 +658,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         const localUsers = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
         if (Array.isArray(localUsers) && isMounted) {
           setSystemUsersList(
-            localUsers.map((lu: any) => ({
-              email: lu.email,
-              fullName: lu.fullName || lu.name || lu.email.split('@')[0],
-              academicTitle: lu.academicTitle || lu.title || 'ThS.',
-              department: lu.department || 'Khoa Công nghệ Thông tin',
-            }))
+            localUsers
+              .filter((lu: any) => lu.email && !isExcludedAdminAccount(lu.email, lu.fullName || lu.name, lu.academicTitle || lu.title, lu.role))
+              .map((lu: any) => ({
+                email: lu.email,
+                fullName: lu.fullName || lu.name || lu.email.split('@')[0],
+                academicTitle: lu.academicTitle || lu.title || 'ThS.',
+                department: lu.department || 'Khoa Công nghệ Thông tin',
+              }))
           );
         }
       } catch {}
@@ -954,7 +956,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     qgroups.forEach((g) => {
       if (g.isDirect) {
         const info = resolveChatDisplayInfo(g, myEmail);
-        if (info.partnerEmail && info.partnerEmail.toLowerCase() !== myEmail.toLowerCase()) {
+        if (
+          info.partnerEmail &&
+          info.partnerEmail.toLowerCase() !== myEmail.toLowerCase() &&
+          !isExcludedAdminAccount(info.partnerEmail, info.displayName)
+        ) {
           map.set(info.partnerEmail.toLowerCase(), {
             email: info.partnerEmail,
             name: info.displayName,
@@ -967,7 +973,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
     // 1. Đồng bộ người dùng thực tế từ auth.db (qua admin-service API)
     systemUsersList.forEach((u) => {
-      if (u.email && u.email.toLowerCase() !== myEmail.toLowerCase()) {
+      if (
+        u.email &&
+        u.email.toLowerCase() !== myEmail.toLowerCase() &&
+        !isExcludedAdminAccount(u.email, u.fullName, u.academicTitle)
+      ) {
         const cleanEmail = u.email.toLowerCase();
         if (!map.has(cleanEmail)) {
           map.set(cleanEmail, {
@@ -980,7 +990,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       }
     });
 
-    // 2. Các tài khoản mẫu hệ thống & đồng nghiệp dự phòng
+    // 2. Các tài khoản mẫu hệ thống & đồng nghiệp dự phòng (Ẩn hoàn toàn tài khoản Quản trị viên/Admin)
     const systemLecturers = [
       { email: 'mr.av1222005@gmail.com', name: 'ThS. Mr. AV', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'avanimechannel@gmail.com', name: 'ThS. Vũ Anh', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
@@ -991,13 +1001,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       { email: 'ducngo.180305@gmail.com', name: 'TS. Ngô Phạm Công Đức', title: 'TS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'lieuthanhau@gmail.com', name: 'ThS. Liêu Thanh Hậu', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'anhvu12022005@gmail.com', name: 'ThS. Anhvu12022005', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
-      { email: 'quizgen.ai.team@gmail.com', name: 'Ban Quản trị QuizGen AI', title: 'Admin', dept: 'Phòng Đào Tạo & Khảo Thí' },
       { email: 'hod.cntt@uth.edu.vn', name: 'PGS. TS. Trưởng Khoa CNTT', title: 'PGS. TS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'gv.kinhte@uth.edu.vn', name: 'TS. Giảng viên Kinh tế', title: 'TS.', dept: 'Khoa Kinh tế Vận tải' },
     ];
 
     systemLecturers.forEach((c) => {
-      if (c.email.toLowerCase() !== myEmail.toLowerCase()) {
+      if (c.email.toLowerCase() !== myEmail.toLowerCase() && !isExcludedAdminAccount(c.email, c.name, c.title)) {
         if (!map.has(c.email.toLowerCase())) {
           map.set(c.email.toLowerCase(), c);
         } else {
@@ -1008,7 +1017,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       }
     });
 
-    return Array.from(map.values());
+    return Array.from(map.values()).filter((c) => !isExcludedAdminAccount(c.email, c.name, c.title));
   }, [qgroups, myEmail, systemUsersList]);
 
   // Bộ lọc danh sách bạn bè theo ô tìm kiếm / ký tự @ (khi thêm thành viên vào kênh)
@@ -2513,16 +2522,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const lookupAccount = useCallback(
     async (emailVal: string) => {
       const clean = emailVal.trim().toLowerCase().replace(/^@/, '');
-      if (!clean) {
+      if (!clean || isExcludedAdminAccount(clean)) {
         return null;
       }
 
       // 1. Kiểm tra trực tiếp trong danh mục tài khoản động từ API (khớp email, tiền tố, hoặc họ tên)
       const dynamicUser = systemUsersList.find(
         (u) =>
-          u.email.toLowerCase() === clean ||
-          u.email.toLowerCase().split('@')[0] === clean ||
-          u.fullName.toLowerCase() === clean
+          !isExcludedAdminAccount(u.email, u.fullName, u.academicTitle) &&
+          (u.email.toLowerCase() === clean ||
+            u.email.toLowerCase().split('@')[0] === clean ||
+            u.fullName.toLowerCase() === clean)
       );
       if (dynamicUser) {
         return {
@@ -2535,7 +2545,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         };
       }
 
-      // 2. Danh mục tài khoản hệ thống & đồng nghiệp mẫu
+      // 2. Danh mục tài khoản hệ thống & đồng nghiệp mẫu (LOẠI BỎ TÀI KHOẢN ADMIN QUIZGEN)
       const localRegistered: Record<
         string,
         { fullName: string; academicTitle: string; department: string }
@@ -2549,25 +2559,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         'ducngo.180305@gmail.com': { fullName: 'Ngô Phạm Công Đức', academicTitle: 'TS.', department: 'Khoa Công nghệ Thông tin' },
         'lieuthanhau@gmail.com': { fullName: 'Liêu Thanh Hậu', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
         'anhvu12022005@gmail.com': { fullName: 'Anhvu12022005', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
-        'quizgen.ai.team@gmail.com': { fullName: 'Ban Quản trị QuizGen AI', academicTitle: 'Admin', department: 'Hệ thống Khảo thí UTH' },
         'hod.cntt@uth.edu.vn': { fullName: 'PGS. TS. Trưởng Khoa CNTT', academicTitle: 'PGS. TS.', department: 'Khoa Công nghệ Thông tin' },
         'gv.kinhte@uth.edu.vn': { fullName: 'TS. Giảng viên Kinh tế', academicTitle: 'TS.', department: 'Khoa Kinh tế Vận tải' },
       };
 
       for (const [em, info] of Object.entries(localRegistered)) {
-        if (
-          em.toLowerCase() === clean ||
-          em.toLowerCase().split('@')[0] === clean ||
-          info.fullName.toLowerCase() === clean
-        ) {
-          return {
-            email: em,
-            fullName: info.fullName,
-            academicTitle: info.academicTitle,
-            department: info.department,
-            university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-            role: 'lecturer',
-          };
+        if (!isExcludedAdminAccount(em, info.fullName, info.academicTitle)) {
+          if (
+            em.toLowerCase() === clean ||
+            em.toLowerCase().split('@')[0] === clean ||
+            info.fullName.toLowerCase() === clean
+          ) {
+            return {
+              email: em,
+              fullName: info.fullName,
+              academicTitle: info.academicTitle,
+              department: info.department,
+              university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+              role: 'lecturer',
+            };
+          }
         }
       }
 
@@ -2580,6 +2591,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           if (res.ok) {
             const data = await res.json();
             if (data.exists && data.user) {
+              if (isExcludedAdminAccount(data.user.email, data.user.fullName, data.user.academicTitle, data.user.role)) {
+                return null;
+              }
               return data.user as {
                 id?: string;
                 email: string;
@@ -2601,12 +2615,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           if (res.ok) {
             const list = await res.json();
             if (Array.isArray(list) && list.length > 0) {
-              const matched = list.find(
+              const safeList = list.filter((u: any) => !isExcludedAdminAccount(u.email, u.fullName, u.academicTitle, u.role));
+              const matched = safeList.find(
                 (u: any) =>
                   u.email.toLowerCase() === clean ||
                   u.email.toLowerCase().split('@')[0] === clean ||
                   u.fullName.toLowerCase() === clean
-              ) || (list.length === 1 ? list[0] : null);
+              ) || (safeList.length === 1 ? safeList[0] : null);
               if (matched) return matched;
             }
           }
@@ -2732,6 +2747,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       const memberName = user.fullName || user.name || clean.split('@')[0];
       const title = user.academicTitle || user.title;
       const dept = user.department || user.dept;
+      if (isExcludedAdminAccount(clean, memberName, title)) {
+        onShowToast('warning', 'Không hợp lệ', 'Tài khoản Quản trị viên hệ thống được bảo mật và không tham gia kênh học thuật.');
+        return;
+      }
       if (clean === myEmail.toLowerCase()) {
         onShowToast('info', 'Thông báo', 'Bạn là Trưởng nhóm khởi tạo nên đã có sẵn trong kênh.');
         return;
@@ -2756,6 +2775,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       const memberName = user.fullName || user.name || clean.split('@')[0];
       const title = user.academicTitle || user.title;
       const dept = user.department || user.dept;
+      if (isExcludedAdminAccount(clean, memberName, title)) {
+        onShowToast('warning', 'Không hợp lệ', 'Tài khoản Quản trị viên hệ thống được bảo mật và không tham gia kênh học thuật.');
+        return;
+      }
       const currentMembers = (activeGroup.members || []).map((m) => String(m).toLowerCase());
       if (currentMembers.includes(clean)) {
         onShowToast('info', 'Đã là thành viên', `${memberName} (${clean}) đã có trong kênh #${activeGroup.name}`);
@@ -2780,6 +2803,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       const memberName = user.fullName || user.name || clean.split('@')[0];
       const title = user.academicTitle || user.title;
       const dept = user.department || user.dept;
+      if (isExcludedAdminAccount(clean, memberName, title)) {
+        onShowToast('warning', 'Không hợp lệ', 'Tài khoản Quản trị viên hệ thống được bảo mật và không thể kết bạn.');
+        return;
+      }
       if (clean === myEmail.toLowerCase()) {
         onShowToast('warning', 'Không hợp lệ', 'Bạn không thể kết bạn với chính mình.');
         return;

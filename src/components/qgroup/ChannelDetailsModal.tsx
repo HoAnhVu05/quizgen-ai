@@ -19,7 +19,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { QGroup } from '../../types';
-import { resolveChatDisplayInfo } from './chatUtils';
+import { resolveChatDisplayInfo, isExcludedAdminAccount } from './chatUtils';
 import { apiClient } from '../../services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -121,11 +121,6 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
       academicTitle: 'TS.',
       department: 'Khoa Công nghệ Thông tin',
     },
-    'quizgen.ai.team@gmail.com': {
-      fullName: 'Ban Quản trị QuizGen AI',
-      academicTitle: 'Admin',
-      department: 'Hệ thống Khảo thí UTH',
-    },
     'hod.cntt@uth.edu.vn': {
       fullName: 'PGS. TS. Trưởng Khoa CNTT',
       academicTitle: 'PGS. TS.',
@@ -141,7 +136,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
   useEffect(() => {
     const clean = inviteEmail.trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-    if (!clean || !emailRegex.test(clean)) {
+    if (!clean || !emailRegex.test(clean) || isExcludedAdminAccount(clean)) {
       setModalLookupStatus('idle');
       setModalLookedUpUser(null);
       return;
@@ -154,7 +149,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
         );
         if (res.ok) {
           const data = await res.json();
-          if (data.exists && data.user) {
+          if (data.exists && data.user && !isExcludedAdminAccount(data.user.email, data.user.fullName, data.user.academicTitle, data.user.role)) {
             setModalLookedUpUser(data.user);
             setModalLookupStatus('found');
             return;
@@ -162,7 +157,7 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
         }
       } catch {}
 
-      if (localRegistered[clean]) {
+      if (localRegistered[clean] && !isExcludedAdminAccount(clean, localRegistered[clean].fullName, localRegistered[clean].academicTitle)) {
         setModalLookedUpUser({ email: clean, ...localRegistered[clean] });
         setModalLookupStatus('found');
         return;
