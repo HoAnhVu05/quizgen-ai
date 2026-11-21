@@ -789,9 +789,33 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
     if agentapi_path.exists():
         try:
             import subprocess
+            import base64
+            
+            # Xử lý lưu ảnh nếu người dùng đính kèm từ điện thoại
+            saved_image_path = None
+            if has_image and image_data:
+                try:
+                    target_cid = session_id or "90dc8a84-74f3-4c42-b433-726bc4924226"
+                    target_dir = Path.home() / ".gemini" / "antigravity" / "brain" / target_cid / ".user_uploaded"
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    img_filename = f"media_{int(time.time()*1000)}.png"
+                    img_file = target_dir / img_filename
+                    b64_str = str(image_data)
+                    if "," in b64_str:
+                        b64_str = b64_str.split(",", 1)[1]
+                    img_file.write_bytes(base64.b64decode(b64_str))
+                    saved_image_path = str(img_file).replace("\\", "/")
+                    logger.info(f"[Remote Agent] Saved uploaded image to: {saved_image_path}")
+                except Exception as img_err:
+                    logger.warning(f"Error saving remote image: {img_err}")
+            
+            prompt_to_send = prompt
+            if saved_image_path:
+                prompt_to_send += f"\n\n[Đính kèm tệp ảnh do anh Vũ gửi từ điện thoại: {saved_image_path}]"
+
             if create_new or not session_id:
                 # Tạo phiên mới trên workspace với câu lệnh sạch sẽ
-                res = subprocess.run([str(agentapi_path), "new-conversation", prompt], capture_output=True, text=True, timeout=15)
+                res = subprocess.run([str(agentapi_path), "new-conversation", prompt_to_send], capture_output=True, text=True, timeout=15)
                 target_cid = session_id
                 if res.returncode == 0:
                     try:
@@ -800,16 +824,14 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
                     except Exception:
                         pass
                 return (
-                    f"🚀 Đã tạo phiên mới trên laptop và bắt đầu thực thi: \"{prompt}\".\n"
-                    f"Toàn bộ hành động đọc file, sửa code và terminal đang truyền trực tiếp lên Tivi!",
+                    f"🚀 Đã tạo phiên mới trên laptop và bắt đầu thực thi: \"{prompt}\".",
                     target_cid
                 )
             else:
                 # Gửi lệnh trực tiếp vào đúng phiên anh đã chọn trong workspace (ngắn gọn, không văn mẫu)
-                res = subprocess.run([str(agentapi_path), "send-message", session_id, prompt], capture_output=True, text=True, timeout=12)
+                res = subprocess.run([str(agentapi_path), "send-message", session_id, prompt_to_send], capture_output=True, text=True, timeout=12)
                 return (
-                    f"📡 Đã chuyển lệnh vào phiên: \"{prompt}\".\n"
-                    f"Tiến trình đang cập nhật trực tiếp trên chiếc Tivi cuộn băng!",
+                    f"📡 Đã chuyển lệnh vào phiên: \"{prompt}\".",
                     session_id
                 )
         except Exception as exc:
@@ -985,6 +1007,22 @@ def get_live_antigravity_feed(session_id: str = None, limit=40):
                                 "text": clean_text,
                                 "timestamp": formatted_time,
                             })
+                    elif stype == "SYSTEM_MESSAGE" or source == "SYSTEM":
+                        content_str = str(obj.get("content") or "")
+                        # Bắt tin nhắn do anh Vũ gửi từ điện thoại qua agentapi
+                        match = re.search(r"\[Message\]\s+timestamp=([^\s]+)\s+sender=([^\s]+).*?content=(.*?)(?:</SYSTEM_MESSAGE>|\Z)", content_str, re.DOTALL)
+                        if match:
+                            time_raw = match.group(1)
+                            msg_content = match.group(3).strip()
+                            if not msg_content.startswith("Task id ") and not msg_content.startswith("ping test"):
+                                time_str = time_raw.split("T")[1][:5] if "T" in time_raw else time_raw
+                                chat_dialogue.append({
+                                    "id": f"step-{idx}-user-remote",
+                                    "sender": "user",
+                                    "senderName": "Hồ Anh Vũ",
+                                    "text": msg_content,
+                                    "timestamp": time_str,
+                                })
                     elif stype == "PLANNER_RESPONSE" and content:
                         clean_reply = content.strip()
                         events.append({
@@ -1133,6 +1171,8 @@ async def delete_session(request: Request):
 
 _facenet_model = None
 _facenet_device = None
+_cached_ref_embeddings = []
+_cached_ref_mtime = 0
 
 def get_facenet_model():
     global _facenet_model, _facenet_device
@@ -1146,6 +1186,35 @@ def get_facenet_model():
         except Exception as e:
             logger.warning(f"Could not load FaceNet InceptionResnetV1: {e}")
     return _facenet_model, _facenet_device
+
+def get_cached_ref_embeddings():
+    """Lấy danh sách vector đặc trưng khuôn mặt quản trị viên đã đăng ký (có caching trong RAM siêu nhanh)"""
+    global _cached_ref_embeddings, _cached_ref_mtime
+    faces_dir, legacy_file = get_face_storage_paths()
+    files_to_check = [faces_dir / f"angle_{i}.jpg" for i in [1, 2, 3]] + [legacy_file]
+    latest_mtime = max([f.stat().st_mtime for f in files_to_check if f.exists()] or [0])
+    
+    if _cached_ref_embeddings and latest_mtime == _cached_ref_mtime:
+        return _cached_ref_embeddings
+        
+    import cv2
+    train_crops = []
+    for fp in files_to_check:
+        if fp.exists():
+            im = cv2.imread(str(fp))
+            if im is not None:
+                train_crops.append(cv2.resize(im, (160, 160)))
+                
+    embs = []
+    for crop in train_crops:
+        emb = compute_facenet_embedding(crop)
+        if emb is not None:
+            embs.append(emb)
+            
+    _cached_ref_embeddings = embs
+    _cached_ref_mtime = latest_mtime
+    logger.info(f"[FaceNet] Cached {len(embs)} reference embeddings in memory.")
+    return embs
 
 def extract_face_crop(img, target_size=(160, 160)):
     if img is None:
@@ -1179,7 +1248,7 @@ def extract_face_crop(img, target_size=(160, 160)):
                         color_crop = img[y1:y2, x1:x2]
                         return cv2.resize(color_crop, target_size)
                         
-        # Fallback: Nếu ảnh vuông selfie cận cảnh góc mặt, lấy vùng tâm 80% để FaceNet tự thẩm định embedding
+        # Fallback: Nếu ảnh selfie cận cảnh góc mặt, lấy vùng tâm 80%
         h, w = img.shape[:2]
         crop_h = int(h * 0.8)
         crop_w = int(w * 0.8)
@@ -1331,56 +1400,38 @@ async def verify_agent_face(request: Request):
                 "message": "Không phát hiện khuôn mặt người trong khung hình (yêu cầu thấy rõ mắt và ngũ quan)."
             }
             
-        faces_dir, legacy_file = get_face_storage_paths()
-        
-        # Load all enrolled reference images
-        train_crops = []
-        for i in [1, 2, 3]:
-            ang_file = faces_dir / f"angle_{i}.jpg"
-            if ang_file.exists():
-                im = cv2.imread(str(ang_file))
-                if im is not None:
-                    train_crops.append(cv2.resize(im, (160, 160)))
-                    
-        if len(train_crops) == 0 and legacy_file.exists():
-            im = cv2.imread(str(legacy_file))
-            if im is not None:
-                train_crops.append(cv2.resize(im, (160, 160)))
-                
-        if len(train_crops) == 0:
+        ref_embs = get_cached_ref_embeddings()
+        if not ref_embs:
             return {
                 "status": "error",
                 "message": "Hệ thống chưa có dữ liệu khuôn mặt Quản trị viên để đối soát."
             }
             
-        # SỬ DỤNG DEEP LEARNING FACENET ĐỂ ĐỐI SOÁT CHUẨN XÁC
+        # SỬ DỤNG DEEP LEARNING FACENET ĐỂ ĐỐI SOÁT CHUẨN XÁC VỚI VECTOR CACHED
         curr_emb = compute_facenet_embedding(curr_crop)
         if curr_emb is not None:
             max_sim = -1.0
-            for ref_crop in train_crops:
-                ref_emb = compute_facenet_embedding(ref_crop)
-                if ref_emb is not None:
-                    sim = torch.cosine_similarity(curr_emb, ref_emb).item()
-                    if sim > max_sim:
-                        max_sim = sim
+            for ref_emb in ref_embs:
+                sim = torch.cosine_similarity(curr_emb, ref_emb).item()
+                if sim > max_sim:
+                    max_sim = sim
                         
-            # Ngưỡng FaceNet: >= 0.50 là cùng một người với độ tin cậy tuyệt đối
-            if max_sim >= 0.50:
-                confidence_pct = int(min(99, max(60, (max_sim - 0.45) / 0.45 * 40 + 60)))
+            # NGƯỠNG BẢO MẬT CHẶT CHẼ: >= 0.72 (Đảm bảo người ngoài/bạn bè KHÔNG THỂ lọt qua)
+            if max_sim >= 0.72:
+                confidence_pct = int(min(99, max(75, (max_sim - 0.70) / 0.30 * 25 + 75)))
                 return {
                     "status": "success",
                     "similarity": round(max_sim, 3),
                     "confidence": confidence_pct,
-                    "message": f"Xác thực khuôn mặt Quản trị viên thành công (FaceNet AI: {confidence_pct}%)."
+                    "message": "Xác thực khuôn mặt Quản trị viên thành công."
                 }
             else:
                 return {
                     "status": "error",
                     "similarity": round(max_sim, 3),
-                    "message": f"Khuôn mặt không trùng khớp với Quản trị viên (Độ tương đồng: {max_sim:.2f} < 0.50). Truy cập bị từ chối."
+                    "message": f"Khuôn mặt không trùng khớp với Quản trị viên (Độ tương đồng {max_sim:.2f} < 0.72). Truy cập bị từ chối."
                 }
         else:
-            # Fallback nếu FaceNet không khả dụng
             return {
                 "status": "error",
                 "message": "Không thể trích xuất đặc trưng khuôn mặt AI. Vui lòng sử dụng Vân tay hoặc Mã PIN."

@@ -399,15 +399,23 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
         // Đồng bộ câu thoại thực tế từ phiên làm việc trên laptop vào khung chat
         if (Array.isArray(data.chatDialogue) && data.chatDialogue.length > 0) {
-          setChatMessages(
-            data.chatDialogue.map((d: any) => ({
+          setChatMessages((prev) => {
+            const serverMsgs = data.chatDialogue.map((d: any) => ({
               id: d.id,
               sender: d.sender,
               senderName: d.sender === 'user' ? (currentUser?.fullName || 'Hồ Anh Vũ') : 'Antigravity Agent (Laptop)',
               text: d.text,
               timestamp: d.timestamp || 'Vừa xong',
-            }))
-          );
+            }));
+
+            // Giữ lại các tin nhắn người dùng vừa gửi từ điện thoại chưa kịp xuất hiện trong server
+            const serverTexts = new Set(serverMsgs.map((m: any) => m.text));
+            const pendingLocal = prev.filter(
+              (m) => m.id.startsWith('user-') && !serverTexts.has(m.text)
+            );
+
+            return [...serverMsgs, ...pendingLocal];
+          });
         }
 
         if (Array.isArray(data.liveFeed) && data.liveFeed.length > 0) {
@@ -747,7 +755,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
       <div
         ref={chatContainerRef}
         onScroll={handleScroll}
-        className="relative flex-1 overflow-y-auto px-3.5 py-4 space-y-5 select-text bg-[#09090b]"
+        className="relative flex-1 overflow-y-auto overflow-x-hidden px-3.5 py-4 space-y-5 select-text bg-[#09090b]"
       >
         {chatMessages.map((msg, idx) => {
           const isUser = msg.sender === 'user';
@@ -755,8 +763,8 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
           if (isUser) {
             return (
-              <div key={msg.id} className="flex flex-col items-end space-y-1.5 max-w-[90%] ml-auto">
-                <div className="bg-[#18181b] border border-zinc-800 text-zinc-100 rounded-2xl px-4 py-3 text-[13px] leading-relaxed font-sans shadow-xs break-words w-fit">
+              <div key={msg.id} className="flex flex-col items-end space-y-1.5 max-w-[85%] ml-auto min-w-0">
+                <div className="bg-[#18181b] border border-zinc-800 text-zinc-100 rounded-2xl px-4 py-3 text-[13px] leading-relaxed font-sans shadow-xs break-words [overflow-wrap:anywhere] max-w-full whitespace-pre-wrap select-text">
                   {msg.text}
 
                   {msg.imageUrl && (
@@ -787,7 +795,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
           // Agent message: Clean Antigravity IDE format (no bubble, formatted markdown, Thinking/Worked accordion)
           return (
-            <div key={msg.id} className="flex flex-col items-start space-y-2 w-full pr-1">
+            <div key={msg.id} className="flex flex-col items-start space-y-2 w-full max-w-full min-w-0 pr-1 overflow-hidden">
               {/* Collapsible Accordion: Thinking / Worked for Xs */}
               {isLastAgentMsg && liveActions.length > 0 && (
                 <div className="py-0.5 w-full">
@@ -868,7 +876,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
         {/* Live Thinking Status while Agent is working */}
         {isAgentWorking && (
-          <div className="flex flex-col items-start space-y-1.5 w-full pr-1 py-1">
+          <div className="flex flex-col items-start space-y-1.5 w-full max-w-full min-w-0 pr-1 overflow-hidden py-1">
             <button
               type="button"
               onClick={() => setIsThinkingExpanded(!isThinkingExpanded)}

@@ -65,10 +65,30 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   }, [initialHasSentRequest]);
 
   useEffect(() => {
-    if (!isOpen || !userEmail) return;
+    if (!isOpen || (!userEmail && !userName)) return;
 
-    const email = userEmail.trim().toLowerCase();
-    const isMe = currentUser?.email?.toLowerCase() === email;
+    let email = (userEmail || '').trim().toLowerCase();
+    const cleanUName = (userName || '').toLowerCase().trim();
+
+    // Nếu chưa có email nhưng có userName, tìm kiếm hoặc ánh xạ chuẩn xác
+    if (!email && userName) {
+      if (cleanUName.includes('vũ') || cleanUName.includes('anh vũ')) {
+        email = 'avanimechannel@gmail.com';
+      } else if (cleanUName.includes('hậu') || cleanUName.includes('liêu')) {
+        email = 'lieuthanhau@gmail.com';
+      } else if (cleanUName.includes('tân')) {
+        email = 'nguyentann0804@gmail.com';
+      } else if (cleanUName.includes('hân')) {
+        email = 'hanbich1506@gmail.com';
+      } else {
+        email = `${userName.toLowerCase().replace(/[^a-z0-9]/g, '')}@uth.edu.vn`;
+      }
+    }
+
+    const isMe = Boolean(
+      (currentUser?.email && currentUser.email.toLowerCase() === email) ||
+      (currentUser?.fullName && userName && currentUser.fullName.toLowerCase() === cleanUName)
+    );
 
     // Load public shared textbooks
     let publicBooks: any[] = [];

@@ -107,6 +107,7 @@ import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
 import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
 import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
+import { openUserProfile } from '../utils/userProfileModalHelper';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -1144,6 +1145,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const chatEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const prevGroupIdRef = useRef<string | null>(null);
+  const isUserNearBottomRef = useRef<boolean>(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const prevMsgCount = useRef<Record<string, number>>({});
@@ -1670,28 +1672,25 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     void fetchFriendRequests();
   }, [myEmail, fetchQGroups, fetchGroupInvitations, fetchFriendRequests]);
 
+  // Nhảy tới tin nhắn mới nhất CHỈ KHI chuyển sang kênh/đoạn chat khác (không tự cuộn khi người dùng đang đọc tin nhắn cũ)
   useLayoutEffect(() => {
     if (selectedGroupId) {
+      const isSwitchingGroup = prevGroupIdRef.current !== selectedGroupId;
       prevGroupIdRef.current = selectedGroupId;
-      // Nhảy lập tức tới tin nhắn mới nhất, không cuộn lướt từ đầu trang xuống
-      const jumpToLatestMessage = () => {
-        if (chatContainerRef.current) {
-          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-        }
-        if (chatEndRef.current) {
-          try {
-            chatEndRef.current.scrollIntoView({ behavior: 'instant' as any, block: 'end' });
-          } catch {
-            chatEndRef.current.scrollIntoView(false);
+      if (isSwitchingGroup) {
+        isUserNearBottomRef.current = true;
+        const jumpToLatestMessage = () => {
+          if (chatContainerRef.current) {
+            chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
           }
-        }
-      };
-      jumpToLatestMessage();
-      requestAnimationFrame(jumpToLatestMessage);
-      const timer = setTimeout(jumpToLatestMessage, 20);
-      return () => clearTimeout(timer);
+        };
+        jumpToLatestMessage();
+        requestAnimationFrame(jumpToLatestMessage);
+        const timer = setTimeout(jumpToLatestMessage, 30);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [selectedGroupId, showMobileChat, qgroups]);
+  }, [selectedGroupId, showMobileChat]);
 
   useEffect(() => {
     if (selectedGroupId) {
@@ -1779,6 +1778,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     () => (activeGroup ? resolveChatDisplayInfo(activeGroup, myEmail) : null),
     [activeGroup, myEmail]
   );
+
+  // Khi có tin nhắn mới trong phòng chat đang mở: chỉ tự động cuộn nếu người dùng đang ở sát đáy
+  const currentActiveMsgCount = activeGroup?.messages?.length || 0;
+  const lastActiveMsgCountRef = useRef<number>(currentActiveMsgCount);
+  useEffect(() => {
+    if (currentActiveMsgCount > lastActiveMsgCountRef.current) {
+      if (isUserNearBottomRef.current && chatContainerRef.current) {
+        chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      }
+    }
+    lastActiveMsgCountRef.current = currentActiveMsgCount;
+  }, [currentActiveMsgCount]);
 
   const isCurrentUserMember = useMemo(() => {
     if (!activeGroup) return false;
@@ -4144,16 +4155,34 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             />
 
             {/* Message Stream (Slack Linear Flow) */}
-            <div ref={chatContainerRef} style={{ scrollBehavior: 'auto' }} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2 bg-[#fcfdfe]">
+            <div
+              ref={chatContainerRef}
+              onScroll={() => {
+                if (chatContainerRef.current) {
+                  const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+                  isUserNearBottomRef.current = scrollHeight - scrollTop - clientHeight <= 120;
+                }
+              }}
+              style={{ scrollBehavior: 'auto' }}
+              className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2 bg-[#fcfdfe]"
+            >
               {/* Channel Welcome Card */}
               {activeGroup.isDirect ? (
                 <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 text-left space-y-3 max-w-xl mb-4 shadow-2xs">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-slate-700 text-white flex items-center justify-center font-bold text-sm">
+                    <div
+                      onClick={() => openUserProfile(activeInfo.partnerEmail, activeInfo.displayName)}
+                      className="w-10 h-10 rounded-lg bg-slate-700 hover:bg-[#008689] text-white flex items-center justify-center font-bold text-sm cursor-pointer transition-colors shadow-2xs"
+                      title={`Xem hồ sơ của ${activeInfo.displayName}`}
+                    >
                       {activeInfo.avatarInitials}
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                      <h4
+                        onClick={() => openUserProfile(activeInfo.partnerEmail, activeInfo.displayName)}
+                        className="text-sm font-bold text-slate-900 hover:text-[#008689] flex items-center gap-1.5 cursor-pointer hover:underline transition-colors"
+                        title={`Xem hồ sơ của ${activeInfo.displayName}`}
+                      >
                         <span>@{activeInfo.displayName}</span>
                         <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
                       </h4>
@@ -4169,6 +4198,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       onClick={() => {
                         setProfileEmail(activeInfo.partnerEmail || null);
                         setProfileName(activeInfo.displayName);
+                        openUserProfile(activeInfo.partnerEmail, activeInfo.displayName);
                       }}
                       className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs cursor-pointer flex items-center gap-1.5 transition-colors border border-slate-200"
                     >
@@ -4221,15 +4251,16 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   >
                     <div
                       onClick={() => {
-                        if (!isMe) {
-                          setProfileEmail(msg.senderEmail || null);
-                          setProfileName(msg.senderName);
-                        }
+                        const targetEmail = msg.senderEmail || (isMe ? myEmail : activeInfo?.partnerEmail);
+                        const targetName = msg.senderName || (isMe ? myName : activeInfo?.displayName);
+                        setProfileEmail(targetEmail || null);
+                        setProfileName(targetName);
+                        openUserProfile(targetEmail, targetName);
                       }}
-                      className={`w-8 h-8 rounded-md text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 cursor-pointer hover:opacity-90 transition-opacity ${
+                      className={`w-8 h-8 rounded-md text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 cursor-pointer hover:opacity-90 transition-opacity shadow-2xs ${
                         isMe ? 'bg-slate-800' : 'bg-teal-700'
                       }`}
-                      title={isMe ? 'Bạn' : `Xem trang cá nhân của ${msg.senderName}`}
+                      title={isMe ? 'Xem hồ sơ của bạn' : `Xem trang cá nhân của ${msg.senderName}`}
                     >
                       {initials(msg.senderName || msg.senderEmail || '')}
                     </div>
@@ -4238,12 +4269,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       <div className="flex items-baseline gap-2 flex-wrap">
                         <span
                           onClick={() => {
-                            if (!isMe) {
-                              setProfileEmail(msg.senderEmail || null);
-                              setProfileName(msg.senderName);
-                            }
+                            const targetEmail = msg.senderEmail || (isMe ? myEmail : activeInfo?.partnerEmail);
+                            const targetName = msg.senderName || (isMe ? myName : activeInfo?.displayName);
+                            setProfileEmail(targetEmail || null);
+                            setProfileName(targetName);
+                            openUserProfile(targetEmail, targetName);
                           }}
-                          className="font-bold text-[13px] text-slate-900 hover:underline cursor-pointer"
+                          className="font-bold text-[13px] text-slate-900 hover:text-[#008689] hover:underline cursor-pointer transition-colors"
+                          title={isMe ? 'Xem hồ sơ của bạn' : `Xem trang cá nhân của ${msg.senderName}`}
                         >
                           {msg.senderName || msg.senderEmail}
                         </span>
@@ -4276,7 +4309,14 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                       {msg.replyTo && !msg.isRecalled && (
                         <div className="flex items-center gap-1.5 text-[11px] text-slate-500 my-1 pl-2 border-l-2 border-teal-500 bg-slate-50/70 py-0.5 rounded-r">
                           <Reply className="w-3 h-3 text-teal-600 shrink-0" />
-                          <span className="font-semibold text-slate-700">{msg.replyTo.senderName}:</span>
+                          <button
+                            type="button"
+                            onClick={() => openUserProfile(undefined, msg.replyTo?.senderName)}
+                            className="font-semibold text-slate-700 hover:text-[#008689] hover:underline cursor-pointer transition-colors"
+                            title={`Xem hồ sơ của ${msg.replyTo.senderName}`}
+                          >
+                            {msg.replyTo.senderName}:
+                          </button>
                           <span className="truncate italic text-slate-600">&ldquo;{msg.replyTo.text}&rdquo;</span>
                         </div>
                       )}
@@ -5050,7 +5090,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           OTHER MODALS: PUBLIC PROFILE, ADD FRIEND, CREATE GROUP
       ==================================================================== */}
       <PublicProfileModal
-        isOpen={Boolean(profileEmail)}
+        isOpen={Boolean(profileEmail || profileName)}
         userEmail={profileEmail}
         userName={profileName}
         isFriend={isTargetFriend}
