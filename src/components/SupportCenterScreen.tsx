@@ -74,6 +74,7 @@ interface TicketAttachment {
 
 interface TicketMessage {
   id: string;
+  sender_id?: string;
   sender_name: string;
   sender_role: string;
   message_body: string;
@@ -96,6 +97,13 @@ interface SupportTicket {
   error_context_json?: string;
   messages?: TicketMessage[];
   attachments?: TicketAttachment[];
+  feedback?: {
+    id?: string;
+    rating_stars: number;
+    feedback_text?: string;
+    resolved_efficiently?: boolean;
+    created_at?: string;
+  };
 }
 
 export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
@@ -138,6 +146,26 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
   // Lightbox xem ảnh toàn màn hình
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
   const [lightboxCaption, setLightboxCaption] = useState<string>('');
+
+  // Đánh giá sao CSAT khi ticket được RESOLVED / CLOSED
+  const [csatRating, setCsatRating] = useState<number>(5);
+  const [csatHover, setCsatHover] = useState<number>(0);
+  const [csatComment, setCsatComment] = useState<string>('');
+  const [isSubmittingCsat, setIsSubmittingCsat] = useState<boolean>(false);
+  const [csatSuccess, setCsatSuccess] = useState<boolean>(false);
+
+  const formatVnDateTime = (dtStr?: string) => {
+    if (!dtStr) return '';
+    const iso = dtStr.includes('Z') || dtStr.includes('+') ? dtStr : `${dtStr}Z`;
+    try {
+      const d = new Date(iso);
+      const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+      return `${time} • ${date}`;
+    } catch {
+      return dtStr;
+    }
+  };
 
   // Thông báo âm thanh nhẹ nhàng
   const playNotificationChime = () => {
@@ -454,6 +482,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         // Đưa phiếu mới vào danh sách ngay tức thì để hiển thị ngay
         setTickets((prev) => [newTicket, ...prev.filter((t) => t.id !== newTicket.id)]);
         setActiveTab('my_tickets');
+        setSelectedTicket(null);
         fetchTickets(false);
       } else {
         const errJson = await res.json().catch(() => null);
@@ -523,6 +552,40 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
     }
   };
 
+  const handleSubmitCsatFeedback = async () => {
+    if (!selectedTicket) return;
+    setIsSubmittingCsat(true);
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-user-id': currentUser?.id || 'usr-lec-001',
+        'x-user-email': currentUser?.email || 'nguyentann0804@gmail.com',
+        'x-user-role': (currentUser?.role || 'lecturer').toUpperCase(),
+      };
+      const token = localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}/support/tickets/${selectedTicket.id}/feedback`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          rating_stars: csatRating,
+          feedback_text: csatComment.trim() || 'Hài lòng với tốc độ và giải pháp của kỹ thuật viên QuizGen AI.',
+          resolved_efficiently: true,
+        }),
+      });
+      if (res.ok) {
+        const fbData = await res.json();
+        setCsatSuccess(true);
+        setSelectedTicket((prev) => (prev ? { ...prev, feedback: fbData } : null));
+      }
+    } catch (e) {
+      console.error('Lỗi gửi đánh giá CSAT:', e);
+    } finally {
+      setIsSubmittingCsat(false);
+    }
+  };
+
   const filteredArticles = articles.filter(
     (a) =>
       a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -574,6 +637,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
             <button
               onClick={() => {
                 setActiveTab('my_tickets');
+                setSelectedTicket(null);
                 fetchTickets();
               }}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative cursor-pointer ${
@@ -844,71 +908,198 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                     )}
                   </div>
 
-                  {/* Danh sách các tin nhắn phản hồi */}
-                  {selectedTicket.messages?.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`p-4 rounded-xl text-xs sm:text-sm ${
-                        msg.sender_role === 'USER'
-                          ? 'bg-teal-50/70 border border-teal-200/80 ml-8 text-teal-950'
-                          : 'bg-white border border-slate-200/90 mr-8 text-slate-800 shadow-2xs'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-xs text-slate-400 mb-1.5">
-                        <span className="font-bold flex items-center gap-1.5 text-slate-900">
-                          {msg.sender_role === 'USER' ? (
-                            'Tôi (Giảng viên)'
-                          ) : (
-                            <>
-                              <ShieldCheck className="w-4 h-4 text-[#008689]" />
-                              <span>Kỹ sư QuizGen AI ({msg.sender_name})</span>
-                            </>
-                          )}
-                        </span>
-                        <span className="font-mono text-[11px]">{new Date(msg.created_at).toLocaleTimeString('vi-VN')}</span>
-                      </div>
-                      <p className="whitespace-pre-line leading-relaxed">{msg.message_body}</p>
+                  {/* Khung trò chuyện Zalo / Messenger 2 bên */}
+                  <div className="space-y-4 max-h-[460px] overflow-y-auto p-4 bg-slate-50/70 rounded-2xl border border-slate-200/80">
+                    {selectedTicket.messages?.map((msg) => {
+                      const isMe = msg.sender_role === 'USER' || msg.sender_id === (currentUser?.id || 'usr-lec-001');
+                      const text = msg.message_body || (msg as any).content || '';
 
-                      {/* Tệp đính kèm trong tin nhắn */}
-                      {msg.attachments && msg.attachments.length > 0 && (
-                        <div className="mt-3 pt-2 border-t border-slate-200/60 flex flex-wrap gap-2">
-                          {msg.attachments.map((att) => {
-                            const isImg = att.mime_type.startsWith('image/');
-                            return isImg ? (
-                              <div
-                                key={att.id}
-                                onClick={() => {
-                                  setLightboxImageUrl(att.file_url || `/api/v1/support/attachments/${att.file_name}`);
-                                  setLightboxCaption(att.file_name);
-                                }}
-                                className="relative rounded-lg overflow-hidden border border-slate-200 group cursor-pointer hover:border-[#008689] transition-colors shadow-2xs"
-                              >
-                                <img
-                                  src={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
-                                  alt={att.file_name}
-                                  className="w-28 h-20 object-cover rounded-lg group-hover:scale-105 transition-transform"
-                                />
-                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                  <Maximize2 className="w-4 h-4 text-white" />
-                                </div>
-                              </div>
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        >
+                          <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-slate-500">
+                            {!isMe ? (
+                              <>
+                                <ShieldCheck className="w-3.5 h-3.5 text-[#008689]" />
+                                <span className="font-bold text-slate-800">Kỹ sư QuizGen AI ({msg.sender_name})</span>
+                                <span className="text-[10px] text-slate-400">• {formatVnDateTime(msg.created_at)}</span>
+                              </>
                             ) : (
-                              <a
-                                key={att.id}
-                                href={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
-                                download
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-[#008689] text-xs text-slate-700 transition-colors shadow-2xs"
-                              >
-                                <FileText className="w-3.5 h-3.5 text-amber-500" />
-                                <span className="max-w-[150px] truncate">{att.file_name}</span>
-                                <Download className="w-3 h-3 text-slate-400" />
-                              </a>
-                            );
-                          })}
+                              <>
+                                <span className="text-[10px] text-slate-400">{formatVnDateTime(msg.created_at)} •</span>
+                                <span className="font-bold text-[#008689]">Tôi (Giảng viên)</span>
+                              </>
+                            )}
+                          </div>
+
+                          <div
+                            className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm max-w-[80%] leading-relaxed shadow-2xs whitespace-pre-line ${
+                              isMe
+                                ? 'bg-[#008689] text-white rounded-tr-xs'
+                                : 'bg-white text-slate-800 rounded-tl-xs border border-slate-200/90'
+                            }`}
+                          >
+                            <p>{text}</p>
+
+                            {/* Tệp đính kèm trong tin nhắn */}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="mt-2.5 pt-2 border-t border-white/20 flex flex-wrap gap-2">
+                                {msg.attachments.map((att) => {
+                                  const isImg = att.mime_type.startsWith('image/');
+                                  return isImg ? (
+                                    <div
+                                      key={att.id}
+                                      onClick={() => {
+                                        setLightboxImageUrl(att.file_url || `/api/v1/support/attachments/${att.file_name}`);
+                                        setLightboxCaption(att.file_name);
+                                      }}
+                                      className="relative rounded-lg overflow-hidden border border-slate-200/60 group cursor-pointer hover:border-white transition-colors shadow-2xs"
+                                    >
+                                      <img
+                                        src={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
+                                        alt={att.file_name}
+                                        className="w-24 h-18 object-cover rounded-lg group-hover:scale-105 transition-transform"
+                                      />
+                                      <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <Maximize2 className="w-4 h-4 text-white" />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <a
+                                      key={att.id}
+                                      href={att.file_url || `/api/v1/support/attachments/${att.file_name}`}
+                                      download
+                                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/90 text-slate-800 text-[11px] font-medium transition-colors shadow-2xs"
+                                    >
+                                      <FileText className="w-3.5 h-3.5 text-amber-500" />
+                                      <span className="max-w-[120px] truncate">{att.file_name}</span>
+                                      <Download className="w-3 h-3 text-slate-400" />
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* ─── KHỐI ĐÁNH GIÁ CHẤT LƯỢNG HỖ TRỢ (CSAT 5 SAO) KHI PHIẾU ĐÃ GIẢI QUYẾT ─── */}
+                  {(selectedTicket.status === 'RESOLVED' || selectedTicket.status === 'CLOSED') && (
+                    <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200 shadow-2xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-900">
+                            Đánh giá chất lượng xử lý sự cố (CSAT)
+                          </h4>
+                        </div>
+                        <span className="text-[11px] font-bold text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full">
+                          {csatSuccess || selectedTicket.feedback ? 'Đã hoàn tất đánh giá' : 'Tối đa 5 sao'}
+                        </span>
+                      </div>
+
+                      {csatSuccess || selectedTicket.feedback ? (
+                        <div className="p-3.5 bg-white border border-amber-200 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-800">Điểm đánh giá:</span>
+                            <div className="flex items-center gap-1 text-amber-500">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <Star
+                                  key={star}
+                                  className={`w-4 h-4 ${
+                                    star <= ((selectedTicket.feedback?.rating_stars) || csatRating)
+                                      ? 'fill-amber-400 text-amber-500'
+                                      : 'text-slate-300'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <span className="text-xs font-bold text-amber-600">
+                              ({(selectedTicket.feedback?.rating_stars) || csatRating}/5 sao)
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 italic">
+                            "{selectedTicket.feedback?.feedback_text || csatComment || 'Hài lòng với tốc độ giải quyết sự cố của kỹ thuật viên QuizGen AI.'}"
+                          </p>
+                          <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1 pt-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            Cảm ơn Thầy/Cô đã đánh giá, ý kiến giúp QuizGen AI nâng cao chất lượng phục vụ!
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3 bg-white p-3.5 rounded-xl border border-amber-200/90">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                              Thầy/Cô hài lòng thế nào với sự hỗ trợ của kỹ thuật viên?
+                            </label>
+                            <div className="flex items-center gap-2">
+                              {[1, 2, 3, 4, 5].map((star) => {
+                                const active = star <= (csatHover || csatRating);
+                                return (
+                                  <button
+                                    key={star}
+                                    type="button"
+                                    onClick={() => setCsatRating(star)}
+                                    onMouseEnter={() => setCsatHover(star)}
+                                    onMouseLeave={() => setCsatHover(0)}
+                                    className="p-1 transition-transform hover:scale-125 cursor-pointer"
+                                  >
+                                    <Star
+                                      className={`w-6 h-6 transition-colors ${
+                                        active
+                                          ? 'text-amber-500 fill-amber-400'
+                                          : 'text-slate-300 hover:text-amber-300'
+                                      }`}
+                                    />
+                                  </button>
+                                );
+                              })}
+                              <span className="text-xs font-bold text-amber-700 ml-2">
+                                {csatRating === 5
+                                  ? 'Rất hài lòng (5 sao)'
+                                  : csatRating === 4
+                                  ? 'Hài lòng (4 sao)'
+                                  : csatRating === 3
+                                  ? 'Bình thường (3 sao)'
+                                  : csatRating === 2
+                                  ? 'Chưa hài lòng (2 sao)'
+                                  : 'Rất không hài lòng (1 sao)'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              Nhận xét đóng góp ý kiến:
+                            </label>
+                            <textarea
+                              rows={2}
+                              value={csatComment}
+                              onChange={(e) => setCsatComment(e.target.value)}
+                              placeholder="Nhập cảm nhận của Thầy/Cô về tốc độ hỗ trợ, độ chính xác của giải pháp..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] focus:bg-white resize-none"
+                            />
+                          </div>
+
+                          <div className="flex items-center justify-end">
+                            <button
+                              type="button"
+                              onClick={handleSubmitCsatFeedback}
+                              disabled={isSubmittingCsat}
+                              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Star className="w-3.5 h-3.5 fill-white" />
+                              <span>{isSubmittingCsat ? 'Đang gửi...' : 'Gửi Đánh Giá CSAT'}</span>
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
-                  ))}
+                  )}
                 </div>
 
                 {/* Khay xem trước ảnh lỗi sắp gửi trong phản hồi */}

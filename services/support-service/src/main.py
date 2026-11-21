@@ -490,7 +490,7 @@ def submit_ticket_feedback(
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket không tồn tại.")
 
-    if ticket.user_id != user["user_id"]:
+    if ticket.user_id != user["user_id"] and ticket.user_email.lower() != user["email"].lower():
         raise HTTPException(status_code=403, detail="Chỉ người tạo ticket mới có quyền đánh giá.")
 
     existing_fb = db.query(SupportFeedback).filter(SupportFeedback.ticket_id == ticket.id).first()

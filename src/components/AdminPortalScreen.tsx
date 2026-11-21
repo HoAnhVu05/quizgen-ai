@@ -310,6 +310,19 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [isLoadingSupport, setIsLoadingSupport] = useState(false);
   const [adminLightboxImage, setAdminLightboxImage] = useState<string | null>(null);
 
+  const formatVnDateTime = (dtStr?: string) => {
+    if (!dtStr) return '';
+    const iso = dtStr.includes('Z') || dtStr.includes('+') ? dtStr : `${dtStr}Z`;
+    try {
+      const d = new Date(iso);
+      const time = d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+      const date = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+      return `${time} • ${date}`;
+    } catch {
+      return dtStr;
+    }
+  };
+
   const fetchAdminSupportData = async (silent = false) => {
     if (!silent) setIsLoadingSupport(true);
     try {
@@ -326,9 +339,6 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
         const data = await ticketsRes.json();
         const list = Array.isArray(data) ? data : [];
         setAdminSupportTickets(list);
-        if (list.length > 0 && !adminSelectedTicket) {
-          void fetchAdminTicketDetail(list[0].id);
-        }
       }
       if (metricsRes.ok) {
         const metrics = await metricsRes.json();
@@ -3421,31 +3431,40 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
                         </span>
                       </div>
 
-                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                      <div className="space-y-3.5 max-h-80 overflow-y-auto pr-1 p-3 bg-slate-50/60 rounded-2xl border border-slate-200/80">
                         {(adminSelectedTicket.messages || []).map((msg: any) => {
-                          const isAdminSender = msg.sender_role === 'admin' || msg.sender_role === 'support';
+                          const roleUpper = (msg.sender_role || '').toUpperCase();
+                          const isAdminSender = ['ADMIN', 'SUPER_ADMIN', 'SUPPORT_STAFF', 'STAFF'].includes(roleUpper);
+                          const text = msg.message_body || msg.content || '';
+
                           return (
                             <div
                               key={msg.id}
                               className={`flex flex-col ${isAdminSender ? 'items-end' : 'items-start'}`}
                             >
-                              <div className="flex items-center gap-1.5 mb-1 text-[10px] text-slate-400">
-                                <span className="font-semibold text-slate-700">{msg.sender_name}</span>
-                                {isAdminSender && (
-                                  <span className="px-1.5 py-0.2 rounded-md bg-teal-100 text-[#008689] font-bold text-[9px]">
-                                    Kỹ thuật viên
-                                  </span>
+                              <div className="flex items-center gap-1.5 mb-1 px-1 text-[11px] text-slate-500">
+                                {!isAdminSender ? (
+                                  <>
+                                    <span className="font-bold text-slate-800">{msg.sender_name || 'Giảng viên'}</span>
+                                    <span className="text-[10px] text-slate-400">• {formatVnDateTime(msg.created_at)}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="text-[10px] text-slate-400">{formatVnDateTime(msg.created_at)} •</span>
+                                    <span className="px-1.5 py-0.5 rounded-md bg-teal-100 text-[#008689] font-bold text-[9px]">
+                                      Tôi (Kỹ thuật viên)
+                                    </span>
+                                  </>
                                 )}
-                                <span>• {new Date(msg.created_at || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
                               </div>
                               <div
-                                className={`px-4 py-2.5 rounded-2xl text-xs max-w-[85%] leading-relaxed ${
+                                className={`px-4 py-2.5 rounded-2xl text-xs sm:text-sm max-w-[80%] leading-relaxed shadow-2xs whitespace-pre-line ${
                                   isAdminSender
-                                    ? 'bg-[#008689] text-white rounded-tr-none'
-                                    : 'bg-slate-100 text-slate-800 rounded-tl-none border border-slate-200/80'
+                                    ? 'bg-[#008689] text-white rounded-tr-xs'
+                                    : 'bg-white text-slate-800 rounded-tl-xs border border-slate-200/90'
                                 }`}
                               >
-                                {msg.content}
+                                {text}
                               </div>
                             </div>
                           );
