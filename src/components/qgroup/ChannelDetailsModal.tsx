@@ -15,9 +15,10 @@ import {
   Clock,
   Check,
   BookOpen,
+  EyeOff,
 } from 'lucide-react';
 import { QGroup } from '../../types';
-import { resolveChatDisplayInfo } from '../QGroupScreen';
+import { resolveChatDisplayInfo } from './chatUtils';
 import { apiClient } from '../../services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
@@ -362,14 +363,30 @@ export const ChannelDetailsModal: React.FC<ChannelDetailsModalProps> = ({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={onLeaveGroup}
-                  className="w-full py-2.5 rounded-lg border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>Rời khỏi kênh này</span>
-                </button>
+                <div className="flex flex-col gap-2 pt-2">
+                  {onDeleteChat && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteChat();
+                        onClose();
+                      }}
+                      className="w-full py-2.5 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <EyeOff className="w-4 h-4 text-slate-500" />
+                      <span>Ẩn cuộc trò chuyện nhóm này</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={onLeaveGroup}
+                    className="w-full py-2.5 rounded-lg border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 hover:text-rose-700 font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Rời khỏi kênh này</span>
+                  </button>
+                </div>
               </div>
             )
           )}

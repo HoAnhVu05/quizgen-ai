@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2 } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { X, ZoomIn, ZoomOut, RotateCcw, Download, Maximize2, Move } from 'lucide-react';
+import { usePinchZoom } from '../hooks/usePinchZoom';
 
 interface ImageLightboxModalProps {
   isOpen: boolean;
@@ -14,10 +15,18 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
   imageUrl,
   imageCaption,
   title = 'Minh chứng Hình ảnh & Sơ đồ Câu hỏi',
-  onClose
+  onClose,
 }) => {
-  const [scale, setScale] = useState(1);
-  const [rotation, setRotation] = useState(0);
+  const {
+    scale,
+    containerRef,
+    zoomIn,
+    zoomOut,
+    rotate,
+    reset,
+    transformStyle,
+    bind,
+  } = usePinchZoom({ minScale: 0.5, maxScale: 5, step: 0.25 });
 
   // ── Mobile Back Gesture & History Popstate Handler ───────────────────────
   useEffect(() => {
@@ -36,6 +45,13 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     };
   }, [isOpen, onClose]);
 
+  // Reset zoom state whenever modal is opened
+  useEffect(() => {
+    if (isOpen) {
+      reset();
+    }
+  }, [isOpen, reset]);
+
   const handleSafeClose = () => {
     try {
       if (window.history.state?.modal === 'lightbox-preview') {
@@ -47,14 +63,6 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
   };
 
   if (!isOpen || !imageUrl) return null;
-
-  const handleZoomIn = () => setScale((s) => Math.min(s + 0.25, 3));
-  const handleZoomOut = () => setScale((s) => Math.max(s - 0.25, 0.5));
-  const handleRotate = () => setRotation((r) => (r + 90) % 360);
-  const handleReset = () => {
-    setScale(1);
-    setRotation(0);
-  };
 
   const handleDownload = () => {
     const link = document.createElement('a');
@@ -69,58 +77,58 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200 select-none"
       onClick={handleSafeClose}
     >
       <div
-        className="relative max-w-4xl w-full bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative max-w-4xl w-full bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/80">
-          <div className="flex items-center gap-2">
-            <Maximize2 className="w-4 h-4 text-indigo-400" />
-            <h3 className="font-semibold text-slate-100 text-sm sm:text-base">{title}</h3>
+        <div className="flex items-center justify-between px-3 sm:px-5 py-3 border-b border-slate-800 bg-slate-950/80">
+          <div className="flex items-center gap-2 truncate mr-2">
+            <Maximize2 className="w-4 h-4 text-teal-400 shrink-0" />
+            <h3 className="font-semibold text-slate-100 text-xs sm:text-base truncate">{title}</h3>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Control buttons */}
-            <div className="flex items-center bg-slate-800 rounded-lg p-1 border border-slate-700/60">
+            <div className="flex items-center bg-slate-800 rounded-lg p-0.5 sm:p-1 border border-slate-700/60">
               <button
                 type="button"
-                onClick={handleZoomIn}
-                className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
+                onClick={zoomIn}
+                className="p-1 sm:p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
                 title="Phóng to"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
               <button
                 type="button"
-                onClick={handleZoomOut}
-                className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
+                onClick={zoomOut}
+                className="p-1 sm:p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
                 title="Thu nhỏ"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
               <button
                 type="button"
-                onClick={handleRotate}
-                className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
+                onClick={rotate}
+                className="p-1 sm:p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
                 title="Xoay hình"
               >
                 <RotateCcw className="w-4 h-4" />
               </button>
               <button
                 type="button"
-                onClick={handleReset}
-                className="px-2 py-1 text-xs hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors font-mono"
-                title="Khôi phục kích thước ban đầu"
+                onClick={reset}
+                className="px-1.5 sm:px-2 py-0.5 sm:py-1 text-[11px] sm:text-xs hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors font-mono"
+                title="Khôi phục kích thước ban đầu (100%)"
               >
                 {Math.round(scale * 100)}%
               </button>
               <button
                 type="button"
                 onClick={handleDownload}
-                className="p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
+                className="p-1 sm:p-1.5 hover:bg-slate-700 rounded text-slate-300 hover:text-white transition-colors"
                 title="Tải ảnh về máy"
               >
                 <Download className="w-4 h-4" />
@@ -131,37 +139,43 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
               type="button"
               onClick={handleSafeClose}
               className="p-1.5 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-700/60 transition-colors"
+              title="Đóng (Esc)"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Image viewport */}
-        <div className="flex-1 overflow-auto p-6 flex items-center justify-center bg-slate-950/60 min-h-[300px]">
-          <div
-            style={{
-              transform: `scale(${scale}) rotate(${rotation}deg)`,
-              transition: 'transform 0.15s ease-out'
-            }}
-            className="flex items-center justify-center"
-          >
+        {/* Image viewport with Touch/Pinch Gestures */}
+        <div
+          ref={containerRef}
+          className="relative flex-1 overflow-hidden p-2 sm:p-6 flex items-center justify-center bg-slate-950/70 min-h-[300px] touch-none cursor-grab active:cursor-grabbing"
+          {...bind}
+        >
+          <div style={transformStyle} className="flex items-center justify-center pointer-events-none">
             <img
               src={imageUrl}
               alt={imageCaption || 'Minh họa câu hỏi'}
-              className="max-h-[65vh] max-w-full rounded-lg shadow-lg border border-slate-800 object-contain select-none"
+              draggable={false}
+              className="max-h-[62vh] sm:max-h-[68vh] max-w-full rounded-lg shadow-2xl border border-slate-800 object-contain select-none pointer-events-none"
             />
+          </div>
+
+          {/* Floating Mobile Tip */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-slate-900/80 backdrop-blur-md border border-white/10 text-[10px] sm:text-xs text-slate-300 flex items-center gap-1.5 pointer-events-none shadow-lg">
+            <Move className="w-3 h-3 text-teal-400" />
+            <span>Chụm 2 ngón thu/phóng • Lăn chuột phóng to tại con trỏ • Kéo rê di chuyển</span>
           </div>
         </div>
 
         {/* Footer with caption */}
         {imageCaption && (
-          <div className="px-5 py-3 bg-slate-950/90 border-t border-slate-800/80 text-xs text-slate-300 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-indigo-400">Chú thích hình ảnh:</span>
-              <span className="italic">{imageCaption}</span>
+          <div className="px-4 sm:px-5 py-2.5 bg-slate-950/90 border-t border-slate-800/80 text-xs text-slate-300 flex items-center justify-between">
+            <div className="flex items-center gap-2 truncate mr-2">
+              <span className="font-semibold text-teal-400 shrink-0">Chú thích:</span>
+              <span className="italic truncate">{imageCaption}</span>
             </div>
-            <span className="text-[11px] text-slate-500 font-mono">Multimodal RAG Asset</span>
+            <span className="text-[10px] sm:text-[11px] text-slate-500 font-mono shrink-0">Multimodal RAG Asset</span>
           </div>
         )}
       </div>

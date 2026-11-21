@@ -137,9 +137,48 @@ export default defineConfig({
     host: true,
     open: false,
     allowedHosts: true,
+    watch: {
+      ignored: [
+        '**/services/**',
+        '**/data/**',
+        '**/uploads/**',
+        '**/database/**',
+        '**/scripts/**',
+        '**/scratch/**',
+        '**/dist/**',
+        '**/*.db*',
+        '**/*.sqlite*',
+        '**/*.jsonl',
+        '**/*.docx',
+        '**/*.xlsx',
+        '**/*.mp4',
+        '**/*.webm',
+        '**/*.mov',
+        (file: string) => {
+          if (!file) return false;
+          const p = file.replace(/\\/g, '/');
+          return (
+            p.includes('/services/') ||
+            p.includes('/data/') ||
+            p.includes('/uploads/') ||
+            p.includes('/database/') ||
+            p.includes('/scratch/') ||
+            p.includes('/scripts/') ||
+            p.includes('/dist/') ||
+            /\.(mp4|webm|mov|mkv|avi|docx?|xlsx?|db|sqlite.*|jsonl)$/i.test(p)
+          );
+        }
+      ]
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
+        changeOrigin: true,
+        timeout: 120000
+      },
+      '/ws': {
+        target: 'ws://localhost:8000',
+        ws: true,
         changeOrigin: true
       }
     }

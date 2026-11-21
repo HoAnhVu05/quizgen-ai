@@ -157,6 +157,10 @@ export interface TextbookFile {
   authorName?: string;
   isShared?: boolean;
   sharingScope?: 'private' | 'department' | 'public';
+  isApproved?: boolean;
+  approvedBy?: string;
+  approvedAt?: string;
+  usageCount?: number;
 }
 
 export interface ToastMessage {
@@ -182,6 +186,22 @@ export interface ExamExportConfig {
   format: 'docx' | 'pdf' | 'qti' | 'zip';
 }
 
+export interface QGroupAttachment {
+  type: 'textbook' | 'exam' | 'file' | 'image' | 'video' | 'audio';
+  id: string;
+  name: string;
+  subject?: string;
+  size?: string;
+  fileUrl?: string;
+  fileType?: string;
+  totalPages?: number;
+  questionCount?: number;
+  durationMinutes?: number;
+  duration?: number;
+  waveform?: number[];
+  authorName?: string;
+}
+
 export interface QGroupMessage {
   id: string;
   senderEmail: string;
@@ -201,21 +221,8 @@ export interface QGroupMessage {
   };
   readBy?: string[];
   reactions?: Record<string, string[]>;
-  attachment?: {
-    type: 'textbook' | 'exam' | 'file' | 'image' | 'video' | 'audio';
-    id: string;
-    name: string;
-    subject?: string;
-    size?: string;
-    fileUrl?: string;
-    fileType?: string;
-    totalPages?: number;
-    questionCount?: number;
-    durationMinutes?: number;
-    duration?: number;
-    waveform?: number[];
-    authorName?: string;
-  };
+  attachment?: QGroupAttachment;
+  attachments?: QGroupAttachment[];
   sharedPost?: {
     id: string;
     tag: string;

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import apiClient from '../services/apiClient';
 
 interface ChatMessage {
   id: string;
@@ -56,6 +57,7 @@ const DEFAULT_WELCOME_MESSAGE = (userName: string, screenLabel: string, bookName
     '📑 Liệt kê cấu trúc các chương',
     '💡 Giải thích chi tiết đáp án',
     '📊 Đề xuất ma trận Bloom',
+    '🎧 Hỗ trợ kỹ thuật & thanh toán',
   ],
 });
 
@@ -78,7 +80,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       const saved = localStorage.getItem('quizgen_quanta_fab_pos');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') {
+        // Bảo đảm không che thanh Header trên Mobile (Header cao ~120px)
+        if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number' && parsed.y >= 140) {
           return parsed;
         }
       }
@@ -171,9 +174,9 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       if (dragRef.current.hasMoved) {
         const elWidth = fabElementRef.current?.offsetWidth || 56;
         const maxX = Math.max(16, window.innerWidth - elWidth - 16);
-        const maxY = Math.max(16, window.innerHeight - 80);
+        const maxY = Math.max(140, window.innerHeight - 80);
         const newX = Math.min(Math.max(16, dragRef.current.originX + dx), maxX);
-        const newY = Math.min(Math.max(16, dragRef.current.originY + dy), maxY);
+        const newY = Math.min(Math.max(140, dragRef.current.originY + dy), maxY);
         setFabPosition({ x: newX, y: newY });
       }
     };
@@ -197,7 +200,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         const midX = window.innerWidth / 2;
         const targetSide: 'left' | 'right' = curX < midX ? 'left' : 'right';
         const snappedX = targetSide === 'left' ? 16 : Math.max(16, window.innerWidth - 80);
-        const clampedY = Math.min(Math.max(16, curY), window.innerHeight - 80);
+        const clampedY = Math.min(Math.max(140, curY), window.innerHeight - 80);
 
         const finalPos = { x: Math.round(snappedX), y: Math.round(clampedY), side: targetSide };
         setFabPosition(finalPos);
@@ -233,18 +236,40 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     ? `${currentUser.academicTitle} ${currentUser.fullName}`
     : currentUser?.fullName || 'Thầy/Cô';
 
-  // Tự động đồng bộ tài liệu mới nhất mỗi khi mở chat hoặc chuyển màn hình
+  // Tự động đồng bộ tài liệu mới nhất từ CSDL thực tế mỗi khi mở chat hoặc chuyển màn hình
   useEffect(() => {
-    try {
-      const books = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
-      setUploadedBooks(books);
-      const selId = localStorage.getItem('quizgen_selected_book_id');
-      if (selId && books.some((b: any) => b.id === selId)) {
-        setSelectedBookId(selId);
-      } else if (books.length > 0) {
-        setSelectedBookId(books[0].id);
-      }
-    } catch {}
+    const syncRealDocuments = async () => {
+      try {
+        const res = await apiClient.get<any[]>('/documents?scope=my');
+        if (Array.isArray(res)) {
+          setUploadedBooks(res);
+          try {
+            localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(res));
+          } catch {}
+          const selId = localStorage.getItem('quizgen_selected_book_id');
+          if (selId && res.some((b: any) => b.id === selId)) {
+            setSelectedBookId(selId);
+          } else if (res.length > 0) {
+            setSelectedBookId(res[0].id);
+          }
+          return;
+        }
+      } catch {}
+
+      // Fallback từ localStorage nếu offline
+      try {
+        const books = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
+        setUploadedBooks(books);
+        const selId = localStorage.getItem('quizgen_selected_book_id');
+        if (selId && books.some((b: any) => b.id === selId)) {
+          setSelectedBookId(selId);
+        } else if (books.length > 0) {
+          setSelectedBookId(books[0].id);
+        }
+      } catch {}
+    };
+
+    syncRealDocuments();
   }, [isOpen, currentScreen]);
 
   const activeBook = uploadedBooks.find((b: any) => b.id === selectedBookId) || (uploadedBooks.length > 0 ? uploadedBooks[0] : null);
@@ -349,6 +374,11 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           'Hệ thống AI đang xử lý lưu lượng cao. Thầy/Cô vui lòng gửi lại câu hỏi hoặc thử lại sau giây lát.';
       }
 
+      const isSupportQuery = /thanh toán|nạp tiền|lỗi|support|hỗ trợ|liên hệ|hotline|zalo|gói|tiền/i.test(text);
+      if (isSupportQuery && (!suggestions || suggestions.length === 0)) {
+        suggestions = ['📞 Hotline: 0909.122.005', '📧 support@hoanhvu.id.vn', '💳 Hướng dẫn đối soát'];
+      }
+
       const botMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         role: 'assistant',
@@ -359,13 +389,23 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
       setMessages((prev) => [...prev, botMsg]);
     } catch (err) {
+      const isSupportQuery = /thanh toán|nạp tiền|lỗi|support|hỗ trợ|liên hệ|hotline|zalo|gói|tiền/i.test(text);
+      const errorContent = isSupportQuery
+        ? `Dạ Thầy/Cô đang gặp sự cố thanh toán hoặc cần hỗ trợ kỹ thuật? Dưới đây là các kênh hỗ trợ chính thức 24/7 của QuizGen AI:\n\n` +
+          `• **Hotline / Zalo hỗ trợ kỹ thuật 24/7:** **0909.122.005** (ThS. Hồ Anh Vũ — UTH)\n` +
+          `• **Email đối soát thanh toán:** support@hoanhvu.id.vn hoặc quizgen.ai.team@gmail.com\n` +
+          `• **Địa chỉ trực tiếp:** Văn phòng Bộ môn Khoa học Máy tính — Khoa CNTT, Trường ĐH Giao thông Vận tải TP.HCM (UTH)\n\n` +
+          `*Lưu ý đối với giao dịch thanh toán:* Thầy/Cô vui lòng chụp ảnh biên lai chuyển khoản (chứa Mã tham chiếu/Mã giao dịch ngân hàng) và gửi qua Zalo/Email trên để bộ phận Khảo thí kích hoạt gói cước ngay trong 5-15 phút ạ!`
+        : 'Không thể kết nối tới máy chủ AI Copilot. Vui lòng kiểm tra lại dịch vụ hoặc thử các tùy chọn bên dưới.';
+
       const errorMsg: ChatMessage = {
         id: `bot-${Date.now()}`,
         role: 'assistant',
-        content:
-          'Không thể kết nối tới máy chủ AI Copilot. Vui lòng kiểm tra lại dịch vụ hoặc thử các tùy chọn bên dưới.',
+        content: errorContent,
         timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        suggestedActions: ['💡 Thử lại', '📊 Tư vấn ma trận Bloom', '🖨️ Xuất đề thi'],
+        suggestedActions: isSupportQuery
+          ? ['📞 Hotline: 0909.122.005', '📧 support@hoanhvu.id.vn', '💳 Đối soát chuyển khoản']
+          : ['💡 Thử lại', '📊 Tư vấn ma trận Bloom', '🖨️ Xuất đề thi'],
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { ShieldCheck, ShieldAlert, Lock, AlertTriangle, AlertCircle } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { TopHeader } from './components/TopHeader';
@@ -17,7 +17,7 @@ import { RegisterScreen } from './components/RegisterScreen';
 import { PricingPlansModal } from './components/PricingPlansModal';
 import { PaymentQRModal } from './components/PaymentQRModal';
 import { AIChatCopilot } from './components/AIChatCopilot';
-import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
+import { ScreenId, AuthScreenId, UserProfile, UserRole, Question, QuestionStatus, ToastMessage, UserSubscriptionInfo, OrderData } from './types';
 import apiClient, { API_BASE } from './services/apiClient';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ThemeParticleOverlay } from './components/ThemeParticleOverlay';
@@ -26,30 +26,69 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
+// Thời gian chờ không hoạt động tối đa: 15 phút (Chuẩn an toàn OWASP & Ngân hàng học thuật)
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+
+// Hàm kiểm tra và giải mã phiên đăng nhập ban đầu
+const getInitialAuthSession = (): { user: UserProfile | null; isAuth: boolean; wasExpired: boolean } => {
+  try {
+    const now = Date.now();
+    const isRemembered = localStorage.getItem('quizgen_remember_me') === 'true';
+
+    // 1. Kiểm tra session từ sessionStorage (tab hiện tại đang làm việc)
+    const sessionUserStr = sessionStorage.getItem('quizgen_user');
+    const sessionToken = sessionStorage.getItem('quizgen_token') || sessionStorage.getItem('quizgen_auth_token');
+
+    if (sessionUserStr && sessionToken) {
+      const lastActiveStr = sessionStorage.getItem('quizgen_last_active');
+      const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : now;
+      if (now - lastActive > INACTIVITY_TIMEOUT_MS) {
+        sessionStorage.clear();
+        return { user: null, isAuth: false, wasExpired: true };
+      }
+      sessionStorage.setItem('quizgen_last_active', now.toString());
+      return { user: JSON.parse(sessionUserStr), isAuth: true, wasExpired: false };
+    }
+
+    // 2. Nếu không có trong sessionStorage:
+    // TUYỆT ĐỐI CHỈ xem xét localStorage NẾU người dùng đã chủ động tích "Ghi nhớ đăng nhập" (quizgen_remember_me === 'true').
+    // Nếu KHÔNG tích "Ghi nhớ đăng nhập", khi xóa tab và mở lại tab mới, sessionStorage sẽ trống -> bắt buộc đăng nhập lại!
+    if (isRemembered) {
+      const localUserStr = localStorage.getItem('quizgen_user');
+      const localToken = localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token');
+
+      if (localUserStr && localToken) {
+        const lastActiveStr = localStorage.getItem('quizgen_last_active');
+        const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : now;
+        if (now - lastActive > INACTIVITY_TIMEOUT_MS) {
+          // Hết hạn do không thao tác > 15 phút
+          localStorage.removeItem('quizgen_token');
+          localStorage.removeItem('quizgen_auth_token');
+          localStorage.removeItem('quizgen_user');
+          localStorage.removeItem('quizgen_remember_me');
+          localStorage.removeItem('quizgen_last_active');
+          return { user: null, isAuth: false, wasExpired: true };
+        }
+        localStorage.setItem('quizgen_last_active', now.toString());
+        sessionStorage.setItem('quizgen_last_active', now.toString());
+        return { user: JSON.parse(localUserStr), isAuth: true, wasExpired: false };
+      }
+    }
+
+    // Mặc định: Không có phiên hợp lệ (hoặc mở tab mới khi không chọn "Ghi nhớ đăng nhập")
+    return { user: null, isAuth: false, wasExpired: false };
+  } catch {
+    return { user: null, isAuth: false, wasExpired: false };
+  }
+};
+
 const AppContent: React.FC = () => {
   const { currentTheme, activeThemeId, showParticles, toggleParticles } = useTheme();
+  
   // ─── Authentication State ────────────────────────────────────────────────
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    try {
-      const saved = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try {
-      return !!(
-        sessionStorage.getItem('quizgen_token') ||
-        sessionStorage.getItem('quizgen_user') ||
-        localStorage.getItem('quizgen_token') ||
-        localStorage.getItem('quizgen_user')
-      );
-    } catch {
-      return false;
-    }
-  });
+  const initialSession = useMemo(() => getInitialAuthSession(), []);
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(initialSession.user);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(initialSession.isAuth);
 
   const [authScreen, setAuthScreen] = useState<AuthScreenId>('login');
   const [lockedAlert, setLockedAlert] = useState<{
@@ -136,6 +175,15 @@ const AppContent: React.FC = () => {
   });
   const [questions, setQuestions] = useState<Question[]>(() => {
     try {
+      // 1. Ưu tiên cao nhất: Câu hỏi vừa sinh đang ở Không gian Kiểm duyệt (tránh mất khi F5 / pull-to-refresh)
+      const pendingStr = localStorage.getItem('quizgen_pending_review_questions');
+      if (pendingStr) {
+        const pending = JSON.parse(pendingStr);
+        if (Array.isArray(pending) && pending.length > 0) {
+          return pending;
+        }
+      }
+
       const saved = localStorage.getItem('quizgen_questions');
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -148,8 +196,7 @@ const AppContent: React.FC = () => {
               q.id !== 'q-2' &&
               q.id !== 'q-3' &&
               q.id !== 'q-4' &&
-              q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
-              q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
+              q.textbookName !== 'GiaoTrinh_Chung.pdf'
           );
           if (filtered.length > 0) return filtered;
         }
@@ -239,8 +286,7 @@ const AppContent: React.FC = () => {
           q.id !== 'q-2' &&
           q.id !== 'q-3' &&
           q.id !== 'q-4' &&
-          q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
-          q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
+          q.textbookName !== 'GiaoTrinh_Chung.pdf'
       );
       if (savedQuestions.length !== filteredQuestions.length) {
         localStorage.setItem('quizgen_questions', JSON.stringify(filteredQuestions));
@@ -261,6 +307,7 @@ const AppContent: React.FC = () => {
       localStorage.getItem('quizgen_token') ||
       localStorage.getItem('quizgen_auth_token');
     if (!token) return;
+    apiClient.setTokens(token);
 
     const verifySession = async () => {
       const savedUserStr = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
@@ -539,26 +586,62 @@ const AppContent: React.FC = () => {
     }
   }, [isAuthenticated, currentUser?.role, currentScreen]);
 
-  // ─── Lắng nghe sự kiện tài khoản bị khóa từ ApiClient ───────────────────────
+  // ─── Lắng nghe sự kiện tài khoản bị khóa / xóa từ ApiClient ───────────────────────
   useEffect(() => {
     const handleAccountLocked = (e: any) => {
       const lockMsg = e.detail || 'Tài khoản của bạn đã bị khóa bởi Quản trị viên.';
       apiClient.clearAuth();
-      localStorage.removeItem('quizgen_token');
-      localStorage.removeItem('quizgen_auth_token');
-      localStorage.removeItem('quizgen_refresh_token');
-      localStorage.removeItem('quizgen_user');
       setCurrentUser(null);
       setIsAuthenticated(false);
       setAuthScreen('login');
       setLockedAlert({ isOpen: true, message: lockMsg });
     };
 
+    const handleAuthRevoked = (e: any) => {
+      const msg = e?.detail || 'Phiên làm việc đã bị thu hồi do tài khoản không còn tồn tại trên hệ thống.';
+      apiClient.clearAuth();
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setAuthScreen('login');
+      handleShowToast('error', 'Phiên Đăng Nhập Đã Bị Thu Hồi', msg);
+    };
+
     window.addEventListener('quizgen:account-locked', handleAccountLocked);
+    window.addEventListener('quizgen:auth-revoked', handleAuthRevoked);
+    window.addEventListener('quizgen:auth-expired', handleAuthRevoked);
+
     return () => {
       window.removeEventListener('quizgen:account-locked', handleAccountLocked);
+      window.removeEventListener('quizgen:auth-revoked', handleAuthRevoked);
+      window.removeEventListener('quizgen:auth-expired', handleAuthRevoked);
     };
   }, []);
+
+  // ─── Heartbeat kiểm tra tính hợp lệ của tài khoản định kỳ (30s) ─────────────
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) return;
+
+    const checkSessionAlive = async () => {
+      try {
+        const res = await apiClient.fetch('/api/v1/auth/me');
+        if (res.status === 403) {
+          apiClient.notifyAuthRevoked('Tài khoản đã bị tạm khóa bởi Quản trị viên.');
+        } else if (res.status === 401) {
+          const data = await res.json().catch(() => ({}));
+          const detail = String(data?.detail || '');
+          if (
+            (detail.includes('ACCOUNT_REVOKED') || detail.includes('đã bị xóa') || detail.includes('không còn tồn tại')) &&
+            !detail.includes('Chưa xác thực')
+          ) {
+            apiClient.notifyAuthRevoked(detail || 'Tài khoản đã bị xóa hoặc bị khóa bởi Quản trị viên.');
+          }
+        }
+      } catch {}
+    };
+
+    const timer = setInterval(checkSessionAlive, 30000);
+    return () => clearInterval(timer);
+  }, [isAuthenticated, currentUser?.id]);
 
   const handleShowToast = useCallback((
     type: 'success' | 'info' | 'warning' | 'error',
@@ -577,6 +660,77 @@ const AppContent: React.FC = () => {
   const handleDismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  // Thông báo nếu phiên trước đó đã hết hạn khi mở trang
+  useEffect(() => {
+    if (initialSession.wasExpired) {
+      handleShowToast(
+        'warning',
+        'Phiên làm việc đã hết hạn',
+        'Hệ thống đã tự động kết thúc phiên do không có thao tác trong 15 phút nhằm bảo vệ an toàn dữ liệu khảo thí.'
+      );
+    }
+  }, [initialSession.wasExpired, handleShowToast]);
+
+  // ─── Cơ chế Tự Động Đăng Xuất Khi Không Hoạt Động (Inactivity Timeout 15 Phút) ────
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let lastInteraction = Date.now();
+
+    const recordActivity = () => {
+      const now = Date.now();
+      // Throttle ghi nhận hoạt động mỗi 5 giây
+      if (now - lastInteraction > 5000) {
+        lastInteraction = now;
+        sessionStorage.setItem('quizgen_last_active', now.toString());
+        if (localStorage.getItem('quizgen_remember_me') === 'true') {
+          localStorage.setItem('quizgen_last_active', now.toString());
+        }
+      }
+    };
+
+    const events = ['mousedown', 'keydown', 'touchstart', 'scroll', 'click'];
+    events.forEach((evt) => window.addEventListener(evt, recordActivity, { passive: true }));
+
+    // Kiểm tra định kỳ mỗi 10 giây xem có vượt quá 15 phút không thao tác
+    const idleCheckInterval = setInterval(() => {
+      const now = Date.now();
+      const lastActiveStr =
+        sessionStorage.getItem('quizgen_last_active') ||
+        localStorage.getItem('quizgen_last_active');
+      const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : lastInteraction;
+
+      if (now - lastActive > INACTIVITY_TIMEOUT_MS) {
+        // Tự động thu hồi phiên
+        apiClient.clearAuth();
+        localStorage.removeItem('quizgen_token');
+        localStorage.removeItem('quizgen_auth_token');
+        localStorage.removeItem('quizgen_user');
+        localStorage.removeItem('quizgen_remember_me');
+        localStorage.removeItem('quizgen_last_active');
+        sessionStorage.removeItem('quizgen_token');
+        sessionStorage.removeItem('quizgen_auth_token');
+        sessionStorage.removeItem('quizgen_user');
+        sessionStorage.removeItem('quizgen_last_active');
+
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setAuthScreen('login');
+
+        handleShowToast(
+          'warning',
+          'Phiên làm việc đã hết hạn',
+          'Hệ thống đã tự động đăng xuất do Thầy/Cô không thao tác trong 15 phút để bảo đảm an toàn dữ liệu khảo thí.'
+        );
+      }
+    }, 10000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, recordActivity));
+      clearInterval(idleCheckInterval);
+    };
+  }, [isAuthenticated, handleShowToast]);
 
   // Lắng nghe sự kiện hết hạn token từ ApiClient để xử lý tự động đăng xuất
   useEffect(() => {
@@ -604,15 +758,25 @@ const AppContent: React.FC = () => {
     });
     return unbind;
   }, [handleShowToast]);
-  // Đồng bộ câu hỏi từ Backend Database nếu có sẵn
+  // Đồng bộ câu hỏi từ Backend Database nếu có sẵn (và bảo toàn câu hỏi đang kiểm duyệt)
   useEffect(() => {
     if (!isAuthenticated) return;
     const fetchQuestions = async () => {
       try {
+        // Nếu người dùng đang ở bước Kiểm duyệt và có câu hỏi vừa sinh, bảo lưu tuyệt đối không đè rỗng
+        const pendingStr = localStorage.getItem('quizgen_pending_review_questions');
+        if (pendingStr) {
+          const pending = JSON.parse(pendingStr);
+          if (Array.isArray(pending) && pending.length > 0) {
+            setQuestions(pending);
+            return;
+          }
+        }
+
         const res = await apiClient.fetch(`${API_BASE}/questions`);
         if (res.ok) {
           const data = await res.json();
-          if (Array.isArray(data)) {
+          if (Array.isArray(data) && data.length > 0) {
             const clean = data.filter(
               (q: any) =>
                 q &&
@@ -624,7 +788,12 @@ const AppContent: React.FC = () => {
                 q.textbookName !== 'GiaoTrinh_Chung.pdf' &&
                 q.textbookName !== 'GiaoTrinh_KinhTeViMo_2025.pdf'
             );
-            setQuestions(clean);
+            if (clean.length > 0) {
+              setQuestions(clean);
+              try {
+                localStorage.setItem('quizgen_questions', JSON.stringify(clean));
+              } catch {}
+            }
           }
         }
       } catch (err) {
@@ -635,7 +804,14 @@ const AppContent: React.FC = () => {
   }, [isAuthenticated]);
 
   const handleUpdateQuestion = async (updated: Question) => {
-    setQuestions((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+    setQuestions((prev) => {
+      const next = prev.map((q) => (q.id === updated.id ? updated : q));
+      try {
+        localStorage.setItem('quizgen_questions', JSON.stringify(next));
+        localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     try {
       await apiClient.fetch(`${API_BASE}/questions/${updated.id}`, {
         method: 'PUT',
@@ -656,9 +832,14 @@ const AppContent: React.FC = () => {
 
   const handleBatchApprove = async () => {
     const pendingIds = questions.filter((q) => q.status === 'pending').map((q) => q.id);
-    setQuestions((prev) =>
-      prev.map((q) => (q.status === 'pending' ? { ...q, status: 'approved' } : q))
-    );
+    setQuestions((prev) => {
+      const next = prev.map((q) => (q.status === 'pending' ? { ...q, status: 'approved' as QuestionStatus } : q));
+      try {
+        localStorage.setItem('quizgen_questions', JSON.stringify(next));
+        localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
     try {
       await apiClient.fetch(`${API_BASE}/questions/batch-approve`, {
         method: 'POST',
@@ -675,9 +856,14 @@ const AppContent: React.FC = () => {
       setQuestions(newQuestions);
       try {
         localStorage.setItem('quizgen_questions', JSON.stringify(newQuestions));
+        localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(newQuestions));
       } catch {}
     }
     setCurrentScreen('review');
+    try {
+      localStorage.setItem('quizgen_active_screen', 'review');
+      sessionStorage.setItem('quizgen_active_screen', 'review');
+    } catch {}
   };
 
   // ─── Auth Handlers ────────────────────────────────────────────────────────
@@ -955,7 +1141,7 @@ const AppContent: React.FC = () => {
 
   // ─── Render Main Application ──────────────────────────────────────────────
   return (
-    <div className="flex h-screen w-full max-w-full overflow-hidden bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
+    <div className="flex h-screen h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-hidden fixed inset-0 bg-[#f7f9fb] text-slate-800 font-sans relative select-none">
       {/* Seasonal Particle Ambient Effect */}
       <ThemeParticleOverlay
         themeId={activeThemeId}
@@ -1100,6 +1286,7 @@ const AppContent: React.FC = () => {
                 onShowToast={handleShowToast}
                 subscriptionInfo={subscriptionInfo}
                 currentUser={currentUser}
+                onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
               />
             )}
 
@@ -1124,6 +1311,7 @@ const AppContent: React.FC = () => {
                   setQuestions(loadedQs);
                   try {
                     localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                    localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(loadedQs));
                   } catch {}
                 }}
               />
@@ -1139,6 +1327,7 @@ const AppContent: React.FC = () => {
                   setQuestions(loadedQs);
                   try {
                     localStorage.setItem('quizgen_questions', JSON.stringify(loadedQs));
+                    localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(loadedQs));
                   } catch {}
                 }}
               />

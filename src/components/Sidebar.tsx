@@ -255,6 +255,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'admin_portal',
+          adminSubTab: 'library',
+          label: 'Quản lý Thư viện Học thuật',
+          icon: BookOpen,
+        },
+        {
+          id: 'admin_portal',
           adminSubTab: 'rbac',
           label: 'Ma trận Phân quyền RBAC',
           icon: Layers,

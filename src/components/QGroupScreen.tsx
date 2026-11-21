@@ -10,6 +10,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useCallback,
@@ -93,6 +94,18 @@ import { InvitationsPanel } from './qgroup/InvitationsPanel';
 import { ChannelDetailsModal } from './qgroup/ChannelDetailsModal';
 import { ChannelSettingsModal } from './qgroup/ChannelSettingsModal';
 import { AiSummarizeModal, HuddleCallModal } from './qgroup/HuddleAndAiModals';
+import { IncomingHuddleModal, IncomingHuddleData } from './qgroup/IncomingHuddleModal';
+import { ActiveHuddleBanner, ActiveHuddleInfo } from './qgroup/ActiveHuddleBanner';
+import { FriendModal } from './qgroup/FriendModal';
+import { DirectAddMemberModal } from './qgroup/DirectAddMemberModal';
+import { CreateOrJoinGroupModal } from './qgroup/CreateOrJoinGroupModal';
+import { ChannelSidebar } from './qgroup/ChannelSidebar';
+import { ChatHeader } from './qgroup/ChatHeader';
+import { PinnedMessagesBar } from './qgroup/PinnedMessagesBar';
+import { ChatComposer } from './qgroup/ChatComposer';
+import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
+import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
+import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -104,6 +117,7 @@ interface QGroupScreenProps {
   ) => void;
   currentUser?: UserProfile | null;
   subscriptionInfo?: UserSubscriptionInfo | null;
+  onOpenMobileMenu?: () => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -371,7 +385,9 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
   }
 
   const renderInlineSpans = (str: string) => {
-    const tokenRegex = /(https?:\/\/[^\s]+)|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)|(@[a-zA-Z0-9_\.\u00C0-\u1EF9]+(?:\s+[a-zA-Z0-9_\.\u00C0-\u1EF9]+){0,2})/g;
+    // 1: URL, 2: Bold, 3: Italic, 4: Inline Code, 5: @Mention (chỉ bắt tên viết hoa hoặc từ đơn, không nuốt các từ viết thường tiếp theo)
+    const tokenRegex =
+      /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])|(\*\*[^*]+\*\*)|(\*[^*]+\*)|(`[^`]+`)|(@(?:all|everyone|kênh|[a-zA-Z0-9_\.\u00C0-\u1EF9]+(?:\s+[A-Z\u00C0-\u1EF9][a-zA-Z0-9_\u00C0-\u1EF9]*)*))/g;
     const tokens: React.ReactNode[] = [];
     let cur = 0;
     let m: RegExpExecArray | null;
@@ -382,16 +398,18 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
       }
       const val = m[0];
       if (m[1]) {
-        // Link web
+        // Link web (Clickable mở tab mới an toàn)
         tokens.push(
           <a
             key={m.index}
             href={val}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-teal-600 hover:text-teal-700 underline break-all font-medium"
+            onClick={(e) => e.stopPropagation()}
+            className="text-teal-600 hover:text-teal-700 underline underline-offset-2 break-all font-semibold transition-colors inline-flex items-center gap-0.5"
+            title={`Mở liên kết: ${val}`}
           >
-            {val}
+            <span>{val}</span>
           </a>
         );
       } else if (m[2]) {
@@ -419,7 +437,7 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
           </code>
         );
       } else if (m[5]) {
-        // Tag / @mention thành viên
+        // Tag / @mention thành viên (chỉ bọc đúng huy hiệu tên được tag)
         const isBroadcast =
           val.toLowerCase() === '@all' ||
           val.toLowerCase() === '@everyone' ||
@@ -427,10 +445,10 @@ const FormattedMessageText: React.FC<{ text: string }> = ({ text }) => {
         tokens.push(
           <span
             key={m.index}
-            className={`inline-flex items-center gap-0.5 px-1.5 py-0.2 mx-0.5 rounded-md font-semibold text-xs transition-colors cursor-pointer select-text ${
+            className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded-md font-semibold text-xs transition-colors cursor-pointer select-text ${
               isBroadcast
                 ? 'bg-amber-100 text-amber-900 ring-1 ring-amber-300 font-bold'
-                : 'bg-teal-100/90 text-teal-800 ring-1 ring-teal-200 hover:bg-teal-200'
+                : 'bg-teal-100/90 text-teal-800 ring-1 ring-teal-300 hover:bg-teal-200 shadow-2xs'
             }`}
           >
             {val}
@@ -532,6 +550,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   onShowToast,
   currentUser,
   subscriptionInfo,
+  onOpenMobileMenu,
 }) => {
   const myEmail = useMemo(
     () => (currentUser?.email || '').trim().toLowerCase(),
@@ -574,6 +593,68 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       } catch {}
     }
   }, [selectedGroupId]);
+
+  // Đồng bộ danh mục tài khoản người dùng từ auth-service và localStorage
+  useEffect(() => {
+    let isMounted = true;
+    const fetchSystemUsers = async () => {
+      try {
+        const res = await apiClient.fetch(`${API_BASE}/auth/users/search?q=`);
+        if (res.ok) {
+          const list = await res.json();
+          if (Array.isArray(list) && isMounted) {
+            setSystemUsersList((prev) => {
+              const map = new Map<string, { email: string; fullName: string; academicTitle?: string; department?: string }>();
+              list.forEach((u: any) => {
+                if (u.email) {
+                  map.set(u.email.toLowerCase(), {
+                    email: u.email,
+                    fullName: u.fullName || u.email.split('@')[0],
+                    academicTitle: u.academicTitle || 'ThS.',
+                    department: u.department || 'Khoa Công nghệ Thông tin',
+                  });
+                }
+              });
+              try {
+                const localUsers = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
+                localUsers.forEach((lu: any) => {
+                  if (lu.email && !map.has(lu.email.toLowerCase())) {
+                    map.set(lu.email.toLowerCase(), {
+                      email: lu.email,
+                      fullName: lu.fullName || lu.name || lu.email.split('@')[0],
+                      academicTitle: lu.academicTitle || lu.title || 'ThS.',
+                      department: lu.department || 'Khoa Công nghệ Thông tin',
+                    });
+                  }
+                });
+              } catch {}
+              return Array.from(map.values());
+            });
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        const localUsers = JSON.parse(localStorage.getItem('quizgen_registered_users') || '[]');
+        if (Array.isArray(localUsers) && isMounted) {
+          setSystemUsersList(
+            localUsers.map((lu: any) => ({
+              email: lu.email,
+              fullName: lu.fullName || lu.name || lu.email.split('@')[0],
+              academicTitle: lu.academicTitle || lu.title || 'ThS.',
+              department: lu.department || 'Khoa Công nghệ Thông tin',
+            }))
+          );
+        }
+      } catch {}
+    };
+
+    void fetchSystemUsers();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const [searchQuery, setSearchQuery] = useState('');
   const [chatInput, setChatInput] = useState('');
   const [filterTab, setFilterTab] = useState<
@@ -605,6 +686,52 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const [isSummarizeModalOpen, setIsSummarizeModalOpen] = useState(false);
   const [isHuddleOpen, setIsHuddleOpen] = useState(false);
   const [isStarred, setIsStarred] = useState(false);
+  const [isSharedMediaOpen, setIsSharedMediaOpen] = useState(false);
+
+  // Trạng thái Huddle toàn hệ thống và cuộc gọi đến
+  const [activeHuddleRooms, setActiveHuddleRooms] = useState<{ [roomId: string]: ActiveHuddleInfo }>({});
+  const [incomingHuddleCall, setIncomingHuddleCall] = useState<IncomingHuddleData | null>(null);
+  const dismissedCallsRef = useRef<{ [roomId: string]: number }>({});
+
+  // Cuộc trò chuyện đã ẩn (Hidden groups)
+  const [hiddenGroupIds, setHiddenGroupIds] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem(`quizgen_hidden_groups_${myEmail}`);
+      return saved ? new Set(JSON.parse(saved)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  const handleHideGroup = useCallback(
+    (groupId: string) => {
+      setHiddenGroupIds((prev) => {
+        const next = new Set(prev);
+        next.add(groupId);
+        try {
+          localStorage.setItem(`quizgen_hidden_groups_${myEmail}`, JSON.stringify(Array.from(next)));
+        } catch {}
+        return next;
+      });
+      onShowToast('info', 'Đã ẩn cuộc trò chuyện', 'Cuộc trò chuyện đã được chuyển vào mục "Đã ẩn" ở cuối danh sách.');
+    },
+    [myEmail, onShowToast]
+  );
+
+  const handleUnhideGroup = useCallback(
+    (groupId: string) => {
+      setHiddenGroupIds((prev) => {
+        const next = new Set(prev);
+        next.delete(groupId);
+        try {
+          localStorage.setItem(`quizgen_hidden_groups_${myEmail}`, JSON.stringify(Array.from(next)));
+        } catch {}
+        return next;
+      });
+      onShowToast('success', 'Đã hiện lại cuộc trò chuyện', 'Cuộc trò chuyện đã xuất hiện lại trong danh sách chính.');
+    },
+    [myEmail, onShowToast]
+  );
 
   // In-App Modern Confirm Dialog
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -630,7 +757,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     type?: string;
   } | null>(null);
   const [activePinnedIdx, setActivePinnedIdx] = useState(0);
-  const [selectedAttachment, setSelectedAttachment] = useState<{
+  const [selectedAttachments, setSelectedAttachments] = useState<Array<{
     type: 'textbook' | 'file' | 'image' | 'video' | 'audio';
     id: string;
     name: string;
@@ -640,7 +767,10 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     totalPages?: number;
     authorName?: string;
     duration?: number;
-  } | null>(null);
+  }>>([]);
+  const selectedAttachment = selectedAttachments[0] || null;
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [uploadProgressText, setUploadProgressText] = useState('');
 
   // Voice Recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -869,6 +999,9 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       { email: 'daipqps37469@gmail.com', name: 'ThS. Đại Phạm Quang', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'vuha3608@ut.edu.vn', name: 'ThS. Vũ Hồ Anh', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'nguyentann0804@gmail.com', name: 'TS. Nguyễn Văn Tân', title: 'TS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'ducngo.180305@gmail.com', name: 'TS. Ngô Phạm Công Đức', title: 'TS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'lieuthanhau@gmail.com', name: 'ThS. Liêu Thanh Hậu', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
+      { email: 'anhvu12022005@gmail.com', name: 'ThS. Anhvu12022005', title: 'ThS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'quizgen.ai.team@gmail.com', name: 'Ban Quản trị QuizGen AI', title: 'Admin', dept: 'Phòng Đào Tạo & Khảo Thí' },
       { email: 'hod.cntt@uth.edu.vn', name: 'PGS. TS. Trưởng Khoa CNTT', title: 'PGS. TS.', dept: 'Khoa Công nghệ Thông tin' },
       { email: 'gv.kinhte@uth.edu.vn', name: 'TS. Giảng viên Kinh tế', title: 'TS.', dept: 'Khoa Kinh tế Vận tải' },
@@ -939,8 +1072,65 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     );
   }, [connectedFriends, createGroupSelectedMembers, createGroupMemberInput]);
 
+  // Gợi ý tức thì dạng dropdown nổi khi gõ từ khóa vào ô tìm kiếm bạn bè
+  const suggestedFriendsDropdown = useMemo(() => {
+    const raw = friendEmailInput.trim().toLowerCase().replace(/^@/, '');
+    if (!raw) return [];
+    return connectedFriends
+      .filter((f) => {
+        if (f.email.toLowerCase() === myEmail.toLowerCase()) return false;
+        const prefix = f.email.toLowerCase().split('@')[0];
+        return (
+          f.email.toLowerCase().includes(raw) ||
+          prefix.includes(raw) ||
+          f.name.toLowerCase().includes(raw) ||
+          (f.dept && f.dept.toLowerCase().includes(raw))
+        );
+      })
+      .slice(0, 6);
+  }, [connectedFriends, friendEmailInput, myEmail]);
+
+  // Gợi ý tức thì khi thêm thành viên vào kênh
+  const suggestedDirectAddDropdown = useMemo(() => {
+    const raw = directAddMemberEmail.trim().toLowerCase().replace(/^@/, '');
+    if (!raw) return [];
+    return connectedFriends
+      .filter((f) => {
+        if (f.email.toLowerCase() === myEmail.toLowerCase()) return false;
+        const prefix = f.email.toLowerCase().split('@')[0];
+        return (
+          f.email.toLowerCase().includes(raw) ||
+          prefix.includes(raw) ||
+          f.name.toLowerCase().includes(raw) ||
+          (f.dept && f.dept.toLowerCase().includes(raw))
+        );
+      })
+      .slice(0, 6);
+  }, [connectedFriends, directAddMemberEmail, myEmail]);
+
+  // Gợi ý tức thì khi tạo nhóm mới
+  const suggestedCreateGroupDropdown = useMemo(() => {
+    const raw = createGroupMemberInput.trim().toLowerCase().replace(/^@/, '');
+    if (!raw) return [];
+    const selected = new Set(createGroupSelectedMembers.map((m) => m.email.toLowerCase()));
+    return connectedFriends
+      .filter((f) => {
+        if (f.email.toLowerCase() === myEmail.toLowerCase() || selected.has(f.email.toLowerCase())) return false;
+        const prefix = f.email.toLowerCase().split('@')[0];
+        return (
+          f.email.toLowerCase().includes(raw) ||
+          prefix.includes(raw) ||
+          f.name.toLowerCase().includes(raw) ||
+          (f.dept && f.dept.toLowerCase().includes(raw))
+        );
+      })
+      .slice(0, 6);
+  }, [connectedFriends, createGroupMemberInput, createGroupSelectedMembers, myEmail]);
+
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const prevGroupIdRef = useRef<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const prevMsgCount = useRef<Record<string, number>>({});
@@ -974,6 +1164,51 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     } catch {}
   }, []);
 
+  // ── Âm thanh réo tên chuẩn Chime (Bắt buộc phát dù tắt chuông) ─────────────
+  const playMentionChime = useCallback(() => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      // Note 1: E5 = 659.25Hz
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(659.25, now);
+      gain1.gain.setValueAtTime(0.2, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.35);
+
+      // Note 2: B5 = 987.77Hz
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(987.77, now + 0.12);
+      gain2.gain.setValueAtTime(0.25, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.12);
+      osc2.stop(now + 0.6);
+    } catch {}
+  }, []);
+
+  // ── Mở phòng Huddle kèm kích hoạt âm thanh Autoplay trên di động ──────────
+  const handleOpenHuddleWithAudioPrime = useCallback(() => {
+    try {
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtxClass) {
+        const dummyCtx = new AudioCtxClass();
+        dummyCtx.resume().catch(() => {});
+      }
+    } catch {}
+    setIsHuddleOpen(true);
+  }, []);
+
   // ── Backend sync & Storage ───────────────────────────────────────────────
   const syncGroupsToBackend = useCallback(async (groups: QGroup[]) => {
     try {
@@ -987,8 +1222,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const applyGroups = useCallback(
     (groups: QGroup[]) => {
-      const bl = getBlacklist(myEmail);
-      const valid = groups.filter((g) => {
+      const cleanGroups = deduplicateDMsAndChannels(groups);
+      const valid = cleanGroups.filter((g) => {
         // Chỉ hiển thị kênh nếu người dùng là thành viên hoặc chủ nhóm
         if (isGroupMemberOrOwner(g, myEmail)) {
           removeFromBlacklist(myEmail, g.id, g.code);
@@ -1123,7 +1358,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         return false;
       });
 
-      const merged = [...remoteClean];
+      const merged = deduplicateDMsAndChannels([...remoteClean]);
 
       const seen = new Set<string>();
       const deduped: QGroup[] = [];
@@ -1175,12 +1410,34 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         if (msgs.length > prev) {
           const last = msgs[msgs.length - 1];
           if (last && last.senderEmail?.toLowerCase() !== myEmail && !last.isSystem) {
-            playBeep();
-            onShowToast(
-              'info',
-              `Tin nhắn mới từ ${last.senderName || 'ai đó'}`,
-              last.text || '[Tệp đính kèm]'
+            const lastText = (last.text || '').toLowerCase();
+            const cleanMyEmail = myEmail.toLowerCase();
+            const cleanMyName = (myName || '').toLowerCase();
+            const isMentioned = Boolean(
+              (cleanMyName && lastText.includes(`@${cleanMyName}`)) ||
+              lastText.includes(`@${cleanMyEmail.split('@')[0]}`) ||
+              lastText.includes('@all') ||
+              lastText.includes('@everyone') ||
+              lastText.includes('@kênh')
             );
+
+            if (isMentioned) {
+              // BẮT BUỘC BÁO DÙ CÓ TẮT CHUÔNG (BYPASS MUTE ON TAG)
+              playMentionChime();
+              onShowToast(
+                'warning',
+                `🔔 ${last.senderName} đã nhắc đến bạn!`,
+                last.text || '[Tệp đính kèm]'
+              );
+            } else if (!g.muted) {
+              // Tin nhắn thường: chỉ kêu nếu không bị tắt chuông
+              playBeep();
+              onShowToast(
+                'info',
+                `Tin nhắn mới từ ${last.senderName || 'ai đó'}`,
+                last.text || '[Tệp đính kèm]'
+              );
+            }
           }
         }
         prevMsgCount.current[g.id] = msgs.length;
@@ -1189,20 +1446,91 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       applyGroups(deduped);
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myEmail, selectedGroupId, applyGroups, playBeep, onShowToast]);
+  }, [myEmail, myName, selectedGroupId, applyGroups, playBeep, playMentionChime, onShowToast]);
+
+  // Đồng bộ trạng thái phòng đàm thoại Huddle và cuộc gọi đến
+  const fetchActiveHuddles = useCallback(async () => {
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/huddle/active`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.rooms) {
+          setActiveHuddleRooms(data.rooms);
+
+          // Kiểm tra xem có cuộc gọi 1-1 nào đang gọi tới currentUser không
+          if (!isHuddleOpen) {
+            const now = Date.now();
+            const incoming = Object.values(data.rooms as { [k: string]: any }).find((r: any) => {
+              if (!r.isDirect) return false;
+              // Chỉ hiện popup chuông reo nếu cuộc gọi đang ở trạng thái đổ chuông thực sự
+              if (r.isRinging === false) return false;
+              if (r.callerEmail?.toLowerCase() === myEmail.toLowerCase()) return false;
+
+              const matchGroup = qgroups.find((g) => {
+                if (!g.isDirect) return false;
+                const directPartner = (g.directPartnerEmail || '').toLowerCase().trim();
+                const owner = (g.ownerEmail || '').toLowerCase().trim();
+                const members = (g.members || []).map((m: string) => m.toLowerCase().trim());
+                return (
+                  (directPartner === r.callerEmail?.toLowerCase() || owner === r.callerEmail?.toLowerCase() || members.includes(r.callerEmail?.toLowerCase())) &&
+                  (owner === myEmail.toLowerCase() || directPartner === myEmail.toLowerCase() || members.includes(myEmail.toLowerCase()))
+                );
+              });
+              if (!matchGroup) return false;
+
+              const dismissedUntil = dismissedCallsRef.current[r.roomId];
+              if (dismissedUntil && now < dismissedUntil) return false;
+
+              return true;
+            });
+
+          if (incoming) {
+            const matchGroup = qgroups.find((g) => {
+              if (!g.isDirect) return false;
+              const directPartner = (g.directPartnerEmail || '').toLowerCase().trim();
+              const owner = (g.ownerEmail || '').toLowerCase().trim();
+              const members = (g.members || []).map((m: string) => m.toLowerCase().trim());
+              return (
+                (directPartner === incoming.callerEmail?.toLowerCase() || owner === incoming.callerEmail?.toLowerCase() || members.includes(incoming.callerEmail?.toLowerCase())) &&
+                (owner === myEmail.toLowerCase() || directPartner === myEmail.toLowerCase() || members.includes(myEmail.toLowerCase()))
+              );
+            });
+
+            setIncomingHuddleCall({
+              roomId: incoming.roomId,
+              callerName: incoming.callerName || 'Đồng nghiệp',
+              callerEmail: incoming.callerEmail,
+              groupName: matchGroup ? matchGroup.name : undefined,
+              isDirect: true,
+              groupId: matchGroup ? matchGroup.id : selectedGroupId,
+            });
+          } else {
+            setIncomingHuddleCall(null);
+          }
+        } else {
+          setIncomingHuddleCall(null);
+        }
+      }
+    }
+  } catch {
+    // Ignored
+  }
+}, [isHuddleOpen, myEmail, qgroups, selectedGroupId]);
 
   // Polling 2s
   useEffect(() => {
     void fetchQGroups();
     void fetchGroupInvitations();
     void fetchFriendRequests();
+    void fetchActiveHuddles();
     const iv = setInterval(() => {
       void fetchQGroups();
       void fetchGroupInvitations();
       void fetchFriendRequests();
+      void fetchActiveHuddles();
     }, 2000);
     return () => clearInterval(iv);
-  }, [fetchQGroups, fetchGroupInvitations, fetchFriendRequests]);
+  }, [fetchQGroups, fetchGroupInvitations, fetchFriendRequests, fetchActiveHuddles]);
 
   // Đồng bộ danh mục tài khoản toàn hệ thống từ auth.db (admin API)
   useEffect(() => {
@@ -1233,9 +1561,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     void fetchFriendRequests();
   }, [myEmail, fetchQGroups, fetchGroupInvitations, fetchFriendRequests]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [selectedGroupId]);
+  useLayoutEffect(() => {
+    if (selectedGroupId) {
+      prevGroupIdRef.current = selectedGroupId;
+      // Nhảy lập tức tới tin nhắn mới nhất, triệt tiêu hoàn toàn hiệu ứng cuộn từ đầu trang xuống
+      const jumpToLatestMessage = () => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+      };
+      jumpToLatestMessage();
+      requestAnimationFrame(jumpToLatestMessage);
+      const timer = setTimeout(jumpToLatestMessage, 40);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedGroupId, showMobileChat]);
 
   useEffect(() => {
     if (selectedGroupId) {
@@ -1256,7 +1596,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   // ── Sorted groups ─────────────────────────────────────────────────────────
   const sortedGroups = useMemo(() => {
-    return [...qgroups]
+    return deduplicateDMsAndChannels([...qgroups])
       .filter((g) => {
         // Bảo mật Tin nhắn riêng 1-1: Chỉ hiển thị cho 2 người tham gia
         if (g.isDirect) {
@@ -1340,52 +1680,180 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     return (activeGroup?.messages || []).filter((m) => m.isPinned);
   }, [activeGroup]);
 
+  // Cuộc đàm thoại Huddle đang diễn ra trong phòng chat hiện tại
+  const activeHuddleForCurrentChat = useMemo(() => {
+    if (!activeGroup) return null;
+    let roomKey = '';
+    if (activeGroup.isDirect) {
+      const raw = [activeGroup.ownerEmail, activeGroup.directPartnerEmail, ...(activeGroup.members || [])]
+        .filter(Boolean)
+        .map((e) => String(e).trim().toLowerCase());
+      const u = Array.from(new Set(raw)).sort();
+      if (u.length >= 2) roomKey = `dm_${u.join('_')}`.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    } else {
+      roomKey = (activeGroup.id || activeGroup.code || '').replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    }
+    return activeHuddleRooms[roomKey] || (activeGroup.id && activeHuddleRooms[activeGroup.id.toLowerCase()]) || null;
+  }, [activeGroup, activeHuddleRooms]);
+
+  // Danh sách ID các phòng đang có Huddle hoạt động
+  const activeHuddleRoomIds = useMemo(() => {
+    return new Set(Object.keys(activeHuddleRooms));
+  }, [activeHuddleRooms]);
+
   const totalInvitations = friendRequests.length + groupInvitations.length;
 
+  // ── Khôi phục & lưu trữ bản nháp (Draft & Attachments) chống mất file/tin khi reload ──
+  useEffect(() => {
+    if (!selectedGroupId) return;
+    try {
+      const draftKey = `quizgen_draft_${myEmail}_${selectedGroupId}`;
+      const saved = sessionStorage.getItem(draftKey) || localStorage.getItem(draftKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.text) setChatInput(parsed.text);
+        if (parsed.attachments && Array.isArray(parsed.attachments)) {
+          setSelectedAttachments(parsed.attachments);
+        }
+      }
+    } catch {}
+  }, [selectedGroupId, myEmail]);
+
+  useEffect(() => {
+    if (!selectedGroupId) return;
+    try {
+      const draftKey = `quizgen_draft_${myEmail}_${selectedGroupId}`;
+      if (chatInput || selectedAttachments.length > 0) {
+        const data = JSON.stringify({
+          text: chatInput,
+          attachments: selectedAttachments,
+        });
+        sessionStorage.setItem(draftKey, data);
+        localStorage.setItem(draftKey, data);
+      } else {
+        sessionStorage.removeItem(draftKey);
+        localStorage.removeItem(draftKey);
+      }
+    } catch {}
+  }, [selectedGroupId, myEmail, chatInput, selectedAttachments]);
+
   // ── File Selection & Paste Support ─────────────────────────────────────────
-  const handleFileSelect = async (file: File) => {
-    if (file.size > 25 * 1024 * 1024) {
-      onShowToast('warning', 'Tệp quá lớn', 'Hệ thống hỗ trợ gửi tệp tối đa 25MB.');
+  const MAX_ATTACHMENTS_COUNT = 5;
+  const MAX_SINGLE_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+  const MAX_TOTAL_BATCH_SIZE = 50 * 1024 * 1024; // 50MB
+
+  const handleFilesSelect = async (files: File[]) => {
+    if (!files || files.length === 0) return;
+
+    // 1. Giới hạn số lượng tệp tối đa (5 tệp trong 1 tin nhắn)
+    if (selectedAttachments.length + files.length > MAX_ATTACHMENTS_COUNT) {
+      onShowToast(
+        'warning',
+        'Quá số lượng tệp cho phép',
+        `Chỉ được đính kèm tối đa ${MAX_ATTACHMENTS_COUNT} tệp trong 1 tin nhắn. Hiện tại bạn đã chọn ${selectedAttachments.length} tệp.`
+      );
       return;
     }
-    const isImage = file.type.startsWith('image/');
-    const isVideo = file.type.startsWith('video/');
-    const isAudio = file.type.startsWith('audio/');
-    const type = isImage ? 'image' : isVideo ? 'video' : isAudio ? 'audio' : 'file';
 
-    const formattedSize =
-      file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.round(file.size / 1024)} KB`;
+    // 2. Giới hạn dung lượng từng tệp (tối đa 25MB mỗi tệp)
+    for (const f of files) {
+      if (f.size > MAX_SINGLE_FILE_SIZE) {
+        const mb = (f.size / (1024 * 1024)).toFixed(1);
+        onShowToast(
+          'error',
+          'Tệp vượt quá giới hạn 25MB',
+          `Tệp "${f.name}" (${mb}MB) vượt quá dung lượng tối đa cho phép là 25MB.`
+        );
+        return;
+      }
+    }
 
-    onShowToast('info', 'Đang tải tệp lên...', file.name);
+    // 3. Giới hạn tổng dung lượng cả đợt (tối đa 50MB)
+    const totalNewSize = files.reduce((acc, f) => acc + f.size, 0);
+    if (totalNewSize > MAX_TOTAL_BATCH_SIZE) {
+      const mbTotal = (totalNewSize / (1024 * 1024)).toFixed(1);
+      onShowToast(
+        'error',
+        'Tổng dung lượng quá lớn',
+        `Tổng dung lượng các tệp tải lên là ${mbTotal}MB, vượt quá mức tối đa 50MB mỗi đợt.`
+      );
+      return;
+    }
 
+    // 4. Hàng đợi tải tuần tự (Sequential Upload) để bảo vệ kết nối, tránh crash và tránh reload
+    setIsUploadingAttachment(true);
+    let successCount = 0;
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await apiClient
-        .fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const isImage = file.type.startsWith('image/');
+        const isVideo = file.type.startsWith('video/');
+        const isAudio = file.type.startsWith('audio/');
+        const type = isImage ? 'image' : isVideo ? 'video' : isAudio ? 'audio' : 'file';
+
+        const formattedSize =
+          file.size > 1024 * 1024
+            ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+            : `${Math.round(file.size / 1024)} KB`;
+
+        setUploadProgressText(`Đang tải (${i + 1}/${files.length}): ${file.name} (${formattedSize})...`);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        const resp = await apiClient.fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
           method: 'POST',
           body: formData,
-        })
-        .then((r) => r.json());
-
-      if (res && res.fileUrl) {
-        setSelectedAttachment({
-          type: res.type || type,
-          id: `att-${Date.now()}`,
-          name: res.name || file.name,
-          size: res.size || formattedSize,
-          fileUrl: res.fileUrl,
-          fileType: res.fileType || file.type,
         });
-        onShowToast('success', 'Đã đính kèm tệp', `${file.name} (${formattedSize})`);
-      } else {
-        throw new Error(res?.detail || 'Không thể tải tệp lên máy chủ');
+
+        let res: any = null;
+        try {
+          res = await resp.json();
+        } catch {
+          const rawText = await resp.text().catch(() => '');
+          throw new Error(
+            resp.status === 413
+              ? `Tệp "${file.name}" vượt quá dung lượng cho phép của máy chủ.`
+              : `Máy chủ phản hồi mã ${resp.status}: ${rawText.slice(0, 80) || 'Lỗi tải tệp'}`
+          );
+        }
+
+        if (!resp.ok) {
+          throw new Error(res?.detail || `Lỗi tải tệp ${file.name} (Mã ${resp.status})`);
+        }
+
+        if (res && res.fileUrl) {
+          const newAtt = {
+            type: (res.type || type) as 'textbook' | 'file' | 'image' | 'video' | 'audio',
+            id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            name: res.name || file.name,
+            size: res.size || formattedSize,
+            fileUrl: res.fileUrl,
+            fileType: res.fileType || file.type,
+          };
+          setSelectedAttachments((prev) => [...prev, newAtt]);
+          successCount++;
+        } else {
+          throw new Error(res?.detail || `Không thể tải lên tệp ${file.name}`);
+        }
       }
+
+      onShowToast(
+        'success',
+        'Đã tải tệp lên thành công',
+        files.length === 1
+          ? `${files[0].name}`
+          : `Đã gắn thành công ${successCount}/${files.length} tệp vào tin nhắn.`
+      );
     } catch (err: any) {
       onShowToast('error', 'Lỗi tải tệp', err?.message || 'Không thể tải tệp lên máy chủ.');
+    } finally {
+      setIsUploadingAttachment(false);
+      setUploadProgressText('');
     }
+  };
+
+  const handleFileSelect = async (file: File) => {
+    return handleFilesSelect([file]);
   };
 
   const handleComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -1435,13 +1903,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   const startVoiceRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+          },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
       mediaStreamRef.current = stream;
 
       // Ensure all audio tracks are active
@@ -1449,7 +1921,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         track.enabled = true;
       });
 
-      // Real AudioContext and Analyser for dynamic live waveform visualization
+      // Real AudioContext and Analyser for dynamic live waveform visualization (without stream.clone())
       try {
         const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioCtxClass) {
@@ -1457,9 +1929,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           if (audioCtx.state === 'suspended') {
             await audioCtx.resume();
           }
-          const analyserStream = stream.clone();
-          analyserStreamRef.current = analyserStream;
-          const source = audioCtx.createMediaStreamSource(analyserStream);
+          const source = audioCtx.createMediaStreamSource(stream);
           const analyser = audioCtx.createAnalyser();
           analyser.fftSize = 64;
           analyser.smoothingTimeConstant = 0.3;
@@ -1622,7 +2092,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       setIsRecording(false);
       setRecordingSeconds(0);
 
-      if (audioBlob.size < 300) {
+      if (audioBlob.size < 100) {
         onShowToast('warning', 'Ghi âm quá ngắn', 'Vui lòng nói rõ ràng hơn.');
         return;
       }
@@ -1746,7 +2216,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // ── Send Message ──────────────────────────────────────────────────────────
   const handleSend = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if ((!chatInput.trim() && !selectedAttachment) || !activeGroup) return;
+    if ((!chatInput.trim() && selectedAttachments.length === 0) || !activeGroup) return;
     if (!activeGroup.isDirect && !isCurrentUserMember) {
       onShowToast('warning', 'Không thể gửi tin', 'Thầy/Cô không còn là thành viên của kênh này.');
       return;
@@ -1760,7 +2230,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       senderTitle: currentUser?.academicTitle || 'GV',
       avatarColor: 'bg-slate-700',
       text: chatInput.trim(),
-      attachment: selectedAttachment || undefined,
+      attachment: selectedAttachments.length > 0 ? (selectedAttachments[0] as any) : undefined,
+      attachments: selectedAttachments.length > 0 ? (selectedAttachments as any) : undefined,
       replyTo: replyingToMessage
         ? {
             id: replyingToMessage.id,
@@ -1782,8 +2253,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     );
     applyGroups(updated);
     setChatInput('');
-    setSelectedAttachment(null);
+    setSelectedAttachments([]);
     setReplyingToMessage(null);
+    try {
+      const draftKey = `quizgen_draft_${myEmail}_${selectedGroupId}`;
+      sessionStorage.removeItem(draftKey);
+      localStorage.removeItem(draftKey);
+    } catch {}
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 60);
 
     const targetId = activeGroup.id || activeGroup.code;
@@ -1802,33 +2278,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // ── Hàm tra cứu danh tính tài khoản trên toàn hệ thống QuizGen / UTH ────
   const lookupAccount = useCallback(
     async (emailVal: string) => {
-      const clean = emailVal.trim().toLowerCase();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-      if (!clean || !emailRegex.test(clean)) {
+      const clean = emailVal.trim().toLowerCase().replace(/^@/, '');
+      if (!clean) {
         return null;
       }
-      try {
-        const res = await apiClient.fetch(
-          `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (data.exists && data.user) {
-            return data.user as {
-              id?: string;
-              email: string;
-              fullName: string;
-              academicTitle?: string;
-              department?: string;
-              university?: string;
-              role?: string;
-            };
-          }
-        }
-      } catch {}
 
-      // Kiểm tra trong danh mục tài khoản động từ API
-      const dynamicUser = systemUsersList.find((u) => u.email.toLowerCase() === clean);
+      // 1. Kiểm tra trực tiếp trong danh mục tài khoản động từ API (khớp email, tiền tố, hoặc họ tên)
+      const dynamicUser = systemUsersList.find(
+        (u) =>
+          u.email.toLowerCase() === clean ||
+          u.email.toLowerCase().split('@')[0] === clean ||
+          u.fullName.toLowerCase() === clean
+      );
       if (dynamicUser) {
         return {
           email: dynamicUser.email,
@@ -1840,78 +2301,103 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         };
       }
 
+      // 2. Danh mục tài khoản hệ thống & đồng nghiệp mẫu
       const localRegistered: Record<
         string,
         { fullName: string; academicTitle: string; department: string }
       > = {
-        'mr.av1222005@gmail.com': {
-          fullName: 'Mr. AV',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'avanimechannel@gmail.com': {
-          fullName: 'Vũ Anh',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'hieuhieu22112005@gmail.com': {
-          fullName: 'Hieu Huynh',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'daipqps37469@gmail.com': {
-          fullName: 'Đại Phạm Quang',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'vuha3608@ut.edu.vn': {
-          fullName: 'Vũ Hồ Anh',
-          academicTitle: 'ThS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'nguyentann0804@gmail.com': {
-          fullName: 'Nguyễn Văn Tân',
-          academicTitle: 'TS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'quizgen.ai.team@gmail.com': {
-          fullName: 'Ban Quản trị QuizGen AI',
-          academicTitle: 'Admin',
-          department: 'Hệ thống Khảo thí UTH',
-        },
-        'hod.cntt@uth.edu.vn': {
-          fullName: 'PGS. TS. Trưởng Khoa CNTT',
-          academicTitle: 'PGS. TS.',
-          department: 'Khoa Công nghệ Thông tin',
-        },
-        'gv.kinhte@uth.edu.vn': {
-          fullName: 'TS. Giảng viên Kinh tế',
-          academicTitle: 'TS.',
-          department: 'Khoa Kinh tế Vận tải',
-        },
+        'mr.av1222005@gmail.com': { fullName: 'Vũ đẹp chai', academicTitle: 'KS.', department: 'Khoa Công nghệ Thông tin' },
+        'avanimechannel@gmail.com': { fullName: 'Vũ Anh', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
+        'hieuhieu22112005@gmail.com': { fullName: 'Hieu Huynh', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
+        'daipqps37469@gmail.com': { fullName: 'Đại Phạm Quang', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
+        'vuha3608@ut.edu.vn': { fullName: 'Vũ Hồ Anh', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
+        'nguyentann0804@gmail.com': { fullName: 'Nguyễn Văn Tân', academicTitle: 'TS.', department: 'Khoa Công nghệ Thông tin' },
+        'ducngo.180305@gmail.com': { fullName: 'Ngô Phạm Công Đức', academicTitle: 'TS.', department: 'Khoa Công nghệ Thông tin' },
+        'lieuthanhau@gmail.com': { fullName: 'Liêu Thanh Hậu', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
+        'anhvu12022005@gmail.com': { fullName: 'Anhvu12022005', academicTitle: 'ThS.', department: 'Khoa Công nghệ Thông tin' },
+        'quizgen.ai.team@gmail.com': { fullName: 'Ban Quản trị QuizGen AI', academicTitle: 'Admin', department: 'Hệ thống Khảo thí UTH' },
+        'hod.cntt@uth.edu.vn': { fullName: 'PGS. TS. Trưởng Khoa CNTT', academicTitle: 'PGS. TS.', department: 'Khoa Công nghệ Thông tin' },
+        'gv.kinhte@uth.edu.vn': { fullName: 'TS. Giảng viên Kinh tế', academicTitle: 'TS.', department: 'Khoa Kinh tế Vận tải' },
       };
 
-      if (localRegistered[clean]) {
-        const info = localRegistered[clean];
-        return {
-          email: clean,
-          fullName: info.fullName,
-          academicTitle: info.academicTitle,
-          department: info.department,
-          university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
-          role: 'lecturer',
-        };
+      for (const [em, info] of Object.entries(localRegistered)) {
+        if (
+          em.toLowerCase() === clean ||
+          em.toLowerCase().split('@')[0] === clean ||
+          info.fullName.toLowerCase() === clean
+        ) {
+          return {
+            email: em,
+            fullName: info.fullName,
+            academicTitle: info.academicTitle,
+            department: info.department,
+            university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
+            role: 'lecturer',
+          };
+        }
       }
 
+      // 3. Nếu có @ và ., gọi API tra cứu chính xác từ auth-service
+      if (clean.includes('@') && clean.includes('.')) {
+        try {
+          const res = await apiClient.fetch(
+            `${API_BASE}/auth/users/lookup?email=${encodeURIComponent(clean)}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data.exists && data.user) {
+              return data.user as {
+                id?: string;
+                email: string;
+                fullName: string;
+                academicTitle?: string;
+                department?: string;
+                university?: string;
+                role?: string;
+              };
+            }
+          }
+        } catch {}
+      } else {
+        // Nếu gõ vài ký tự / từ khóa, gọi API tìm kiếm gợi ý từ backend
+        try {
+          const res = await apiClient.fetch(
+            `${API_BASE}/auth/users/search?q=${encodeURIComponent(clean)}`
+          );
+          if (res.ok) {
+            const list = await res.json();
+            if (Array.isArray(list) && list.length > 0) {
+              const matched = list.find(
+                (u: any) =>
+                  u.email.toLowerCase() === clean ||
+                  u.email.toLowerCase().split('@')[0] === clean ||
+                  u.fullName.toLowerCase() === clean
+              ) || (list.length === 1 ? list[0] : null);
+              if (matched) return matched;
+            }
+          }
+        } catch {}
+      }
+
+      // 4. Tìm trong danh sách thành viên các nhóm/kênh hiện có
       const foundInGroups = qgroups.find((g) => {
         const members = (g.members || []).map((m) => String(m).toLowerCase());
-        return members.includes(clean) || g.ownerEmail?.toLowerCase() === clean;
+        return (
+          members.some((m) => m === clean || m.split('@')[0] === clean) ||
+          g.ownerEmail?.toLowerCase() === clean
+        );
       });
 
       if (foundInGroups) {
+        const targetMember =
+          (foundInGroups.members || []).find(
+            (m) =>
+              String(m).toLowerCase() === clean ||
+              String(m).toLowerCase().split('@')[0] === clean
+          ) || foundInGroups.ownerEmail;
         return {
-          email: clean,
-          fullName: clean.split('@')[0],
+          email: targetMember || clean,
+          fullName: (targetMember || clean).split('@')[0],
           academicTitle: 'Giảng viên',
           department: foundInGroups.department || 'Khoa Chuyên Ngành',
           university: 'Trường Đại học Giao thông Vận tải TP.HCM (UTH)',
@@ -1927,9 +2413,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // ── Tra cứu cho modal Thêm thành viên vào kênh đang mở ───────────────────
   const handleLookupUser = useCallback(
     async (email: string) => {
-      const clean = email.trim().toLowerCase();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-      if (!clean || !emailRegex.test(clean)) {
+      const clean = email.trim().toLowerCase().replace(/^@/, '');
+      if (!clean) {
         setLookupStatus('idle');
         setLookedUpUser(null);
         return;
@@ -1940,8 +2425,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         setLookedUpUser(user);
         setLookupStatus('found');
       } else {
-        setLookedUpUser(null);
-        setLookupStatus('not_found');
+        if (clean.includes('@') && clean.includes('.')) {
+          setLookedUpUser(null);
+          setLookupStatus('not_found');
+        } else {
+          setLookedUpUser(null);
+          setLookupStatus('idle');
+        }
       }
     },
     [lookupAccount]
@@ -1950,9 +2440,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // ── Tra cứu cho modal Thêm bạn bè mới ─────────────────────────────────────
   const handleFriendLookup = useCallback(
     async (emailVal: string) => {
-      const clean = emailVal.trim().toLowerCase();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-      if (!clean || !emailRegex.test(clean)) {
+      const clean = emailVal.trim().toLowerCase().replace(/^@/, '');
+      if (!clean) {
         setFriendLookupStatus('idle');
         setFriendLookedUpUser(null);
         return;
@@ -1963,8 +2452,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         setFriendLookedUpUser(user);
         setFriendLookupStatus('found');
       } else {
-        setFriendLookedUpUser(null);
-        setFriendLookupStatus('not_found');
+        if (clean.includes('@') && clean.includes('.')) {
+          setFriendLookedUpUser(null);
+          setFriendLookupStatus('not_found');
+        } else {
+          setFriendLookedUpUser(null);
+          setFriendLookupStatus('idle');
+        }
       }
     },
     [lookupAccount]
@@ -1973,9 +2467,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   // ── Tra cứu cho modal Tạo kênh học thuật mới ──────────────────────────────
   const handleCreateGroupMemberLookup = useCallback(
     async (emailVal: string) => {
-      const clean = emailVal.trim().toLowerCase();
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-      if (!clean || !emailRegex.test(clean)) {
+      const clean = emailVal.trim().toLowerCase().replace(/^@/, '');
+      if (!clean) {
         setCreateGroupLookupStatus('idle');
         setCreateGroupLookedUpUser(null);
         return;
@@ -1986,8 +2479,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         setCreateGroupLookedUpUser(user);
         setCreateGroupLookupStatus('found');
       } else {
-        setCreateGroupLookedUpUser(null);
-        setCreateGroupLookupStatus('not_found');
+        if (clean.includes('@') && clean.includes('.')) {
+          setCreateGroupLookedUpUser(null);
+          setCreateGroupLookupStatus('not_found');
+        } else {
+          setCreateGroupLookedUpUser(null);
+          setCreateGroupLookupStatus('idle');
+        }
       }
     },
     [lookupAccount]
@@ -2644,11 +3142,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             const next = qgroups.filter((g) => {
               if (g.isDirect || g.type === 'direct') {
                 const members = (g.members || []).map((m) => m.toLowerCase().trim());
-                if (members.includes(cleanTarget)) return false;
+                const cleanOwner = (g.ownerEmail || '').toLowerCase().trim();
+                const cleanPartner = (g.directPartnerEmail || '').toLowerCase().trim();
+                if (members.includes(cleanTarget) || cleanOwner === cleanTarget || cleanPartner === cleanTarget) {
+                  return false;
+                }
               }
               return true;
             });
             applyGroups(next);
+            void syncGroupsToBackend(next);
+            await fetchQGroups();
+            await fetchFriendRequests();
             if (activeGroup && (activeGroup.isDirect || activeGroup.type === 'direct')) {
               setSelectedGroupId(next[0]?.id || '');
               setShowMobileChat(false);
@@ -3333,397 +3838,77 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       <div
         className={`md:w-72 lg:w-80 ${
           showMobileChat ? 'hidden md:flex' : 'flex w-full'
-        } bg-slate-50 border-r border-slate-200 flex-col shrink-0 h-full transition-all duration-200`}
+        } border-r border-slate-200 flex-col shrink-0 h-full transition-all duration-200`}
       >
-        {/* Header */}
-        <div className="p-3 border-b border-slate-200/80 space-y-2.5 bg-white">
-          <div className="flex items-center justify-between">
-            <div className="min-w-0 pr-1">
-              <h2 className="text-sm font-bold text-slate-900 tracking-tight flex items-center gap-1.5 truncate">
-                <span>UTH Academic</span>
-                {totalInvitations > 0 && (
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-                )}
-              </h2>
-              <p className="text-[10px] text-slate-500 font-medium truncate">Khoa CNTT • Kênh Học Thuật</p>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsAddFriendOpen(true);
-                }}
-                className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
-                title="Thêm đồng nghiệp mới"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setGroupModalTab('create');
-                  setIsCreateGroupOpen(true);
-                }}
-                className="w-7 h-7 rounded-lg bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center transition-colors shadow-xs cursor-pointer"
-                title="Tạo kênh mới hoặc Nhập mã"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm kênh hoặc đồng nghiệp..."
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-100 hover:bg-slate-200/70 focus:bg-white border border-transparent focus:border-slate-400 rounded-lg text-xs text-slate-800 placeholder-slate-400 outline-none transition-all"
-            />
-          </div>
-
-          {/* Filter tabs */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFilterTab('all');
-              }}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                filterTab === 'all'
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Tất cả
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFilterTab('unread');
-              }}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all cursor-pointer ${
-                filterTab === 'unread'
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Chưa đọc
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setFilterTab('invitations');
-              }}
-              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                filterTab === 'invitations'
-                  ? 'bg-slate-900 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <span>Lời mời</span>
-              {totalInvitations > 0 && (
-                <span className="px-1.5 rounded-full text-[10px] font-bold bg-rose-500 text-white">
-                  {totalInvitations}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Conversation List / Invitations */}
-        {filterTab === 'invitations' ? (
-          <InvitationsPanel
-            friendRequests={friendRequests}
-            sentFriendRequests={sentFriendRequests}
-            groupInvitations={groupInvitations}
-            onAcceptFriend={handleAcceptFriendRequest}
-            onRejectFriend={handleRejectFriendRequest}
-            onCancelFriend={handleCancelFriendRequest}
-            onAcceptGroup={handleAcceptGroupInv}
-            onRejectGroup={handleRejectGroupInv}
-            onBack={() => setFilterTab('all')}
-          />
-        ) : (
-          <div className="flex-1 overflow-y-auto py-2">
-            {/* Lời mời kết bạn nổi bật cho tài khoản nhận */}
-            {friendRequests.length > 0 && (
-              <div
-                onClick={() => setFilterTab('invitations')}
-                className="mx-2 mb-2 p-2.5 rounded-lg bg-slate-900 text-white flex items-center justify-between gap-2.5 cursor-pointer hover:bg-slate-800 transition-all shadow-xs"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <UserPlus className="w-4 h-4 text-teal-400 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold truncate flex items-center gap-1.5">
-                      <span>{friendRequests.length} lời mời kết bạn mới</span>
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                    </p>
-                    <p className="text-[10px] text-slate-300 truncate">
-                      Từ: {friendRequests[0]?.senderName || friendRequests[0]?.senderEmail}
-                    </p>
-                  </div>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-white/20 text-white text-[10px] font-semibold shrink-0">
-                  Xem
-                </span>
-              </div>
-            )}
-
-            {sortedGroups.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 space-y-2">
-                <MessageCircle className="w-8 h-8 mx-auto text-slate-300" />
-                <p className="text-xs font-semibold text-slate-600">Không có kênh hay tin nhắn nào</p>
-                <p className="text-[11px]">Bấm dấu + để tạo kênh chuyên môn hoặc kết nối đồng nghiệp.</p>
-              </div>
-            ) : filterTab === 'unread' ? (
-              <div className="space-y-0.5">
-                <div className="px-3 py-1 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Tin nhắn chưa đọc ({sortedGroups.length})
-                </div>
-                {sortedGroups.map((group) => (
-                  <ConversationItem
-                    key={group.id}
-                    group={group}
-                    isSelected={group.id === selectedGroupId}
-                    myEmail={myEmail}
-                    isMenuOpen={menuGroupId === group.id}
-                    onSelect={() => {
-                      setSelectedGroupId(group.id);
-                      setShowMobileChat(true);
-                      markGroupAsRead(group.id);
-                      setMenuGroupId(null);
-                    }}
-                    onMenuToggle={(e) => {
-                      e.stopPropagation();
-                      setMenuGroupId((prev) => (prev === group.id ? null : group.id));
-                    }}
-                    onViewProfile={() => {
-                      const info = resolveChatDisplayInfo(group, myEmail);
-                      setProfileEmail(info.partnerEmail || null);
-                      setProfileName(info.displayName);
-                      setMenuGroupId(null);
-                    }}
-                    onViewDetails={() => {
-                      setDetailsGroup(group);
-                      setChannelDetailsTab('about');
-                      setIsChannelDetailsOpen(true);
-                      setMenuGroupId(null);
-                    }}
-                    onMute={() => handleToggleMute(group)}
-                    onTogglePin={() => {
-                      handleTogglePinConversation(group);
-                      setMenuGroupId(null);
-                    }}
-                    onDelete={() => handleDeleteChat(group)}
-                    onUnfriend={() => {
-                      const info = resolveChatDisplayInfo(group, myEmail);
-                      if (info.partnerEmail) {
-                        handleUnfriend(info.partnerEmail, info.displayName);
-                      }
-                    }}
-                    onLeave={() => handleLeaveGroup(group)}
-                    onTransferOwner={() => handleOpenTransferOwnership(group)}
-                    onDisband={() => handleDisbandGroup(group)}
-                    onCopyCode={() => {
-                      navigator.clipboard.writeText(group.code);
-                      onShowToast('info', 'Đã sao chép mã phòng', group.code);
-                      setMenuGroupId(null);
-                    }}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {/* SECTION 1: KÊNH CHUYÊN MÔN (SLACK CHANNELS) */}
-                <div>
-                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800 select-none">
-                    <button
-                      type="button"
-                      onClick={() => setIsChannelsOpen((prev) => !prev)}
-                      className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                    >
-                      {isChannelsOpen ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                      )}
-                      <Hash className="w-3.5 h-3.5" />
-                      <span>Kênh chuyên môn ({sortedGroups.filter((g) => !g.isDirect).length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGroupModalTab('create');
-                        setIsCreateGroupOpen(true);
-                      }}
-                      className="w-5 h-5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
-                      title="Tạo kênh mới hoặc Nhập mã"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {isChannelsOpen && (
-                    <div className="space-y-0.5 mt-0.5">
-                      {sortedGroups
-                        .filter((g) => !g.isDirect)
-                        .map((group) => (
-                          <ConversationItem
-                            key={group.id}
-                            group={group}
-                            isSelected={group.id === selectedGroupId}
-                            myEmail={myEmail}
-                            isMenuOpen={menuGroupId === group.id}
-                            onSelect={() => {
-                              setSelectedGroupId(group.id);
-                              setShowMobileChat(true);
-                              markGroupAsRead(group.id);
-                              setMenuGroupId(null);
-                            }}
-                            onMenuToggle={(e) => {
-                              e.stopPropagation();
-                              setMenuGroupId((prev) => (prev === group.id ? null : group.id));
-                            }}
-                            onViewProfile={() => {
-                              const info = resolveChatDisplayInfo(group, myEmail);
-                              setProfileEmail(info.partnerEmail || null);
-                              setProfileName(info.displayName);
-                              setMenuGroupId(null);
-                            }}
-                            onViewDetails={() => {
-                              setDetailsGroup(group);
-                              setChannelDetailsTab('about');
-                              setIsChannelDetailsOpen(true);
-                              setMenuGroupId(null);
-                            }}
-                            onMute={() => handleToggleMute(group)}
-                            onTogglePin={() => {
-                              handleTogglePinConversation(group);
-                              setMenuGroupId(null);
-                            }}
-                            onDelete={() => handleDeleteChat(group)}
-                            onUnfriend={() => {
-                              const info = resolveChatDisplayInfo(group, myEmail);
-                              if (info.partnerEmail) {
-                                handleUnfriend(info.partnerEmail, info.displayName);
-                              }
-                            }}
-                            onLeave={() => handleLeaveGroup(group)}
-                            onTransferOwner={() => handleOpenTransferOwnership(group)}
-                            onDisband={() => handleDisbandGroup(group)}
-                            onCopyCode={() => {
-                              navigator.clipboard.writeText(group.code);
-                              onShowToast('info', 'Đã sao chép mã phòng', group.code);
-                              setMenuGroupId(null);
-                            }}
-                          />
-                        ))}
-                      {sortedGroups.filter((g) => !g.isDirect).length === 0 && (
-                        <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có kênh học thuật nào</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* SECTION 2: TIN NHẮN TRỰC TIẾP (SLACK DIRECT MESSAGES) */}
-                <div className="pt-2 border-t border-slate-200/60">
-                  <div className="flex items-center justify-between px-3 py-1 text-slate-500 hover:text-slate-800 select-none">
-                    <button
-                      type="button"
-                      onClick={() => setIsDmsOpen((prev) => !prev)}
-                      className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
-                    >
-                      {isDmsOpen ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                      )}
-                      <Users className="w-3.5 h-3.5" />
-                      <span>Tin nhắn trực tiếp ({sortedGroups.filter((g) => Boolean(g.isDirect)).length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsAddFriendOpen(true)}
-                      className="w-5 h-5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center cursor-pointer transition-colors"
-                      title="Thêm đồng nghiệp mới"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  {isDmsOpen && (
-                    <div className="space-y-0.5 mt-0.5">
-                      {sortedGroups
-                        .filter((g) => Boolean(g.isDirect))
-                        .map((group) => (
-                          <ConversationItem
-                            key={group.id}
-                            group={group}
-                            isSelected={group.id === selectedGroupId}
-                            myEmail={myEmail}
-                            isMenuOpen={menuGroupId === group.id}
-                            onSelect={() => {
-                              setSelectedGroupId(group.id);
-                              setShowMobileChat(true);
-                              markGroupAsRead(group.id);
-                              setMenuGroupId(null);
-                            }}
-                            onMenuToggle={(e) => {
-                              e.stopPropagation();
-                              setMenuGroupId((prev) => (prev === group.id ? null : group.id));
-                            }}
-                            onViewProfile={() => {
-                              const info = resolveChatDisplayInfo(group, myEmail);
-                              setProfileEmail(info.partnerEmail || null);
-                              setProfileName(info.displayName);
-                              setMenuGroupId(null);
-                            }}
-                            onViewDetails={() => {
-                              setDetailsGroup(group);
-                              setChannelDetailsTab('about');
-                              setIsChannelDetailsOpen(true);
-                              setMenuGroupId(null);
-                            }}
-                            onMute={() => handleToggleMute(group)}
-                            onTogglePin={() => {
-                              handleTogglePinConversation(group);
-                              setMenuGroupId(null);
-                            }}
-                            onDelete={() => handleDeleteChat(group)}
-                            onUnfriend={() => {
-                              const info = resolveChatDisplayInfo(group, myEmail);
-                              if (info.partnerEmail) {
-                                handleUnfriend(info.partnerEmail, info.displayName);
-                              }
-                            }}
-                            onLeave={() => handleLeaveGroup(group)}
-                            onTransferOwner={() => handleOpenTransferOwnership(group)}
-                            onDisband={() => handleDisbandGroup(group)}
-                            onCopyCode={() => {
-                              navigator.clipboard.writeText(group.code);
-                              onShowToast('info', 'Đã sao chép mã phòng', group.code);
-                              setMenuGroupId(null);
-                            }}
-                          />
-                        ))}
-                      {sortedGroups.filter((g) => Boolean(g.isDirect)).length === 0 && (
-                        <p className="px-3 py-1 text-[11px] text-slate-400 italic">Chưa có tin nhắn 1-1 nào</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        <ChannelSidebar
+          sortedGroups={sortedGroups}
+          selectedGroupId={selectedGroupId}
+          myEmail={myEmail}
+          activeHuddleRoomIds={activeHuddleRoomIds}
+          menuGroupId={menuGroupId}
+          filterTab={filterTab}
+          setFilterTab={setFilterTab}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          totalInvitations={totalInvitations}
+          friendRequests={friendRequests}
+          sentFriendRequests={sentFriendRequests}
+          groupInvitations={groupInvitations}
+          onAcceptFriend={handleAcceptFriendRequest}
+          onRejectFriend={handleRejectFriendRequest}
+          onCancelFriend={handleCancelFriendRequest}
+          onAcceptGroup={handleAcceptGroupInv}
+          onRejectGroup={handleRejectGroupInv}
+          onOpenAddFriend={() => setIsAddFriendOpen(true)}
+          onOpenCreateGroup={() => {
+            setGroupModalTab('create');
+            setIsCreateGroupOpen(true);
+          }}
+          onSelectGroup={(groupId) => {
+            setSelectedGroupId(groupId);
+            setShowMobileChat(true);
+            markGroupAsRead(groupId);
+            setMenuGroupId(null);
+          }}
+          onToggleMenu={(groupId, e) => {
+            e.stopPropagation();
+            setMenuGroupId((prev) => (prev === groupId ? null : groupId));
+          }}
+          onViewProfile={(group) => {
+            const info = resolveChatDisplayInfo(group, myEmail);
+            setProfileEmail(info.partnerEmail || null);
+            setProfileName(info.displayName);
+            setMenuGroupId(null);
+          }}
+          onViewDetails={(group) => {
+            setDetailsGroup(group);
+            setChannelDetailsTab('about');
+            setIsChannelDetailsOpen(true);
+            setMenuGroupId(null);
+          }}
+          onMute={(group) => handleToggleMute(group)}
+          onTogglePin={(group) => {
+            handleTogglePinConversation(group);
+            setMenuGroupId(null);
+          }}
+          onDeleteChat={(group) => handleHideGroup(group.id)}
+          hiddenGroupIds={hiddenGroupIds}
+          onUnhideGroup={handleUnhideGroup}
+          onUnfriend={(group) => {
+            const info = resolveChatDisplayInfo(group, myEmail);
+            if (info.partnerEmail) {
+              handleUnfriend(info.partnerEmail, info.displayName);
+            }
+          }}
+          onLeaveGroup={(group) => handleLeaveGroup(group)}
+          onTransferOwner={(group) => handleOpenTransferOwnership(group)}
+          onDisbandGroup={(group) => handleDisbandGroup(group)}
+          onCopyCode={(code) => {
+            navigator.clipboard.writeText(code);
+            onShowToast('info', 'Đã sao chép mã phòng', code);
+            setMenuGroupId(null);
+          }}
+        />
       </div>
 
       {/* ====================================================================
@@ -3733,451 +3918,77 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         {activeGroup && activeInfo ? (
           <>
             {/* Slack Style Chat Header */}
-            <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-200 flex items-center justify-between gap-2 bg-white shadow-2xs z-10 shrink-0">
-              <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                {/* Mobile Back Button (Chuẩn Zalo/Telegram/Slack: Bấm để quay về danh sách kênh) */}
-                <button
-                  type="button"
-                  onClick={() => setShowMobileChat(false)}
-                  className="md:hidden p-1.5 -ml-1 rounded-lg hover:bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 cursor-pointer"
-                  title="Quay lại danh sách hội nhóm"
-                >
-                  <ArrowLeft className="w-5 h-5 text-slate-700" />
-                </button>
-                <div
-                  onClick={() => {
-                    if (activeGroup.isDirect) {
-                      setProfileEmail(activeInfo.partnerEmail || null);
-                      setProfileName(activeInfo.displayName);
-                    } else {
-                      setDetailsGroup(activeGroup);
-                      setIsChannelDetailsOpen(true);
-                    }
-                  }}
-                  className="w-9 h-9 rounded-lg bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center cursor-pointer hover:bg-slate-300 transition-colors shrink-0"
-                >
-                  {activeGroup.isDirect ? (
-                    <div className="relative">
-                      <span>{activeInfo.avatarInitials}</span>
-                      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-1 ring-white" />
-                    </div>
-                  ) : (
-                    <Hash className="w-5 h-5 text-slate-700" />
-                  )}
-                </div>
+            <ChatHeader
+              activeGroup={activeGroup}
+              activeInfo={activeInfo}
+              myEmail={myEmail}
+              isStarred={isStarred}
+              isHuddleActive={Boolean(activeHuddleForCurrentChat && activeHuddleForCurrentChat.count > 0)}
+              activeHuddleCount={activeHuddleForCurrentChat ? activeHuddleForCurrentChat.count : 0}
+              onToggleStarred={() => {
+                setIsStarred(!isStarred);
+                onShowToast('info', isStarred ? 'Bỏ đánh dấu sao' : 'Đã đánh dấu sao kênh', activeGroup.name);
+              }}
+              onBackToMobileList={() => setShowMobileChat(false)}
+              onOpenMobileMenu={onOpenMobileMenu}
+              onOpenProfile={(email, name) => {
+                setProfileEmail(email);
+                setProfileName(name);
+              }}
+              onOpenDetails={(group, tab) => {
+                setDetailsGroup(group);
+                if (tab) setChannelDetailsTab(tab);
+                setIsChannelDetailsOpen(true);
+              }}
+              onOpenDirectAddMember={() => {
+                setDirectAddMemberEmail('');
+                setLookedUpUser(null);
+                setLookupStatus('idle');
+                setIsDirectAddMemberOpen(true);
+              }}
+              onOpenHuddle={handleOpenHuddleWithAudioPrime}
+              onToggleMute={(group) => handleToggleMute(group)}
+              onTogglePinConversation={(group) => handleTogglePinConversation(group)}
+              onOpenCanvas={() => onShowToast('info', 'Bảng ghi nhớ Canvas', 'Mở không gian làm việc ghi nhớ của kênh')}
+              onOpenSummarize={() => setIsSummarizeModalOpen(true)}
+              onOpenSharedMedia={() => setIsSharedMediaOpen(true)}
+              onOpenChannelSettings={() => setIsChannelSettingsOpen(true)}
+              onOpenTransferOwnership={(group) => handleOpenTransferOwnership(group)}
+              onDeleteChat={(group) => handleDeleteChat(group)}
+              onHideChat={(group) => handleHideGroup(group.id)}
+              onUnfriend={(email, name) => handleUnfriend(email, name)}
+              onDisbandGroup={(group) => handleDisbandGroup(group)}
+              onLeaveGroup={(group) => handleLeaveGroup(group)}
+              onShowToast={onShowToast}
+            />
 
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <h3
-                      onClick={() => {
-                        if (activeGroup.isDirect) {
-                          setProfileEmail(activeInfo.partnerEmail || null);
-                          setProfileName(activeInfo.displayName);
-                        } else {
-                          setDetailsGroup(activeGroup);
-                          setIsChannelDetailsOpen(true);
-                        }
-                      }}
-                      className="text-sm font-bold text-slate-900 truncate cursor-pointer hover:underline flex items-center gap-1 max-w-[120px] xs:max-w-[160px] sm:max-w-xs md:max-w-md"
-                    >
-                      {!activeGroup.isDirect ? (
-                        <Hash className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      ) : (
-                        <span className="text-slate-500 font-bold shrink-0 text-xs">@</span>
-                      )}
-                      <span className="truncate">{activeInfo.displayName}</span>
-                    </h3>
+            {/* Active Huddle Banner in Channel/DM */}
+            <ActiveHuddleBanner
+              activeHuddle={activeHuddleForCurrentChat}
+              isCurrentUserInHuddle={isHuddleOpen}
+              onJoinHuddle={handleOpenHuddleWithAudioPrime}
+            />
 
-                    {/* Star Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsStarred(!isStarred);
-                        onShowToast('info', isStarred ? 'Bỏ đánh dấu sao' : 'Đã đánh dấu sao kênh', activeInfo.displayName);
-                      }}
-                      className={`hidden sm:inline-flex p-1 rounded-md transition-colors ${
-                        isStarred ? 'text-amber-500 hover:text-amber-600' : 'text-slate-400 hover:text-slate-600'
-                      }`}
-                      title={isStarred ? 'Bỏ đánh dấu sao' : 'Đánh dấu sao'}
-                    >
-                      <Star className={`w-3.5 h-3.5 ${isStarred ? 'fill-current' : ''}`} />
-                    </button>
-
-                    {!activeGroup.isDirect && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(activeGroup.code);
-                          onShowToast('info', 'Đã sao chép mã phòng', activeGroup.code);
-                        }}
-                        className="hidden sm:inline-flex px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-[10px] font-mono font-semibold text-slate-700 items-center gap-1 transition-colors shrink-0 border border-slate-200"
-                        title="Sao chép mã phòng"
-                      >
-                        {activeGroup.code}
-                        <Copy className="w-2.5 h-2.5 text-slate-500" />
-                      </button>
-                    )}
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 truncate flex items-center gap-1.5">
-                    {activeGroup.isDirect ? (
-                      <span className="flex items-center gap-1 text-emerald-600 font-medium truncate">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block shrink-0" />
-                        <span className="shrink-0">Đang hoạt động</span>
-                        <span className="text-slate-400 ml-1 truncate">• {activeInfo.displayRoleOrMembers}</span>
-                      </span>
-                    ) : (
-                      <>
-                        <span
-                          onClick={() => {
-                            setDetailsGroup(activeGroup);
-                            setChannelDetailsTab('members');
-                            setIsChannelDetailsOpen(true);
-                          }}
-                          className="hover:underline cursor-pointer hover:text-slate-900 font-medium flex items-center gap-1 shrink-0"
-                        >
-                          <Users className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{activeGroup.memberCount ?? (activeGroup.members || []).length} thành viên</span>
-                        </span>
-                        {activeGroup.department && <span className="truncate hidden sm:inline">• {activeGroup.department}</span>}
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              {/* Slack Header Action Buttons */}
-              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 relative">
-                {/* 1. NÚT THÊM THÀNH VIÊN HIỂN THỊ NỔI BẬT Ở NGOÀI */}
-                {!activeGroup.isDirect && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDirectAddMemberEmail('');
-                      setLookedUpUser(null);
-                      setLookupStatus('idle');
-                      setIsDirectAddMemberOpen(true);
-                    }}
-                    className="px-2 sm:px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-bold text-xs flex items-center gap-1 border border-teal-200 transition-colors shadow-2xs cursor-pointer shrink-0"
-                    title="Thêm thành viên trực tiếp vào kênh"
-                  >
-                    <UserPlus className="w-3.5 h-3.5 text-[#008689] shrink-0" />
-                    <span className="hidden sm:inline">Thêm thành viên</span>
-                  </button>
-                )}
-
-                {/* 2. Huddle Button - Ẩn trên mobile để header thoáng đãng */}
-                <button
-                  type="button"
-                  onClick={() => setIsHuddleOpen(true)}
-                  className="hidden md:flex px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 shrink-0"
-                  title="Bắt đầu thảo luận nhanh (Huddle)"
-                >
-                  <Headphones className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                  <span className="hidden lg:inline">Huddle</span>
-                  <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
-                </button>
-
-                {/* 3. Notifications */}
-                <button
-                  type="button"
-                  onClick={() => handleToggleMute(activeGroup)}
-                  className="p-1.5 sm:p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer border border-slate-200/60 shrink-0"
-                  title={activeGroup.muted ? 'Bật thông báo' : 'Tắt thông báo'}
-                >
-                  {activeGroup.muted ? <BellOff className="w-4 h-4 text-amber-500" /> : <Bell className="w-4 h-4" />}
-                </button>
-
-                {/* 4. SLACK RĂNG CƯA / THREE DOTS MENU (SỔ RA KHI CẦN - CHUẨN SLACK IMAGE 1) */}
-                <div className="relative" ref={headerMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsHeaderMenuOpen((prev) => !prev)}
-                    className={`p-2 rounded-lg transition-colors cursor-pointer border ${
-                      isHeaderMenuOpen
-                        ? 'bg-slate-200 text-slate-900 border-slate-300'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200/60'
-                    }`}
-                    title="Tùy chọn kênh (Slack style)"
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
-
-                  {/* Slack Popup Dropdown Menu */}
-                  {isHeaderMenuOpen && (() => {
-                    const isGroupOwner = (activeGroup.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
-                    const isActivePinned = Boolean(
-                      activeGroup.isPinned || (activeGroup.pinnedBy || []).some((e) => e.toLowerCase() === myEmail.toLowerCase())
-                    );
-
-                    return (
-                      <div
-                        className="absolute right-0 top-full mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 text-xs animate-fade-in divide-y divide-slate-100 select-none"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {/* Nhóm 1: Ghim, Chi tiết, Mã phòng & Thông báo */}
-                        <div className="py-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsHeaderMenuOpen(false);
-                              handleTogglePinConversation(activeGroup);
-                            }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
-                          >
-                            <Pin className={`w-3.5 h-3.5 ${isActivePinned ? 'fill-amber-500 text-amber-500' : 'text-slate-400'}`} />
-                            <span>{isActivePinned ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại lên đầu'}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsHeaderMenuOpen(false);
-                              if (activeGroup.isDirect) {
-                                setProfileEmail(activeInfo.partnerEmail || null);
-                                setProfileName(activeInfo.displayName);
-                              } else {
-                                setDetailsGroup(activeGroup);
-                                setChannelDetailsTab('about');
-                                setIsChannelDetailsOpen(true);
-                              }
-                            }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
-                          >
-                            <span className="flex items-center gap-2.5">
-                              {activeGroup.isDirect ? <User className="w-3.5 h-3.5 text-slate-400" /> : <Info className="w-3.5 h-3.5 text-slate-400" />}
-                              <span>{activeGroup.isDirect ? 'Xem trang cá nhân' : 'Chi tiết kênh'}</span>
-                            </span>
-                            <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                          </button>
-
-                          {!activeGroup.isDirect && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHeaderMenuOpen(false);
-                                navigator.clipboard.writeText(activeGroup.code);
-                                onShowToast('info', 'Đã sao chép mã phòng', activeGroup.code);
-                              }}
-                              className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
-                            >
-                              <span className="flex items-center gap-2.5">
-                                <Copy className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Sao chép mã phòng</span>
-                              </span>
-                              <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{activeGroup.code}</span>
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsHeaderMenuOpen(false);
-                              handleToggleMute(activeGroup);
-                            }}
-                            className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
-                          >
-                            {activeGroup.muted ? (
-                              <>
-                                <Bell className="w-3.5 h-3.5 text-slate-600" />
-                                <span>Bật thông báo</span>
-                              </>
-                            ) : (
-                              <>
-                                <BellOff className="w-3.5 h-3.5 text-slate-400" />
-                                <span>Tắt thông báo</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-
-                        {/* Nhóm 2: AI & Quản trị kênh */}
-                        {!activeGroup.isDirect && (
-                          <div className="py-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHeaderMenuOpen(false);
-                                setIsSummarizeModalOpen(true);
-                              }}
-                              className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
-                            >
-                              <span className="flex items-center gap-2.5">
-                                <Sparkles className="w-3.5 h-3.5 text-teal-600" />
-                                <span>Tóm tắt kênh bằng AI</span>
-                              </span>
-                              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                            </button>
-
-                            {isGroupOwner && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsHeaderMenuOpen(false);
-                                    setIsChannelSettingsOpen(true);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center justify-between text-slate-700 font-medium cursor-pointer"
-                                >
-                                  <span className="flex items-center gap-2.5">
-                                    <Settings className="w-3.5 h-3.5 text-slate-400" />
-                                    <span>Cài đặt kênh</span>
-                                  </span>
-                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsHeaderMenuOpen(false);
-                                    handleOpenTransferOwnership(activeGroup);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-medium cursor-pointer"
-                                >
-                                  <UserCheck className="w-3.5 h-3.5 text-slate-600" />
-                                  <span>Chuyển quyền Trưởng nhóm</span>
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Nhóm 3: Rời khỏi / Giải tán / Xóa */}
-                        <div className="py-1">
-                          {activeGroup.isDirect ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsHeaderMenuOpen(false);
-                                  handleDeleteChat(activeGroup);
-                                }}
-                                className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                                <span>Xóa đoạn chat</span>
-                              </button>
-                              {activeInfo.partnerEmail && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsHeaderMenuOpen(false);
-                                    handleUnfriend(activeInfo.partnerEmail!, activeInfo.displayName);
-                                  }}
-                                  className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
-                                >
-                                  <UserMinus className="w-3.5 h-3.5 text-rose-500" />
-                                  <span>Hủy kết bạn</span>
-                                </button>
-                              )}
-                            </>
-                          ) : isGroupOwner ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHeaderMenuOpen(false);
-                                handleDisbandGroup(activeGroup);
-                              }}
-                              className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                              <span>Giải tán nhóm</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsHeaderMenuOpen(false);
-                                handleLeaveGroup(activeGroup);
-                              }}
-                              className="w-full px-3.5 py-2 text-left hover:bg-rose-50 flex items-center gap-2.5 text-rose-600 font-semibold cursor-pointer text-xs"
-                            >
-                              <LogOut className="w-3.5 h-3.5 text-rose-500" />
-                              <span>Rời khỏi kênh</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-
-            {/* Pinned Messages Bar (Slack Sticky Pinned Banner) */}
-            {pinnedMessages.length > 0 && (
-              <div className="px-4 py-2 bg-amber-50/95 border-b border-amber-200/90 flex items-center justify-between gap-3 text-xs z-10 shrink-0 backdrop-blur-xs transition-all shadow-2xs">
-                <div
-                  onClick={() => {
-                    const curMsg = pinnedMessages[activePinnedIdx % pinnedMessages.length];
-                    if (curMsg) {
-                      const el = document.getElementById(`chat-msg-${curMsg.id}`);
-                      if (el) {
-                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        el.classList.add('ring-2', 'ring-amber-400', 'bg-amber-100/70');
-                        setTimeout(() => {
-                          el.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-100/70');
-                        }, 2500);
-                      }
-                    }
-                  }}
-                  className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer group"
-                  title="Nhấn để xem tin nhắn được ghim trong hội thoại"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/15 text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/60">
-                    <Pin className="w-3.5 h-3.5 fill-amber-500 text-amber-600" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 font-bold text-amber-900 text-[11px]">
-                      <span>Tin nhắn đã ghim</span>
-                      {pinnedMessages.length > 1 && (
-                        <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-200 text-amber-800 font-semibold">
-                          {(activePinnedIdx % pinnedMessages.length) + 1}/{pinnedMessages.length}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-slate-700 truncate text-[11px] group-hover:text-amber-950 transition-colors">
-                      <strong className="text-slate-900">
-                        {pinnedMessages[activePinnedIdx % pinnedMessages.length].senderName}:{' '}
-                      </strong>
-                      {pinnedMessages[activePinnedIdx % pinnedMessages.length].text ||
-                        (pinnedMessages[activePinnedIdx % pinnedMessages.length].attachment
-                          ? `[Tệp đính kèm: ${pinnedMessages[activePinnedIdx % pinnedMessages.length].attachment?.name}]`
-                          : '...')}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {pinnedMessages.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setActivePinnedIdx((prev) => (prev + 1) % pinnedMessages.length)}
-                      className="px-2 py-1 rounded-md bg-amber-100 hover:bg-amber-200 text-amber-900 text-[10px] font-semibold transition-colors cursor-pointer border border-amber-300/60"
-                      title="Chuyển sang tin nhắn đã ghim tiếp theo"
-                    >
-                      Xem tiếp
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const curMsg = pinnedMessages[activePinnedIdx % pinnedMessages.length];
-                      if (curMsg) {
-                        handleTogglePinMessage(curMsg.id);
-                      }
-                    }}
-                    className="w-6 h-6 rounded-md hover:bg-amber-200 text-amber-700 hover:text-amber-950 flex items-center justify-center cursor-pointer transition-colors"
-                    title="Bỏ ghim tin nhắn này"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Pinned Messages Bar */}
+            <PinnedMessagesBar
+              pinnedMessages={pinnedMessages}
+              activePinnedIdx={activePinnedIdx}
+              onNextPinned={() => setActivePinnedIdx((prev) => (prev + 1) % pinnedMessages.length)}
+              onUnpin={(msgId) => handleTogglePinMessage(msgId)}
+              onScrollToMessage={(msgId) => {
+                const el = document.getElementById(`chat-msg-${msgId}`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  el.classList.add('ring-2', 'ring-amber-400', 'bg-amber-100/70');
+                  setTimeout(() => {
+                    el.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-100/70');
+                  }, 2500);
+                }
+              }}
+            />
 
             {/* Message Stream (Slack Linear Flow) */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2 bg-[#fcfdfe]">
+            <div ref={chatContainerRef} style={{ scrollBehavior: 'auto' }} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2 bg-[#fcfdfe]">
               {/* Channel Welcome Card */}
               {activeGroup.isDirect ? (
                 <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 text-left space-y-3 max-w-xl mb-4 shadow-2xs">
@@ -4460,148 +4271,152 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                         );
                       })()}
 
-                      {/* Direct Attachment (Hỗ trợ Ảnh, Video, File máy tính & Giáo trình thư viện) */}
-                      {!msg.isRecalled && msg.attachment && !msg.sharedPost && !msg.text?.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
-                        <div className="mt-2.5 max-w-md">
-                          {msg.attachment.type === 'image' && msg.attachment.fileUrl ? (
-                            <div className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 shadow-2xs group relative">
-                              <img
-                                src={msg.attachment.fileUrl}
-                                alt={msg.attachment.name}
-                                className="max-h-72 w-auto object-cover rounded-t-2xl cursor-pointer hover:opacity-95 transition-opacity"
-                                onClick={() => {
-                                  if (msg.attachment?.fileUrl) {
-                                    setPreviewFile({
-                                      url: msg.attachment.fileUrl,
-                                      name: msg.attachment.name || 'image.png',
-                                      size: msg.attachment.size,
-                                      type: 'image/jpeg',
-                                    });
-                                  }
-                                }}
-                              />
-                              <div className="p-2.5 flex items-center justify-between text-xs bg-white border-t border-slate-100">
-                                <div className="min-w-0 pr-2">
-                                  <p className="truncate font-semibold text-slate-800 text-xs">{msg.attachment.name}</p>
-                                  <p className="text-[10px] text-slate-400 font-medium">{msg.attachment.size} • Bấm để xem &amp; thu phóng</p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const rawUrl = msg.attachment!.fileUrl!;
-                                    const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
-                                    const a = document.createElement('a');
-                                    a.href = dlUrl;
-                                    a.download = msg.attachment?.name || 'image.png';
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                    onShowToast('info', 'Đang tải ảnh xuống...', msg.attachment?.name || 'Ảnh');
-                                  }}
-                                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 hover:text-white text-slate-700 transition-all shrink-0 flex items-center justify-center cursor-pointer border border-slate-200/80 shadow-2xs"
-                                  title="Tải ảnh về máy"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                </button>
+                      {/* Direct Attachment (Hỗ trợ Ảnh, Video, File máy tính & Giáo trình thư viện - Đơn hoặc Nhiều tệp) */}
+                      {!msg.isRecalled && (msg.attachment || (msg.attachments && msg.attachments.length > 0)) && !msg.sharedPost && !msg.text?.includes('[DIỄN ĐÀN HỌC THUẬT UTH]') && (
+                        <div className="mt-2.5 max-w-md space-y-2">
+                          {((msg.attachments && msg.attachments.length > 0) ? msg.attachments : [msg.attachment!]).map((attItem, attIdx) => {
+                            if (!attItem) return null;
+                            const attKey = attItem.id || `${msg.id}-att-${attIdx}`;
+                            return (
+                              <div key={attKey}>
+                                {attItem.type === 'image' && attItem.fileUrl ? (
+                                  <div className="relative group inline-block max-w-sm rounded-2xl overflow-hidden border border-slate-200/80 bg-slate-50/50 shadow-xs transition-all hover:border-teal-400">
+                                    <img
+                                      src={attItem.fileUrl}
+                                      alt={attItem.name || 'Ảnh đính kèm'}
+                                      className="max-h-80 w-auto max-w-full object-contain rounded-2xl cursor-pointer hover:opacity-95 transition-opacity block"
+                                      onClick={() => {
+                                        if (attItem.fileUrl) {
+                                          setPreviewMediaUrl({
+                                            url: attItem.fileUrl,
+                                            name: attItem.name || 'image.png',
+                                          });
+                                        }
+                                      }}
+                                    />
+                                    {/* Hover Action Overlay */}
+                                    <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const rawUrl = attItem.fileUrl!;
+                                          const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
+                                          const a = document.createElement('a');
+                                          a.href = dlUrl;
+                                          a.download = attItem.name || 'image.png';
+                                          document.body.appendChild(a);
+                                          a.click();
+                                          document.body.removeChild(a);
+                                          onShowToast('info', 'Đang tải ảnh xuống...', attItem.name || 'Ảnh');
+                                        }}
+                                        className="w-8 h-8 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white backdrop-blur-md flex items-center justify-center transition-all cursor-pointer shadow-md"
+                                        title="Tải ảnh về máy"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : attItem.type === 'video' && attItem.fileUrl ? (
+                                  <div className="rounded-2xl overflow-hidden border border-slate-200 bg-black shadow-2xs">
+                                    <video
+                                      src={attItem.fileUrl}
+                                      controls
+                                      className="max-h-72 w-full"
+                                    />
+                                    <div className="p-2.5 flex items-center justify-between text-xs bg-slate-900 text-white">
+                                      <span className="truncate font-medium text-xs max-w-[200px]">{attItem.name}</span>
+                                      <span className="text-[10px] text-slate-400">{attItem.size}</span>
+                                    </div>
+                                  </div>
+                                ) : attItem.type === 'audio' && attItem.fileUrl ? (
+                                  <div className="max-w-sm">
+                                    <AudioMessagePlayer attachment={attItem} onShowToast={onShowToast} />
+                                  </div>
+                                ) : attItem.type === 'file' ? (
+                                  <div
+                                    onClick={() => {
+                                      if (attItem.fileUrl) {
+                                        setPreviewFile({
+                                          url: attItem.fileUrl,
+                                          name: attItem.name,
+                                          size: attItem.size,
+                                          type: attItem.fileType,
+                                        });
+                                      }
+                                    }}
+                                    className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-teal-500 hover:shadow-xs flex items-center justify-between gap-3 cursor-pointer group transition-all"
+                                    title={`Bấm để mở xem tệp ${attItem.name}`}
+                                  >
+                                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                                      <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-teal-50 flex items-center justify-center text-slate-700 group-hover:text-teal-700 transition-colors shrink-0">
+                                        {getFileIcon(attItem.name)}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-bold text-slate-900 group-hover:text-teal-700 truncate transition-colors">
+                                          {attItem.name}
+                                        </p>
+                                        <p className="text-[10px] text-slate-500 font-medium">
+                                          {attItem.size} • Bấm để xem tệp
+                                        </p>
+                                      </div>
+                                    </div>
+                                    {attItem.fileUrl && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const rawUrl = attItem.fileUrl!;
+                                          const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
+                                          const a = document.createElement('a');
+                                          a.href = dlUrl;
+                                          a.download = attItem.name;
+                                          document.body.appendChild(a);
+                                          a.click();
+                                          document.body.removeChild(a);
+                                          onShowToast('info', 'Đang tải tệp xuống...', attItem.name);
+                                        }}
+                                        className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer"
+                                        title="Tải tệp về máy"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  /* Textbook Attachment */
+                                  <div className="p-3 rounded-2xl bg-white border border-slate-200 text-left space-y-2 hover:border-teal-400 transition-colors">
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0">
+                                        <BookOpen className="w-5 h-5 text-teal-700" />
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-xs font-bold text-slate-900 truncate">
+                                          {attItem.name}
+                                        </p>
+                                        <p className="text-[10px] text-slate-500 font-medium">
+                                          {attItem.totalPages ? `${attItem.totalPages} trang • ` : ''}{attItem.size} • Giáo trình UTH
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          onShowToast('success', 'Đã nạp giáo trình', `Đã chuyển ${attItem.name} vào màn hình sinh đề AI`);
+                                          onNavigate('generate');
+                                        }}
+                                        className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                      >
+                                        <Sparkles className="w-3.5 h-3.5" />
+                                        <span>Dùng Sinh Đề Ngay</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ) : msg.attachment.type === 'video' && msg.attachment.fileUrl ? (
-                            <div className="rounded-2xl overflow-hidden border border-slate-200 bg-black shadow-2xs">
-                              <video
-                                src={msg.attachment.fileUrl}
-                                controls
-                                className="max-h-72 w-full"
-                              />
-                              <div className="p-2.5 flex items-center justify-between text-xs bg-slate-900 text-white">
-                                <span className="truncate font-medium text-xs max-w-[200px]">{msg.attachment.name}</span>
-                                <span className="text-[10px] text-slate-400">{msg.attachment.size}</span>
-                              </div>
-                            </div>
-                          ) : msg.attachment.type === 'audio' && msg.attachment.fileUrl ? (
-                            <div className="mt-2.5 max-w-sm">
-                              <AudioMessagePlayer attachment={msg.attachment} onShowToast={onShowToast} />
-                            </div>
-                          ) : msg.attachment.type === 'file' ? (
-                            <div
-                              onClick={() => {
-                                if (msg.attachment?.fileUrl) {
-                                  setPreviewFile({
-                                    url: msg.attachment.fileUrl,
-                                    name: msg.attachment.name,
-                                    size: msg.attachment.size,
-                                    type: msg.attachment.fileType,
-                                  });
-                                }
-                              }}
-                              className="p-3 rounded-2xl bg-white border border-slate-200 hover:border-teal-400 hover:bg-slate-50/70 transition-all text-left shadow-2xs cursor-pointer group flex items-center justify-between gap-3"
-                              title={`Bấm để mở xem tệp ${msg.attachment.name}`}
-                            >
-                              <div className="flex items-center gap-3 min-w-0 flex-1">
-                                <div className="w-10 h-10 rounded-xl bg-slate-100 group-hover:bg-teal-50 text-slate-700 group-hover:text-teal-700 flex items-center justify-center shrink-0 border border-slate-200 transition-colors">
-                                  {getFileIcon(msg.attachment.name)}
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold text-slate-900 group-hover:text-teal-900 truncate transition-colors">
-                                    {msg.attachment.name}
-                                  </p>
-                                  <p className="text-[10px] text-slate-500 font-medium">
-                                    {msg.attachment.size} • Bấm để xem tệp
-                                  </p>
-                                </div>
-                              </div>
-                              {msg.attachment.fileUrl && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const rawUrl = msg.attachment!.fileUrl!;
-                                    const dlUrl = rawUrl + (rawUrl.includes('?') ? '&' : '?') + 'download=true';
-                                    const a = document.createElement('a');
-                                    a.href = dlUrl;
-                                    a.download = msg.attachment!.name;
-                                    document.body.appendChild(a);
-                                    a.click();
-                                    document.body.removeChild(a);
-                                    onShowToast('info', 'Đang tải tệp xuống...', msg.attachment!.name);
-                                  }}
-                                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-teal-600 text-slate-700 hover:text-white transition-all shrink-0 flex items-center justify-center cursor-pointer border border-slate-200/80 shadow-2xs"
-                                  title="Tải tệp về máy"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </div>
-                          ) : (
-                            /* Textbook Attachment */
-                            <div className="p-3 rounded-2xl bg-white border border-slate-200 text-left space-y-2 shadow-2xs">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200">
-                                  <BookOpen className="w-5 h-5 text-teal-700" />
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold text-slate-900 truncate">
-                                    {msg.attachment.name}
-                                  </p>
-                                  <p className="text-[10px] text-slate-500 font-medium">
-                                    {msg.attachment.totalPages} trang • {msg.attachment.size} • Giáo trình học thuật
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onShowToast('success', 'Đã nạp giáo trình', `Đã chuyển ${msg.attachment?.name} vào không gian sinh đề`);
-                                  }}
-                                  className="flex-1 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5" />
-                                  <span>Dùng Sinh Đề Ngay</span>
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                            );
+                          })}
                         </div>
                       )}
 
@@ -4722,332 +4537,69 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 SLACK RICH TEXT COMPOSER OR INACTIVE CHANNEL BANNER
             ================================================================ */}
             <div className="p-3 sm:px-4 sm:py-3 border-t border-slate-200 bg-white space-y-2">
-              {!activeGroup.isDirect && !isCurrentUserMember ? (
-                <div className="p-4 rounded-xl bg-slate-100/90 border border-slate-200 flex items-center justify-center gap-2.5 text-xs font-semibold text-slate-500 select-none">
-                  <Lock className="w-4 h-4 text-slate-400 shrink-0" />
-                  <span>Thầy/Cô không còn là thành viên của kênh này nên không thể gửi tin nhắn.</span>
-                </div>
-              ) : (
-                <>
-                  {/* Replying Banner (nếu đang trả lời 1 tin nhắn) */}
-                  {replyingToMessage && (
-                    <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-teal-50/80 border border-teal-200 text-xs animate-fade-in">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Reply className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-                        <span className="font-bold text-slate-800">Đang trả lời {replyingToMessage.senderName}:</span>
-                        <span className="text-slate-600 truncate italic">&ldquo;{replyingToMessage.text || 'Tệp đính kèm'}&rdquo;</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setReplyingToMessage(null)}
-                        className="p-1 rounded-md hover:bg-teal-100 text-slate-400 hover:text-slate-700 cursor-pointer"
-                        title="Hủy trả lời"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Staged Attachment Preview (Hiện tệp đang chuẩn bị gửi) */}
-                  {selectedAttachment && (
-                    <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs animate-fade-in">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        {selectedAttachment.type === 'image' && selectedAttachment.fileUrl ? (
-                          <img
-                            src={selectedAttachment.fileUrl}
-                            alt={selectedAttachment.name}
-                            className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
-                          />
-                        ) : selectedAttachment.type === 'video' ? (
-                          <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-700 flex items-center justify-center shrink-0 border border-purple-200">
-                            <Film className="w-4 h-4" />
-                          </div>
-                        ) : selectedAttachment.type === 'textbook' ? (
-                          <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200">
-                            <BookOpen className="w-4 h-4" />
-                          </div>
-                        ) : (
-                          <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0 border border-slate-200">
-                            {getFileIcon(selectedAttachment.name)}
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <p className="font-semibold text-slate-800 truncate max-w-xs">{selectedAttachment.name}</p>
-                          <p className="text-[10px] text-slate-400">
-                            {selectedAttachment.size} • {selectedAttachment.type === 'image' ? 'Hình ảnh' : selectedAttachment.type === 'video' ? 'Video' : selectedAttachment.type === 'textbook' ? 'Giáo trình UTH' : 'Tài liệu'}
-                          </p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedAttachment(null)}
-                        className="w-6 h-6 rounded-md hover:bg-slate-200 text-slate-400 hover:text-slate-700 flex items-center justify-center cursor-pointer transition-colors"
-                        title="Gỡ đính kèm"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Modern Unified Composer Box (Telegram / Zalo Style) */}
-                  <div className="border border-slate-300 hover:border-slate-400 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100/60 rounded-2xl bg-white shadow-2xs transition-all relative">
-                    {/* Hidden File Input */}
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleFileSelect(f);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                      accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
-                    />
-
-                    {/* Autocomplete Mention Popover */}
-                    {isMentionOpen && mentionCandidates.length > 0 && (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="absolute left-2 bottom-full mb-2 z-40 w-72 sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden animate-fade-in"
-                      >
-                        <div className="px-3 py-1.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                          <span className="flex items-center gap-1 text-teal-800">
-                            <AtSign className="w-3.5 h-3.5 text-teal-600" />
-                            <span>Nhắc đến thành viên (@)</span>
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-normal">Esc để đóng</span>
-                        </div>
-                        <div className="max-h-52 overflow-y-auto p-1 divide-y divide-slate-50">
-                          {mentionCandidates.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => {
-                                const cursorPos = textareaRef.current?.selectionStart || chatInput.length;
-                                const textBefore = chatInput.slice(0, cursorPos);
-                                const atIdx = textBefore.lastIndexOf('@');
-                                if (atIdx !== -1) {
-                                  const beforeAt = chatInput.slice(0, atIdx);
-                                  const after = chatInput.slice(cursorPos);
-                                  setChatInput(`${beforeAt}@${c.tag} ${after}`);
-                                } else {
-                                  setChatInput((prev) => `${prev}@${c.tag} `);
-                                }
-                                setIsMentionOpen(false);
-                                setMentionSearch(null);
-                                textareaRef.current?.focus();
-                              }}
-                              className="w-full px-2.5 py-1.5 rounded-xl hover:bg-teal-50 flex items-center justify-between text-left group transition-colors cursor-pointer"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="w-6 h-6 rounded-md bg-slate-800 text-white font-bold text-[9px] flex items-center justify-center shrink-0 group-hover:bg-teal-700 transition-colors">
-                                  {c.tag === 'everyone' ? '📢' : c.tag === 'kênh' ? '🔔' : (c.tag || 'GV').slice(0, 2).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-800 group-hover:text-teal-900 truncate">
-                                    @{c.tag}
-                                  </p>
-                                  {c.email && (
-                                    <p className="text-[10px] text-slate-400 truncate">{c.email}</p>
-                                  )}
-                                </div>
-                              </div>
-                              <span className="text-[10px] text-slate-500 font-semibold px-1.5 py-0.5 rounded bg-slate-100 group-hover:bg-teal-100 group-hover:text-teal-800 shrink-0">
-                                {c.role}
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Textarea */}
-                    <textarea
-                      ref={textareaRef}
-                      rows={2}
-                      value={chatInput}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setChatInput(val);
-                        const cursorPos = e.target.selectionStart || val.length;
-                        const textBefore = val.slice(0, cursorPos);
-                        const atMatch = textBefore.match(/@([a-zA-Z0-9_\.\u00C0-\u1EF9]*)$/);
-                        if (atMatch) {
-                          setMentionSearch(atMatch[1]);
-                          setIsMentionOpen(true);
-                        } else {
-                          setIsMentionOpen(false);
-                          setMentionSearch(null);
-                        }
-                      }}
-                      onPaste={handleComposerPaste}
-                      onKeyDown={(e) => {
-                        if (isMentionOpen && e.key === 'Escape') {
-                          setIsMentionOpen(false);
-                          return;
-                        }
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      placeholder={
-                        activeGroup.isDirect
-                          ? `Nhắn tin tới ${activeGroup.directPartnerName || activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng, hoặc dán ảnh Ctrl+V)`
-                          : `Nhắn tin trong #${activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng, hoặc dán ảnh Ctrl+V)`
-                      }
-                      className="w-full px-3.5 pt-2.5 pb-1 text-xs text-slate-800 placeholder-slate-400 bg-transparent outline-none resize-none leading-relaxed"
-                    />
-
-                    {/* Bottom Action Bar */}
-                    <div className="px-2.5 py-1.5 flex items-center justify-between border-t border-slate-100 bg-slate-50/60 rounded-b-2xl">
-                      {isRecording ? (
-                        /* Voice Recording Mode UI */
-                        <div className="flex items-center justify-between w-full py-0.5 animate-fade-in">
-                          <div className="flex items-center gap-2.5">
-                            <span className="relative flex h-3 w-3">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-500" />
-                            </span>
-                            <span className="text-xs font-bold text-rose-700 flex items-center gap-1.5 font-mono">
-                              <span>Đang ghi âm...</span>
-                              <span className="bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded-md text-[11px]">
-                                {formatDuration(recordingSeconds)}
-                              </span>
-                            </span>
-                            {/* Real-time live audio wave bars dancing to voice */}
-                            <div className="flex items-center gap-1 h-5 px-1 bg-rose-50/80 rounded-md border border-rose-200/50">
-                              {liveMicLevels.map((h, i) => (
-                                <span
-                                  key={i}
-                                  style={{ height: `${h}%` }}
-                                  className="w-1 bg-rose-500 rounded-full transition-all duration-75"
-                                />
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={cancelVoiceRecording}
-                              className="px-2.5 py-1 rounded-lg hover:bg-slate-200 text-slate-600 hover:text-rose-600 font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Hủy ghi âm"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Hủy</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={stopAndSendVoiceRecording}
-                              className="px-3 py-1 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                              title="Dừng và gửi tin nhắn thoại"
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                              <span>Gửi Voice</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        /* Normal Action Bar */
-                        <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-1">
-                            {/* 1. NÚT ĐÍNH KÈM TỆP & ẢNH TRỰC TIẾP TỪ THIẾT BỊ */}
-                            <button
-                              type="button"
-                              onClick={() => fileInputRef.current?.click()}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer flex items-center gap-1 transition-colors"
-                              title="Tải tệp & ảnh từ thiết bị (Word, PDF, Ảnh, Video, Excel, ZIP...)"
-                            >
-                              <Paperclip className="w-4 h-4 text-slate-600" />
-                            </button>
-
-                            {/* 2. NÚT GIÁO TRÌNH THƯ VIỆN UTH */}
-                            <button
-                              type="button"
-                              onClick={() => setIsTextbookModalOpen(true)}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 cursor-pointer flex items-center gap-1 transition-colors"
-                              title="Đính kèm giáo trình Thư viện UTH"
-                            >
-                              <BookOpen className="w-4 h-4 text-slate-600 hover:text-teal-700" />
-                            </button>
-
-                            {/* 3. NÚT EMOJI (KHO EMOJI PHONG CÁCH SLACK) */}
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setIsEmojiPickerOpen(!isEmojiPickerOpen);
-                                }}
-                                className={`p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-200/80 cursor-pointer transition-colors ${
-                                  isEmojiPickerOpen ? 'bg-slate-200 text-slate-900' : ''
-                                }`}
-                                title="Kho biểu tượng cảm xúc (Slack Emoji)"
-                              >
-                                <Smile className="w-4 h-4 text-slate-600" />
-                              </button>
-
-                              {isEmojiPickerOpen && (
-                                <SlackEmojiPicker
-                                  onSelect={(emoji) => {
-                                    setChatInput((prev) => prev + emoji);
-                                    setIsEmojiPickerOpen(false);
-                                    textareaRef.current?.focus();
-                                  }}
-                                  onClose={() => setIsEmojiPickerOpen(false)}
-                                />
-                              )}
-                            </div>
-
-                            {/* 4. NÚT TAG / MENTION THÀNH VIÊN (@) */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChatInput((prev) => prev + '@');
-                                setMentionSearch('');
-                                setIsMentionOpen(true);
-                                textareaRef.current?.focus();
-                              }}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 cursor-pointer flex items-center gap-1 transition-colors"
-                              title="Nhắc đến thành viên (@mention)"
-                            >
-                              <AtSign className="w-4 h-4 text-slate-600 hover:text-teal-700" />
-                            </button>
-
-                            {/* 5. NÚT GHI ÂM TIN NHẮN THOẠI (MIC) */}
-                            <button
-                              type="button"
-                              onClick={startVoiceRecording}
-                              className="p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-rose-50 cursor-pointer flex items-center gap-1 transition-colors"
-                              title="Ghi âm tin nhắn thoại (Voice note)"
-                            >
-                              <Mic className="w-4 h-4 text-slate-600 hover:text-rose-600" />
-                            </button>
-                          </div>
-
-                          {/* Send Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleSend()}
-                            disabled={!chatInput.trim() && !selectedAttachment}
-                            className={`px-3 py-1.5 rounded-xl font-semibold text-xs flex items-center gap-1.5 transition-all shadow-2xs ${
-                              chatInput.trim() || selectedAttachment
-                                ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                            title="Gửi tin nhắn (Enter)"
-                          >
-                            <span className="hidden sm:inline">Gửi</span>
-                            <Send className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
+              <ChatComposer
+                isMemberOfChannel={Boolean(activeGroup.isDirect || isCurrentUserMember)}
+                replyingToMessage={replyingToMessage}
+                onCancelReply={() => setReplyingToMessage(null)}
+                selectedAttachments={selectedAttachments}
+                selectedAttachment={selectedAttachment}
+                onRemoveAttachment={(idx) =>
+                  setSelectedAttachments((prev) => prev.filter((_, i) => i !== idx))
+                }
+                onClearAttachment={() => setSelectedAttachments([])}
+                chatInput={chatInput}
+                onChatInputChange={(val) => {
+                  setChatInput(val);
+                  const cursorPos = textareaRef.current?.selectionStart || val.length;
+                  const textBefore = val.slice(0, cursorPos);
+                  const atMatch = textBefore.match(/@([a-zA-Z0-9_\.\u00C0-\u1EF9]*)$/);
+                  if (atMatch) {
+                    setMentionSearch(atMatch[1]);
+                    setIsMentionOpen(true);
+                  } else {
+                    setIsMentionOpen(false);
+                    setMentionSearch(null);
+                  }
+                }}
+                isMentionOpen={isMentionOpen}
+                mentionCandidates={mentionCandidates}
+                onSelectMentionCandidate={(c) => {
+                  const cursorPos = textareaRef.current?.selectionStart || chatInput.length;
+                  const textBefore = chatInput.slice(0, cursorPos);
+                  const atIdx = textBefore.lastIndexOf('@');
+                  if (atIdx !== -1) {
+                    const beforeAt = chatInput.slice(0, atIdx);
+                    const after = chatInput.slice(cursorPos);
+                    setChatInput(`${beforeAt}@${c.tag} ${after}`);
+                  } else {
+                    setChatInput((prev) => `${prev}@${c.tag} `);
+                  }
+                  setIsMentionOpen(false);
+                  setMentionSearch(null);
+                }}
+                onCloseMention={() => {
+                  setIsMentionOpen(false);
+                  setMentionSearch(null);
+                }}
+                onSend={() => handleSend()}
+                onComposerPaste={handleComposerPaste}
+                placeholder={
+                  activeGroup.isDirect
+                    ? `Nhắn tin tới ${activeGroup.directPartnerName || activeGroup.name}... (Enter để gửi)`
+                    : `Nhắn tin trong #${activeGroup.name}... (Enter để gửi, Shift+Enter xuống dòng)`
+                }
+                isRecording={isRecording}
+                recordingSeconds={recordingSeconds}
+                liveMicLevels={liveMicLevels}
+                onCancelRecording={cancelVoiceRecording}
+                onStopAndSendRecording={stopAndSendVoiceRecording}
+                onStartRecording={startVoiceRecording}
+                onSelectFile={(f) => handleFileSelect(f)}
+                onSelectFiles={handleFilesSelect}
+                isUploading={isUploadingAttachment}
+                uploadProgressText={uploadProgressText}
+                onOpenTextbookModal={() => setIsTextbookModalOpen(true)}
+              />
             </div>
           </>
         ) : (
@@ -5065,411 +4617,40 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           MODAL: THÊM THÀNH VIÊN VÀO KÊNH (SLACK DIRECT ADD MEMBER)
       ==================================================================== */}
       {isDirectAddMemberOpen && activeGroup && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
-          onClick={() => setIsDirectAddMemberOpen(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-xl sm:max-w-xl lg:max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-base text-slate-900 flex items-center gap-1.5">
-                  <UserPlus className="w-4 h-4 text-[#008689]" />
-                  <span>Thêm thành viên vào #{activeGroup.name}</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Gợi ý bạn bè, đồng nghiệp hoặc nhập email để thêm vào kênh
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsDirectAddMemberOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-              {/* CHIPS TRAY: DANH SÁCH THÀNH VIÊN ĐÃ CHỌN (NẾU CÓ) */}
-              {directAddSelectedMembers.length > 0 && (
-                <div className="space-y-1.5 p-3 bg-teal-50/50 border border-teal-200/80 rounded-xl animate-fade-in">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-                    <span className="flex items-center gap-1.5 text-teal-900 font-bold">
-                      <Users className="w-3.5 h-3.5 text-[#008689]" />
-                      <span>Đã chọn ({directAddSelectedMembers.length} đồng nghiệp):</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setDirectAddSelectedMembers([])}
-                      className="text-[10px] text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
-                    >
-                      Xóa tất cả
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                    {directAddSelectedMembers.map((m) => (
-                      <span
-                        key={m.email}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
-                      >
-                        <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
-                          {initials(m.fullName)}
-                        </span>
-                        <span className="truncate max-w-[140px]">{m.fullName}</span>
-                        {m.academicTitle && (
-                          <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setDirectAddSelectedMembers((prev) => prev.filter((x) => x.email !== m.email))}
-                          className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                  <span>Tìm kiếm đồng nghiệp hoặc nhập email:</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Gõ @ để gợi ý tài khoản</span>
-                </label>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={directAddMemberEmail}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setDirectAddMemberEmail(val);
-                      void handleLookupUser(val);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && lookupStatus === 'found' && lookedUpUser) {
-                        handleQueueDirectAddMember(lookedUpUser);
-                      }
-                    }}
-                    placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên..."
-                    className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
-                    autoFocus
-                  />
-                  {lookupStatus === 'searching' && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <span className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
-                    </div>
-                  )}
-                  {directAddMemberEmail && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDirectAddMemberEmail('');
-                        setLookedUpUser(null);
-                        setLookupStatus('idle');
-                      }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* THẺ TÀI KHOẢN (NẾU NGƯỜI ĐÓ ĐÃ ĐĂNG KÝ TÀI KHOẢN) */}
-              {lookupStatus === 'found' && lookedUpUser && (
-                <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
-                      {initials(lookedUpUser.fullName)}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-xs text-slate-900 truncate">{lookedUpUser.fullName}</span>
-                        {lookedUpUser.academicTitle && (
-                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
-                            {lookedUpUser.academicTitle}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-500 truncate">{lookedUpUser.email}</p>
-                      <p className="text-[10px] text-slate-400 truncate">{lookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
-                    <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>Tài khoản đã kích hoạt hệ thống</span>
-                    </span>
-                    {(() => {
-                      const isUserSelected = directAddSelectedMembers.some((m) => m.email.toLowerCase() === lookedUpUser.email.toLowerCase());
-                      const friendship = getFriendshipState(lookedUpUser.email);
-                      const isFriend = friendship.type === 'friend';
-                      const isAlreadyInChannel = (activeGroup.members || []).some(
-                        (m) => String(m).trim().toLowerCase() === lookedUpUser.email.trim().toLowerCase()
-                      );
-                      const hasSentInvite = isMemberInvitedToActiveChannel(lookedUpUser.email);
-                      return (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {!isAlreadyInChannel && (
-                            isUserSelected ? (
-                              <button
-                                type="button"
-                                onClick={() => setDirectAddSelectedMembers((prev) => prev.filter((x) => x.email.toLowerCase() !== lookedUpUser.email.toLowerCase()))}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                                title="Đã chọn (Bấm để hủy chọn)"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                                <span>Đã chọn</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleQueueDirectAddMember(lookedUpUser)}
-                                className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
-                                title="Chọn để thêm hàng loạt"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </button>
-                            )
-                          )}
-                          {isAlreadyInChannel ? (
-                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span>Đã tham gia</span>
-                            </span>
-                          ) : hasSentInvite ? (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-[#008689] text-xs font-semibold select-none shadow-2xs">
-                              <Check className="w-3.5 h-3.5 text-[#008689]" />
-                              <span>Đã mời</span>
-                            </span>
-                          ) : isFriend ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleAddUserToActiveChannel(lookedUpUser.email, lookedUpUser.fullName)}
-                              disabled={isAddingMember}
-                              className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 cursor-pointer transition-colors flex items-center gap-1.5"
-                              title="Thêm ngay vào nhóm (đã là bạn bè)"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                              <span>Thêm ngay</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => void handleSendGroupInvitation(lookedUpUser.email, lookedUpUser.fullName)}
-                              className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                              title="Gửi lời mời tham gia kênh"
-                            >
-                              <Send className="w-3 h-3" />
-                              <span>Mời</span>
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              {/* CẢNH BÁO TÀI KHOẢN CHƯA ĐĂNG KÝ / KHÔNG TỒN TẠI (CHỈ KHI ĐÃ NHẬP ĐẦY ĐỦ DOMAIN EMAIL) */}
-              {lookupStatus === 'not_found' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(directAddMemberEmail.trim()) && (
-                <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex items-start gap-3 animate-fade-in">
-                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-                  <div className="min-w-0 text-xs text-rose-800 space-y-1">
-                    <p className="font-bold">Người dùng không tồn tại trên hệ thống</p>
-                    <p className="text-[11px] text-rose-600 leading-relaxed">
-                      Địa chỉ email <strong>{directAddMemberEmail}</strong> chưa được dùng để đăng ký tài khoản QuizGen AI. Thầy/Cô vui lòng kiểm tra lại địa chỉ email hoặc mời đồng nghiệp đăng ký trước khi thêm vào kênh.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* MỤC BẠN BÈ & ĐỒNG NGHIỆP: GỬI LỜI MỜI HOẶC THÊM TRỰC TIẾP */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    Bạn bè & Đồng nghiệp ({filteredFriends.length})
-                  </span>
-                  <span className="text-[10px] text-slate-400">Gửi lời mời hoặc thêm trực tiếp</span>
-                </div>
-
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                  {filteredFriends.length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 py-3 italic">
-                      Không tìm thấy đồng nghiệp phù hợp
-                    </p>
-                  ) : (
-                    filteredFriends.map((f) => {
-                      const isAlreadyInChannel = (activeGroup.members || []).some(
-                        (m) => String(m).trim().toLowerCase() === f.email.trim().toLowerCase()
-                      );
-                      const hasSentInvite = isMemberInvitedToActiveChannel(f.email);
-                      const isSelected = directAddSelectedMembers.some(
-                        (m) => m.email.toLowerCase() === f.email.toLowerCase()
-                      );
-                      const friendship = getFriendshipState(f.email);
-                      const isFriend = friendship.type === 'friend';
-
-                      return (
-                        <div
-                          key={f.email}
-                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 transition-colors ${
-                            isSelected
-                              ? 'bg-teal-50/60 border-teal-300'
-                              : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200/80'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                              {initials(f.name)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
-                                {f.title && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
-                                    {f.title}
-                                  </span>
-                                )}
-                                {isFriend && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                                    Bạn bè
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
-                              {f.dept && (
-                                <p className="text-[10px] text-slate-400 truncate">{f.dept}</p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {/* Nút Chọn / Đã chọn (Dấu cộng nhỏ -> Đã chọn khi click) */}
-                            {!isAlreadyInChannel && (
-                              isSelected ? (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setDirectAddSelectedMembers((prev) =>
-                                      prev.filter((x) => x.email.toLowerCase() !== f.email.toLowerCase())
-                                    )
-                                  }
-                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                                  title="Đã chọn (Bấm để hủy chọn)"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Đã chọn</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQueueDirectAddMember(f)}
-                                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
-                                  title="Chọn để thêm hàng loạt"
-                                >
-                                  <Plus className="w-4 h-4" />
-                                </button>
-                              )
-                            )}
-
-                            {/* Nút hành động trực tiếp: Đã tham gia | Đã mời | Thêm ngay (nếu đã là bạn bè) | Mời (nếu chưa kết bạn) */}
-                            {isAlreadyInChannel ? (
-                              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
-                                <Check className="w-3 h-3 text-emerald-600" />
-                                <span>Đã tham gia</span>
-                              </span>
-                            ) : hasSentInvite ? (
-                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-[#008689] text-xs font-semibold select-none shadow-2xs">
-                                <Check className="w-3.5 h-3.5 text-[#008689]" />
-                                <span>Đã mời</span>
-                              </span>
-                            ) : isFriend ? (
-                              <button
-                                type="button"
-                                onClick={() => void handleAddUserToActiveChannel(f.email, f.name)}
-                                disabled={isAddingMember}
-                                className="px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-[#008689] font-semibold text-xs border border-teal-200 flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Thêm ngay vào nhóm (đã là bạn bè)"
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                <span>Thêm ngay</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void handleSendGroupInvitation(f.email, f.name)}
-                                className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
-                                title="Gửi lời mời: Đồng nghiệp nhận thông báo và bấm Chấp nhận để vào"
-                              >
-                                <Send className="w-3 h-3" />
-                                <span>Mời</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-              <div>
-                {directAddSelectedMembers.length > 0 && (
-                  <span className="text-[11px] text-teal-800 font-bold">
-                    Đã chọn {directAddSelectedMembers.length} đồng nghiệp
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsDirectAddMemberOpen(false);
-                    setDirectAddSelectedMembers([]);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
-                >
-                  Đóng
-                </button>
-                {directAddSelectedMembers.length > 0 && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => void handleBatchSendGroupInvitations()}
-                      className="px-3.5 py-2 rounded-lg bg-white border border-teal-600 text-[#008689] hover:bg-teal-50 font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-2xs"
-                      title="Gửi lời mời tham gia kênh cho tất cả người đã chọn"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                      <span>Gửi lời mời ({directAddSelectedMembers.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleBatchAddUsersToActiveChannel()}
-                      disabled={isAddingMember}
-                      className="px-4 py-2 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
-                      title="Thêm ngay tất cả người đã chọn vào kênh"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>Thêm ngay ({directAddSelectedMembers.length})</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <DirectAddMemberModal
+          isOpen={isDirectAddMemberOpen}
+          onClose={() => {
+            setIsDirectAddMemberOpen(false);
+            setDirectAddSelectedMembers([]);
+            setDirectAddMemberEmail('');
+            setLookedUpUser(null);
+            setLookupStatus('idle');
+          }}
+          activeGroup={activeGroup}
+          directAddMemberEmail={directAddMemberEmail}
+          onDirectAddMemberEmailChange={setDirectAddMemberEmail}
+          onLookupUser={handleLookupUser}
+          lookupStatus={lookupStatus}
+          lookedUpUser={lookedUpUser}
+          onClearLookedUpUser={() => {
+            setDirectAddMemberEmail('');
+            setLookedUpUser(null);
+            setLookupStatus('idle');
+          }}
+          directAddSelectedMembers={directAddSelectedMembers}
+          setDirectAddSelectedMembers={setDirectAddSelectedMembers}
+          onQueueDirectAddMember={handleQueueDirectAddMember}
+          suggestedDirectAddDropdown={suggestedDirectAddDropdown}
+          filteredFriends={filteredFriends}
+          getFriendshipState={getFriendshipState}
+          isMemberInvitedToActiveChannel={isMemberInvitedToActiveChannel}
+          onAddUserToActiveChannel={handleAddUserToActiveChannel}
+          onSendGroupInvitation={handleSendGroupInvitation}
+          onBatchAddUsersToActiveChannel={handleBatchAddUsersToActiveChannel}
+          onBatchSendGroupInvitations={handleBatchSendGroupInvitations}
+          isAddingMember={isAddingMember}
+          initials={(n) => initials(n || '')}
+        />
       )}
 
       {/* ====================================================================
@@ -5650,9 +4831,45 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         <HuddleCallModal
           group={activeGroup}
           currentUser={currentUser}
-          onClose={() => setIsHuddleOpen(false)}
+          onClose={() => {
+            if (activeGroup) {
+              const partner = (activeGroup.directPartnerEmail || '').toLowerCase().trim();
+              const roomId = activeGroup.isDirect
+                ? `dm_${[myEmail, partner].filter(Boolean).sort().join('_')}`
+                : `room_${activeGroup.id || activeGroup.code}`;
+              dismissedCallsRef.current[roomId] = Date.now() + 86400000;
+            }
+            setIncomingHuddleCall(null);
+            setIsHuddleOpen(false);
+          }}
         />
       )}
+
+      {/* ====================================================================
+          MODAL: INCOMING HUDDLE CALL (THÔNG BÁO CUỘC GỌI ĐẾN TỨC THÌ)
+      ==================================================================== */}
+      <IncomingHuddleModal
+        incomingCall={incomingHuddleCall}
+        onAccept={(call) => {
+          setIncomingHuddleCall(null);
+          if (call.groupId) {
+            setSelectedGroupId(call.groupId);
+            setShowMobileChat(true);
+          }
+          handleOpenHuddleWithAudioPrime();
+        }}
+        onDecline={(call) => {
+          dismissedCallsRef.current[call.roomId] = Date.now() + 86400000;
+          setIncomingHuddleCall(null);
+          apiClient
+            .fetch(`${API_BASE}/huddle/dismiss`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ roomId: call.roomId }),
+            })
+            .catch(() => {});
+        }}
+      />
 
       {/* ====================================================================
           OTHER MODALS: PUBLIC PROFILE, ADD FRIEND, CREATE GROUP
@@ -5693,871 +4910,73 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       />
 
       {isAddFriendOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
-          onClick={handleCloseAddFriendModal}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-xl sm:max-w-xl lg:max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-base text-slate-900 flex items-center gap-1.5">
-                  <UserPlus className="w-4 h-4 text-[#008689]" />
-                  <span>Thêm Đồng Nghiệp Mới</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Gợi ý giảng viên, đồng nghiệp hoặc nhập email để gửi lời mời kết nối học thuật
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseAddFriendModal}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-              {/* CHIPS TRAY: DANH SÁCH ĐỒNG NGHIỆP ĐÃ CHỌN ĐỂ KẾT BẠN */}
-              {selectedFriendsToInvite.length > 0 && (
-                <div className="space-y-1.5 p-3 bg-teal-50/50 border border-teal-200/80 rounded-xl animate-fade-in">
-                  <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-                    <span className="flex items-center gap-1.5 text-teal-900 font-bold">
-                      <UserPlus className="w-3.5 h-3.5 text-[#008689]" />
-                      <span>Đã chọn ({selectedFriendsToInvite.length} đồng nghiệp):</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedFriendsToInvite([])}
-                      className="text-[10px] text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
-                    >
-                      Xóa tất cả
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                    {selectedFriendsToInvite.map((m) => (
-                      <span
-                        key={m.email}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
-                      >
-                        <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
-                          {initials(m.fullName)}
-                        </span>
-                        <span className="truncate max-w-[140px]">{m.fullName}</span>
-                        {m.academicTitle && (
-                          <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFriendsToInvite((prev) => prev.filter((x) => x.email !== m.email))}
-                          className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                  <span>Tìm kiếm đồng nghiệp hoặc nhập email:</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Gõ @ để gợi ý tài khoản</span>
-                </label>
-                <div className="relative">
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={friendEmailInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFriendEmailInput(val);
-                      void handleFriendLookup(val);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        if (friendLookupStatus === 'found' && friendLookedUpUser) {
-                          handleQueueFriendInvite(friendLookedUpUser);
-                        } else if (friendEmailInput.trim()) {
-                          void handleSendFriendRequest();
-                        }
-                      }
-                    }}
-                    placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên..."
-                    className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
-                    autoFocus
-                  />
-                  {friendLookupStatus === 'searching' && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <span className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
-                    </div>
-                  )}
-                  {friendEmailInput && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFriendEmailInput('');
-                        setFriendLookedUpUser(null);
-                        setFriendLookupStatus('idle');
-                      }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* THẺ TÀI KHOẢN (NẾU NGƯỜI ĐÓ ĐÃ ĐĂNG KÝ TÀI KHOẢN) */}
-              {friendLookupStatus === 'found' && friendLookedUpUser && (() => {
-                const cardState = getFriendshipState(friendLookedUpUser.email);
-                return (
-                  <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
-                        {initials(friendLookedUpUser.fullName)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs text-slate-900 truncate">{friendLookedUpUser.fullName}</span>
-                          {friendLookedUpUser.academicTitle && (
-                            <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
-                              {friendLookedUpUser.academicTitle}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[11px] text-slate-500 truncate">{friendLookedUpUser.email}</p>
-                        <p className="text-[10px] text-slate-400 truncate">{friendLookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
-                      </div>
-                    </div>
-
-                    <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
-                      <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>Tài khoản đã kích hoạt hệ thống</span>
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {cardState.type === 'self' && (
-                          <span className="text-xs text-slate-400 italic">Tài khoản của bạn</span>
-                        )}
-                        {cardState.type === 'friend' && (
-                          <span className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center gap-1.5 border border-emerald-300">
-                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            <span>Đã là bạn bè</span>
-                          </span>
-                        )}
-                        {cardState.type === 'sent_pending' && (
-                          <span className="px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 font-semibold text-xs flex items-center gap-1.5 border border-amber-300">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            <span>Đang chờ duyệt</span>
-                          </span>
-                        )}
-                        {cardState.type === 'received_pending' && (
-                          <button
-                            type="button"
-                            onClick={() => void handleAcceptFriendRequest(cardState.req)}
-                            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Chấp nhận kết bạn</span>
-                          </button>
-                        )}
-                        {cardState.type === 'none' && (() => {
-                          const isSelected = selectedFriendsToInvite.some((m) => m.email.toLowerCase() === friendLookedUpUser.email.toLowerCase());
-                          return (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {isSelected ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedFriendsToInvite((prev) => prev.filter((x) => x.email.toLowerCase() !== friendLookedUpUser.email.toLowerCase()))}
-                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                                  title="Đã chọn (Bấm để hủy chọn)"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Đã chọn</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQueueFriendInvite(friendLookedUpUser)}
-                                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
-                                  title="Chọn để gửi lời mời hàng loạt"
-                                >
-                                  <Plus className="w-4 h-4" />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => void handleSendFriendRequest(friendLookedUpUser.email)}
-                                className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                <span>Kết bạn</span>
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* CẢNH BÁO TÀI KHOẢN CHƯA ĐĂNG KÝ / KHÔNG TỒN TẠI (CHỈ KHI ĐÃ NHẬP ĐẦY ĐỦ DOMAIN EMAIL) */}
-              {friendLookupStatus === 'not_found' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(friendEmailInput.trim()) && (
-                <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex items-start gap-3 animate-fade-in">
-                  <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-                  <div className="min-w-0 text-xs text-rose-800 space-y-1">
-                    <p className="font-bold">Người dùng không tồn tại trên hệ thống</p>
-                    <p className="text-[11px] text-rose-600 leading-relaxed">
-                      Địa chỉ email <strong>{friendEmailInput}</strong> chưa được dùng để đăng ký tài khoản QuizGen AI. Thầy/Cô vui lòng kiểm tra lại địa chỉ email hoặc mời đồng nghiệp đăng ký trước khi kết nối học thuật.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* MỤC GỢI Ý ĐỒNG NGHIỆP: KẾT NỐI 1-CHẠM */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    Gợi ý Đồng nghiệp & Giảng viên ({filteredColleaguesForFriend.length})
-                  </span>
-                  <span className="text-[10px] text-slate-400">Kết nối 1-chạm</span>
-                </div>
-
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                  {filteredColleaguesForFriend.length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 py-3 italic">
-                      Không tìm thấy đồng nghiệp phù hợp
-                    </p>
-                  ) : (
-                    filteredColleaguesForFriend.map((f) => {
-                      const state = getFriendshipState(f.email);
-                      const isSelected = selectedFriendsToInvite.some((m) => m.email.toLowerCase() === f.email.toLowerCase());
-                      return (
-                        <div
-                          key={f.email}
-                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${
-                            isSelected
-                              ? 'bg-teal-50/60 border-teal-300'
-                              : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200/80'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                              {initials(f.name)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
-                                {f.title && (
-                                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
-                                    {f.title}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
-                              {f.dept && (
-                                <p className="text-[10px] text-slate-400 truncate">{f.dept}</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {state.type === 'self' && (
-                            <span className="text-[10px] text-slate-400 italic">Bạn</span>
-                          )}
-                          {state.type === 'friend' && (
-                            <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-emerald-200">
-                              <Check className="w-3 h-3 text-emerald-600" />
-                              <span>Đã là bạn bè</span>
-                            </span>
-                          )}
-                          {state.type === 'sent_pending' && (
-                            <span className="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold text-[10px] flex items-center gap-1 shrink-0 border border-amber-200">
-                              <Clock className="w-3 h-3 text-amber-600" />
-                              <span>Đang chờ duyệt</span>
-                            </span>
-                          )}
-                          {state.type === 'received_pending' && (
-                            <button
-                              type="button"
-                              onClick={() => void handleAcceptFriendRequest(state.req)}
-                              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-2xs flex items-center gap-1 cursor-pointer transition-colors shrink-0"
-                              title="Chấp nhận lời mời kết bạn từ đồng nghiệp"
-                            >
-                              <Check className="w-3 h-3" />
-                              <span>Chấp nhận</span>
-                            </button>
-                          )}
-                          {state.type === 'none' && (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {isSelected ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedFriendsToInvite((prev) => prev.filter((x) => x.email.toLowerCase() !== f.email.toLowerCase()))}
-                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                                  title="Đã chọn (Bấm để hủy chọn)"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Đã chọn</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleQueueFriendInvite(f)}
-                                  className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer"
-                                  title="Chọn vào danh sách gửi lời mời hàng loạt"
-                                >
-                                  <Plus className="w-4 h-4" />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => void handleSendFriendRequest(f.email)}
-                                className="px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
-                                title="Gửi lời mời kết nối học thuật 1-1"
-                              >
-                                <UserPlus className="w-3.5 h-3.5" />
-                                <span>Kết bạn</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-              <div>
-                {selectedFriendsToInvite.length > 0 && (
-                  <span className="text-[11px] text-teal-800 font-bold">
-                    Đã chọn {selectedFriendsToInvite.length} đồng nghiệp
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleCloseAddFriendModal}
-                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
-                >
-                  Đóng
-                </button>
-                {selectedFriendsToInvite.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => void handleBatchSendFriendRequests()}
-                    className="px-4 py-2 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs"
-                    title="Gửi lời mời kết bạn tới tất cả đồng nghiệp đã chọn"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>Gửi lời mời tất cả ({selectedFriendsToInvite.length})</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <FriendModal
+          isOpen={isAddFriendOpen}
+          onClose={handleCloseAddFriendModal}
+          friendEmailInput={friendEmailInput}
+          onFriendEmailInputChange={setFriendEmailInput}
+          onFriendLookup={handleFriendLookup}
+          friendLookupStatus={friendLookupStatus}
+          friendLookedUpUser={friendLookedUpUser}
+          onClearLookedUpUser={() => {
+            setFriendEmailInput('');
+            setFriendLookedUpUser(null);
+            setFriendLookupStatus('idle');
+          }}
+          selectedFriendsToInvite={selectedFriendsToInvite}
+          setSelectedFriendsToInvite={setSelectedFriendsToInvite}
+          suggestedFriendsDropdown={suggestedFriendsDropdown}
+          filteredColleaguesForFriend={filteredColleaguesForFriend}
+          getFriendshipState={getFriendshipState}
+          onQueueFriendInvite={handleQueueFriendInvite}
+          onSendFriendRequest={handleSendFriendRequest}
+          onAcceptFriendRequest={handleAcceptFriendRequest}
+          onBatchSendFriendRequests={handleBatchSendFriendRequests}
+          initials={(n) => initials(n || '')}
+        />
       )}
 
       {isCreateGroupOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-fade-in"
-          onClick={() => {
+        <CreateOrJoinGroupModal
+          isOpen={isCreateGroupOpen}
+          onClose={() => {
             setIsCreateGroupOpen(false);
             setCreateGroupSelectedMembers([]);
             setCreateGroupMemberInput('');
             setCreateGroupLookedUpUser(null);
             setCreateGroupLookupStatus('idle');
           }}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl max-w-xl sm:max-w-xl lg:max-w-2xl w-full border border-slate-200 overflow-hidden flex flex-col animate-scale-up"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-base text-slate-900 flex items-center gap-1.5">
-                  <Users className="w-4 h-4 text-[#008689]" />
-                  <span>Kênh Chuyên Môn Học Thuật</span>
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Không gian làm việc chung: trao đổi, chia sẻ giáo trình và ma trận khảo thí UTH
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCreateGroupOpen(false);
-                  setCreateGroupSelectedMembers([]);
-                  setCreateGroupMemberInput('');
-                  setCreateGroupLookedUpUser(null);
-                  setCreateGroupLookupStatus('idle');
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Sub-Tabs */}
-            <div className="px-5 pt-3">
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg select-none">
-                <button
-                  type="button"
-                  onClick={() => setGroupModalTab('create')}
-                  className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    groupModalTab === 'create'
-                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Tạo kênh mới</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGroupModalTab('join')}
-                  className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    groupModalTab === 'join'
-                      ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Hash className="w-3.5 h-3.5" />
-                  <span>Nhập mã tham gia</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-              {groupModalTab === 'create' ? (
-                /* TAB TẠO NHÓM MỚI */
-                <div className="space-y-3.5 text-xs">
-                  <div>
-                    <label className="font-semibold text-slate-700">Tên kênh học thuật *</label>
-                    <input
-                      type="text"
-                      value={newGroupName}
-                      onChange={(e) => setNewGroupName(e.target.value)}
-                      placeholder="VD: Bộ Môn Mạng & Hệ Điều Hành"
-                      className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white transition-all text-xs text-slate-800"
-                      autoFocus
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-semibold text-slate-700">Khoa / Bộ môn</label>
-                      <input
-                        type="text"
-                        value={newGroupDept}
-                        onChange={(e) => setNewGroupDept(e.target.value)}
-                        placeholder="VD: Khoa Công nghệ Thông tin"
-                        className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white transition-all text-xs text-slate-800"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold text-slate-700">Mô tả mục đích kênh</label>
-                      <input
-                        type="text"
-                        value={newGroupDesc}
-                        onChange={(e) => setNewGroupDesc(e.target.value)}
-                        placeholder="Trao đổi ngân hàng câu hỏi, chia sẻ giáo trình..."
-                        className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white transition-all text-xs text-slate-800"
-                      />
-                    </div>
-                  </div>
-
-                  {/* THÊM THÀNH VIÊN VÀO KÊNH NGAY TẠI ĐÂY (KHÔNG GIỚI HẠN SỐ LƯỢNG) */}
-                  <div className="pt-2 border-t border-slate-200/80 space-y-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5">
-                          <UserPlus className="w-3.5 h-3.5 text-[#008689]" />
-                          <span>Thêm thành viên vào kênh:</span>
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-normal">Gõ @ để gợi ý tài khoản</span>
-                      </label>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Đồng nghiệp đã kết bạn sẽ vào thẳng nhóm. Đồng nghiệp chưa kết bạn sẽ nhận được lời mời tham gia (chờ đồng ý).
-                      </p>
-                    </div>
-
-                    {/* CHIPS TRAY: DANH SÁCH THÀNH VIÊN ĐÃ CHỌN VÀO KÊNH MỚI */}
-                    {createGroupSelectedMembers.length > 0 && (
-                      <div className="space-y-1.5 p-3 bg-teal-50/50 border border-teal-200/80 rounded-xl animate-fade-in">
-                        <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700">
-                          <span className="flex items-center gap-1.5 text-teal-900 font-bold">
-                            <Users className="w-3.5 h-3.5 text-[#008689]" />
-                            <span>Đã chọn ({createGroupSelectedMembers.length} thành viên):</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setCreateGroupSelectedMembers([])}
-                            className="text-[10px] text-rose-600 hover:text-rose-700 font-medium cursor-pointer"
-                          >
-                            Xóa tất cả
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-                          {createGroupSelectedMembers.map((m) => {
-                            const isFriend = getFriendshipState(m.email).type === 'friend';
-                            return (
-                              <span
-                                key={m.email}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border text-xs font-semibold shadow-2xs animate-scale-up ${
-                                  isFriend
-                                    ? 'text-[#008689] border-teal-300'
-                                    : 'text-amber-800 border-amber-300'
-                                }`}
-                              >
-                                <span
-                                  className={`w-4 h-4 rounded-full text-white text-[9px] font-bold flex items-center justify-center shrink-0 ${
-                                    isFriend ? 'bg-[#008689]' : 'bg-amber-600'
-                                  }`}
-                                >
-                                  {initials(m.fullName)}
-                                </span>
-                                <span className="truncate max-w-[140px]">{m.fullName}</span>
-                                <span
-                                  className={`text-[9px] px-1 py-0.2 rounded font-medium shrink-0 ${
-                                    isFriend
-                                      ? 'bg-teal-50 text-[#008689]'
-                                      : 'bg-amber-50 text-amber-700'
-                                  }`}
-                                >
-                                  {isFriend ? 'Vào thẳng' : 'Chờ đồng ý'}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setCreateGroupSelectedMembers((prev) =>
-                                      prev.filter((x) => x.email !== m.email)
-                                    )
-                                  }
-                                  className="hover:text-rose-600 transition-colors p-0.5 rounded cursor-pointer shrink-0"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* INPUT TÌM KIẾM / NHẬP EMAIL THÀNH VIÊN */}
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={createGroupMemberInput}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setCreateGroupMemberInput(val);
-                          void handleCreateGroupMemberLookup(val);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && createGroupLookupStatus === 'found' && createGroupLookedUpUser) {
-                            handleAddMemberToNewGroup(createGroupLookedUpUser);
-                          }
-                        }}
-                        placeholder="Gõ @đồng nghiệp hoặc nhập email giảng viên cần thêm..."
-                        className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689] transition-all font-medium"
-                      />
-                      {createGroupLookupStatus === 'searching' && (
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <span className="w-3.5 h-3.5 border-2 border-teal-600 border-t-transparent rounded-full animate-spin inline-block" />
-                        </div>
-                      )}
-                      {createGroupMemberInput && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCreateGroupMemberInput('');
-                            setCreateGroupLookedUpUser(null);
-                            setCreateGroupLookupStatus('idle');
-                          }}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* THẺ TÀI KHOẢN TÌM THẤY (ĐÃ ĐĂNG KÝ HỆ THỐNG) */}
-                    {createGroupLookupStatus === 'found' && createGroupLookedUpUser && (
-                      <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
-                            {initials(createGroupLookedUpUser.fullName)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-bold text-xs text-slate-900 truncate">{createGroupLookedUpUser.fullName}</span>
-                              {createGroupLookedUpUser.academicTitle && (
-                                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-700 border border-slate-200 shrink-0">
-                                  {createGroupLookedUpUser.academicTitle}
-                                </span>
-                              )}
-                              {(() => {
-                                const isFriend = getFriendshipState(createGroupLookedUpUser.email).type === 'friend';
-                                return (
-                                  <span
-                                    className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border shrink-0 ${
-                                      isFriend
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                        : 'bg-amber-50 text-amber-700 border-amber-200'
-                                    }`}
-                                  >
-                                    {isFriend ? 'Bạn bè • Vào thẳng' : 'Chưa kết bạn • Chờ đồng ý'}
-                                  </span>
-                                );
-                              })()}
-                            </div>
-                            <p className="text-[11px] text-slate-500 truncate">{createGroupLookedUpUser.email}</p>
-                            <p className="text-[10px] text-slate-400 truncate">{createGroupLookedUpUser.department || 'Khoa Công nghệ Thông tin'}</p>
-                          </div>
-                        </div>
-
-                          <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between gap-2 text-xs">
-                            <span className="text-[10px] text-emerald-700 font-semibold flex items-center gap-1">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <span>Tài khoản đã kích hoạt hệ thống</span>
-                            </span>
-                            {(() => {
-                              const isSelected = createGroupSelectedMembers.some((m) => m.email.toLowerCase() === createGroupLookedUpUser.email.toLowerCase());
-                              return isSelected ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setCreateGroupSelectedMembers((prev) => prev.filter((x) => x.email.toLowerCase() !== createGroupLookedUpUser.email.toLowerCase()))}
-                                  className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors"
-                                  title="Đã chọn (Bấm để hủy chọn)"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                  <span>Đã chọn</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleAddMemberToNewGroup(createGroupLookedUpUser)}
-                                  className="px-3.5 py-1.5 rounded-lg bg-[#008689] hover:bg-[#007073] text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                                >
-                                  <Plus className="w-3.5 h-3.5" />
-                                  <span>Thêm vào kênh ({createGroupSelectedMembers.length + 1})</span>
-                                </button>
-                              );
-                            })()}
-                          </div>
-                      </div>
-                    )}
-
-                    {/* CẢNH BÁO TÀI KHOẢN CHƯA ĐĂNG KÝ / KHÔNG TỒN TẠI */}
-                    {createGroupLookupStatus === 'not_found' && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(createGroupMemberInput.trim()) && (
-                      <div className="p-3.5 rounded-xl border border-rose-200 bg-rose-50/50 flex items-start gap-3 animate-fade-in">
-                        <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-                        <div className="min-w-0 text-xs text-rose-800 space-y-1">
-                          <p className="font-bold">Người dùng không tồn tại trên hệ thống</p>
-                          <p className="text-[11px] text-rose-600 leading-relaxed">
-                            Địa chỉ email <strong>{createGroupMemberInput}</strong> chưa được dùng để đăng ký tài khoản QuizGen AI. Thầy/Cô vui lòng kiểm tra lại địa chỉ email hoặc mời đồng nghiệp đăng ký trước khi thêm vào kênh.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* GỢI Ý ĐỒNG NGHIỆP TRONG TRƯỜNG */}
-                    <div className="space-y-1.5 pt-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                          Gợi ý Đồng nghiệp ({filteredColleaguesForNewGroup.length})
-                        </span>
-                        <span className="text-[10px] text-slate-400">Bấm để chọn nhanh</span>
-                      </div>
-
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {filteredColleaguesForNewGroup.length === 0 ? (
-                          <p className="text-center text-xs text-slate-400 py-2.5 italic">
-                            Không còn đồng nghiệp nào khác chưa chọn
-                          </p>
-                        ) : (
-                          filteredColleaguesForNewGroup.map((f) => {
-                            const isSelected = createGroupSelectedMembers.some((m) => m.email.toLowerCase() === f.email.toLowerCase());
-                            return (
-                              <div
-                                key={f.email}
-                                className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 transition-colors ${
-                                  isSelected
-                                    ? 'bg-teal-50/60 border-teal-300'
-                                    : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200/80'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                  <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                    {initials(f.name)}
-                                  </div>
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>
-                                      {f.title && (
-                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white text-slate-600 border border-slate-200 shrink-0">
-                                          {f.title}
-                                        </span>
-                                      )}
-                                      {(() => {
-                                        const isFriend = getFriendshipState(f.email).type === 'friend';
-                                        return (
-                                          <span
-                                            className={`px-1.5 py-0.2 rounded text-[9px] font-semibold border shrink-0 ${
-                                              isFriend
-                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                : 'bg-amber-50 text-amber-700 border-amber-200'
-                                            }`}
-                                          >
-                                            {isFriend ? 'Bạn bè' : 'Chưa kết bạn'}
-                                          </span>
-                                        );
-                                      })()}
-                                    </div>
-                                    <p className="text-[11px] text-slate-400 truncate" title={f.email}>{f.email}</p>
-                                  </div>
-                                </div>
-                                {isSelected ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => setCreateGroupSelectedMembers((prev) => prev.filter((x) => x.email.toLowerCase() !== f.email.toLowerCase()))}
-                                    className="px-2.5 py-1.5 rounded-lg bg-[#008689] text-white font-semibold text-xs flex items-center gap-1 shadow-2xs cursor-pointer transition-colors shrink-0"
-                                    title="Đã chọn (Bấm để hủy chọn)"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span>Đã chọn</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAddMemberToNewGroup({ email: f.email, fullName: f.name, academicTitle: f.title, department: f.dept })}
-                                    className="w-8 h-8 rounded-lg border border-slate-300 text-slate-600 hover:text-[#008689] hover:border-[#008689] hover:bg-teal-50 flex items-center justify-center transition-all cursor-pointer shrink-0"
-                                    title="Chọn thành viên"
-                                  >
-                                    <Plus className="w-4 h-4" />
-                                  </button>
-                                )}
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* TAB NHẬP MÃ THAM GIA */
-                <div className="space-y-3.5 text-xs">
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-                    <span className="font-semibold text-slate-800 text-[11px] flex items-center gap-1.5">
-                      <Info className="w-3.5 h-3.5 text-slate-600" />
-                      <span>Tham gia nhóm qua Mã phòng</span>
-                    </span>
-                    <p className="text-slate-600 text-[11px] leading-relaxed">
-                      Nhập mã phòng chuyên môn được đồng nghiệp hoặc Trưởng nhóm chia sẻ (ví dụ: <strong className="font-mono text-slate-800">QGRP-L6RUM</strong>).
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="font-semibold text-slate-700">Mã phòng chuyên môn *</label>
-                    <div className="relative mt-1">
-                      <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-                      <input
-                        type="text"
-                        value={joinCodeInput}
-                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            void handleJoinByCode(joinCodeInput);
-                          }
-                        }}
-                        placeholder="VD: QGRP-OS2026..."
-                        className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#008689] focus:bg-white font-mono font-bold text-slate-800 placeholder-slate-400 text-xs tracking-wider"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1 text-[11px] text-slate-500 px-1">
-                    <p>• Kênh công khai: Bạn sẽ vào thẳng nhóm trò chuyện ngay lập tức.</p>
-                    <p>• Kênh cần phê duyệt: Yêu cầu sẽ được chuyển đến Trưởng nhóm để duyệt.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-              <div>
-                {groupModalTab === 'create' && createGroupSelectedMembers.length > 0 && (() => {
-                  const friendsCount = createGroupSelectedMembers.filter((m) => getFriendshipState(m.email).type === 'friend').length;
-                  const nonFriendsCount = createGroupSelectedMembers.length - friendsCount;
-                  return (
-                    <span className="text-[11px] text-teal-800 font-bold">
-                      {friendsCount > 0 && `${friendsCount} bạn bè (vào thẳng)`}
-                      {friendsCount > 0 && nonFriendsCount > 0 && ' • '}
-                      {nonFriendsCount > 0 && `${nonFriendsCount} chờ đồng ý`}
-                    </span>
-                  );
-                })()}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCreateGroupOpen(false);
-                    setCreateGroupSelectedMembers([]);
-                    setCreateGroupMemberInput('');
-                    setCreateGroupLookedUpUser(null);
-                    setCreateGroupLookupStatus('idle');
-                  }}
-                  className="px-4 py-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition-colors"
-                >
-                  Hủy
-                </button>
-                {groupModalTab === 'create' ? (
-                  <button
-                    type="button"
-                    disabled={!newGroupName.trim()}
-                    onClick={handleCreateGroup}
-                    className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>
-                      Tạo kênh {createGroupSelectedMembers.length > 0 ? `(${createGroupSelectedMembers.length + 1} thành viên)` : ''}
-                    </span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={!joinCodeInput.trim() || isJoiningCode}
-                    onClick={() => void handleJoinByCode(joinCodeInput)}
-                    className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold text-xs shadow-xs cursor-pointer flex items-center gap-1.5 transition-colors"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Tham gia kênh ngay</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+          groupModalTab={groupModalTab}
+          setGroupModalTab={setGroupModalTab}
+          newGroupName={newGroupName}
+          setNewGroupName={setNewGroupName}
+          newGroupDept={newGroupDept}
+          setNewGroupDept={setNewGroupDept}
+          newGroupDesc={newGroupDesc}
+          setNewGroupDesc={setNewGroupDesc}
+          createGroupSelectedMembers={createGroupSelectedMembers}
+          setCreateGroupSelectedMembers={setCreateGroupSelectedMembers}
+          createGroupMemberInput={createGroupMemberInput}
+          setCreateGroupMemberInput={setCreateGroupMemberInput}
+          onLookupMember={handleCreateGroupMemberLookup}
+          createGroupLookupStatus={createGroupLookupStatus}
+          createGroupLookedUpUser={createGroupLookedUpUser}
+          onClearLookedUpUser={() => {
+            setCreateGroupMemberInput('');
+            setCreateGroupLookedUpUser(null);
+            setCreateGroupLookupStatus('idle');
+          }}
+          suggestedCreateGroupDropdown={suggestedCreateGroupDropdown}
+          filteredColleaguesForNewGroup={filteredColleaguesForNewGroup}
+          getFriendshipState={getFriendshipState}
+          onAddMemberToNewGroup={handleAddMemberToNewGroup}
+          onCreateGroup={handleCreateGroup}
+          joinCodeInput={joinCodeInput}
+          setJoinCodeInput={setJoinCodeInput}
+          onJoinByCode={handleJoinByCode}
+          isJoiningCode={isJoiningCode}
+          initials={(n) => initials(n || '')}
+        />
       )}
 
       {/* Modern In-App Confirm Dialog */}
@@ -6598,74 +5017,30 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )}
 
       {/* Lightbox Media Zoom Modal */}
-      {previewMediaUrl && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-md animate-fade-in select-none"
-          onClick={closePreviewMedia}
-        >
-          {/* Mobile-Safe Fixed Top Header */}
-          <div
-            className="fixed top-0 left-0 right-0 z-50 px-3 py-3 sm:px-6 bg-gradient-to-b from-black/95 via-black/60 to-transparent flex items-center justify-between pointer-events-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={closePreviewMedia}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white font-medium text-xs backdrop-blur-md transition-all cursor-pointer shadow-md"
-              title="Quay lại"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại</span>
-            </button>
+      <MediaLightboxModal
+        previewMedia={previewMediaUrl}
+        onClose={closePreviewMedia}
+      />
 
-            <span className="text-xs text-white/90 font-medium truncate max-w-[180px] sm:max-w-md mx-2">
-              {previewMediaUrl.name}
-            </span>
-
-            <button
-              type="button"
-              onClick={closePreviewMedia}
-              className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center backdrop-blur-md cursor-pointer transition-all shadow-md"
-              title="Đóng xem ảnh"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div
-            className="relative max-w-4xl w-full max-h-[85vh] flex flex-col items-center mt-12 sm:mt-6"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <img
-              src={previewMediaUrl.url}
-              alt={previewMediaUrl.name}
-              className="max-w-full max-h-[70vh] sm:max-h-[78vh] object-contain rounded-xl shadow-2xl"
-            />
-            <div className="mt-3 flex items-center gap-2 sm:gap-4 bg-slate-900/90 text-white px-4 py-2 rounded-full text-xs shadow-xl backdrop-blur-md border border-white/10">
-              <span className="font-medium truncate max-w-[140px] sm:max-w-sm">{previewMediaUrl.name}</span>
-              <div className="h-3 w-[1px] bg-white/20 mx-1" />
-              <a
-                href={previewMediaUrl.url}
-                download={previewMediaUrl.name}
-                className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 font-bold cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                <span>Tải về</span>
-              </a>
-              <button
-                type="button"
-                onClick={closePreviewMedia}
-                className="flex items-center gap-1 text-rose-300 hover:text-rose-200 font-semibold px-2 py-1 rounded-md hover:bg-white/10 transition-colors cursor-pointer ml-1"
-                title="Đóng xem ảnh"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Đóng</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Shared Media Drawer (Kho Lưu Trữ Phương Tiện 4 Tab) */}
+      {activeGroup && (
+        <SharedMediaDrawer
+          isOpen={isSharedMediaOpen}
+          onClose={() => setIsSharedMediaOpen(false)}
+          group={activeGroup}
+          myEmail={myEmail}
+          onSelectImage={(file) => {
+            setPreviewMediaUrl({
+              url: file.url,
+              name: file.name,
+            });
+          }}
+          onUseTextbookForExam={(textbookName) => {
+            onShowToast('success', 'Đã nạp giáo trình', `Đã chuyển ${textbookName} vào phân hệ sinh đề thi`);
+            onNavigate('generate');
+          }}
+          onShowToast={onShowToast}
+        />
       )}
 
       {/* Textbook Picker Modal */}
@@ -6696,14 +5071,17 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 <div
                   key={tb.id}
                   onClick={() => {
-                    setSelectedAttachment({
-                      type: 'textbook',
-                      id: tb.id,
-                      name: tb.name,
-                      size: tb.size,
-                      totalPages: tb.totalPages,
-                      authorName: tb.authorName,
-                    });
+                    setSelectedAttachments((prev) => [
+                      ...prev,
+                      {
+                        type: 'textbook',
+                        id: tb.id,
+                        name: tb.name,
+                        size: tb.size,
+                        totalPages: tb.totalPages,
+                        authorName: tb.authorName,
+                      },
+                    ]);
                     setIsTextbookModalOpen(false);
                     onShowToast('info', 'Đã chọn giáo trình', tb.name);
                   }}
@@ -6760,228 +5138,5 @@ const Modal: React.FC<{
       {children}
     </div>
   </div>
-);
-
-// ── ConversationItem (True Enterprise Slack & Teams Standard) ─────────────
-const ConversationItem: React.FC<{
-  group: QGroup;
-  isSelected: boolean;
-  myEmail: string;
-  isMenuOpen: boolean;
-  onSelect: () => void;
-  onMenuToggle: (e: React.MouseEvent) => void;
-  onViewProfile: () => void;
-  onViewDetails: () => void;
-  onMute: () => void;
-  onTogglePin: () => void;
-  onDelete: () => void;
-  onLeave: () => void;
-  onTransferOwner?: () => void;
-  onDisband?: () => void;
-  onCopyCode: () => void;
-  onUnfriend?: () => void;
-}> = ({
-  group,
-  isSelected,
-  myEmail,
-  isMenuOpen,
-  onSelect,
-  onMenuToggle,
-  onViewProfile,
-  onViewDetails,
-  onMute,
-  onTogglePin,
-  onDelete,
-  onLeave,
-  onTransferOwner,
-  onDisband,
-  onCopyCode,
-  onUnfriend,
-}) => {
-  const msgs = group.messages || [];
-  const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
-  const isUnread =
-    !isSelected &&
-    Boolean(
-      lastMsg &&
-      !lastMsg.isSystem &&
-      lastMsg.senderEmail?.toLowerCase() !== myEmail &&
-      !(lastMsg.readBy || []).some((r) => String(r).toLowerCase() === myEmail)
-    );
-
-  const isGroup = !group.isDirect;
-  const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
-  const info = resolveChatDisplayInfo(group, myEmail);
-  const isPinned = Boolean(
-    group.isPinned || (group.pinnedBy || []).some((e) => e.toLowerCase() === myEmail.toLowerCase())
-  );
-
-  if (isGroup) {
-    return (
-      <div
-        onClick={onSelect}
-        className={`group relative flex items-center justify-between px-3 py-1.5 mx-1.5 rounded-lg cursor-pointer transition-all select-none ${
-          isSelected
-            ? 'bg-slate-200/90 text-slate-900 font-bold'
-            : isUnread
-            ? 'text-slate-900 font-bold bg-slate-50 hover:bg-slate-100'
-            : 'text-slate-600 font-medium hover:bg-slate-100 hover:text-slate-900'
-        }`}
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1 pr-6">
-          <Hash
-            className={`w-4 h-4 shrink-0 transition-colors ${
-              isSelected ? 'text-slate-900' : 'text-slate-400 group-hover:text-slate-600'
-            }`}
-          />
-          <span className="text-xs truncate">{group.name}</span>
-          {isPinned && <Pin className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
-          {isOwner && (
-            <span className="px-1.5 py-0.2 rounded text-[9px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 shrink-0">
-              Trưởng nhóm
-            </span>
-          )}
-          {group.muted && <BellOff className="w-3 h-3 text-slate-400 shrink-0" />}
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0">
-          {isUnread && (
-            <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0" />
-          )}
-          <button
-            type="button"
-            onClick={onMenuToggle}
-            className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded hover:bg-slate-300/60 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
-            title="Tùy chọn kênh"
-          >
-            <MoreVertical className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Slack Channel Context Menu */}
-        {isMenuOpen && (
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-6 top-7 z-40 w-56 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-xs animate-fade-in"
-          >
-            <MenuBtn icon={<Info className="w-3.5 h-3.5 text-slate-600" />} label="Chi tiết kênh" onClick={onViewDetails} />
-            <MenuBtn icon={<Copy className="w-3.5 h-3.5 text-slate-500" />} label="Sao chép mã nhóm" onClick={onCopyCode} />
-            <MenuBtn
-              icon={<Pin className={`w-3.5 h-3.5 ${isPinned ? 'text-amber-500 fill-amber-500' : 'text-slate-500'}`} />}
-              label={isPinned ? 'Bỏ ghim kênh' : 'Ghim kênh lên đầu'}
-              onClick={onTogglePin}
-            />
-            <MenuBtn
-              icon={group.muted ? <Bell className="w-3.5 h-3.5 text-slate-600" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
-              label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
-              onClick={onMute}
-            />
-            <div className="border-t border-slate-100 my-1" />
-            {isOwner ? (
-              <>
-                <MenuBtn
-                  icon={<UserCheck className="w-3.5 h-3.5 text-slate-700" />}
-                  label="Chuyển quyền Trưởng nhóm"
-                  onClick={() => {
-                    if (onTransferOwner) onTransferOwner();
-                    else onLeave();
-                  }}
-                />
-                {onDisband && (
-                  <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-600" />} label="Giải tán nhóm" onClick={onDisband} danger />
-                )}
-              </>
-            ) : (
-              <MenuBtn icon={<LogOut className="w-3.5 h-3.5 text-rose-500" />} label="Rời khỏi nhóm" onClick={onLeave} danger />
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // DIRECT MESSAGE (1-1 Slack Row)
-  return (
-    <div
-      onClick={onSelect}
-      className={`group relative flex items-center justify-between px-3 py-1.5 mx-1.5 rounded-lg cursor-pointer transition-all select-none ${
-        isSelected
-          ? 'bg-slate-200/90 text-slate-900 font-bold'
-          : isUnread
-          ? 'text-slate-900 font-bold bg-slate-50 hover:bg-slate-100'
-          : 'text-slate-600 font-medium hover:bg-slate-100 hover:text-slate-900'
-      }`}
-    >
-      <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-6">
-        <div className="relative shrink-0">
-          <div className="w-5 h-5 rounded-md bg-slate-700 text-white font-bold text-[9px] flex items-center justify-center">
-            {info.avatarInitials}
-          </div>
-          <span className="absolute -bottom-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-white" />
-        </div>
-        <div className="min-w-0 flex-1 flex items-center gap-1.5">
-          <p className="text-xs truncate">{info.displayName}</p>
-          {isPinned && <Pin className="w-3 h-3 text-amber-500 fill-amber-500 shrink-0" />}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1 shrink-0">
-        {isUnread && (
-          <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0" />
-        )}
-        <button
-          type="button"
-          onClick={onMenuToggle}
-          className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded hover:bg-slate-300/60 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-all cursor-pointer"
-          title="Tùy chọn tin nhắn"
-        >
-          <MoreVertical className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Context Menu for DM */}
-      {isMenuOpen && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute right-6 top-7 z-40 w-52 bg-white border border-slate-200 rounded-xl shadow-xl py-1 text-xs animate-fade-in"
-        >
-          <MenuBtn icon={<User className="w-3.5 h-3.5 text-slate-600" />} label="Xem trang cá nhân" onClick={onViewProfile} />
-          <MenuBtn
-            icon={<Pin className={`w-3.5 h-3.5 ${isPinned ? 'text-amber-500 fill-amber-500' : 'text-slate-500'}`} />}
-            label={isPinned ? 'Bỏ ghim hội thoại' : 'Ghim hội thoại lên đầu'}
-            onClick={onTogglePin}
-          />
-          <MenuBtn
-            icon={group.muted ? <Bell className="w-3.5 h-3.5 text-slate-600" /> : <BellOff className="w-3.5 h-3.5 text-slate-400" />}
-            label={group.muted ? 'Bật thông báo' : 'Tắt thông báo'}
-            onClick={onMute}
-          />
-          <div className="border-t border-slate-100 my-1" />
-          <MenuBtn icon={<Trash2 className="w-3.5 h-3.5 text-rose-500" />} label="Xóa đoạn chat" onClick={onDelete} danger />
-          {onUnfriend && (
-            <MenuBtn icon={<UserMinus className="w-3.5 h-3.5 text-rose-500" />} label="Hủy kết bạn" onClick={onUnfriend} danger />
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const MenuBtn: React.FC<{
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}> = ({ icon, label, onClick, danger }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`w-full px-3.5 py-2 text-left hover:bg-slate-50 flex items-center gap-2 cursor-pointer ${
-      danger ? 'text-rose-600 font-semibold' : 'text-slate-700'
-    }`}
-  >
-    {icon}
-    <span>{label}</span>
-  </button>
 );
 

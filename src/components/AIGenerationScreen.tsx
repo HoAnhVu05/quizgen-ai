@@ -1,55 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Sparkles,
-  BookOpen,
-  Sliders,
-  Layers,
-  HelpCircle,
-  Check,
-  ChevronRight,
-  ArrowRight,
-  Flame,
-  FileText,
-  AlertCircle,
-  Zap,
-  BookmarkCheck,
-  Cpu,
-  RefreshCw,
-  XCircle,
-  History,
-  Clock,
-  RotateCcw,
-  Eye,
-  Trash2,
-  Calendar,
-  X,
-  CheckCircle2,
-  UploadCloud,
-  Library,
-  Search,
-} from 'lucide-react';
+import { Sparkles, History } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption, UserProfile } from '../types';
-import MathRenderer from './MathRenderer';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
 import apiClient from '../services/apiClient';
+import {
+  BloomDistribution,
+  DocumentItem,
+  GenerationHistoryRecord,
+  GenerationPreset,
+  GenerationConfigPanel,
+  GenerationHistoryDrawer,
+  TextbookLibraryModal,
+  GenerationProgressModal,
+} from './aigen';
 
-export interface GenerationHistoryRecord {
-  id: string;
-  jobId?: string;
-  documentId: string;
-  documentName: string;
-  chapters: string[];
-  bloomDistribution: {
-    nhanBiet: number;
-    thongHieu: number;
-    vanDung: number;
-    phanTich: number;
-  };
-  totalQuestions: number;
-  questions: Question[];
-  createdAt: string;
-  status: 'success' | 'failed' | 'completed';
-}
+export type { GenerationHistoryRecord, BloomDistribution, DocumentItem } from './aigen';
 
 interface AIGenerationScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -58,7 +23,7 @@ interface AIGenerationScreenProps {
   currentUser?: UserProfile | null;
 }
 
-const FALLBACK_DOCUMENTS: Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }> = [];
+const FALLBACK_DOCUMENTS: DocumentItem[] = [];
 
 const DEFAULT_CUSTOM_CHAPTERS = [
   'Chương 1: Tổng quan kiến thức học phần & Khái niệm cốt lõi',
@@ -136,7 +101,7 @@ const normalizeGeneratedQuestion = (
 const generateDraftQuestions = (
   bookName: string,
   chapters: string[],
-  bloom: { nhanBiet: number; thongHieu: number; vanDung: number; phanTich: number }
+  bloom: BloomDistribution
 ): Question[] => {
   const result: Question[] = [];
   const timestamp = Date.now();
@@ -186,7 +151,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 }) => {
   const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
-  const [bloomDistribution, setBloomDistribution] = useState({
+  const [bloomDistribution, setBloomDistribution] = useState<BloomDistribution>({
     nhanBiet: 8,
     thongHieu: 8,
     vanDung: 4,
@@ -196,11 +161,10 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [generationStep, setGenerationStep] = useState('');
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [activePreset, setActivePreset] = useState<string>('giuaKy');
+  const [activePreset, setActivePreset] = useState<GenerationPreset>('giuaKy');
   const [activeMainTab, setActiveMainTab] = useState<'generate' | 'history'>('generate');
-  const [historySearchQuery, setHistorySearchQuery] = useState('');
-  const [previewHistoryRecord, setPreviewHistoryRecord] = useState<GenerationHistoryRecord | null>(null);
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+
   const [generationHistory, setGenerationHistory] = useState<GenerationHistoryRecord[]>(() => {
     try {
       const saved = localStorage.getItem('quizgen_generation_history');
@@ -268,38 +232,27 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     loadHistoryFromApi();
   }, [loadHistoryFromApi]);
 
-  const [documents, setDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number; isShared?: boolean }>>([]);
-  const [myDocuments, setMyDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
-  const [sharedDocuments, setSharedDocuments] = useState<Array<{ id: string; name: string; status: string; totalPages: number; chaptersCount: number }>>([]);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [myDocuments, setMyDocuments] = useState<DocumentItem[]>([]);
+  const [sharedDocuments, setSharedDocuments] = useState<DocumentItem[]>([]);
   const [chaptersByDocument, setChaptersByDocument] = useState<Record<string, string[]>>({});
-  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
-  const [isUsingFallback, setIsUsingFallback] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
   const [libraryModalTab, setLibraryModalTab] = useState<'my' | 'shared'>('shared');
   const [librarySearchQuery, setLibrarySearchQuery] = useState('');
   const [chapterSearchQuery, setChapterSearchQuery] = useState('');
-
-  const hasWarnedBackendRef = useRef(false);
+  const [pedagogicalPrompt, setPedagogicalPrompt] = useState<string>('');
 
   const parseErrorMessage = async (res: Response): Promise<string> => {
     try {
       const payload = await res.json();
-      if (typeof payload?.detail === 'string') {
-        return payload.detail;
-      }
-      if (typeof payload?.message === 'string') {
-        return payload.message;
-      }
-    } catch {
-      // Ignore JSON parse failure.
-    }
+      if (typeof payload?.detail === 'string') return payload.detail;
+      if (typeof payload?.message === 'string') return payload.message;
+    } catch {}
     return `Yêu cầu thất bại (${res.status})`;
   };
 
   const fetchDocuments = useCallback(async () => {
-    setIsLoadingDocuments(true);
     try {
-      // 1. Fetch personal docs for current user
       let myDocsList: any[] = [];
       try {
         const myRes = await apiClient.fetch(
@@ -311,7 +264,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         }
       } catch {}
 
-      // Merge personal docs from localStorage for current user
       let localUploadedDocs: any[] = [];
       try {
         const userStorageKey = currentUser?.id
@@ -325,7 +277,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         }
       } catch {}
 
-      const allMy = [...localUploadedDocs, ...myDocsList]
+      const allMy: DocumentItem[] = [...localUploadedDocs, ...myDocsList]
         .filter((item: any) => item && (item.status === 'ready' || !item.status))
         .map((item: any) => ({
           id: String(item.id),
@@ -340,7 +292,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       );
       setMyDocuments(uniqueMy);
 
-      // 2. Fetch shared library docs
       let sharedDocsList: any[] = [];
       try {
         const sharedRes = await apiClient.fetch(`${API_BASE}/documents/documents?scope=shared`);
@@ -350,7 +301,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         }
       } catch {}
 
-      const allShared = [...sharedDocsList, ...FALLBACK_DOCUMENTS]
+      const allShared: DocumentItem[] = [...sharedDocsList, ...FALLBACK_DOCUMENTS]
         .filter((item: any) => item && (item.status === 'ready' || !item.status))
         .map((item: any) => ({
           id: String(item.id),
@@ -365,30 +316,24 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       );
       setSharedDocuments(uniqueShared);
 
-      // Combined list
       const combinedAll = [...uniqueMy, ...uniqueShared];
       const uniqueCombined = combinedAll.filter(
         (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
       );
       setDocuments(uniqueCombined);
 
-      // Selection logic: prioritize explicitly saved book, otherwise prioritize user's own document
       const savedId = localStorage.getItem('quizgen_selected_book_id');
       if (savedId && uniqueCombined.some((d) => d.id === savedId)) {
         setSelectedBook(savedId);
       } else if (uniqueMy.length > 0) {
-        // Only auto-select if user has their OWN document!
         setSelectedBook(uniqueMy[0].id);
       } else {
-        // If user has 0 personal documents, DO NOT auto-select public document!
         setSelectedBook('');
         setSelectedChapters([]);
       }
-      setIsUsingFallback(false);
     } catch {
-      // Fallback
       setMyDocuments([]);
-      const fallbackShared = FALLBACK_DOCUMENTS.map((item: any) => ({
+      const fallbackShared: DocumentItem[] = FALLBACK_DOCUMENTS.map((item: any) => ({
         id: String(item.id),
         name: String(item.name || item.title || 'Tài liệu giáo trình'),
         status: 'ready',
@@ -405,11 +350,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         setSelectedBook('');
         setSelectedChapters([]);
       }
-      setIsUsingFallback(true);
-    } finally {
-      setIsLoadingDocuments(false);
     }
-  }, [API_BASE, currentUser?.id, onShowToast]);
+  }, [API_BASE, currentUser?.id]);
 
   useEffect(() => {
     void fetchDocuments();
@@ -439,15 +381,21 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     return chaptersList.filter((ch) => ch.toLowerCase().includes(q));
   }, [chaptersList, chapterSearchQuery]);
 
-  const handleSelectBook = (bookId: string) => {
-    setSelectedBook(bookId);
-    localStorage.setItem('quizgen_selected_book_id', bookId);
-    const available = chaptersByDocument[bookId] || FALLBACK_CHAPTERS[bookId] || [];
+  const handleSelectBook = (doc: DocumentItem) => {
+    setSelectedBook(doc.id);
+    localStorage.setItem('quizgen_selected_book_id', doc.id);
+    const available = chaptersByDocument[doc.id] || FALLBACK_CHAPTERS[doc.id] || [];
     if (available.length > 0) {
       setSelectedChapters([available[0]]);
     } else {
       setSelectedChapters([]);
     }
+    setIsLibraryModalOpen(false);
+    onShowToast(
+      'success',
+      'Đã chọn giáo trình',
+      `Đã áp dụng giáo trình "${doc.name}" để cấu hình sinh đề.`
+    );
   };
 
   useEffect(() => {
@@ -464,16 +412,13 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       });
     }
 
-    if (chaptersByDocument[selectedBook]?.length) {
-      return;
-    }
+    if (chaptersByDocument[selectedBook]?.length) return;
 
     if (FALLBACK_CHAPTERS[selectedBook]) {
       setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: FALLBACK_CHAPTERS[selectedBook] }));
       return;
     }
 
-    // Tải chapters từ backend nếu có
     const loadChapters = async () => {
       try {
         let res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
@@ -509,8 +454,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     bloomDistribution.vanDung +
     bloomDistribution.phanTich;
 
-  // Presets calibration
-  const applyPreset = (preset: 'giuaKy' | 'cuoiKy' | 'quiz15p') => {
+  const applyPreset = (preset: GenerationPreset) => {
     setActivePreset(preset);
     if (preset === 'giuaKy') {
       setBloomDistribution({ nhanBiet: 8, thongHieu: 8, vanDung: 4, phanTich: 0 });
@@ -532,7 +476,14 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     }
   };
 
-  // ─── ĐẤU NỐI API SINH CÂU HỎI AI THẬT ──────────────────────────────────────
+  const handleSelectAllChapters = (selectAll: boolean) => {
+    if (selectAll) {
+      setSelectedChapters([...chaptersList]);
+    } else {
+      setSelectedChapters([]);
+    }
+  };
+
   const handleStartGenerate = async () => {
     if (selectedChapters.length === 0) {
       onShowToast('warning', 'Chưa chọn chương mục', 'Vui lòng chọn ít nhất 1 chương giáo trình để sinh câu hỏi.');
@@ -548,17 +499,14 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setGenerationProgress(12);
     setGenerationStep('Đang đọc hiểu và trích xuất nội dung từ giáo trình môn học...');
 
-    const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
+    const bookName = selectedDocument?.name || 'Tài liệu đã chọn';
     const defaultChapter = selectedChapters[0] || 'Chương tổng hợp';
 
-    // Timeout Controller mở rộng lên 5 phút (300 giây) bảo đảm sinh an toàn cho bộ đề lớn (20-50 câu)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, 300000);
 
-    // Tiến trình hiển thị động mượt mà trong lúc chờ Gemini phản hồi
     const progressTimer = setInterval(() => {
       setGenerationProgress((prev) => {
         if (prev < 30) return prev + 4;
@@ -581,11 +529,13 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       const payload = {
         documentId: selectedBook,
         document_id: selectedBook,
-        document_name: selectedDoc?.name || '',
-        documentName: selectedDoc?.name || '',
+        document_name: selectedDocument?.name || '',
+        documentName: selectedDocument?.name || '',
         chapters: selectedChapters,
         bloomMatrix: bloomDistribution,
         bloom_matrix: bloomDistribution,
+        pedagogicalPrompt: pedagogicalPrompt.trim(),
+        pedagogical_prompt: pedagogicalPrompt.trim(),
       };
 
       const token = localStorage.getItem('quizgen_auth_token');
@@ -653,7 +603,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         normalizeGeneratedQuestion(item, bookName, defaultChapter, index)
       );
 
-      // Lưu lịch sử đợt sinh câu hỏi thành công
       const newRecord: GenerationHistoryRecord = {
         id: `gen-${Date.now()}`,
         jobId: data?.jobId,
@@ -677,6 +626,9 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           'Sinh câu hỏi AI hoàn tất!',
           `Đã khởi tạo thành công ${mappedQuestions.length} câu hỏi thật từ Gemini AI. Đang chuyển sang Không gian Kiểm duyệt...`
         );
+        if (selectedBook) {
+          apiClient.post(`/documents/${selectedBook}/increment-usage`).catch(() => {});
+        }
         onGenerateSuccess(mappedQuestions);
         onNavigate('review');
       }, 500);
@@ -713,10 +665,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const handleUseFallbackQuestions = () => {
     setIsGenerating(false);
     setGenerationError(null);
-    const selectedDoc = documents.find((d) => d.id === selectedBook);
-    const bookName = selectedDoc?.name || 'Tài liệu đã chọn';
+    const bookName = selectedDocument?.name || 'Tài liệu đã chọn';
     const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
-    // Lưu lịch sử đợt sinh câu hỏi dự phòng
     const newRecord: GenerationHistoryRecord = {
       id: `gen-fb-${Date.now()}`,
       documentId: selectedBook,
@@ -739,154 +689,24 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     onNavigate('review');
   };
 
-  const filteredHistory = useMemo(() => {
-    if (!historySearchQuery.trim()) return generationHistory;
-    const q = historySearchQuery.toLowerCase();
-    return generationHistory.filter(
-      (h) =>
-        h.documentName.toLowerCase().includes(q) ||
-        h.chapters.some((c) => c.toLowerCase().includes(q))
-    );
-  }, [generationHistory, historySearchQuery]);
-
   return (
     <div className="flex-1 p-3.5 sm:p-6 md:p-8 overflow-y-auto space-y-4 sm:space-y-6 bg-[#f7f9fb] text-slate-800 relative">
-      {/* ===== OVERLAY 2: AI Generation Processing Overlay ===== */}
-      {isGenerating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
-          <div className="relative bg-white rounded-3xl p-8 sm:p-10 max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden">
-            {/* Shimmer wave bar at top */}
-            <div className="absolute top-0 left-0 right-0 h-1 shimmer-bar" />
+      {/* AI Generation Processing Overlay */}
+      <GenerationProgressModal
+        isGenerating={isGenerating}
+        generationError={generationError}
+        generationStep={generationStep}
+        generationProgress={generationProgress}
+        totalQuestions={totalQuestions}
+        onRetry={handleStartGenerate}
+        onUseFallback={handleUseFallbackQuestions}
+        onClose={() => {
+          setIsGenerating(false);
+          setGenerationError(null);
+        }}
+      />
 
-            {generationError ? (
-              /* Error Display inside modal */
-              <div className="text-center space-y-4 animate-fade-in">
-                <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto text-[#da1c2d]">
-                  <AlertCircle className="w-8 h-8" />
-                </div>
-
-                <div className="space-y-1.5">
-                  <h3 className="text-lg font-bold text-slate-900">Lỗi kết nối AI Service</h3>
-                  <p className="text-xs text-[#da1c2d] leading-relaxed bg-rose-50 p-3 rounded-xl border border-rose-200 text-left">
-                    {generationError}
-                  </p>
-                </div>
-
-                <div className="space-y-2 pt-2">
-                  <button
-                    onClick={handleStartGenerate}
-                    className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-gradient-to-r from-[#008689] to-[#1d999d] hover:brightness-105 transition-all flex items-center justify-center gap-2 shadow-md shadow-[#008689]/25"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Thử lại gọi mô hình AI
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setIsGenerating(false);
-                      setGenerationError(null);
-                    }}
-                    className="w-full py-2.5 rounded-xl font-semibold text-xs text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 border border-slate-200"
-                  >
-                    Đóng và cấu hình lại
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Normal Loading Progress */
-              <div>
-                <div className="flex justify-center mb-5">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#008689] to-[#1d999d] flex items-center justify-center shadow-lg shadow-[#008689]/25">
-                    <Sparkles className="w-8 h-8 text-white animate-spin" style={{ animationDuration: '3s' }} />
-                  </div>
-                </div>
-
-                <h2 className="text-center text-xl font-extrabold text-slate-900 mb-1.5 tracking-tight">
-                  Gemini AI đang sinh câu hỏi
-                </h2>
-                <p className="text-center text-xs text-slate-500 mb-6">
-                  Đang xử lý {totalQuestions} câu hỏi theo Thang đo nhận thức Bloom qua API
-                </p>
-
-                {/* 3-step sequential status tracker */}
-                <div className="space-y-2.5">
-                  {[
-                    { step: 1, label: 'Đọc hiểu nội dung giáo trình môn học...' },
-                    { step: 2, label: 'Gemini AI tổng hợp và sinh câu hỏi theo chuẩn Bloom...' },
-                    { step: 3, label: 'Kiểm tra minh chứng trích dẫn & chuẩn hóa câu hỏi...' },
-                  ].map(({ step, label }) => {
-                    const currentStepNum =
-                      generationProgress < 35 ? 1
-                      : generationProgress < 85 ? 2
-                      : 3;
-                    const isDone = step < currentStepNum;
-                    const isActive = step === currentStepNum;
-
-                    return (
-                      <div
-                        key={step}
-                        className={`flex items-center space-x-3 p-2.5 rounded-xl border transition-all duration-300 ${
-                          isDone
-                            ? 'bg-emerald-50 border-emerald-200'
-                            : isActive
-                            ? 'bg-[#e0f7fa]/75 border-[#008689]/40 shadow-sm'
-                            : 'bg-slate-50 border-slate-200 opacity-60'
-                        }`}
-                      >
-                        <div
-                          className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold border transition-all ${
-                            isDone
-                              ? 'bg-emerald-500 border-emerald-600 text-white'
-                              : isActive
-                              ? 'bg-[#008689] border-[#006d70] text-white animate-pulse'
-                              : 'bg-white border-slate-300 text-slate-400'
-                          }`}
-                        >
-                          {isDone ? '✓' : step}
-                        </div>
-                        <span
-                          className={`text-xs font-semibold leading-snug flex-1 ${
-                            isActive ? 'text-[#006d70]' : isDone ? 'text-emerald-700' : 'text-slate-500'
-                          }`}
-                        >
-                          {label}
-                        </span>
-                        {isActive && (
-                          <div className="flex space-x-1 shrink-0">
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" style={{ animationDelay: '300ms' }} />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Progress bar */}
-                <div className="mt-5 w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                  <div
-                    className="bg-gradient-to-r from-[#008689] to-[#1d999d] h-full rounded-full transition-all duration-500"
-                    style={{ width: `${generationProgress}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] font-mono mt-2 text-slate-500">
-                  <span className="truncate max-w-[200px]">{generationStep}</span>
-                  <span className="text-[#008689] font-bold shrink-0">{generationProgress}%</span>
-                </div>
-
-                <p className="text-center text-[10px] text-teal-600/80 font-medium mt-3 flex items-center justify-center gap-1.5">
-                  <Sparkles className="w-3 h-3 text-teal-600" />
-                  Mô hình Gemini 2.5 Flash · Xử lý liên tục không ngắt quãng
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 1. Header with Mode Tabs: Cấu hình mới & Lịch sử sinh câu hỏi */}
+      {/* Header with Mode Tabs: Cấu hình mới & Lịch sử sinh câu hỏi */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-3 sm:pb-4 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
@@ -897,7 +717,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           </div>
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">
             Sinh câu hỏi AI theo Ma trận Bloom
-
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Chọn giáo trình, cấu hình ma trận Bloom hoặc tra cứu lại lịch sử các đợt sinh câu hỏi AI.
@@ -913,7 +732,6 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
                 activeMainTab === 'generate'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
-
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -941,13 +759,13 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           {activeMainTab === 'generate' && (
             <div className="flex items-center gap-1.5">
               {[
-                { id: 'giuaKy', label: 'Giữa kỳ (20 câu)' },
-                { id: 'cuoiKy', label: 'Cuối kỳ (40 câu)' },
-                { id: 'quiz15p', label: '15p (10 câu)' },
+                { id: 'giuaKy' as const, label: 'Giữa kỳ (20 câu)' },
+                { id: 'cuoiKy' as const, label: 'Cuối kỳ (40 câu)' },
+                { id: 'quiz15p' as const, label: '15p (10 câu)' },
               ].map((preset) => (
                 <button
                   key={preset.id}
-                  onClick={() => applyPreset(preset.id as any)}
+                  onClick={() => applyPreset(preset.id)}
                   className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
                     activePreset === preset.id
                       ? 'bg-[#008689] text-white shadow-sm'
@@ -962,769 +780,74 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         </div>
       </div>
 
-      {/* 2. BODY CONTENT: Tùy theo tab đang chọn */}
+      {/* Main Tab Content */}
       {activeMainTab === 'history' ? (
-        <div className="space-y-4">
-          {/* Header & Filter Search for History */}
-          <div className="bg-white border border-slate-200 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Lịch sử các đợt sinh câu hỏi AI ({filteredHistory.length})
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={historySearchQuery}
-                onChange={(e) => setHistorySearchQuery(e.target.value)}
-                placeholder="Tìm theo giáo trình hoặc chương..."
-                className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs bg-slate-50 focus:bg-white focus:border-[#008689] outline-none"
-              />
-              <button
-                onClick={() => setActiveMainTab('generate')}
-                className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Sinh câu hỏi mới
-              </button>
-            </div>
-          </div>
-
-          {filteredHistory.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
-                <History className="w-6 h-6" />
-              </div>
-              <h4 className="text-sm font-bold text-slate-800">
-                Chưa có lịch sử sinh câu hỏi nào
-              </h4>
-              <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                Sau khi bạn thực hiện sinh câu hỏi bằng mô hình AI, các đợt sinh cùng toàn bộ danh sách câu hỏi đã tạo sẽ được lưu trữ tự động tại đây để bạn kiểm tra lại hoặc nạp lại bất cứ lúc nào.
-              </p>
-              <button
-                onClick={() => setActiveMainTab('generate')}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#008689] text-white text-xs font-bold hover:bg-[#006f72] transition-colors"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Bắt đầu sinh câu hỏi ngay
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4">
-              {filteredHistory.map((item) => (
-                <div
-                  key={item.id}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-[#008689]/40 hover:shadow-sm transition-all space-y-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-teal-50 text-[#008689] flex items-center justify-center font-bold">
-                        <BookOpen className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-900">
-                          {item.documentName}
-                        </h4>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          <span>{item.createdAt}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        {item.totalQuestions} câu hỏi đã sinh
-                      </span>
-                      <button
-                        onClick={() => deleteHistoryRecord(item.id)}
-                        title="Xóa đợt sinh này khỏi lịch sử"
-                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Chapters */}
-                  <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="text-slate-500 font-medium">Chương áp dụng:</span>
-                    {item.chapters.map((ch, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-semibold"
-                      >
-                        {ch}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Bloom Breakdown */}
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span className="text-xs text-slate-500 font-medium">Ma trận Bloom:</span>
-                    <span className="px-2 py-0.5 rounded-lg bg-sky-50 text-sky-700 text-[11px] font-bold border border-sky-200">
-                      Nhận biết: {item.bloomDistribution?.nhanBiet ?? 0}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-teal-50 text-teal-700 text-[11px] font-bold border border-teal-200">
-                      Thông hiểu: {item.bloomDistribution?.thongHieu ?? 0}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-700 text-[11px] font-bold border border-amber-200">
-                      Vận dụng: {item.bloomDistribution?.vanDung ?? 0}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">
-                      Phân tích: {item.bloomDistribution?.phanTich ?? 0}
-                    </span>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      onClick={() => {
-                        setSelectedBook(item.documentId);
-                        setSelectedChapters(item.chapters);
-                        setBloomDistribution(item.bloomDistribution);
-                        setActiveMainTab('generate');
-                        onShowToast('info', 'Đã tải cấu hình', `Đã áp dụng cấu hình sinh câu hỏi từ ${item.documentName}.`);
-                      }}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-[#008689]" />
-                      Dùng lại cấu hình này
-                    </button>
-
-                    {item.questions && item.questions.length > 0 && (
-                      <button
-                        onClick={() => setPreviewHistoryRecord(item)}
-                        className="px-3 py-1.5 rounded-xl border border-[#008689] text-[#008689] bg-[#e6f4f4]/40 hover:bg-[#e6f4f4] text-xs font-bold transition-colors flex items-center gap-1.5"
-                      >
-                        <Eye className="w-3.5 h-3.5" />
-                        Xem chi tiết câu hỏi ({item.questions.length})
-                      </button>
-                    )}
-
-                    {item.questions && item.questions.length > 0 && (
-                      <button
-                        onClick={() => {
-                          onGenerateSuccess(item.questions);
-                          onShowToast(
-                            'success',
-                            'Đã nạp bộ câu hỏi',
-                            `Đã nạp ${item.questions.length} câu hỏi vào Không gian Kiểm duyệt.`
-                          );
-                          onNavigate('review');
-                        }}
-                        className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs"
-                      >
-                        <ArrowRight className="w-3.5 h-3.5" />
-                        Nạp vào Bước 3 (Kiểm duyệt)
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <GenerationHistoryDrawer
+          history={generationHistory}
+          onRestoreConfig={(record) => {
+            setSelectedBook(record.documentId);
+            setSelectedChapters(record.chapters);
+            setBloomDistribution(record.bloomDistribution);
+            setActiveMainTab('generate');
+            onShowToast('info', 'Đã tải cấu hình', `Đã áp dụng cấu hình sinh câu hỏi từ ${record.documentName}.`);
+          }}
+          onApplyQuestions={(questions) => {
+            onGenerateSuccess(questions);
+            onShowToast(
+              'success',
+              'Đã nạp bộ câu hỏi',
+              `Đã nạp ${questions.length} câu hỏi vào Không gian Kiểm duyệt.`
+            );
+            onNavigate('review');
+          }}
+          onDeleteRecord={deleteHistoryRecord}
+          onNavigateToGenerate={() => setActiveMainTab('generate')}
+        />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Form: Parameters (2 Cols) */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Card 1: Chọn giáo trình & chương (Modern Unified UX) */}
-          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
-                1. Giáo trình & Chương mục
-              </h2>
-              {selectedBook && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLibraryModalTab(myDocuments.some((d) => d.id === selectedBook) ? 'my' : 'shared');
-                    setIsLibraryModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#008689] bg-[#e0f7fa] hover:bg-[#b2ebf2] border border-[#008689]/30 rounded-xl transition-all shadow-2xs cursor-pointer"
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  Đổi giáo trình khác
-                </button>
-              )}
-            </div>
-
-            {!selectedBook ? (
-              <div className="p-7 rounded-2xl border-2 border-dashed border-teal-200 bg-gradient-to-br from-teal-50/40 via-white to-teal-50/20 text-center space-y-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-teal-100/80 text-[#008689] flex items-center justify-center mx-auto shadow-xs">
-                  <BookOpen className="w-7 h-7" />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Chưa chọn giáo trình để biên soạn đề
-                  </h3>
-                  <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
-                    Chọn nhanh từ Thư viện giáo trình dùng chung ({sharedDocuments.length} môn) hoặc nạp giáo trình riêng của Thầy/Cô để AI bóc tách chương mục và ma trận câu hỏi.
-                  </p>
-                </div>
-                <div className="flex items-center justify-center gap-3 pt-1 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLibraryModalTab('shared');
-                      setIsLibraryModalOpen(true);
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Library className="w-4 h-4" />
-                    Chọn từ Thư viện giáo trình ({sharedDocuments.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onNavigate('upload')}
-                    className="px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-2 shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <UploadCloud className="w-4 h-4 text-[#008689]" />
-                    Nạp giáo trình cá nhân
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {/* Selected Textbook Showcase Banner */}
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/80 via-white to-cyan-50/30 border border-teal-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-11 h-11 rounded-2xl bg-[#008689] text-white flex items-center justify-center shrink-0 shadow-xs">
-                      <BookOpen className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-extrabold text-slate-900 truncate">
-                          {selectedDocument?.name || selectedBook}
-                        </h3>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          myDocuments.some((d) => d.id === selectedBook)
-                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        }`}>
-                          {myDocuments.some((d) => d.id === selectedBook) ? 'Cá nhân' : 'Dùng chung'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
-                        <span>{chaptersList.length} chương mục</span>
-                        <span>•</span>
-                        <span>{selectedDocument?.totalPages || '?'} trang</span>
-                        <span>•</span>
-                        <span className="font-bold text-[#008689]">
-                          Đã chọn {selectedChapters.length}/{chaptersList.length} chương
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLibraryModalTab(myDocuments.some((d) => d.id === selectedBook) ? 'my' : 'shared');
-                        setIsLibraryModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
-                      Đổi giáo trình
-                    </button>
-                  </div>
-                </div>
-
-                {/* Chapter Selection Controls */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                        Chương mục áp dụng ({selectedChapters.length}/{chaptersList.length})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (selectedChapters.length === chaptersList.length) {
-                            setSelectedChapters([]);
-                          } else {
-                            setSelectedChapters([...chaptersList]);
-                          }
-                        }}
-                        className="text-xs font-semibold text-[#008689] hover:underline cursor-pointer"
-                      >
-                        {selectedChapters.length === chaptersList.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {chaptersList.length > 5 && (
-                    <div className="relative">
-                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        value={chapterSearchQuery}
-                        onChange={(e) => setChapterSearchQuery(e.target.value)}
-                        placeholder="Lọc nhanh danh sách chương..."
-                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:bg-white focus:border-[#008689]"
-                      />
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {chaptersList.length === 0 && (
-                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400 text-center">
-                        Chưa có danh sách chương mục cho tài liệu này.
-                      </div>
-                    )}
-                    {filteredChapters.map((ch) => {
-                      const isChecked = selectedChapters.includes(ch);
-                      return (
-                        <div
-                          key={ch}
-                          onClick={() => handleToggleChapter(ch)}
-                          className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                            isChecked
-                              ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold shadow-2xs'
-                              : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
-                          }`}
-                        >
-                          <span className="text-xs truncate pr-2">{ch}</span>
-                          <div
-                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                              isChecked ? 'bg-[#008689] border-[#008689]' : 'border-slate-300 bg-white'
-                            }`}
-                          >
-                            {isChecked && <Check className="w-3 h-3 text-white" />}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Card 2: Thang đo Bloom */}
-          <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                2. Phân bổ mức độ nhận thức Bloom
-              </h2>
-              <span className="text-xs font-mono font-bold text-[#008689]">
-                Tổng: {totalQuestions} câu
-              </span>
-            </div>
-
-            <div className="space-y-4">
-              {[
-                { key: 'nhanBiet' as const, label: 'Mức 1: Nhận biết', accent: 'accent-sky-500' },
-                { key: 'thongHieu' as const, label: 'Mức 2: Thông hiểu', accent: 'accent-teal-600' },
-                { key: 'vanDung' as const, label: 'Mức 3: Vận dụng', accent: 'accent-amber-500' },
-                { key: 'phanTich' as const, label: 'Mức 4: Phân tích', accent: 'accent-indigo-600' },
-              ].map(({ key, label, accent }) => (
-                <div key={key} className="space-y-1.5">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-semibold text-slate-700">{label}</span>
-                    <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2.5 py-0.5 rounded-lg">
-                      {bloomDistribution[key]} câu
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="20"
-                    value={bloomDistribution[key]}
-                    onChange={(e) =>
-                      setBloomDistribution({
-                        ...bloomDistribution,
-                        [key]: parseInt(e.target.value) || 0,
-                      })
-                    }
-                    className={`w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer ${accent}`}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Summary Sidebar (1 Col) */}
-        <div>
-          <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl space-y-4 sticky lg:top-6">
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider pb-3 border-b border-slate-100">
-              Tóm tắt cấu hình
-            </h3>
-
-            <div className="space-y-2.5 text-xs">
-              <div className="flex justify-between text-slate-500">
-                <span>Tổng số câu:</span>
-                <span className="font-bold text-slate-900 font-mono">{totalQuestions} câu</span>
-              </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Giáo trình:</span>
-                <span className="font-semibold text-slate-800 truncate max-w-[160px]" title={selectedDocument?.name || ''}>
-                  {selectedDocument?.name || 'Chưa chọn'}
-                </span>
-              </div>
-              <div className="flex justify-between text-slate-500">
-                <span>Số chương:</span>
-                <span className="font-semibold text-slate-800">{selectedChapters.length} chương</span>
-              </div>
-            </div>
-
-            {totalQuestions > 0 && (
-              <div className="w-full h-2 rounded-full flex overflow-hidden bg-slate-100">
-                <div style={{ width: `${(bloomDistribution.nhanBiet / totalQuestions) * 100}%` }} className="bg-sky-500" />
-                <div style={{ width: `${(bloomDistribution.thongHieu / totalQuestions) * 100}%` }} className="bg-[#008689]" />
-                <div style={{ width: `${(bloomDistribution.vanDung / totalQuestions) * 100}%` }} className="bg-amber-500" />
-                <div style={{ width: `${(bloomDistribution.phanTich / totalQuestions) * 100}%` }} className="bg-indigo-500" />
-              </div>
-            )}
-
-            <button
-              onClick={handleStartGenerate}
-              disabled={isGenerating || totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook}
-              className={`w-full py-3 text-xs font-bold rounded-xl flex items-center justify-center space-x-2 transition-all ${
-                totalQuestions === 0 || selectedChapters.length === 0 || !selectedBook
-                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm shadow-blue-600/25'
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{isGenerating ? 'Đang sinh câu hỏi...' : `Sinh ${totalQuestions} câu hỏi AI (Bước 2)`}</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        <GenerationConfigPanel
+          selectedBook={selectedBook}
+          selectedDocument={selectedDocument}
+          sharedDocuments={sharedDocuments}
+          myDocuments={myDocuments}
+          chaptersList={chaptersList}
+          filteredChapters={filteredChapters}
+          selectedChapters={selectedChapters}
+          chapterSearchQuery={chapterSearchQuery}
+          onChapterSearchChange={setChapterSearchQuery}
+          onToggleChapter={handleToggleChapter}
+          onSelectAllChapters={handleSelectAllChapters}
+          onOpenLibraryModal={(tab) => {
+            setLibraryModalTab(tab);
+            setIsLibraryModalOpen(true);
+          }}
+          onNavigateUpload={() => onNavigate('upload')}
+          bloomDistribution={bloomDistribution}
+          onBloomDistributionChange={setBloomDistribution}
+          totalQuestions={totalQuestions}
+          pedagogicalPrompt={pedagogicalPrompt}
+          onPedagogicalPromptChange={setPedagogicalPrompt}
+          isGenerating={isGenerating}
+          onStartGenerate={handleStartGenerate}
+        />
       )}
 
-      {/* ===== MODAL: XEM CHI TIẾT BỘ CÂU HỎI LỊCH SỬ ===== */}
-      {previewHistoryRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden animate-fade-in">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-50 text-[#008689] flex items-center justify-center font-bold">
-                  <BookOpen className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Chi tiết đợt sinh: {previewHistoryRecord.documentName}
-                  </h3>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                    <span>{previewHistoryRecord.createdAt}</span>
-                    <span>•</span>
-                    <span className="font-semibold text-teal-700">
-                      {previewHistoryRecord.totalQuestions} câu hỏi
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setPreviewHistoryRecord(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Questions List */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1">
-              {previewHistoryRecord.questions.map((q, idx) => (
-                <div key={q.id || idx} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="text-xs font-bold text-slate-900 leading-relaxed">
-                      <span className="text-[#008689] font-extrabold mr-1">Câu {idx + 1}:</span>
-                      <MathRenderer content={q.question} inline />
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {(q.hasFormula || q.question.includes('$')) && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                          ∑ LaTeX
-                        </span>
-                      )}
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white border border-slate-200 text-slate-700">
-                        {q.bloomLevel}
-                      </span>
-                    </div>
-                  </div>
-
-                  {q.hasImage && q.imageUrl && (
-                    <div className="p-2 bg-white rounded-lg border border-slate-200 text-center max-w-sm mx-auto">
-                      <img src={q.imageUrl} alt={q.imageCaption || 'Hình sơ đồ'} className="max-h-40 mx-auto rounded object-contain" />
-                      {q.imageCaption && <p className="text-[10px] text-slate-500 italic mt-1">{q.imageCaption}</p>}
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    {q.options.map((opt) => {
-                      const isCorrect = opt.id === q.correctAnswerId;
-                      return (
-                        <div
-                          key={opt.id}
-                          className={`p-2 rounded-lg text-xs flex items-start gap-1.5 ${
-                            isCorrect
-                              ? 'bg-emerald-50 border border-emerald-300 text-emerald-900 font-semibold'
-                              : 'bg-white border border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          <span className="font-bold shrink-0">{opt.label}.</span>
-                          <span className="flex-1"><MathRenderer content={opt.text} /></span>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {q.explanation && (
-                    <div className="text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">
-                      <strong className="text-slate-700">Giải thích: </strong>
-                      <MathRenderer content={q.explanation} inline />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-              <button
-                onClick={() => setPreviewHistoryRecord(null)}
-                className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs"
-              >
-                Đóng
-              </button>
-
-              <button
-                onClick={() => {
-                  onGenerateSuccess(previewHistoryRecord.questions);
-                  setPreviewHistoryRecord(null);
-                  onShowToast(
-                    'success',
-                    'Đã nạp bộ câu hỏi',
-                    `Đã chuyển tiếp ${previewHistoryRecord.questions.length} câu hỏi vào Không gian Kiểm duyệt.`
-                  );
-                  onNavigate('review');
-                }}
-                className="px-4 py-2 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
-              >
-                <ArrowRight className="w-3.5 h-3.5" />
-                Nạp bộ câu hỏi này vào Bước 3 (Kiểm duyệt)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===== OVERLAY 4: Unified Textbook Picker Modal ===== */}
-      {isLibraryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm bg-slate-900/50 p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-teal-50/50 via-white to-cyan-50/30">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#008689] text-white flex items-center justify-center font-bold shadow-xs">
-                  <Library className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">
-                    Kho Giáo Trình & Tài Liệu Soạn Đề
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Chọn giáo trình học thuật chuẩn để AI bóc tách cấu trúc chương mục và tạo đề thi.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsLibraryModalOpen(false)}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Tabs: Thư viện dùng chung vs Giáo trình của tôi */}
-            <div className="flex items-center border-b border-slate-200 px-5 pt-2 bg-slate-50/40 gap-4">
-              <button
-                type="button"
-                onClick={() => setLibraryModalTab('shared')}
-                className={`pb-2.5 pt-1 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                  libraryModalTab === 'shared'
-                    ? 'border-[#008689] text-[#008689]'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Library className="w-3.5 h-3.5" />
-                <span>Thư viện dùng chung</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  libraryModalTab === 'shared' ? 'bg-[#008689] text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
-                  {sharedDocuments.length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setLibraryModalTab('my')}
-                className={`pb-2.5 pt-1 text-xs font-bold border-b-2 transition-all flex items-center gap-2 cursor-pointer ${
-                  libraryModalTab === 'my'
-                    ? 'border-[#008689] text-[#008689]'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Giáo trình của tôi</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                  libraryModalTab === 'my' ? 'bg-[#008689] text-white' : 'bg-slate-200 text-slate-700'
-                }`}>
-                  {myDocuments.length}
-                </span>
-              </button>
-            </div>
-
-            {/* Search Input */}
-            <div className="p-4 border-b border-slate-100 bg-white">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={librarySearchQuery}
-                  onChange={(e) => setLibrarySearchQuery(e.target.value)}
-                  placeholder="Tìm kiếm giáo trình theo tên môn học, học phần..."
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#008689] transition-all"
-                />
-              </div>
-            </div>
-
-            {/* List of Books */}
-            <div className="p-5 overflow-y-auto space-y-3 flex-1">
-              {libraryModalTab === 'my' && myDocuments.length === 0 ? (
-                <div className="p-8 text-center rounded-2xl border-2 border-dashed border-slate-200 space-y-3">
-                  <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-xs font-bold text-slate-700">Chưa có giáo trình cá nhân nào</p>
-                  <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                    Thầy/Cô có thể tải lên tệp giáo trình PDF / DOCX của riêng mình ở Bước 1 hoặc chọn từ Thư viện dùng chung.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsLibraryModalOpen(false);
-                      onNavigate('upload');
-                    }}
-                    className="px-3.5 py-2 rounded-xl bg-[#008689] text-white font-bold text-xs hover:bg-[#006f72] transition-colors cursor-pointer inline-flex items-center gap-1.5"
-                  >
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    + Nạp giáo trình ở Bước 1
-                  </button>
-                </div>
-              ) : (
-                (libraryModalTab === 'shared' ? sharedDocuments : myDocuments)
-                  .filter(
-                    (d) =>
-                      !librarySearchQuery ||
-                      d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
-                  )
-                  .map((doc) => {
-                    const isCurrent = selectedBook === doc.id;
-                    return (
-                      <div
-                        key={doc.id}
-                        className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                          isCurrent
-                            ? 'border-[#008689] bg-[#e0f7fa]/30 ring-1 ring-[#008689]'
-                            : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
-                        }`}
-                      >
-                        <div className="flex items-start gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-100 text-[#008689] flex items-center justify-center shrink-0 mt-0.5">
-                            <BookOpen className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h4 className="text-xs font-bold text-slate-900 leading-snug">
-                              {doc.name}
-                            </h4>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1">
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                                libraryModalTab === 'shared'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
-                              }`}>
-                                {libraryModalTab === 'shared' ? 'Dùng chung' : 'Cá nhân'}
-                              </span>
-                              <span>• {doc.chaptersCount} chương mục</span>
-                              <span>• {doc.totalPages} trang</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                          {isCurrent ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-teal-100 text-[#008689] font-bold text-xs">
-                              <Check className="w-3.5 h-3.5" />
-                              Đang chọn
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleSelectBook(doc.id);
-                                setIsLibraryModalOpen(false);
-                                onShowToast(
-                                  'success',
-                                  'Đã chọn giáo trình',
-                                  `Đã áp dụng giáo trình "${doc.name}" để cấu hình sinh đề.`
-                                );
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-[#008689] hover:bg-[#006f72] text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              Dùng Giáo Trình Này
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-
-              {(libraryModalTab === 'shared' ? sharedDocuments : myDocuments).filter(
-                (d) =>
-                  !librarySearchQuery ||
-                  d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
-              ).length === 0 && (
-                <div className="p-8 text-center text-xs text-slate-400">
-                  Không tìm thấy giáo trình nào phù hợp với từ khóa tìm kiếm.
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-[11px] text-slate-500">
-                Hiển thị{' '}
-                {
-                  (libraryModalTab === 'shared' ? sharedDocuments : myDocuments).filter(
-                    (d) =>
-                      !librarySearchQuery ||
-                      d.name.toLowerCase().includes(librarySearchQuery.toLowerCase())
-                  ).length
-                }{' '}
-                giáo trình
-              </span>
-              <button
-                type="button"
-                onClick={() => setIsLibraryModalOpen(false)}
-                className="px-4 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unified Textbook Picker Modal */}
+      <TextbookLibraryModal
+        isOpen={isLibraryModalOpen}
+        onClose={() => setIsLibraryModalOpen(false)}
+        libraryModalTab={libraryModalTab}
+        onTabChange={setLibraryModalTab}
+        librarySearchQuery={librarySearchQuery}
+        onSearchChange={setLibrarySearchQuery}
+        myDocuments={myDocuments}
+        sharedDocuments={sharedDocuments}
+        selectedBook={selectedBook}
+        onSelectBook={handleSelectBook}
+        onNavigateUpload={() => {
+          setIsLibraryModalOpen(false);
+          onNavigate('upload');
+        }}
+      />
     </div>
   );
 };

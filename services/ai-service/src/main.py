@@ -184,7 +184,8 @@ async def generate_questions(
             document_id=document_id,
             chapter_name=primary_chapter,
             textbook_name=textbook_name,
-            images=req.get_images()
+            images=req.get_images(),
+            pedagogical_prompt=req.get_pedagogical_prompt()
         )
 
         # Cập nhật kết quả Job vào DB

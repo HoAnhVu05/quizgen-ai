@@ -23,8 +23,10 @@ import {
   BookOpen,
   ArrowRight,
   CornerDownLeft,
+  RefreshCw,
   X,
   CreditCard,
+  Terminal,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole, UserSubscriptionInfo } from '../types';
 
@@ -347,7 +349,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   return (
     <header
-      className={`${
+      className={`sticky top-0 ${
         showAdminHeader ? 'h-[72px]' : 'h-16'
       } bg-white border-b border-[#E5EDF5] px-2.5 sm:px-5 lg:px-6 flex items-center justify-between z-30 shrink-0 select-none gap-2 sm:gap-3 shadow-2xs transition-all w-full max-w-full overflow-x-hidden`}
     >
@@ -432,6 +434,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           >
             <Search className="w-4 h-4 text-slate-500" />
           </button>
+
+          {/* Nút làm mới trang nhanh cho thiết bị di động */}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="md:hidden w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-600 flex items-center justify-center transition-colors border border-slate-200/80 cursor-pointer shadow-2xs active:scale-95"
+            title="Tải lại trang (Làm mới dữ liệu)"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-[#008689]" />
+          </button>
         </div>
       )}
 
@@ -477,18 +489,28 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 className="flex-1 text-sm text-slate-900 placeholder-slate-400 outline-none bg-transparent font-medium"
                 autoFocus
               />
-              {searchValue && (
+              {searchValue ? (
                 <button
                   type="button"
-                  onClick={() => setSearchValue('')}
-                  className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  onClick={() => {
+                    setSearchValue('');
+                    searchInputRef.current?.focus();
+                  }}
+                  title="Xóa từ khóa tìm kiếm"
+                  className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 cursor-pointer transition-colors"
                 >
                   <X className="w-4 h-4" />
                 </button>
-              )}
-              <kbd className="px-2 py-1 text-[10px] font-mono font-bold bg-slate-100 border border-slate-200 text-slate-500 rounded-lg">
-                ESC
-              </kbd>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen(false)}
+                title="Đóng thanh tìm kiếm (Phím ESC)"
+                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold bg-slate-100 hover:bg-rose-50 hover:text-[#da1c2d] hover:border-rose-200 border border-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer shadow-2xs"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>ESC</span>
+              </button>
             </div>
 
             {/* Spotlight Results List */}
@@ -586,6 +608,21 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
         {showAdminHeader ? (
           /* ── ADMIN HEADER ACTIONS ── */
           <>
+            {/* Nút Chat Với Antigravity Agent Từ Xa */}
+            <button
+              type="button"
+              onClick={() => {
+                onNavigate?.('admin_portal');
+                onAdminTabChange?.('secret_command');
+              }}
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-100 border border-zinc-800 text-xs font-medium shadow-xs transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+              title="Mở giao diện chat trực tiếp với Antigravity Agent"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span className="hidden sm:inline">Chat Agent</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+            </button>
+
             {/* Nút Kiểm tra Sức khỏe */}
             <button
               type="button"
@@ -793,10 +830,16 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] sm:text-[11px] font-semibold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={onOpenPricingModal}
+                    title="Bấm để xem bảng giá và nâng cấp gói cước"
+                    className="flex items-center gap-1 text-[10px] sm:text-[11px] font-bold px-2 py-1 rounded-xl bg-slate-100 hover:bg-amber-50 hover:text-amber-800 hover:border-amber-300 text-slate-700 border border-slate-200 transition-all cursor-pointer shadow-2xs active:scale-95"
+                  >
+                    <Crown className="w-3 h-3 text-amber-500 shrink-0" />
                     <span className="hidden lg:inline">Gói Miễn Phí</span>
-                    <span className="lg:hidden font-bold">FREE</span>
-                  </span>
+                    <span className="lg:hidden">FREE</span>
+                  </button>
                   {onOpenPricingModal && (
                     <button
                       onClick={onOpenPricingModal}

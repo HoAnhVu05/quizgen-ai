@@ -198,6 +198,24 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   const [filterBloom, setFilterBloom] = useState<'all' | BloomLevel>('all');
   const [isEditing, setIsEditing] = useState(false);
 
+  // Tự động khôi phục câu hỏi từ localStorage nếu state rỗng khi F5 / tải lại trang
+  useEffect(() => {
+    if ((!questions || questions.length === 0) && onLoadQuestions) {
+      try {
+        const pendingStr =
+          localStorage.getItem('quizgen_pending_review_questions') ||
+          sessionStorage.getItem('quizgen_pending_review_questions') ||
+          localStorage.getItem('quizgen_questions');
+        if (pendingStr) {
+          const loaded = JSON.parse(pendingStr);
+          if (Array.isArray(loaded) && loaded.length > 0) {
+            onLoadQuestions(loaded);
+          }
+        }
+      } catch {}
+    }
+  }, [questions?.length, onLoadQuestions]);
+
   // Edit Buffer
   const [editStem, setEditStem] = useState('');
   const [editOptions, setEditOptions] = useState<Question['options']>([]);

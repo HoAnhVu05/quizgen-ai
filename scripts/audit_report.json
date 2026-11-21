@@ -1,0 +1,100 @@
+{
+  "timestamp": "2026-11-20 02:51:39",
+  "summary": {
+    "passed": 15,
+    "warnings": 0,
+    "failed": 0
+  },
+  "details": [
+    {
+      "category": "Microservices",
+      "name": "Health Check: API Gateway",
+      "status": "PASS",
+      "details": "HTTP 200 (status=healthy)"
+    },
+    {
+      "category": "Microservices",
+      "name": "Health Check: Auth Service",
+      "status": "PASS",
+      "details": "HTTP 200 (status=healthy)"
+    },
+    {
+      "category": "Microservices",
+      "name": "Health Check: Document Service",
+      "status": "PASS",
+      "details": "HTTP 200 (status=healthy)"
+    },
+    {
+      "category": "Microservices",
+      "name": "Health Check: RAG Service",
+      "status": "PASS",
+      "details": "HTTP 200 (status=healthy)"
+    },
+    {
+      "category": "Microservices",
+      "name": "Health Check: AI Service",
+      "status": "PASS",
+      "details": "HTTP 200 (status=healthy)"
+    },
+    {
+      "category": "Microservices",
+      "name": "Health Check: Exam Service",
+      "status": "PASS",
+      "details": "HTTP 200 (status=healthy)"
+    },
+    {
+      "category": "Auth",
+      "name": "User Registration Endpoint",
+      "status": "PASS",
+      "details": "Tài khoản kiểm thử đã tồn tại sẵn"
+    },
+    {
+      "category": "Auth",
+      "name": "User Login & Token Issuance",
+      "status": "PASS",
+      "details": "Đăng nhập thành công, Role: lecturer, Token: eyJhbGciOiJIUzI1NiIs..."
+    },
+    {
+      "category": "Auth",
+      "name": "Colleague Search API",
+      "status": "PASS",
+      "details": "Tìm kiếm thành công (2 kết quả)"
+    },
+    {
+      "category": "QGroup",
+      "name": "Fetch Group List",
+      "status": "PASS",
+      "details": "Lấy thành công 10 nhóm/hội thoại"
+    },
+    {
+      "category": "QGroup",
+      "name": "Duplicate Direct Conversations Check",
+      "status": "PASS",
+      "details": "Không có hội thoại 1-1 nào bị tạo trùng lặp!"
+    },
+    {
+      "category": "QGroup",
+      "name": "Upload Attachment Endpoint Existence",
+      "status": "PASS",
+      "details": "Endpoint sẵn sàng (Status 422)"
+    },
+    {
+      "category": "Exam",
+      "name": "Exam Service API Routing (/api/v1/exams)",
+      "status": "PASS",
+      "details": "Định tuyến Gateway chuẩn xác, tìm thấy 4 đề thi"
+    },
+    {
+      "category": "Exam",
+      "name": "Question Bank API Routing (/api/v1/questions)",
+      "status": "PASS",
+      "details": "Gateway định tuyến chuẩn tới Question Bank (Status 200)"
+    },
+    {
+      "category": "Frontend",
+      "name": "TypeScript Compilation (tsc --noEmit)",
+      "status": "PASS",
+      "details": "100% Type-safe! Không có lỗi cú pháp (trong 8.7s)"
+    }
+  ]
+}
