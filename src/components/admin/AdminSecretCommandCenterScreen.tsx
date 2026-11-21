@@ -25,8 +25,11 @@ import {
   Maximize2,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   Plus,
   Pencil,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 import apiClient, { API_BASE } from '../../services/apiClient';
 
@@ -79,6 +82,173 @@ interface AdminSecretCommandCenterScreenProps {
   } | null;
 }
 
+// Markdown formatting helper matching Antigravity IDE typography
+const renderInlineMarkdown = (line: string): React.ReactNode => {
+  const parts: React.ReactNode[] = [];
+  let remaining = line;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Inline code: `code`
+    const codeMatch = remaining.match(/^`([^`]+)`/);
+    if (codeMatch) {
+      parts.push(
+        <code
+          key={key++}
+          className="px-1.5 py-0.5 rounded bg-zinc-800 text-emerald-300 font-mono text-[11px] border border-zinc-700/60 mx-0.5"
+        >
+          {codeMatch[1]}
+        </code>
+      );
+      remaining = remaining.slice(codeMatch[0].length);
+      continue;
+    }
+
+    // Bold: **text** or __text__
+    const boldMatch = remaining.match(/^(\*\*|__)(.*?)\1/);
+    if (boldMatch) {
+      parts.push(
+        <strong key={key++} className="font-semibold text-zinc-100">
+          {boldMatch[2]}
+        </strong>
+      );
+      remaining = remaining.slice(boldMatch[0].length);
+      continue;
+    }
+
+    // Italic: *text* or _text_
+    const italicMatch = remaining.match(/^(\*|_)(.*?)\1/);
+    if (italicMatch && !italicMatch[2].includes('*') && !italicMatch[2].includes('_')) {
+      parts.push(
+        <em key={key++} className="italic text-zinc-300">
+          {italicMatch[2]}
+        </em>
+      );
+      remaining = remaining.slice(italicMatch[0].length);
+      continue;
+    }
+
+    // Link: [text](url)
+    const linkMatch = remaining.match(/^\[(.*?)\]\((.*?)\)/);
+    if (linkMatch) {
+      parts.push(
+        <span key={key++} className="text-emerald-400 font-medium underline underline-offset-2">
+          {linkMatch[1]}
+        </span>
+      );
+      remaining = remaining.slice(linkMatch[0].length);
+      continue;
+    }
+
+    const nextSpecial = remaining.search(/[`\*_\[]/);
+    if (nextSpecial === -1) {
+      parts.push(remaining);
+      break;
+    } else if (nextSpecial === 0) {
+      parts.push(remaining[0]);
+      remaining = remaining.slice(1);
+    } else {
+      parts.push(remaining.slice(0, nextSpecial));
+      remaining = remaining.slice(nextSpecial);
+    }
+  }
+
+  return parts;
+};
+
+const renderMarkdownContent = (text: string): React.ReactNode => {
+  if (!text) return null;
+
+  // Split by code blocks first
+  const blocks = text.split(/(```[\s\S]*?```)/g);
+
+  return blocks.map((block, bIdx) => {
+    if (block.startsWith('```') && block.endsWith('```')) {
+      const firstLineEnd = block.indexOf('\n');
+      const lang = firstLineEnd !== -1 ? block.slice(3, firstLineEnd).trim() : '';
+      const code = firstLineEnd !== -1 ? block.slice(firstLineEnd + 1, -3) : block.slice(3, -3);
+
+      return (
+        <div key={bIdx} className="my-2.5 rounded-xl overflow-hidden border border-zinc-800 bg-[#0d0e12] font-mono text-xs">
+          <div className="px-3 py-1.5 bg-zinc-900/80 border-b border-zinc-800 flex items-center justify-between text-[11px] text-zinc-400">
+            <span className="text-zinc-500">{lang || 'terminal'}</span>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(code)}
+              className="text-zinc-500 hover:text-white transition-colors cursor-pointer"
+            >
+              <Copy className="w-3 h-3" />
+            </button>
+          </div>
+          <pre className="p-3 overflow-x-auto text-zinc-200 leading-relaxed whitespace-pre font-mono text-[11px]">
+            <code>{code}</code>
+          </pre>
+        </div>
+      );
+    }
+
+    // Process lines inside regular text
+    const lines = block.split('\n');
+    return (
+      <div key={bIdx} className="space-y-1.5">
+        {lines.map((line, lIdx) => {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            return <div key={lIdx} className="h-1.5" />;
+          }
+
+          // Headers
+          if (trimmed.startsWith('### ')) {
+            return (
+              <h3 key={lIdx} className="text-[13px] font-bold text-white mt-2.5 mb-1">
+                {renderInlineMarkdown(trimmed.slice(4))}
+              </h3>
+            );
+          }
+          if (trimmed.startsWith('## ')) {
+            return (
+              <h2 key={lIdx} className="text-sm font-bold text-white mt-3 mb-1.5">
+                {renderInlineMarkdown(trimmed.slice(3))}
+              </h2>
+            );
+          }
+          if (trimmed.startsWith('# ')) {
+            return (
+              <h1 key={lIdx} className="text-base font-bold text-white mt-3.5 mb-2">
+                {renderInlineMarkdown(trimmed.slice(2))}
+              </h1>
+            );
+          }
+
+          // Horizontal rule
+          if (trimmed === '---' || trimmed === '***') {
+            return <hr key={lIdx} className="border-zinc-800/80 my-2" />;
+          }
+
+          // List item
+          if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+            return (
+              <div key={lIdx} className="flex items-start gap-2 pl-1.5 text-zinc-200">
+                <span className="text-zinc-500 font-bold mt-0.5 text-[11px]">•</span>
+                <span className="flex-1 leading-relaxed">
+                  {renderInlineMarkdown(trimmed.slice(2))}
+                </span>
+              </div>
+            );
+          }
+
+          // Normal paragraph
+          return (
+            <p key={lIdx} className="leading-relaxed text-zinc-200">
+              {renderInlineMarkdown(line)}
+            </p>
+          );
+        })}
+      </div>
+    );
+  });
+};
+
 export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterScreenProps> = ({
   onExit,
   currentUser,
@@ -128,6 +298,10 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
   const [isRenaming, setIsRenaming] = useState(false);
   const [isDeletingSessionId, setIsDeletingSessionId] = useState<string | null>(null);
 
+  // Accordion Thinking / Worked for Xs
+  const [isThinkingExpanded, setIsThinkingExpanded] = useState<boolean>(false);
+  const isInitialOrSwitchRef = useRef<boolean>(true);
+
   useEffect(() => {
     selectedSessionIdRef.current = selectedSessionId;
   }, [selectedSessionId]);
@@ -157,11 +331,21 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
   };
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    chatEndRef.current?.scrollIntoView({ behavior });
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior,
+      });
+    } else {
+      chatEndRef.current?.scrollIntoView({ behavior });
+    }
   };
 
   useEffect(() => {
-    if (isAtBottomRef.current || isSubmitting) {
+    if (isInitialOrSwitchRef.current) {
+      scrollToBottom('auto');
+      isInitialOrSwitchRef.current = false;
+    } else if (isAtBottomRef.current || isSubmitting) {
       scrollToBottom('smooth');
     }
   }, [chatMessages, isSubmitting]);
@@ -559,199 +743,174 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
         </button>
       </div>
 
-      {/* ── 2. "TIVI CUỘN BĂNG" (LIVE TAPE MONITOR) ─────────────────────────── */}
-      <div className="px-3 pt-2 pb-1.5 bg-black/90 border-b border-zinc-900 shrink-0">
-        <div
-          className={`relative rounded-2xl bg-zinc-950/95 border transition-all duration-300 shadow-2xl overflow-hidden ${
-            isAgentWorking ? 'border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-zinc-800'
-          } ${tapeMode === 'expanded' ? 'h-64' : tapeMode === 'collapsed' ? 'h-8' : 'h-[92px]'}`}
-        >
-          {/* TV Header Bar */}
-          <div className="h-7 px-3 bg-zinc-900/90 border-b border-zinc-850 flex items-center justify-between text-[10px] font-mono select-none">
-            <div className="flex items-center gap-2">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isAgentWorking
-                    ? 'bg-emerald-400 animate-ping shadow-[0_0_8px_rgba(52,211,153,0.8)]'
-                    : 'bg-zinc-600'
-                }`}
-              />
-              <span className="font-bold tracking-wider text-zinc-300 flex items-center gap-1">
-                <span>TIVI TIẾN TRÌNH</span>
-                <span className="text-zinc-500 font-normal">({liveActions.length} steps)</span>
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span
-                className={`text-[9px] px-1.5 py-0.2 rounded font-mono font-bold uppercase tracking-wider ${
-                  isAgentWorking ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-zinc-800 text-zinc-400'
-                }`}
-              >
-                {isAgentWorking ? '⚡ EXECUTING' : '🟢 SẴN SÀNG'}
-              </span>
-
-              {/* Mode switch buttons */}
-              <button
-                type="button"
-                onClick={() => setTapeMode((prev) => (prev === 'collapsed' ? 'normal' : 'collapsed'))}
-                className="text-zinc-400 hover:text-white p-0.5 cursor-pointer"
-                title={tapeMode === 'collapsed' ? 'Mở rộng TV' : 'Thu nhỏ 1 dòng'}
-              >
-                {tapeMode === 'collapsed' ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTapeMode((prev) => (prev === 'expanded' ? 'normal' : 'expanded'))}
-                className="text-zinc-400 hover:text-white p-0.5 cursor-pointer"
-                title={tapeMode === 'expanded' ? 'Thu về chuẩn' : 'Xem toàn màn hình'}
-              >
-                {tapeMode === 'expanded' ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
-              </button>
-            </div>
-          </div>
-
-          {/* TV Screen Viewport (Cuộn băng chạy mượt mà bên trong) */}
-          {tapeMode === 'collapsed' ? (
-            /* Chế độ 1 dòng ticker chạy ngang siêu gọn */
-            <div className="h-full px-3 flex items-center text-[10px] font-mono text-zinc-300 truncate">
-              {latestAction ? (
-                <div className="flex items-center gap-2 truncate">
-                  <span className="text-emerald-400 font-bold">LATEST:</span>
-                  <span className="truncate">{latestAction.title}</span>
-                  {latestAction.command && <span className="text-zinc-500 font-mono">({latestAction.command})</span>}
-                </div>
-              ) : (
-                <span className="text-zinc-500">Antigravity sẵn sàng nhận lệnh...</span>
-              )}
-            </div>
-          ) : (
-            /* Chế độ cuộn băng chạy mượt mà từ dưới lên */
-            <div
-              ref={tapeScrollRef}
-              className="h-[calc(100%-28px)] overflow-y-auto p-2 space-y-1.5 font-mono text-[10px] leading-relaxed select-text"
-            >
-              {liveActions.length === 0 ? (
-                <div className="h-full flex items-center justify-center text-zinc-600 text-[10px] font-mono italic">
-                  [Cuộn băng đang chờ lệnh từ anh Vũ...]
-                </div>
-              ) : (
-                liveActions.map((act) => {
-                  const isCode = act.category === 'code';
-                  const isTerm = act.category === 'terminal';
-
-                  return (
-                    <div
-                      key={act.id}
-                      className="flex items-start gap-1.5 p-1 rounded bg-black/60 border border-zinc-900 text-zinc-300 hover:border-zinc-800 transition-colors"
-                    >
-                      <span
-                        className={`px-1 py-0.2 rounded text-[9px] font-bold shrink-0 ${
-                          isCode
-                            ? 'bg-amber-950 text-amber-300 border border-amber-900/60'
-                            : isTerm
-                            ? 'bg-sky-950 text-sky-300 border border-sky-900/60'
-                            : 'bg-zinc-800 text-zinc-400'
-                        }`}
-                      >
-                        {isCode ? 'CODE' : isTerm ? 'TERM' : 'SYS'}
-                      </span>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-zinc-200 truncate">{act.title}</span>
-                          <span className="text-[9px] text-zinc-600 shrink-0">{act.timestamp}</span>
-                        </div>
-
-                        {act.command && (
-                          <div className="text-emerald-400/90 text-[10px] truncate">$ {act.command}</div>
-                        )}
-                        {act.filePath && !act.command && (
-                          <div className="text-zinc-500 text-[9px] truncate">{act.filePath}</div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── 3. CLEAN CHAT DIALOGUE STREAM (CHỈ CHỨA TRÒ CHUYỆN) ─────────────── */}
+      {/* ── 2. NATIVE ANTIGRAVITY IDE CHAT STREAM ─────────────────────────── */}
       <div
         ref={chatContainerRef}
         onScroll={handleScroll}
-        className="relative flex-1 overflow-y-auto px-3.5 py-4 space-y-3.5 select-text"
+        className="relative flex-1 overflow-y-auto px-3.5 py-4 space-y-5 select-text bg-[#09090b]"
       >
-        {chatMessages.map((msg) => {
+        {chatMessages.map((msg, idx) => {
           const isUser = msg.sender === 'user';
+          const isLastAgentMsg = !isUser && idx === chatMessages.length - 1;
 
-          return (
-            <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start items-start gap-2.5'}`}>
-              {!isUser && (
-                <div className="w-7 h-7 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 mt-0.5 text-zinc-200 shadow-xs">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                </div>
-              )}
-
-              <div className={`max-w-[86%] space-y-1 ${isUser ? 'items-end' : 'items-start'}`}>
-                <div
-                  className={`rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed break-words shadow-sm ${
-                    isUser
-                      ? 'bg-zinc-850 text-white rounded-br-xs border border-zinc-750'
-                      : 'bg-zinc-950 text-zinc-200 rounded-bl-xs border border-zinc-850 whitespace-pre-wrap font-sans'
-                  }`}
-                >
+          if (isUser) {
+            return (
+              <div key={msg.id} className="flex flex-col items-end space-y-1.5 max-w-[90%] ml-auto">
+                <div className="bg-[#18181b] border border-zinc-800 text-zinc-100 rounded-2xl px-4 py-3 text-[13px] leading-relaxed font-sans shadow-xs break-words w-fit">
                   {msg.text}
 
                   {msg.imageUrl && (
-                    <div className="mt-2">
+                    <div className="mt-2.5">
                       <img
                         src={msg.imageUrl}
                         alt="Ảnh gửi kèm"
-                        className="max-h-48 rounded-xl object-cover border border-zinc-700 shadow-md"
+                        className="max-h-56 rounded-xl object-cover border border-zinc-700 shadow-md"
                       />
                     </div>
                   )}
+                </div>
 
-                  {!isUser && (
-                    <button
-                      type="button"
-                      onClick={() => handleCopyText(msg.id, msg.text)}
-                      className="ml-2 text-zinc-500 hover:text-white inline-flex align-middle cursor-pointer"
-                      title="Sao chép"
-                    >
-                      {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                    </button>
+                <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-500 pr-1">
+                  <span>{msg.timestamp || 'Vừa xong'}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyText(msg.id, msg.text)}
+                    className="text-zinc-600 hover:text-zinc-300 transition-colors p-0.5 cursor-pointer"
+                    title="Sao chép"
+                  >
+                    {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // Agent message: Clean Antigravity IDE format (no bubble, formatted markdown, Thinking/Worked accordion)
+          return (
+            <div key={msg.id} className="flex flex-col items-start space-y-2 w-full pr-1">
+              {/* Collapsible Accordion: Thinking / Worked for Xs */}
+              {isLastAgentMsg && liveActions.length > 0 && (
+                <div className="py-0.5 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setIsThinkingExpanded(!isThinkingExpanded)}
+                    className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 font-mono py-1 cursor-pointer select-none group"
+                  >
+                    <span className="text-zinc-400 font-medium">Worked for 18s</span>
+                    <ChevronRight
+                      className={`w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-transform duration-200 ${
+                        isThinkingExpanded ? 'rotate-90 text-emerald-400' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isThinkingExpanded && (
+                    <div className="mt-2 ml-1 pl-3 border-l-2 border-zinc-800 space-y-1.5 py-1 font-mono text-[11px] leading-relaxed select-text">
+                      {liveActions.slice(-12).map((act) => (
+                        <div key={act.id} className="flex items-start gap-2 py-0.5">
+                          <span
+                            className={`px-1 py-0.2 rounded text-[9px] font-bold shrink-0 ${
+                              act.category === 'code'
+                                ? 'bg-amber-950/80 text-amber-300 border border-amber-900/60'
+                                : act.category === 'terminal'
+                                ? 'bg-sky-950/80 text-sky-300 border border-sky-900/60'
+                                : 'bg-zinc-800 text-zinc-400'
+                            }`}
+                          >
+                            {act.category === 'code' ? 'CODE' : act.category === 'terminal' ? 'TERM' : 'SYS'}
+                          </span>
+                          <div className="min-w-0 flex-1 truncate">
+                            <span className="text-zinc-300 font-medium">{act.title}</span>
+                            {act.command && <span className="ml-1 text-zinc-500 font-mono text-[10px]">({act.command})</span>}
+                          </div>
+                          <span className="text-zinc-600 text-[10px] shrink-0 font-mono">{act.timestamp}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
+              )}
 
-                <div
-                  className={`text-[10px] font-mono text-zinc-500 px-1 ${
-                    isUser ? 'text-right' : 'text-left'
-                  }`}
+              {/* Formatted Markdown Body (no raw asterisks!) */}
+              <div className="text-[13px] text-zinc-200 leading-[1.65] font-sans break-words w-full space-y-2 select-text">
+                {renderMarkdownContent(msg.text)}
+              </div>
+
+              {/* Agent Message Footer (Antigravity IDE style) */}
+              <div className="flex items-center gap-3 text-[11px] font-mono text-zinc-500 pt-1">
+                <span>{msg.timestamp || 'Vừa xong'}</span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyText(msg.id, msg.text)}
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors p-0.5 cursor-pointer"
+                  title="Sao chép nội dung"
                 >
-                  {msg.senderName} • {msg.timestamp}
-                </div>
+                  {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors p-0.5 cursor-pointer"
+                  title="Hài lòng"
+                >
+                  <ThumbsUp className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className="text-zinc-600 hover:text-zinc-300 transition-colors p-0.5 cursor-pointer"
+                  title="Chưa hài lòng"
+                >
+                  <ThumbsDown className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           );
         })}
 
-        {/* Loading Indicator */}
-        {isSubmitting && (
-          <div className="flex items-start gap-2.5 justify-start">
-            <div className="w-7 h-7 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0 mt-0.5 text-zinc-200">
-              <Sparkles className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
-            </div>
-            <div className="bg-zinc-950 border border-zinc-850 px-3.5 py-2.5 rounded-2xl rounded-bl-xs flex items-center gap-1.5 shadow-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
+        {/* Live Thinking Status while Agent is working */}
+        {isAgentWorking && (
+          <div className="flex flex-col items-start space-y-1.5 w-full pr-1 py-1">
+            <button
+              type="button"
+              onClick={() => setIsThinkingExpanded(!isThinkingExpanded)}
+              className="flex items-center gap-2 text-xs text-zinc-300 hover:text-white font-mono py-1 cursor-pointer select-none group"
+            >
+              <span className="font-semibold text-zinc-200">Thinking</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              <ChevronRight
+                className={`w-3.5 h-3.5 text-zinc-500 group-hover:text-zinc-300 transition-transform duration-200 ${
+                  isThinkingExpanded ? 'rotate-90 text-emerald-400' : ''
+                }`}
+              />
+            </button>
+
+            {isThinkingExpanded && (
+              <div className="mt-1 ml-1 pl-3 border-l-2 border-emerald-500/50 space-y-1.5 py-1 font-mono text-[11px] leading-relaxed select-text w-full">
+                {liveActions.length === 0 ? (
+                  <div className="text-zinc-500 italic text-[11px]">Đang phân tích và xử lý lệnh trên laptop...</div>
+                ) : (
+                  liveActions.slice(-15).map((act) => (
+                    <div key={act.id} className="flex items-start gap-2 py-0.5">
+                      <span
+                        className={`px-1 py-0.2 rounded text-[9px] font-bold shrink-0 ${
+                          act.category === 'code'
+                            ? 'bg-amber-950/80 text-amber-300 border border-amber-900/60'
+                            : act.category === 'terminal'
+                            ? 'bg-sky-950/80 text-sky-300 border border-sky-900/60'
+                            : 'bg-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        {act.category === 'code' ? 'CODE' : act.category === 'terminal' ? 'TERM' : 'SYS'}
+                      </span>
+                      <div className="min-w-0 flex-1 truncate">
+                        <span className="text-zinc-200 font-medium">{act.title}</span>
+                        {act.command && <span className="ml-1 text-emerald-400/80 font-mono text-[10px]">({act.command})</span>}
+                      </div>
+                      <span className="text-zinc-600 text-[10px] shrink-0 font-mono">{act.timestamp}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -938,6 +1097,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
                       setShowSessionDrawer(false);
                       setIsCreatingNewSession(false);
                       setChatMessages([]);
+                      isInitialOrSwitchRef.current = true;
                       void fetchLiveMirror(s.id);
                     }}
                     className={`w-full text-left p-3 rounded-xl transition-all flex items-start justify-between gap-3 cursor-pointer ${

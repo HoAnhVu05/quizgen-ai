@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, ScreenId } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
+import { openUserProfile } from '../utils/userProfileModalHelper';
 
 interface ForumScreenProps {
   currentUser?: UserProfile | null;
@@ -1122,14 +1123,23 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                 {/* 1. Header: Author info & Context Menu (Không bị ép chữ trên mobile) */}
                 <div className="flex items-start justify-between gap-2.5 text-xs">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="w-8 h-8 rounded-lg bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                    <div
+                      onClick={() => openUserProfile(post.authorEmail || `${post.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, post.authorName)}
+                      className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-[#008689] text-white font-bold text-xs flex items-center justify-center shrink-0 cursor-pointer transition-colors shadow-2xs"
+                      title={`Xem hồ sơ của ${post.authorName}`}
+                    >
                       {post.authorName.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-slate-900 truncate">
+                        <button
+                          type="button"
+                          onClick={() => openUserProfile(post.authorEmail || `${post.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, post.authorName)}
+                          className="font-bold text-slate-900 hover:text-[#008689] hover:underline truncate cursor-pointer text-left transition-colors"
+                          title={`Xem hồ sơ của ${post.authorName}`}
+                        >
                           {post.authorTitle ? `${post.authorTitle} ` : ''}{post.authorName}
-                        </span>
+                        </button>
                         <span className="text-slate-300 hidden sm:inline">•</span>
                         <span className="text-slate-500 text-[11px] truncate hidden sm:inline">{post.department}</span>
                       </div>
@@ -1364,9 +1374,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           return (
                             <div key={cm.id} className="p-2.5 bg-slate-50 rounded-lg text-xs space-y-1 group">
                               <div className="flex items-center justify-between">
-                                <span className="font-bold text-slate-900">
+                                <button
+                                  type="button"
+                                  onClick={() => openUserProfile(cm.authorEmail || `${cm.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, cm.authorName)}
+                                  className="font-bold text-slate-900 hover:text-[#008689] hover:underline cursor-pointer text-left transition-colors"
+                                  title={`Xem hồ sơ của ${cm.authorName}`}
+                                >
                                   {cm.authorTitle ? `${cm.authorTitle} ` : ''}{cm.authorName}
-                                </span>
+                                </button>
 
                                 <div className="flex items-center gap-2">
                                   <span className="text-[10px] text-slate-400 font-mono">{cmTime}</span>

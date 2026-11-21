@@ -14,6 +14,7 @@ import { UserProfile, UserRole } from '../../types';
 import { formatVietnameseDateTime } from '../../utils/dateUtils';
 import { AdminGrantPlanModal, GrantPlanPayload } from './AdminGrantPlanModal';
 import apiClient from '../../services/apiClient';
+import { openUserProfile } from '../../utils/userProfileModalHelper';
 
 export interface AdminUsersTabProps {
   usersList: UserProfile[];
@@ -178,19 +179,28 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
                               <div
-                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${
+                                onClick={() => openUserProfile(u.email, u.fullName)}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs cursor-pointer hover:scale-105 transition-all shadow-2xs ${
                                   u.role === 'admin'
                                     ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
                                     : u.role === 'head_of_department'
                                     ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
                                     : 'bg-teal-50 text-[#008689] border border-teal-200'
                                 }`}
+                                title="Bấm để xem hồ sơ cá nhân"
                               >
                                 {u.fullName ? u.fullName.slice(0, 2).toUpperCase() : 'ND'}
                               </div>
                               <div>
                                 <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                                  <span>{u.fullName}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openUserProfile(u.email, u.fullName)}
+                                    className="hover:text-[#008689] hover:underline cursor-pointer text-left transition-colors"
+                                    title="Xem hồ sơ cá nhân"
+                                  >
+                                    {u.fullName}
+                                  </button>
                                   {isSuperAdmin && (
                                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-50 text-[#da1c2d] font-semibold border border-rose-200">
                                       Super Admin

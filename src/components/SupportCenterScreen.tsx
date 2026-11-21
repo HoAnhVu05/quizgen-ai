@@ -36,6 +36,7 @@ import {
 import { UserProfile } from '../types';
 import { API_BASE } from '../services/apiClient';
 import { ImageLightboxModal } from './ImageLightboxModal';
+import { openUserProfile } from '../utils/userProfileModalHelper';
 
 interface SupportCenterScreenProps {
   currentUser?: UserProfile | null;
@@ -960,13 +961,27 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
                             {!isMe ? (
                               <>
                                 <ShieldCheck className="w-3.5 h-3.5 text-[#008689]" />
-                                <span className="font-bold text-slate-800">Kỹ sư QuizGen AI ({msg.sender_name})</span>
+                                <button
+                                  type="button"
+                                  onClick={() => openUserProfile('support@quizgen.ai', msg.sender_name || 'Kỹ sư QuizGen AI')}
+                                  className="font-bold text-slate-800 hover:text-[#008689] hover:underline cursor-pointer transition-colors"
+                                  title="Xem hồ sơ hỗ trợ"
+                                >
+                                  Kỹ sư QuizGen AI ({msg.sender_name})
+                                </button>
                                 <span className="text-[10px] text-slate-400">• {formatVnDateTime(msg.created_at)}</span>
                               </>
                             ) : (
                               <>
                                 <span className="text-[10px] text-slate-400">{formatVnDateTime(msg.created_at)} •</span>
-                                <span className="font-bold text-[#008689]">Tôi (Giảng viên)</span>
+                                <button
+                                  type="button"
+                                  onClick={() => openUserProfile(currentUser?.email, currentUser?.fullName || 'Tôi')}
+                                  className="font-bold text-[#008689] hover:underline cursor-pointer transition-colors"
+                                  title="Xem hồ sơ cá nhân"
+                                >
+                                  Tôi (Giảng viên)
+                                </button>
                               </>
                             )}
                           </div>

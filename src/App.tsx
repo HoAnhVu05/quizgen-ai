@@ -12,6 +12,7 @@ import { AdminPortalScreen } from './components/AdminPortalScreen';
 import { ForumScreen } from './components/ForumScreen';
 import { ToastContainer } from './components/ToastContainer';
 import { UserProfileModal } from './components/UserProfileModal';
+import { PublicProfileModal } from './components/PublicProfileModal';
 import { LoginScreen } from './components/LoginScreen';
 import { RegisterScreen } from './components/RegisterScreen';
 import { PricingPlansModal } from './components/PricingPlansModal';
@@ -178,6 +179,74 @@ const AppContent: React.FC = () => {
   }, [adminTab]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  // ─── Global Public User Profile Modal (Xem trang cá nhân ở bất kỳ đâu) ─────
+  const [inspectedProfileUser, setInspectedProfileUser] = useState<{
+    email: string;
+    name?: string;
+  } | null>(null);
+  const [inspectedIsFriend, setInspectedIsFriend] = useState(false);
+  const [inspectedHasSentRequest, setInspectedHasSentRequest] = useState(false);
+
+  useEffect(() => {
+    const handleOpenProfileEvent = (e: CustomEvent<any>) => {
+      const email = e.detail?.email;
+      const name = e.detail?.name;
+      if (email || name) {
+        setInspectedProfileUser({ email: email || '', name: name || '' });
+      }
+    };
+    window.addEventListener('quizgen:open-profile', handleOpenProfileEvent as EventListener);
+    return () => window.removeEventListener('quizgen:open-profile', handleOpenProfileEvent as EventListener);
+  }, []);
+
+  // Kiểm tra tình trạng bạn bè khi mở hồ sơ người dùng
+  useEffect(() => {
+    if (!inspectedProfileUser || !currentUser?.email) {
+      setInspectedIsFriend(false);
+      setInspectedHasSentRequest(false);
+      return;
+    }
+    const myClean = currentUser.email.toLowerCase().trim();
+    const targetClean = (inspectedProfileUser.email || '').toLowerCase().trim();
+    if (!targetClean || targetClean === myClean) {
+      setInspectedIsFriend(false);
+      setInspectedHasSentRequest(false);
+      return;
+    }
+
+    try {
+      // 1. Kiểm tra bạn bè từ qgroups cache
+      const rawGroups = localStorage.getItem('quizgen_qgroups');
+      if (rawGroups) {
+        const groups = JSON.parse(rawGroups);
+        const isFr = Array.isArray(groups) && groups.some((g: any) => {
+          if (!g.isDirect && g.type !== 'direct') return false;
+          const members = (g.members || []).map((m: any) => String(m).toLowerCase().trim());
+          const owner = (g.ownerEmail || '').toLowerCase().trim();
+          const partner = (g.directPartnerEmail || '').toLowerCase().trim();
+          return (
+            (owner === targetClean || partner === targetClean || members.includes(targetClean)) &&
+            (owner === myClean || partner === myClean || members.includes(myClean))
+          );
+        });
+        setInspectedIsFriend(isFr);
+      }
+
+      // 2. Kiểm tra lời mời đã gửi
+      const rawReqs = localStorage.getItem('quizgen_friend_requests');
+      if (rawReqs) {
+        const reqs = JSON.parse(rawReqs);
+        const hasSent = Array.isArray(reqs) && reqs.some(
+          (r: any) =>
+            r.senderEmail?.toLowerCase().trim() === myClean &&
+            r.targetEmail?.toLowerCase().trim() === targetClean &&
+            r.status === 'pending'
+        );
+        setInspectedHasSentRequest(hasSent);
+      }
+    } catch {}
+  }, [inspectedProfileUser, currentUser?.email]);
   const [isLuckyMoneyOpen, setIsLuckyMoneyOpen] = useState(() => {
     try {
       return localStorage.getItem('quizgen_lucky_money_seen_2027') !== 'true';
@@ -1563,6 +1632,102 @@ const AppContent: React.FC = () => {
             }}
           />
         )}
+
+        {/* Global Public User Profile Modal: Mở ở bất kỳ đâu xuất hiện tên tài khoản */}
+        <PublicProfileModal
+          isOpen={Boolean(inspectedProfileUser?.email || inspectedProfileUser?.name)}
+          userEmail={inspectedProfileUser?.email || null}
+          userName={inspectedProfileUser?.name}
+          isFriend={inspectedIsFriend}
+          hasSentRequest={inspectedHasSentRequest}
+          onClose={() => setInspectedProfileUser(null)}
+          currentUser={currentUser}
+          onStartDirectChat={(targetEmail) => {
+            setInspectedProfileUser(null);
+            try {
+              sessionStorage.setItem('quizgen_direct_open_chat', 'true');
+              sessionStorage.setItem('quizgen_target_chat_email', targetEmail);
+            } catch {}
+            setCurrentScreen('qgroup');
+          }}
+          onSendFriendRequest={async (targetEmail, targetName) => {
+            try {
+              const email = targetEmail.trim().toLowerCase();
+              const myEmail = currentUser?.email || 'lecturer@uth.edu.vn';
+              const myName = currentUser?.fullName || 'Giảng viên UTH';
+              const newReq = {
+                id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                senderEmail: myEmail,
+                senderName: myName,
+                senderTitle: currentUser?.academicTitle || 'ThS.',
+                targetEmail: email,
+                recipientEmail: email,
+                requestedAt: new Date().toISOString(),
+                status: 'pending',
+              };
+              await apiClient.fetch(`${API_BASE}/documents/qgroups/friend-requests`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newReq),
+              });
+              const raw = localStorage.getItem('quizgen_friend_requests');
+              const list = raw ? JSON.parse(raw) : [];
+              list.push(newReq);
+              localStorage.setItem('quizgen_friend_requests', JSON.stringify(list));
+              setInspectedHasSentRequest(true);
+              handleShowToast('success', 'Đã gửi lời mời kết bạn', `Đã gửi lời mời kết nối tới ${targetName || targetEmail}`);
+            } catch {
+              handleShowToast('error', 'Lỗi', 'Không thể gửi lời mời kết bạn lúc này.');
+            }
+          }}
+          onUnfriend={async (targetEmail, targetName) => {
+            const displayName = targetName || targetEmail;
+            if (!window.confirm(`Bạn có chắc chắn muốn hủy kết bạn với "${displayName}"?`)) {
+              return;
+            }
+            try {
+              const myEmail = (currentUser?.email || '').toLowerCase().trim();
+              const cleanTarget = targetEmail.trim().toLowerCase();
+              await apiClient.fetch(`${API_BASE}/documents/friends/unfriend`, {
+                method: 'POST',
+                body: JSON.stringify({ myEmail, targetEmail: cleanTarget }),
+              });
+              const raw = localStorage.getItem('quizgen_qgroups');
+              if (raw) {
+                const list = JSON.parse(raw);
+                const next = list.filter((g: any) => {
+                  if (!g.isDirect && g.type !== 'direct') return true;
+                  const members = (g.members || []).map((m: any) => String(m).toLowerCase().trim());
+                  const owner = (g.ownerEmail || '').toLowerCase().trim();
+                  const partner = (g.directPartnerEmail || '').toLowerCase().trim();
+                  const isThisPair =
+                    (owner === cleanTarget || partner === cleanTarget || members.includes(cleanTarget)) &&
+                    (owner === myEmail || partner === myEmail || members.includes(myEmail));
+                  return !isThisPair;
+                });
+                localStorage.setItem('quizgen_qgroups', JSON.stringify(next));
+              }
+              setInspectedIsFriend(false);
+              handleShowToast('success', 'Đã hủy kết bạn', `Đã hủy kết nối đồng nghiệp với ${displayName}.`);
+            } catch {
+              handleShowToast('error', 'Lỗi', 'Không thể hủy kết bạn lúc này.');
+            }
+          }}
+          onCancelFriendRequest={async (targetEmail) => {
+            try {
+              const email = targetEmail.trim().toLowerCase();
+              const myEmail = (currentUser?.email || '').toLowerCase().trim();
+              const raw = localStorage.getItem('quizgen_friend_requests');
+              if (raw) {
+                const list = JSON.parse(raw);
+                const filtered = list.filter((r: any) => !(r.senderEmail?.toLowerCase() === myEmail && r.targetEmail?.toLowerCase() === email));
+                localStorage.setItem('quizgen_friend_requests', JSON.stringify(filtered));
+              }
+              setInspectedHasSentRequest(false);
+              handleShowToast('info', 'Đã thu hồi lời mời', `Đã hủy lời mời kết bạn tới ${targetEmail}`);
+            } catch {}
+          }}
+        />
       </main>
 
       {/* QuizGen Copilot: Trợ lý Khảo thí Học thuật AI (Bong bóng chat thông minh) */}

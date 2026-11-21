@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { QGroup } from '../../types';
 import { resolveChatDisplayInfo } from './chatUtils';
+import { isConversationPinned } from '../../utils/notificationPrefs';
 
 export interface ConversationItemProps {
   group: QGroup;
@@ -89,9 +90,7 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
   const isGroup = !group.isDirect;
   const isOwner = (group.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
   const info = resolveChatDisplayInfo(group, myEmail);
-  const isPinned = Boolean(
-    group.isPinned || (group.pinnedBy || []).some((e) => e.toLowerCase() === myEmail.toLowerCase())
-  );
+  const isPinned = isConversationPinned(group.id, myEmail, group.pinnedBy) || Boolean(group.isPinned);
 
   if (isGroup) {
     return (

@@ -106,7 +106,7 @@ import { ChatComposer } from './qgroup/ChatComposer';
 import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
 import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { deduplicateDMsAndChannels } from './qgroup/chatUtils';
-import { isGroupMuted, toggleGroupMute } from '../utils/notificationPrefs';
+import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
 
 // ─── Props ─────────────────────────────────────────────────────────────────
 interface QGroupScreenProps {
@@ -1259,6 +1259,27 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     window.addEventListener('quizgen:open-group', handleOpenGroup);
     window.addEventListener('quizgen:join-huddle', handleJoinHuddle);
 
+    // Kiểm tra cờ mở chat trực tiếp từ xem trang cá nhân
+    try {
+      const targetEmail = sessionStorage.getItem('quizgen_target_chat_email');
+      if (targetEmail) {
+        sessionStorage.removeItem('quizgen_target_chat_email');
+        const cleanTarget = targetEmail.trim().toLowerCase();
+        const dm = qgroups.find((g) => {
+          if (!g.isDirect) return false;
+          const cleanOwner = (g.ownerEmail || '').trim().toLowerCase();
+          const cleanPartner = (g.directPartnerEmail || '').trim().toLowerCase();
+          const members = (g.members || []).map((m) => String(m).trim().toLowerCase());
+          return cleanOwner === cleanTarget || cleanPartner === cleanTarget || members.includes(cleanTarget);
+        });
+        if (dm) {
+          setSelectedGroupId(dm.id);
+          setShowMobileChat(true);
+          setFilterTab('all');
+        }
+      }
+    } catch {}
+
     // Kiểm tra cờ auto-join nếu vừa chuyển màn hình vào
     try {
       if (sessionStorage.getItem('quizgen_auto_open_huddle') === 'true') {
@@ -1271,7 +1292,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       window.removeEventListener('quizgen:open-group', handleOpenGroup);
       window.removeEventListener('quizgen:join-huddle', handleJoinHuddle);
     };
-  }, [handleOpenHuddleWithAudioPrime]);
+  }, [handleOpenHuddleWithAudioPrime, qgroups]);
 
   // ── Backend sync & Storage ───────────────────────────────────────────────
   const syncGroupsToBackend = useCallback(async (groups: QGroup[]) => {
@@ -1466,7 +1487,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
         const calculatedTime = getGroupSortTime({ ...g, messages: cleanMsgs });
         const isMuted = isGroupMuted(g.id, myEmail);
-        deduped.push({ ...g, messages: cleanMsgs, updatedAt: calculatedTime, muted: isMuted });
+        const isPinned = isConversationPinned(g.id, myEmail, g.pinnedBy);
+        deduped.push({ ...g, messages: cleanMsgs, updatedAt: calculatedTime, muted: isMuted, isPinned });
       }
 
       deduped.forEach((g) => {
@@ -1727,8 +1749,8 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       })
       .sort((a, b) => {
         const cleanMyEmail = myEmail.toLowerCase().trim();
-        const aPinned = Boolean(a.isPinned || (a.pinnedBy || []).some((e) => e.toLowerCase() === cleanMyEmail));
-        const bPinned = Boolean(b.isPinned || (b.pinnedBy || []).some((e) => e.toLowerCase() === cleanMyEmail));
+        const aPinned = isConversationPinned(a.id, cleanMyEmail, a.pinnedBy);
+        const bPinned = isConversationPinned(b.id, cleanMyEmail, b.pinnedBy);
         if (aPinned && !bPinned) return -1;
         if (!aPinned && bPinned) return 1;
         return getGroupSortTime(b) - getGroupSortTime(a);
@@ -3150,10 +3172,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const handleTogglePinConversation = useCallback(
     (group: QGroup) => {
       const cleanMyEmail = myEmail.toLowerCase().trim();
-      const isPinned = Boolean(
-        group.isPinned || (group.pinnedBy || []).some((e) => e.toLowerCase() === cleanMyEmail)
-      );
-      const nowPinned = !isPinned;
+      const nowPinned = toggleConversationPin(group.id, cleanMyEmail, group.pinnedBy);
       const updated = qgroups.map((g) => {
         if (g.id !== group.id && g.code !== group.code) return g;
         const currentList = (g.pinnedBy || []).map((e) => e.toLowerCase());
@@ -3165,7 +3184,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }
         return {
           ...g,
-          isPinned: nextPinnedBy.length > 0,
+          isPinned: nowPinned,
           pinnedBy: nextPinnedBy,
         };
       });
@@ -5062,6 +5081,21 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         }}
         onSendFriendRequest={(email) => {
           void handleSendFriendRequest(email);
+        }}
+        onUnfriend={(email, name) => {
+          setProfileEmail(null);
+          setProfileName(undefined);
+          handleUnfriend(email, name);
+        }}
+        onCancelFriendRequest={(email) => {
+          const req = friendRequests.find(
+            (r) =>
+              r.senderEmail?.toLowerCase() === myEmail.toLowerCase() &&
+              r.targetEmail?.toLowerCase() === email.toLowerCase()
+          );
+          if (req) {
+            handleRejectFriendRequest(req);
+          }
         }}
       />
 

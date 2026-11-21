@@ -27,6 +27,7 @@ import {
   FolderArchive,
 } from 'lucide-react';
 import { QGroup } from '../../types';
+import { isConversationPinned } from '../../utils/notificationPrefs';
 
 export interface ActiveChatInfo {
   displayName: string;
@@ -106,9 +107,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   }, []);
 
   const isGroupOwner = (activeGroup.ownerEmail || '').toLowerCase() === myEmail.toLowerCase();
-  const isActivePinned = Boolean(
-    activeGroup.isPinned || (activeGroup.pinnedBy || []).some((e) => e.toLowerCase() === myEmail.toLowerCase())
-  );
+  const isActivePinned = isConversationPinned(activeGroup.id, myEmail, activeGroup.pinnedBy) || Boolean(activeGroup.isPinned);
 
   return (
     <div className="px-3 sm:px-4 py-2 sm:py-2.5 border-b border-slate-200 flex items-center justify-between gap-2 bg-white shrink-0">

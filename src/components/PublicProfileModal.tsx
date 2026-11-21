@@ -8,6 +8,8 @@ import {
   MessageSquare,
   UserPlus,
   UserCheck,
+  UserMinus,
+  UserX,
   Send,
   Lock,
   Globe,
@@ -30,6 +32,8 @@ interface PublicProfileModalProps {
   currentUser?: UserProfile | null;
   onStartDirectChat?: (targetEmail: string, targetName?: string) => void;
   onSendFriendRequest?: (targetEmail: string, targetName?: string) => void;
+  onUnfriend?: (targetEmail: string, targetName?: string) => void;
+  onCancelFriendRequest?: (targetEmail: string) => void;
   isFriend?: boolean;
   hasSentRequest?: boolean;
 }
@@ -42,6 +46,8 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   currentUser,
   onStartDirectChat,
   onSendFriendRequest,
+  onUnfriend,
+  onCancelFriendRequest,
   isFriend: initialIsFriend,
   hasSentRequest: initialHasSentRequest,
 }) => {
@@ -184,6 +190,22 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
     if (onSendFriendRequest && profile) {
       onSendFriendRequest(profile.email, profile.fullName);
       setHasSentRequest(true);
+      setIsFriend(false);
+    }
+  };
+
+  const handleCancelFriendRequestAction = () => {
+    if (onCancelFriendRequest && profile) {
+      onCancelFriendRequest(profile.email);
+      setHasSentRequest(false);
+    }
+  };
+
+  const handleUnfriendAction = () => {
+    if (onUnfriend && profile) {
+      onUnfriend(profile.email, profile.fullName);
+      setIsFriend(false);
+      setHasSentRequest(false);
     }
   };
 
@@ -202,7 +224,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-colors"
+            className="absolute top-3.5 right-3.5 w-8 h-8 rounded-full bg-black/30 hover:bg-black/50 text-white flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -230,36 +252,59 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
               </div>
             </div>
 
-            {/* Actions for other users */}
+            {/* Actions for other users: Toàn bộ là nút bấm trực tiếp nổi bật, KHÔNG để trong 3 chấm */}
             {!isMe && (
-              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center flex-wrap justify-end">
                 {isFriend ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-800 font-semibold text-xs border border-emerald-200">
-                    <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    Đồng nghiệp (Bạn bè)
-                  </span>
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 font-bold text-xs border border-emerald-200">
+                      <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      Đồng nghiệp
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleUnfriendAction}
+                      className="px-3.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1.5 border border-rose-200 hover:border-rose-300 transition-all cursor-pointer shadow-2xs"
+                      title="Hủy kết nối đồng nghiệp với người này"
+                    >
+                      <UserMinus className="w-3.5 h-3.5 text-rose-600" />
+                      Hủy kết bạn
+                    </button>
+                  </>
                 ) : hasSentRequest ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 font-semibold text-xs border border-slate-200">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    Đã gửi lời mời
-                  </span>
+                  <>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 font-medium text-xs border border-amber-200">
+                      <Clock className="w-3.5 h-3.5 text-amber-600" />
+                      Đã gửi lời mời
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelFriendRequestAction}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold flex items-center gap-1.5 border border-slate-200 hover:border-rose-200 transition-all cursor-pointer"
+                      title="Thu hồi lời mời kết bạn"
+                    >
+                      <UserX className="w-3.5 h-3.5 text-slate-500 hover:text-rose-600" />
+                      Hủy lời mời
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"
                     onClick={handleSendFriendAction}
-                    className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                    className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-indigo-600 hover:from-teal-700 hover:to-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                    title="Gửi lời mời kết bạn đồng nghiệp"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
-                    Kết nối đồng nghiệp
+                    Kết bạn
                   </button>
                 )}
 
                 <button
                   type="button"
                   onClick={handleStartChatAction}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold flex items-center gap-1.5 border border-slate-200 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                 >
-                  <Send className="w-3.5 h-3.5 text-slate-600" />
+                  <Send className="w-3.5 h-3.5 text-teal-400" />
                   Nhắn tin
                 </button>
               </div>
