@@ -124,7 +124,7 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({
       {/* Main Image Viewport with Touch/Pinch Gestures */}
       <div
         ref={containerRef}
-        className="relative max-w-5xl w-full h-[75vh] sm:h-[80vh] flex flex-col items-center justify-center mt-12 sm:mt-10 overflow-hidden touch-none"
+        className="relative w-full h-[78vh] sm:h-[82vh] flex flex-col items-center justify-center my-auto overflow-hidden touch-none"
         onClick={(e) => e.stopPropagation()}
         {...bind}
       >
@@ -133,7 +133,7 @@ export const MediaLightboxModal: React.FC<MediaLightboxModalProps> = ({
             src={previewMedia.url}
             alt={previewMedia.name}
             draggable={false}
-            className="max-w-full max-h-[68vh] sm:max-h-[75vh] object-contain rounded-xl shadow-2xl border border-white/10 select-none pointer-events-none"
+            className="max-w-[92vw] max-h-[72vh] sm:max-h-[78vh] object-contain rounded-xl shadow-2xl border border-white/10 select-none pointer-events-none"
           />
         </div>
 

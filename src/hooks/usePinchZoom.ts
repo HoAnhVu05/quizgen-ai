@@ -14,7 +14,14 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}) {
   const [rotation, setRotation] = useState<number>(0);
   const [isDragging, setIsDragging] = useState<boolean>(false);
 
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerRefCurrent = useRef<HTMLDivElement | null>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+
+  // Callback ref to guarantee listener attachment even if component conditionally renders
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    containerRefCurrent.current = node;
+    setContainerEl(node);
+  }, []);
   const scaleRef = useRef<number>(1);
   const panRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isDraggingRef = useRef<boolean>(false);
@@ -72,10 +79,11 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}) {
       const currentPan = panRef.current;
       const nextScale = Math.min(Math.max(currentScale * factor, minScale), maxScale);
 
+      // If scale is 1 or less, center the view smoothly
       if (nextScale <= 1) {
-        scaleRef.current = 1;
+        scaleRef.current = nextScale;
         panRef.current = { x: 0, y: 0 };
-        setScale(1);
+        setScale(nextScale);
         setPan({ x: 0, y: 0 });
         return;
       }
@@ -96,15 +104,23 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}) {
 
   // Native Wheel & Touch Event Listeners (passive: false to prevent browser default pinch/zoom)
   useEffect(() => {
-    const el = containerRef.current;
+    const el = containerEl || containerRefCurrent.current;
     if (!el) return;
 
-    // 1. Mouse Wheel Zoom centered at cursor
+    // 1. Mouse Wheel Zoom centered at cursor (Supports normal wheel and laptop touchpad pinch with ctrlKey)
     const handleNativeWheel = (e: WheelEvent) => {
       e.preventDefault();
       e.stopPropagation();
 
-      const factor = e.deltaY < 0 ? 1.15 : 0.85;
+      let factor = 1;
+      if (e.ctrlKey) {
+        // Laptop precision touchpad 2-finger pinch
+        factor = Math.exp(-e.deltaY * 0.015);
+      } else {
+        // Standard mouse wheel roll
+        factor = e.deltaY < 0 ? 1.15 : 0.85;
+      }
+
       const rect = el.getBoundingClientRect();
       const cursorX = e.clientX - (rect.left + rect.width / 2);
       const cursorY = e.clientY - (rect.top + rect.height / 2);
@@ -236,7 +252,7 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}) {
       el.removeEventListener('touchend', handleNativeTouchEnd);
       el.removeEventListener('touchcancel', handleNativeTouchEnd);
     };
-  }, [minScale, maxScale, zoomAtPoint, reset]);
+  }, [containerEl, minScale, maxScale, zoomAtPoint, reset]);
 
   // Mouse Drag Handlers for Desktop
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -268,7 +284,7 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}) {
     if (scaleRef.current > 1) {
       reset();
     } else {
-      const el = containerRef.current;
+      const el = containerRefCurrent.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const cursorX = e.clientX - (rect.left + rect.width / 2);
@@ -303,6 +319,20 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}) {
       onMouseUp: handleMouseUp,
       onMouseLeave: handleMouseUp,
       onDoubleClick: handleDoubleClick,
+      onWheel: (e: React.WheelEvent) => {
+        let factor = 1;
+        if (e.ctrlKey) {
+          factor = Math.exp(-e.deltaY * 0.015);
+        } else {
+          factor = e.deltaY < 0 ? 1.15 : 0.85;
+        }
+        const el = containerRefCurrent.current;
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const cursorX = e.clientX - (rect.left + rect.width / 2);
+        const cursorY = e.clientY - (rect.top + rect.height / 2);
+        zoomAtPoint(cursorX, cursorY, factor);
+      },
     },
   };
 }

@@ -5631,10 +5631,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       )}
 
       {/* Lightbox Media Zoom Modal */}
-      <MediaLightboxModal
-        previewMedia={previewMediaUrl}
-        onClose={closePreviewMedia}
-      />
+      {previewMediaUrl && (
+        <MediaLightboxModal
+          previewMedia={previewMediaUrl}
+          onClose={closePreviewMedia}
+        />
+      )}
 
       {/* Shared Media Drawer (Kho Lưu Trữ Phương Tiện 4 Tab) */}
       {activeGroup && (
