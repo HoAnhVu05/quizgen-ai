@@ -25,10 +25,18 @@ export const AdminGrantPlanModal: React.FC<AdminGrantPlanModalProps> = ({
   onClose,
   onGrantPlan,
 }) => {
-  const [selectedPlan, setSelectedPlan] = useState<string>(user.planTier || 'pro');
+  const getInitialPlan = (tier?: string) => {
+    const raw = (tier || '').toUpperCase();
+    if (raw === 'ENTERPRISE') return 'ENTERPRISE';
+    if (raw === 'PRO_YEAR') return 'PRO_YEAR';
+    if (raw === 'PRO_MONTH' || raw === 'PRO') return 'PRO_MONTH';
+    return 'PRO_MONTH';
+  };
+
+  const [selectedPlan, setSelectedPlan] = useState<string>(getInitialPlan(user.planTier));
   const [durationOption, setDurationOption] = useState<string>('30d');
   const [customQuotaExams, setCustomQuotaExams] = useState<number>(100);
-  const [customQuotaStorageMb, setCustomQuotaStorageMb] = useState<number>(1024);
+  const [customQuotaStorageMb, setCustomQuotaStorageMb] = useState<number>(2048);
   const [reason, setReason] = useState<string>('Đặc quyền Ban Giám hiệu / Quản trị viên cấp');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -36,44 +44,48 @@ export const AdminGrantPlanModal: React.FC<AdminGrantPlanModalProps> = ({
 
   const planOptions = [
     {
-      id: 'free',
-      name: 'Gói Miễn Phí (Free)',
-      desc: 'Giới hạn 10 đề thi/tháng, 100MB lưu trữ',
+      id: 'FREE',
+      name: 'Gói Trải Nghiệm (Free)',
+      desc: '3 giáo trình (≤ 15MB/tệp), 50 câu hỏi AI & 2 đề thi/tháng',
       badge: 'Cơ bản',
       color: 'border-slate-200 bg-slate-50 text-slate-700',
       activeColor: 'border-slate-400 bg-slate-100 ring-2 ring-slate-400',
-      defaultExams: 10,
+      defaultExams: 2,
       defaultStorage: 100,
+      defaultDuration: '30d',
     },
     {
-      id: 'standard',
-      name: 'Gói Tiêu Chuẩn (Standard)',
-      desc: '30 đề thi/tháng, 500MB lưu trữ, hỗ trợ Bloom chuẩn',
-      badge: 'Giảng viên',
-      color: 'border-sky-200 bg-sky-50 text-sky-800',
-      activeColor: 'border-sky-500 bg-sky-50/80 ring-2 ring-sky-500',
-      defaultExams: 30,
-      defaultStorage: 500,
-    },
-    {
-      id: 'pro',
-      name: 'Gói Chuyên Nghiệp (Pro)',
-      desc: '100 đề thi/tháng, 2GB lưu trữ, RAG ma trận đề thi',
+      id: 'PRO_MONTH',
+      name: 'Gói PRO Giảng Viên (1 Tháng)',
+      desc: 'Giáo trình không giới hạn (≤ 50MB/tệp), 1.000 câu/tháng, 4 mức tư duy Bloom',
       badge: 'Phổ biến',
       color: 'border-teal-200 bg-teal-50 text-[#008689]',
       activeColor: 'border-[#008689] bg-teal-50/80 ring-2 ring-[#008689]',
       defaultExams: 100,
       defaultStorage: 2048,
+      defaultDuration: '30d',
     },
     {
-      id: 'enterprise',
+      id: 'PRO_YEAR',
+      name: 'Gói PRO Giảng Viên (1 Năm)',
+      desc: 'Đầy đủ đặc quyền PRO (≤ 50MB/tệp), RAG chuyên sâu, thời hạn trọn 365 ngày',
+      badge: 'Ưu đãi 1 Năm',
+      color: 'border-indigo-200 bg-indigo-50 text-indigo-700',
+      activeColor: 'border-indigo-500 bg-indigo-50/80 ring-2 ring-indigo-500',
+      defaultExams: 500,
+      defaultStorage: 5120,
+      defaultDuration: '365d',
+    },
+    {
+      id: 'ENTERPRISE',
       name: 'Gói Bộ Môn / Viện (Enterprise)',
-      desc: 'Không giới hạn đề thi, 10GB lưu trữ, HOD Verified',
+      desc: 'Tải tệp lớn (≤ 100MB/tệp), không giới hạn câu hỏi & đề thi, ngân hàng dùng chung',
       badge: 'Cao cấp',
       color: 'border-amber-200 bg-amber-50 text-amber-900',
       activeColor: 'border-amber-500 bg-amber-50/80 ring-2 ring-amber-500',
       defaultExams: -1,
       defaultStorage: 10240,
+      defaultDuration: '365d',
     },
   ];
 
@@ -83,6 +95,9 @@ export const AdminGrantPlanModal: React.FC<AdminGrantPlanModalProps> = ({
     if (matched) {
       setCustomQuotaExams(matched.defaultExams);
       setCustomQuotaStorageMb(matched.defaultStorage);
+      if (matched.defaultDuration) {
+        setDurationOption(matched.defaultDuration);
+      }
     }
   };
 

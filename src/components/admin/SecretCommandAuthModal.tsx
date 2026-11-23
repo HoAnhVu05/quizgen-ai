@@ -624,11 +624,11 @@ export const SecretCommandAuthModal: React.FC<SecretCommandAuthModalProps> = ({
 
                   {/* Face ID Verified Overlay */}
                   {isAuthenticating && (
-                    <div className="absolute inset-0 bg-black/70 backdrop-blur-xs flex flex-col items-center justify-center space-y-2 z-20 animate-in zoom-in-95 duration-200">
-                      <div className="w-14 h-14 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-emerald-400 shadow-[0_0_20px_rgba(52,211,153,0.6)]">
-                        <CheckCircle2 className="w-8 h-8" />
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center space-y-1.5 z-20 animate-in zoom-in-95 duration-200">
+                      <div className="w-11 h-11 rounded-full bg-emerald-500/20 border border-emerald-400/80 flex items-center justify-center text-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.4)]">
+                        <CheckCircle2 className="w-6 h-6" />
                       </div>
-                      <span className="text-xs font-bold text-emerald-300 tracking-wide uppercase">ĐÃ XÁC THỰC FACE ID</span>
+                      <span className="text-[11px] font-medium text-emerald-300/90 tracking-wider">Đã nhận diện</span>
                     </div>
                   )}
                 </>

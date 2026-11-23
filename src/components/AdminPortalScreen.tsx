@@ -82,6 +82,7 @@ import {
   AdminExamsTab,
   AdminPaymentsTab,
   AdminThemesTab,
+  AdminSupportTab,
   MicroserviceStatus,
   RealOverviewKPIs,
   ExamComplianceData,
@@ -112,7 +113,7 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const ROOT_ADMIN_EMAIL = 'quizgen.ai.team@gmail.com';
   const isCurrentRootAdmin = (currentUser?.email || '').toLowerCase() === ROOT_ADMIN_EMAIL;
 
-  const [internalTab, setInternalTab] = useState<'overview' | 'pipeline_monitor' | 'users' | 'library' | 'services' | 'security' | 'audit' | 'exams' | 'rbac' | 'payments' | 'themes'>('overview');
+  const [internalTab, setInternalTab] = useState<'overview' | 'pipeline_monitor' | 'users' | 'library' | 'services' | 'security' | 'audit' | 'exams' | 'rbac' | 'payments' | 'themes' | 'support'>('overview');
   const activeTab = (externalTab as any) || internalTab;
   const setActiveTab = (tab: any) => {
     setInternalTab(tab);
@@ -218,12 +219,13 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
   const [servicesStatus, setServicesStatus] = useState<MicroserviceStatus[]>([
     { name: 'API Gateway', port: 8000, role: 'Cổng định tuyến tập trung, CORS & Reverse Proxy', technology: 'FastAPI, Uvicorn', status: 'healthy', latencyMs: 14, details: 'Proxy 7 downstream services' },
     { name: 'Auth Service', port: 8001, role: 'Xác thực đa vai trò, Bcrypt & JWT Access/Refresh', technology: 'FastAPI, SQLite, Bcrypt', status: 'healthy', latencyMs: 19, details: 'JWT 24h / Refresh 30d' },
-    { name: 'Document Service', port: 8002, role: 'Trích xuất giáo trình PDF/DOCX, Lọc nhiễu Noise Filter', technology: 'PyMuPDF, python-docx, OCR', status: 'healthy', latencyMs: 25, details: 'Max upload: 25MB' },
+    { name: 'Document Service', port: 8002, role: 'Trích xuất giáo trình PDF/DOCX, Lọc nhiễu Noise Filter', technology: 'PyMuPDF, python-docx, OCR', status: 'healthy', latencyMs: 25, details: 'Max upload: 15MB - 100MB (Theo gói)' },
     { name: 'RAG Service', port: 8003, role: 'Vector Search, MMR Diversity Re-rank & SLA Window', technology: 'ChromaDB, all-MiniLM-L6-v2', status: 'healthy', latencyMs: 39, details: 'SLA: 39.84ms < 200ms' },
     { name: 'AI Service', port: 8004, role: 'Sinh câu hỏi ma trận Bloom, Prompt Engineering (Zero Mock)', technology: 'Google Gemini 2.5 Flash', status: 'healthy', latencyMs: 138, details: 'Zero Mock Policy active' },
     { name: 'Exam Service', port: 8005, role: 'Trộn 4 mã đề, Đóng gói xuất Word DOCX / PDF OMR 50 câu', technology: 'FastAPI, python-docx, ReportLab', status: 'healthy', latencyMs: 28, details: 'Version 1.2.0' },
     { name: 'Admin Service', port: 8006, role: 'Quản trị RBAC, Giám sát 8 Services & Khóa tài khoản tức thì', technology: 'FastAPI, SQLite, SQLAlchemy', status: 'healthy', latencyMs: 12, details: 'Port 8006 live' },
     { name: 'Payment Service', port: 8007, role: 'Quản lý Gói cước, Sinh mã VietQR PRO MB Bank & Tự động kích hoạt', technology: 'FastAPI, SQLite, PayOS SDK', status: 'healthy', latencyMs: 16, details: 'MB Bank 06020501360812' },
+    { name: 'Support Service', port: 8008, role: 'Quản trị Ticket Hỗ trợ, SLA Tracking, Khay ảnh lỗi & Cẩm nang FAQ', technology: 'FastAPI, SQLite WAL', status: 'healthy', latencyMs: 15, details: 'Port 8008 live' },
   ]);
   const [isCheckingServices, setIsCheckingServices] = useState(false);
 
@@ -921,6 +923,14 @@ export const AdminPortalScreen: React.FC<AdminPortalScreenProps> = ({
           themeLastUpdated={themeLastUpdated}
           activatingThemeId={activatingThemeId}
           handleActivateTheme={handleActivateTheme}
+        />
+      )}
+
+      {/* ── TAB: TIẾP NHẬN & CSKH KỸ THUẬT (SUPPORT HELPDESK - PORT 8008) ── */}
+      {activeTab === 'support' && (
+        <AdminSupportTab
+          currentUser={currentUser}
+          onShowToast={onShowToast}
         />
       )}
 

@@ -583,8 +583,27 @@ def update_user_role_endpoint(user_id: str, req: UpdateUserRoleRequest, db: Sess
 
 @app.post("/users/{user_id}/grant-plan")
 def grant_user_plan_endpoint(user_id: str, req: GrantPlanRequest, db: Session = Depends(get_db)):
-    """Cấp gói dịch vụ và tùy biến Quota đặc quyền cho người dùng trực tiếp trong auth.db"""
+    """Cấp gói dịch vụ và tùy biến Quota đặc quyền cho người dùng, đồng bộ trực tiếp sang auth.db và payment.db"""
     clean_actor = (req.actor_email or "").strip().lower() or ROOT_ADMIN_EMAIL
+
+    # Chuẩn hóa mã gói cước về 4 mã chuẩn của hệ thống: FREE, PRO_MONTH, PRO_YEAR, ENTERPRISE
+    raw_tier = (req.plan_tier or "FREE").strip().upper()
+    if raw_tier in ["PRO", "STANDARD", "PRO_MONTH"]:
+        norm_tier = "PRO_MONTH"
+    elif raw_tier in ["PRO_YEAR", "YEAR"]:
+        norm_tier = "PRO_YEAR"
+    elif raw_tier in ["ENTERPRISE"]:
+        norm_tier = "ENTERPRISE"
+    else:
+        norm_tier = "FREE"
+
+    now_dt = datetime.utcnow()
+    now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    expires_at_str = None
+    if req.duration_days > 0:
+        exp_date = now_dt + timedelta(days=req.duration_days)
+        expires_at_str = exp_date.strftime("%Y-%m-%d %H:%M:%S")
 
     with get_auth_connection() as conn:
         user = conn.execute("SELECT id, email, role, plan_tier FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -592,11 +611,10 @@ def grant_user_plan_endpoint(user_id: str, req: GrantPlanRequest, db: Session = 
             raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
 
         user_email = user["email"].strip().lower()
-        old_plan = user["plan_tier"] or "free"
 
-        # Đảm bảo schema có đủ các cột
+        # Đảm bảo schema auth.db có đủ các cột
         for col in [
-            "plan_tier VARCHAR(30) DEFAULT 'free'",
+            "plan_tier VARCHAR(30) DEFAULT 'FREE'",
             "plan_expires_at TIMESTAMP",
             "custom_quota_exams INTEGER",
             "custom_quota_storage_mb INTEGER"
@@ -606,34 +624,82 @@ def grant_user_plan_endpoint(user_id: str, req: GrantPlanRequest, db: Session = 
             except Exception:
                 pass
 
-        expires_at_str = None
-        if req.duration_days > 0:
-            exp_date = datetime.utcnow() + timedelta(days=req.duration_days)
-            expires_at_str = exp_date.strftime("%Y-%m-%d %H:%M:%S")
-
-        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             """UPDATE users 
                SET plan_tier = ?, plan_expires_at = ?, custom_quota_exams = ?, custom_quota_storage_mb = ?, updated_at = ?
                WHERE id = ?""",
-            (req.plan_tier, expires_at_str, req.custom_quota_exams, req.custom_quota_storage_mb, now_str, user_id)
+            (norm_tier, expires_at_str, req.custom_quota_exams, req.custom_quota_storage_mb, now_str, user_id)
         )
         conn.commit()
+
+    # [ĐỒNG BỘ ĐẶC QUYỀN SANG payment.db] - Đảm bảo User thực sự sở hữu Subscription và Quotas
+    try:
+        p_conn = get_payment_connection()
+        if p_conn:
+            p_cur = p_conn.cursor()
+            # 1. Hủy mọi subscription đang active trước đó của user
+            p_cur.execute(
+                "UPDATE subscriptions SET status = 'cancelled' WHERE user_id = ? AND status = 'active'",
+                (user_id,)
+            )
+
+            if norm_tier != "FREE":
+                # Lấy thông tin plan tương ứng trong payment.db
+                p_cur.execute("SELECT id, name FROM plans WHERE code = ? LIMIT 1", (norm_tier,))
+                plan_row = p_cur.fetchone()
+                if plan_row:
+                    plan_id = plan_row["id"]
+                else:
+                    plan_id = "plan_pro_monthly" if norm_tier == "PRO_MONTH" else "plan_pro_yearly" if norm_tier == "PRO_YEAR" else "plan_enterprise"
+
+                sub_id = f"sub_admin_{uuid.uuid4().hex[:12]}"
+                p_cur.execute(
+                    """INSERT INTO subscriptions (id, user_id, plan_id, plan_code, status, starts_at, expires_at, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
+                    (sub_id, user_id, plan_id, norm_tier, now_str, expires_at_str, now_str, now_str)
+                )
+
+                # Upsert user_quotas
+                p_cur.execute("SELECT user_id FROM user_quotas WHERE user_id = ?", (user_id,))
+                q_row = p_cur.fetchone()
+                reset_date = (now_dt + timedelta(days=30)).strftime("%Y-%m-%d")
+                if q_row:
+                    p_cur.execute(
+                        "UPDATE user_quotas SET plan_code = ?, updated_at = ? WHERE user_id = ?",
+                        (norm_tier, now_str, user_id)
+                    )
+                else:
+                    p_cur.execute(
+                        """INSERT INTO user_quotas (user_id, plan_code, documents_used, questions_used_month, exams_used_month, quota_reset_date, updated_at)
+                           VALUES (?, ?, 0, 0, 0, ?, ?)""",
+                        (user_id, norm_tier, reset_date, now_str)
+                    )
+            else:
+                # Trả về FREE trong user_quotas
+                p_cur.execute("SELECT user_id FROM user_quotas WHERE user_id = ?", (user_id,))
+                if p_cur.fetchone():
+                    p_cur.execute("UPDATE user_quotas SET plan_code = 'FREE', updated_at = ? WHERE user_id = ?", (now_str, user_id))
+
+            p_conn.commit()
+            p_conn.close()
+            print(f"[ADMIN-SERVICE] Đồng bộ đặc quyền thành công gói {norm_tier} sang payment.db cho {user_email}")
+    except Exception as e:
+        print(f"[ADMIN-SERVICE - WARNING] Lỗi đồng bộ sang payment.db: {e}")
 
     dur_text = f"{req.duration_days} ngày" if req.duration_days > 0 else "Vĩnh viễn"
     db.add(AdminAuditLogDB(
         actor_email=clean_actor,
         action="ADMIN_GRANT_PLAN",
-        detail=f"Cấp gói '{req.plan_tier.upper()}' (Thời hạn: {dur_text}, Đề thi: {req.custom_quota_exams}, RAG: {req.custom_quota_storage_mb}MB) cho {user_email}. Lý do: {req.reason or 'N/A'}",
+        detail=f"Cấp gói '{norm_tier}' (Thời hạn: {dur_text}, Đề thi: {req.custom_quota_exams}, RAG: {req.custom_quota_storage_mb}MB) cho {user_email}. Lý do: {req.reason or 'N/A'}",
         severity="info"
     ))
     db.commit()
 
     return {
         "status": "success",
-        "message": f"Đã cấp thành công gói {req.plan_tier.upper()} cho {user_email}.",
+        "message": f"Đã cấp thành công gói {norm_tier} cho {user_email}.",
         "userId": user_id,
-        "planTier": req.plan_tier,
+        "planTier": norm_tier,
         "planExpiresAt": expires_at_str,
         "customQuotaExams": req.custom_quota_exams,
         "customQuotaStorageMb": req.custom_quota_storage_mb

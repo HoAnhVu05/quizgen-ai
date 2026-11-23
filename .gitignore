@@ -62,3 +62,9 @@ Thumbs.db
 tempCodeRunnerFile.py
 
 test_outputs/
+
+# Local cloudflare runner
+run_cloudflare.bat
+*.xlsx
+*wifi*
+

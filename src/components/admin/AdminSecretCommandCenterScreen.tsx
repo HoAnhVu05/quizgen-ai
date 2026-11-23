@@ -30,6 +30,7 @@ import {
   Pencil,
   ThumbsUp,
   ThumbsDown,
+  Square,
 } from 'lucide-react';
 import apiClient, { API_BASE } from '../../services/apiClient';
 
@@ -300,7 +301,11 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
   // Accordion Thinking / Worked for Xs
   const [isThinkingExpanded, setIsThinkingExpanded] = useState<boolean>(false);
+  const [commandQueue, setCommandQueue] = useState<Array<{ id: string; prompt: string; formattedTime: string; status: string }>>([]);
+  const [isServerBusy, setIsServerBusy] = useState<boolean>(false);
+  const [isCancelling, setIsCancelling] = useState<boolean>(false);
   const isInitialOrSwitchRef = useRef<boolean>(true);
+  const prevMsgCountRef = useRef<number>(0);
 
   useEffect(() => {
     selectedSessionIdRef.current = selectedSessionId;
@@ -342,12 +347,25 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
   };
 
   useEffect(() => {
-    if (isInitialOrSwitchRef.current) {
+    if (isInitialOrSwitchRef.current && chatMessages.length > 0) {
+      // Khi vừa mở trang hoặc chuyển phiên: ĐỨNG IM NGAY Ở TIN MỚI NHẤT, KHÔNG CUỘN GIẬT
       scrollToBottom('auto');
-      isInitialOrSwitchRef.current = false;
-    } else if (isAtBottomRef.current || isSubmitting) {
+      const t1 = setTimeout(() => scrollToBottom('auto'), 50);
+      const t2 = setTimeout(() => {
+        scrollToBottom('auto');
+        isInitialOrSwitchRef.current = false;
+      }, 150);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    } else if (isSubmitting) {
+      scrollToBottom('smooth');
+    } else if (chatMessages.length > prevMsgCountRef.current && isAtBottomRef.current) {
+      // CHỈ CUỘN KHI THỰC SỰ CÓ TIN NHẮN MỚI THÊM VÀO và người dùng đang ở đáy
       scrollToBottom('smooth');
     }
+    prevMsgCountRef.current = chatMessages.length;
   }, [chatMessages, isSubmitting]);
 
   // Tự động cuộn cuộn băng Tivi xuống hành động mới nhất
@@ -391,6 +409,12 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
         if (data.systemStats) {
           setSysStats(data.systemStats);
         }
+        if (data.commandQueue) {
+          setCommandQueue(data.commandQueue);
+        }
+        if (typeof data.isBusy === 'boolean') {
+          setIsServerBusy(data.isBusy);
+        }
 
         if (data.activeSessionId && !selectedSessionIdRef.current) {
           setSelectedSessionId(data.activeSessionId);
@@ -414,7 +438,16 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
               (m) => m.id.startsWith('user-') && !serverTexts.has(m.text)
             );
 
-            return [...serverMsgs, ...pendingLocal];
+            const nextMsgs = [...serverMsgs, ...pendingLocal];
+            // SO SÁNH NỘI DUNG ĐỂ TRÁNH RE-RENDER VÔ ÍCH GÂY CUỘN TIN NHẮN LIÊN TỤC
+            if (
+              prev.length === nextMsgs.length &&
+              prev.every((p, i) => p.id === nextMsgs[i].id && p.text === nextMsgs[i].text)
+            ) {
+              return prev;
+            }
+
+            return nextMsgs;
           });
         }
 
@@ -566,6 +599,37 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
     setTimeout(() => setCopiedId(null), 1500);
   };
 
+  // Hủy thực thi hoặc xóa lệnh trong hàng đợi
+  const handleCancelAgent = async (queueItemId?: string) => {
+    setIsCancelling(true);
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/agent-bridge/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(queueItemId ? { id: queueItemId } : {}),
+      });
+      if (res.ok) {
+        if (queueItemId) {
+          setCommandQueue((prev) => prev.filter((q) => q.id !== queueItemId));
+        } else {
+          setCommandQueue([]);
+          setIsSubmitting(false);
+          const cancelMsg: ChatMessage = {
+            id: `agent-cancel-${Date.now()}`,
+            sender: 'agent',
+            senderName: 'Antigravity Agent',
+            text: '⛔ Đã nhận lệnh DỪNG / HỦY của anh. Em đã dừng tác vụ và xóa các yêu cầu đang chờ trong hàng đợi.',
+            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          };
+          setChatMessages((prev) => [...prev, cancelMsg]);
+        }
+        await fetchLiveMirror();
+      }
+    } catch {} finally {
+      setIsCancelling(false);
+    }
+  };
+
   // Gửi lệnh hoặc lời trò chuyện
   const handleSendMessage = async (customPrompt?: string) => {
     const finalPrompt = (customPrompt || promptText).trim();
@@ -616,6 +680,16 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
       if (res.ok) {
         const result = await res.json();
+        if (result.status === 'queued') {
+          const queueNotice: ChatMessage = {
+            id: `queue-msg-${Date.now()}`,
+            sender: 'agent',
+            senderName: 'Antigravity Agent',
+            text: result.output || `⏳ Yêu cầu "${finalPrompt}" đã vào hàng đợi an toàn. Em sẽ thực thi ngay khi xong tác vụ hiện tại!`,
+            timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          };
+          setChatMessages((prev) => [...prev, queueNotice]);
+        }
         if (result.sessionId) {
           setSelectedSessionId(result.sessionId);
           setIsCreatingNewSession(false);
@@ -623,7 +697,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
         }
         setTimeout(() => {
           void fetchLiveMirror(result.sessionId);
-        }, 1000);
+        }, 600);
       } else {
         throw new Error('Máy chủ phản hồi lỗi');
       }
@@ -657,7 +731,7 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
   const latestAction = liveActions[liveActions.length - 1];
   const lastMsg = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
-  const isAgentWorking = isSubmitting || (lastMsg !== null && lastMsg.sender === 'user');
+  const isAgentWorking = isSubmitting || isServerBusy || (lastMsg !== null && lastMsg.sender === 'user');
 
   return (
     <div className="fixed inset-0 z-[200] bg-black text-zinc-100 flex flex-col font-sans select-none overflow-hidden">
@@ -943,6 +1017,28 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
 
       {/* ── 4. BOTTOM COMPOSER: TRÒ CHUYỆN & RA LỆNH ───────────────────────── */}
       <div className="px-3 py-2.5 bg-zinc-950 border-t border-zinc-900 flex flex-col space-y-2 shrink-0">
+        {/* Hàng đợi lệnh (Queue UI) */}
+        {commandQueue.length > 0 && (
+          <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-300">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+              <span className="font-semibold shrink-0">Hàng đợi ({commandQueue.length} lệnh):</span>
+              <span className="text-zinc-300 truncate font-mono">
+                "{commandQueue[0]?.prompt}"
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCancelAgent()}
+              className="text-rose-400 hover:text-rose-300 font-mono text-[10px] flex items-center gap-1 shrink-0 ml-2 cursor-pointer"
+              title="Hủy toàn bộ hàng đợi"
+            >
+              <X className="w-3 h-3" />
+              <span>Hủy hàng đợi</span>
+            </button>
+          </div>
+        )}
+
         {attachedImage && (
           <div className="relative inline-block self-start">
             <img
@@ -1003,12 +1099,25 @@ export const AdminSecretCommandCenterScreen: React.FC<AdminSecretCommandCenterSc
             </button>
           </div>
 
+          {/* Nút STOP / CANCEL (Hình vuông) khi Agent đang thực thi hoặc có hàng đợi - chuẩn Antigravity IDE */}
+          {(isAgentWorking || commandQueue.length > 0) && (
+            <button
+              type="button"
+              onClick={() => void handleCancelAgent()}
+              disabled={isCancelling}
+              className="w-9 h-9 rounded-full bg-rose-500/20 border border-rose-500/50 text-rose-400 hover:bg-rose-500/30 active:scale-95 flex items-center justify-center transition-all cursor-pointer shrink-0 mb-0.5 shadow-md group"
+              title="Dừng / Hủy thực thi (Stop/Cancel giống Antigravity IDE)"
+            >
+              <Square className="w-3.5 h-3.5 fill-rose-400 group-hover:scale-110 transition-transform" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => void handleSendMessage()}
-            disabled={isSubmitting || (!promptText.trim() && !attachedImage)}
+            disabled={!promptText.trim() && !attachedImage}
             className="w-9 h-9 rounded-full bg-white text-black hover:bg-zinc-200 active:scale-95 flex items-center justify-center transition-all disabled:opacity-20 disabled:scale-100 cursor-pointer shrink-0 mb-0.5 shadow-md"
-            title="Gửi tin nhắn"
+            title={isAgentWorking ? "Đưa vào hàng đợi lệnh" : "Gửi tin nhắn"}
           >
             <ArrowUp className="w-4 h-4 font-bold" />
           </button>

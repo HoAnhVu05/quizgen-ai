@@ -10,3 +10,4 @@ export * from './AdminPaymentsTab';
 export * from './AdminThemesTab';
 export * from './AdminLibraryTab';
 export * from './AdminGrantPlanModal';
+export * from './AdminSupportTab';

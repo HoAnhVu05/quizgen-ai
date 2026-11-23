@@ -317,6 +317,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
   const [editTitle, setEditTitle] = useState('');
   const [editContent, setEditContent] = useState('');
   const [editCategory, setEditCategory] = useState<'exam' | 'qa' | 'textbook'>('exam');
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [editTagInput, setEditTagInput] = useState('');
+  const [editAttachedFileName, setEditAttachedFileName] = useState('');
+  const [editAttachedFileSize, setEditAttachedFileSize] = useState('');
+  const [editAttachedFileUrl, setEditAttachedFileUrl] = useState('');
+  const [isEditUploadingFile, setIsEditUploadingFile] = useState(false);
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editLinkUrl, setEditLinkUrl] = useState('');
+  const [editLinkLabel, setEditLinkLabel] = useState('');
 
   // Share Modal State
   const [sharingPost, setSharingPost] = useState<ForumPost | null>(null);
@@ -418,8 +427,10 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 25 * 1024 * 1024) {
-      onShowToast('warning', 'Tệp quá lớn', 'Hệ thống hỗ trợ đính kèm tối đa 25MB.');
+    const userTier = (currentUser?.planTier || 'FREE').toUpperCase();
+    const maxMb = userTier === 'ENTERPRISE' ? 100 : (userTier === 'PRO_MONTH' || userTier === 'PRO_YEAR' || userTier === 'PRO') ? 50 : 25;
+    if (file.size > maxMb * 1024 * 1024) {
+      onShowToast('warning', 'Tệp quá lớn', `Hệ thống hỗ trợ đính kèm tối đa ${maxMb}MB cho gói ${userTier}.`);
       return;
     }
 
@@ -550,21 +561,118 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     }
   };
 
-  // Edit Post
+  // Open Edit Post Modal
+  const handleStartEdit = (post: ForumPost) => {
+    setEditingPost(post);
+    setEditTitle(post.title);
+    setEditContent(post.content);
+    setEditCategory(post.category);
+    setEditTags(post.tags ? post.tags.filter((t) => t && t !== 'Chung') : []);
+    setEditTagInput('');
+    setEditAttachedFileName(post.attachmentFileName || '');
+    setEditAttachedFileSize(post.attachmentFileSize || '');
+    setEditAttachedFileUrl(post.attachmentUrl || '');
+    setEditImageUrl(post.imageUrl || '');
+    setEditLinkUrl(post.linkUrl || post.videoUrl || '');
+    setEditLinkLabel(post.linkLabel || (post.videoUrl ? 'Video bài giảng' : ''));
+    setActiveMenuId(null);
+  };
+
+  // Upload file for edit modal
+  const handleSelectEditFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const userTier = (currentUser?.planTier || 'FREE').toUpperCase();
+    const maxMb = userTier === 'ENTERPRISE' ? 100 : (userTier === 'PRO_MONTH' || userTier === 'PRO_YEAR' || userTier === 'PRO') ? 50 : 25;
+    if (file.size > maxMb * 1024 * 1024) {
+      onShowToast('warning', 'Tệp quá lớn', `Hệ thống hỗ trợ đính kèm tối đa ${maxMb}MB cho gói ${userTier}.`);
+      return;
+    }
+
+    setEditAttachedFileName(file.name);
+    const sizeStr =
+      file.size > 1024 * 1024
+        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(file.size / 1024)} KB`;
+    setEditAttachedFileSize(sizeStr);
+    setIsEditUploadingFile(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await apiClient
+        .fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
+          method: 'POST',
+          body: formData,
+        })
+        .then((r) => r.json());
+
+      if (res && res.fileUrl) {
+        setEditAttachedFileUrl(res.fileUrl);
+        onShowToast('success', 'Đã tải tệp lên', `${file.name} (${sizeStr})`);
+      } else {
+        throw new Error(res?.detail || 'Lỗi lưu trữ tệp trên máy chủ');
+      }
+    } catch (err: any) {
+      console.warn('Backend upload fallback:', err);
+      const localUrl = URL.createObjectURL(file);
+      setEditAttachedFileUrl(localUrl);
+      onShowToast('info', 'Đã gắn tệp', `${file.name} (${sizeStr})`);
+    } finally {
+      setIsEditUploadingFile(false);
+    }
+  };
+
+  // Upload image for edit modal
+  const handleSelectEditImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        if (ev.target?.result) {
+          setEditImageUrl(ev.target.result as string);
+          onShowToast('info', 'Đã gắn ảnh', file.name);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Save Edit Post
   const handleSaveEditPost = () => {
     if (!editingPost) return;
     if (!editTitle.trim() || !editContent.trim()) {
       onShowToast('warning', 'Thiếu thông tin', 'Vui lòng không để trống tiêu đề hoặc nội dung.');
       return;
     }
+
+    const pendingTag = editTagInput.trim().replace(/^#/, '').replace(/\s+/g, '_');
+    const finalTags = [...editTags];
+    if (pendingTag && !finalTags.includes(pendingTag)) {
+      finalTags.push(pendingTag);
+    }
+
     const updated = posts.map((p) =>
       p.id === editingPost.id
-        ? { ...p, title: editTitle.trim(), content: editContent.trim(), category: editCategory }
+        ? {
+            ...p,
+            title: editTitle.trim(),
+            content: editContent.trim(),
+            category: editCategory,
+            tags: finalTags,
+            attachmentFileName: editAttachedFileName.trim() || undefined,
+            attachmentFileSize: editAttachedFileSize.trim() || undefined,
+            attachmentUrl: editAttachedFileUrl.trim() || undefined,
+            imageUrl: editImageUrl.trim() || undefined,
+            linkUrl: editLinkUrl.trim() || undefined,
+            linkLabel: editLinkLabel.trim() || undefined,
+          }
         : p
     );
     savePosts(updated);
     setEditingPost(null);
-    onShowToast('success', 'Cập nhật thành công', 'Nội dung chủ đề đã được lưu thay đổi.');
+    onShowToast('success', 'Cập nhật thành công', 'Nội dung và tệp đính kèm đã được lưu thay đổi.');
   };
 
   // Share to QGroup Modal
@@ -1219,14 +1327,8 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                       >
                         <button
                           type="button"
-                          onClick={() => {
-                            setEditingPost(post);
-                            setEditTitle(post.title);
-                            setEditContent(post.content);
-                            setEditCategory(post.category);
-                            setActiveMenuId(null);
-                          }}
-                          className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                          onClick={() => handleStartEdit(post)}
+                          className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                         >
                           <Pencil className="w-3.5 h-3.5 text-slate-500" />
                           <span>Chỉnh sửa chủ đề</span>
@@ -1533,46 +1635,121 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       {/* ─── 3. MODAL CHỈNH SỬA CHỦ ĐỀ ─────────────────────────────────────── */}
       {editingPost && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn"
           onClick={() => setEditingPost(null)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 p-5 space-y-3.5 text-xs animate-fadeIn"
+            className="w-full max-w-lg bg-white rounded-xl shadow-xl border border-slate-200 p-4 sm:p-5 space-y-3.5 text-xs animate-fadeIn max-h-[92vh] flex flex-col"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="font-bold text-sm text-slate-900">Chỉnh sửa chủ đề thảo luận</h3>
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-md bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
+                  <Pencil className="w-3.5 h-3.5" />
+                </div>
+                <h3 className="font-bold text-sm text-slate-900">Chỉnh sửa chủ đề thảo luận</h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setEditingPost(null)}
-                className="text-slate-400 hover:text-slate-600"
+                className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-3">
+            {/* Scrollable Form Body */}
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Tiêu đề:</label>
                 <input
                   type="text"
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Tiêu đề thảo luận..."
                   className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-900 focus:outline-none focus:bg-white focus:border-slate-800"
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Chuyên mục:</label>
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value as any)}
-                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:bg-white focus:border-slate-800"
-                >
-                  <option value="exam">Đề thi &amp; Ma trận Bloom</option>
-                  <option value="qa">Hỏi đáp Khảo thí</option>
-                  <option value="textbook">Giáo trình &amp; Học liệu</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Chuyên mục:</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value as any)}
+                    className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:bg-white focus:border-slate-800"
+                  >
+                    <option value="exam">Đề thi &amp; Ma trận Bloom</option>
+                    <option value="qa">Hỏi đáp Khảo thí</option>
+                    <option value="textbook">Giáo trình &amp; Học liệu</option>
+                  </select>
+                </div>
+
+                {/* Edit Tags Input */}
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Gắn thẻ môn học / Chủ đề:
+                  </label>
+                  <div className="flex items-center gap-1.5 flex-wrap p-1.5 bg-slate-50 border border-slate-200 rounded-lg min-h-[36px]">
+                    {editTags.map((t) => (
+                      <span
+                        key={t}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 text-white font-mono text-[11px]"
+                      >
+                        #{t}
+                        <button
+                          type="button"
+                          onClick={() => setEditTags(editTags.filter((x) => x !== t))}
+                          className="text-slate-400 hover:text-white cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                    <div className="flex items-center gap-1 flex-1 min-w-[130px]">
+                      <input
+                        type="text"
+                        value={editTagInput}
+                        onChange={(e) => setEditTagInput(e.target.value)}
+                        onBlur={() => {
+                          const clean = editTagInput.trim().replace(/^#/, '').replace(/\s+/g, '_');
+                          if (clean && !editTags.includes(clean)) {
+                            setEditTags([...editTags, clean]);
+                            setEditTagInput('');
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ',') {
+                            e.preventDefault();
+                            const clean = editTagInput.trim().replace(/^#/, '').replace(/\s+/g, '_');
+                            if (clean && !editTags.includes(clean)) {
+                              setEditTags([...editTags, clean]);
+                              setEditTagInput('');
+                            }
+                          }
+                        }}
+                        placeholder="Thêm thẻ mã môn..."
+                        className="bg-transparent text-xs text-slate-800 focus:outline-none flex-1 px-1 min-w-[90px]"
+                      />
+                      {editTagInput.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const clean = editTagInput.trim().replace(/^#/, '').replace(/\s+/g, '_');
+                            if (clean && !editTags.includes(clean)) {
+                              setEditTags([...editTags, clean]);
+                              setEditTagInput('');
+                            }
+                          }}
+                          className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[11px] font-semibold cursor-pointer shrink-0"
+                        >
+                          + Thêm
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -1581,25 +1758,188 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                   rows={4}
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
+                  placeholder="Nhập nội dung chia sẻ..."
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:bg-white focus:border-slate-800 leading-relaxed resize-none"
                 />
               </div>
+
+              {/* Tệp đính kèm & Đa phương tiện */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-100">
+                <span className="block font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                  Đính kèm (Tệp tin, Hình ảnh, Liên kết)
+                </span>
+
+                {/* 1. Tệp đính kèm Word/PDF/Excel */}
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Tệp tài liệu (Word, PDF, Excel...)</span>
+                    </span>
+                    {editAttachedFileName && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditAttachedFileName('');
+                          setEditAttachedFileSize('');
+                          setEditAttachedFileUrl('');
+                        }}
+                        className="text-rose-600 hover:text-rose-700 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                        title="Xóa tệp đính kèm"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Xóa tệp</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {editAttachedFileName ? (
+                    <div className="flex items-center justify-between gap-2 p-2 bg-white rounded border border-slate-200">
+                      <div className="flex items-center gap-2 truncate">
+                        <FileText className="w-4 h-4 text-blue-600 shrink-0" />
+                        <div className="truncate">
+                          <span className="font-semibold text-slate-800 text-xs truncate block">{editAttachedFileName}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">{editAttachedFileSize || 'Tài liệu'}</span>
+                        </div>
+                      </div>
+                      <label className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] cursor-pointer shrink-0 transition-colors">
+                        <span>Đổi tệp khác</span>
+                        <input
+                          type="file"
+                          accept=".docx,.pdf,.xlsx,.zip,.pptx,.txt"
+                          onChange={handleSelectEditFile}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="w-full py-2 border-2 border-dashed border-slate-200 hover:border-slate-300 hover:bg-white rounded-lg flex items-center justify-center gap-2 text-slate-600 font-medium text-xs cursor-pointer transition-all">
+                      <FileText className="w-3.5 h-3.5 text-slate-500" />
+                      <span>{isEditUploadingFile ? 'Đang tải tệp lên...' : 'Bấm để tải tệp Word/PDF/Excel mới'}</span>
+                      <input
+                        type="file"
+                        accept=".docx,.pdf,.xlsx,.zip,.pptx,.txt"
+                        onChange={handleSelectEditFile}
+                        disabled={isEditUploadingFile}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* 2. Ảnh minh họa */}
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Hình ảnh minh họa</span>
+                    </span>
+                    {editImageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setEditImageUrl('')}
+                        className="text-rose-600 hover:text-rose-700 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                        title="Xóa hình ảnh"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Xóa ảnh</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {editImageUrl ? (
+                    <div className="flex items-center justify-between gap-3 p-2 bg-white rounded border border-slate-200">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <img
+                          src={editImageUrl}
+                          alt="Minh họa"
+                          className="w-12 h-12 rounded object-cover border border-slate-200 shrink-0"
+                        />
+                        <span className="text-[11px] text-slate-500 truncate">Ảnh đính kèm đã sẵn sàng</span>
+                      </div>
+                      <label className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded text-[11px] cursor-pointer shrink-0 transition-colors">
+                        <span>Đổi ảnh khác</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleSelectEditImage}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <label className="w-full py-2 border-2 border-dashed border-slate-200 hover:border-slate-300 hover:bg-white rounded-lg flex items-center justify-center gap-2 text-slate-600 font-medium text-xs cursor-pointer transition-all">
+                      <ImageIcon className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Bấm để tải ảnh minh họa từ thiết bị</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleSelectEditImage}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {/* 3. Liên kết tham khảo / Video */}
+                <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                      <LinkIcon className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Liên kết tham khảo (Website hoặc Video bài giảng)</span>
+                    </span>
+                    {(editLinkUrl || editLinkLabel) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditLinkUrl('');
+                          setEditLinkLabel('');
+                        }}
+                        className="text-rose-600 hover:text-rose-700 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                        title="Xóa liên kết"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Xóa link</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={editLinkUrl}
+                      onChange={(e) => setEditLinkUrl(e.target.value)}
+                      placeholder="https://... (link website, tài liệu hoặc YouTube)"
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-slate-800"
+                    />
+                    <input
+                      type="text"
+                      value={editLinkLabel}
+                      onChange={(e) => setEditLinkLabel(e.target.value)}
+                      placeholder="Tiêu đề / Tên liên kết (ví dụ: Video bài giảng)..."
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            {/* Footer Buttons (Sticky) */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 shrink-0">
               <button
                 type="button"
                 onClick={() => setEditingPost(null)}
-                className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 font-semibold rounded-lg"
+                className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 font-semibold rounded-lg cursor-pointer"
               >
                 Hủy
               </button>
               <button
                 type="button"
                 onClick={handleSaveEditPost}
-                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg shadow-2xs"
+                disabled={isEditUploadingFile}
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-semibold rounded-lg shadow-2xs cursor-pointer"
               >
-                Lưu thay đổi
+                {isEditUploadingFile ? 'Đang tải tệp...' : 'Lưu thay đổi'}
               </button>
             </div>
           </div>

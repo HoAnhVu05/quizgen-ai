@@ -16,6 +16,7 @@ import io
 import re
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -102,13 +103,30 @@ class QuestionGenerator:
         if isinstance(img_data, Image.Image):
             return img_data
         if isinstance(img_data, str):
-            # 1. Kiểm tra nếu là file path trên ổ đĩa
-            if os.path.exists(img_data):
+            # 1. Kiểm tra nếu là file path trực tiếp trên ổ đĩa
+            if os.path.exists(img_data) and os.path.isfile(img_data):
                 try:
                     return Image.open(img_data)
                 except Exception as err:
                     print(f"[AI-SERVICE] Không thể mở ảnh từ đường dẫn {img_data}: {err}")
-            # 2. Kiểm tra nếu là base64 data URI
+            
+            # 2. Tìm kiếm trong các thư mục media của document-service
+            clean_name = os.path.basename(img_data.split("?")[0])
+            base_dir = Path(__file__).resolve().parent.parent.parent / "document-service" / "data"
+            candidate_paths = [
+                base_dir / "extracted_images" / clean_name,
+                base_dir / "question_attachments" / clean_name,
+                base_dir / "forum_attachments" / clean_name,
+                base_dir / "uploads" / clean_name,
+            ]
+            for cp in candidate_paths:
+                if cp.exists() and cp.is_file():
+                    try:
+                        return Image.open(str(cp))
+                    except Exception:
+                        pass
+
+            # 3. Kiểm tra nếu là base64 data URI
             if "base64," in img_data:
                 img_data = img_data.split("base64,")[1]
             try:
@@ -197,11 +215,31 @@ class QuestionGenerator:
         if not chunks:
             raise RuntimeError(f"Tài liệu '{textbook_name}' không có ngữ cảnh văn bản hợp lệ để sinh câu hỏi.")
 
-        req_nhan_biet = bloom_matrix.get("nhanBiet") or bloom_matrix.get("nhan_biet") or 4
-        req_thong_hieu = bloom_matrix.get("thongHieu") or bloom_matrix.get("thong_hieu") or 4
-        req_van_dung = bloom_matrix.get("vanDung") or bloom_matrix.get("van_dung") or 2
-        req_phan_tich = bloom_matrix.get("phanTich") or bloom_matrix.get("phan_tich") or 0
+        # Đọc chính xác ma trận Bloom, tránh lỗi '0 or default' làm sai lệch số lượng
+        def _get_matrix_val(*keys: str, default: int = 0) -> int:
+            for k in keys:
+                if k in bloom_matrix and bloom_matrix[k] is not None:
+                    try:
+                        return int(bloom_matrix[k])
+                    except (ValueError, TypeError):
+                        pass
+            return default
+
+        req_nhan_biet = _get_matrix_val("nhanBiet", "nhan_biet", default=4)
+        req_thong_hieu = _get_matrix_val("thongHieu", "thong_hieu", default=4)
+        req_van_dung = _get_matrix_val("vanDung", "van_dung", default=2)
+        req_phan_tich = _get_matrix_val("phanTich", "phan_tich", default=0)
         total_questions = req_nhan_biet + req_thong_hieu + req_van_dung + req_phan_tich
+        if total_questions <= 0:
+            req_nhan_biet, req_thong_hieu, req_van_dung, req_phan_tich = 4, 4, 2, 0
+            total_questions = 10
+
+        target_matrix_clean = {
+            "nhanBiet": req_nhan_biet,
+            "thongHieu": req_thong_hieu,
+            "vanDung": req_van_dung,
+            "phanTich": req_phan_tich
+        }
 
         # 1. Chuẩn bị context text từ các chunks thực tế của tài liệu
         context_str = "\n\n".join([
@@ -255,7 +293,7 @@ Hãy vận dụng chỉ đạo trên để định hướng chủ đề câu h�
             raise RuntimeError("Chưa khởi tạo được mô hình Gemini AI. Vui lòng kiểm tra khóa API.")
 
         # Helper tạo prompt cho từng slice/batch
-        def _build_batch_prompt(matrix_desc: str) -> str:
+        def _build_batch_prompt(matrix_desc: str, target_count: int) -> str:
             return f"""
 NGỮ CẢNH HỌC LIỆU TỪ TÀI LIỆU '{textbook_name}':
 {context_str}
@@ -264,6 +302,11 @@ NGỮ CẢNH HỌC LIỆU TỪ TÀI LIỆU '{textbook_name}':
 
 YÊU CẦU MA TRẬN ĐỀ THI CHO ĐỢT NÀY:
 {matrix_desc}
+
+YÊU CẦU SỐ LƯỢNG NGHIÊM NGẶT (KHÔNG ĐƯỢC SAI LỆCH):
+- Bạn BẮT BUỘC phải sinh CHÍNH XÁC đúng {target_count} câu hỏi trắc nghiệm.
+- TUYỆT ĐỐI KHÔNG sinh thừa (không sinh {target_count+1} hay nhiều hơn) và TUYỆT ĐỐI KHÔNG sinh thiếu.
+- Danh sách 'questions' trong JSON kết quả phải có ĐÚNG {target_count} phần tử.
 
 LƯU Ý QUAN TRỌNG:
 1. Toàn bộ câu hỏi, phương án và giải thích PHẢI BÁM SÁT 100% ngữ cảnh học liệu ở trên.
@@ -276,19 +319,22 @@ LƯU Ý QUAN TRỌNG:
         if total_questions > 4:
             sub_tasks_matrix = []
             if req_nhan_biet > 0:
-                sub_tasks_matrix.append(f"- Nhận biết: {req_nhan_biet} câu")
+                sub_tasks_matrix.append((f"- Nhận biết: chính xác {req_nhan_biet} câu", req_nhan_biet))
             if req_thong_hieu > 0:
-                sub_tasks_matrix.append(f"- Thông hiểu: {req_thong_hieu} câu")
+                sub_tasks_matrix.append((f"- Thông hiểu: chính xác {req_thong_hieu} câu", req_thong_hieu))
             van_phan = []
+            vp_count = 0
             if req_van_dung > 0:
-                van_phan.append(f"- Vận dụng: {req_van_dung} câu")
+                van_phan.append(f"- Vận dụng: chính xác {req_van_dung} câu")
+                vp_count += req_van_dung
             if req_phan_tich > 0:
-                van_phan.append(f"- Phân tích: {req_phan_tich} câu")
+                van_phan.append(f"- Phân tích: chính xác {req_phan_tich} câu")
+                vp_count += req_phan_tich
             if van_phan:
-                sub_tasks_matrix.append("\n".join(van_phan))
+                sub_tasks_matrix.append(("\n".join(van_phan), vp_count))
 
-            async def _run_sub_batch(matrix_desc: str) -> List[Dict[str, Any]]:
-                b_prompt = _build_batch_prompt(matrix_desc)
+            async def _run_sub_batch(matrix_desc: str, target_count: int) -> List[Dict[str, Any]]:
+                b_prompt = _build_batch_prompt(matrix_desc, target_count)
                 b_parts: List[Any] = [BLOOM_SYSTEM_PROMPT, b_prompt]
                 if loaded_pil_images:
                     b_parts.extend(loaded_pil_images)
@@ -298,25 +344,37 @@ LƯU Ý QUAN TRỌNG:
                     generation_config={"response_mime_type": "application/json"}
                 )
                 parsed = self._parse_json_safely(resp.text)
-                return parsed.get("questions", [])
+                batch_qs = parsed.get("questions", [])
+                if isinstance(batch_qs, list) and len(batch_qs) > target_count:
+                    batch_qs = batch_qs[:target_count]
+                return batch_qs
 
             try:
-                batch_results = await asyncio.gather(*[_run_sub_batch(m) for m in sub_tasks_matrix], return_exceptions=True)
+                batch_results = await asyncio.gather(*[_run_sub_batch(m, cnt) for m, cnt in sub_tasks_matrix], return_exceptions=True)
                 gathered_questions = []
                 for res in batch_results:
                     if isinstance(res, list):
                         gathered_questions.extend(res)
                 if gathered_questions:
-                    return self._normalize_questions(gathered_questions, chunks, document_id, chapter_name, textbook_name, all_images_meta)
+                    return self._normalize_questions(
+                        gathered_questions,
+                        chunks,
+                        document_id,
+                        chapter_name,
+                        textbook_name,
+                        all_images_meta,
+                        expected_total=total_questions,
+                        bloom_matrix=target_matrix_clean
+                    )
             except Exception as e:
                 print(f"[AI GENERATOR] Warning in parallel batch: {e}, falling back to single batch.")
 
         # Fallback hoặc khi số câu hỏi <= 4: Chạy 1 batch tổng
-        full_matrix_desc = f"""- Nhận biết: {req_nhan_biet} câu
-- Thông hiểu: {req_thong_hieu} câu
-- Vận dụng: {req_van_dung} câu
-- Phân tích: {req_phan_tich} câu"""
-        user_prompt = _build_batch_prompt(full_matrix_desc)
+        full_matrix_desc = f"""- Nhận biết: chính xác {req_nhan_biet} câu
+- Thông hiểu: chính xác {req_thong_hieu} câu
+- Vận dụng: chính xác {req_van_dung} câu
+- Phân tích: chính xác {req_phan_tich} câu"""
+        user_prompt = _build_batch_prompt(full_matrix_desc, total_questions)
 
         try:
             parts: List[Any] = [BLOOM_SYSTEM_PROMPT, user_prompt]
@@ -333,7 +391,16 @@ LƯU Ý QUAN TRỌNG:
             if not raw_questions:
                 raise RuntimeError("Mô hình AI phản hồi rỗng hoặc không có câu hỏi hợp lệ trong JSON.")
 
-            return self._normalize_questions(raw_questions, chunks, document_id, chapter_name, textbook_name, all_images_meta)
+            return self._normalize_questions(
+                raw_questions,
+                chunks,
+                document_id,
+                chapter_name,
+                textbook_name,
+                all_images_meta,
+                expected_total=total_questions,
+                bloom_matrix=target_matrix_clean
+            )
         except Exception as exc:
             raise RuntimeError(f"Lỗi khi gọi mô hình Gemini AI: {str(exc)}")
 
@@ -474,7 +541,9 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         document_id: str,
         chapter_name: str,
         textbook_name: str = "",
-        images_meta: Optional[List[Dict[str, Any]]] = None
+        images_meta: Optional[List[Dict[str, Any]]] = None,
+        expected_total: Optional[int] = None,
+        bloom_matrix: Optional[Dict[str, int]] = None
     ) -> List[Dict[str, Any]]:
         """Bổ sung đầy đủ các trường tương thích kép camelCase và snake_case cho Frontend & Database"""
         normalized = []
@@ -538,6 +607,54 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
                 "createdAt": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
             }
             normalized.append(item)
+
+        # [SỬA LỖI LỆCH SỐ LƯỢNG CÂU HỎI]: Đảm bảo trả về CHÍNH XÁC đúng số câu hỏi yêu cầu, tuyệt đối không thừa / thiếu
+        if expected_total is not None and expected_total > 0:
+            if bloom_matrix:
+                nb_target = bloom_matrix.get("nhanBiet", bloom_matrix.get("nhan_biet", 0))
+                th_target = bloom_matrix.get("thongHieu", bloom_matrix.get("thong_hieu", 0))
+                vd_target = bloom_matrix.get("vanDung", bloom_matrix.get("van_dung", 0))
+                pt_target = bloom_matrix.get("phanTich", bloom_matrix.get("phan_tich", 0))
+
+                nb_bucket = [q for q in normalized if "nhận biết" in str(q["bloomLevel"]).lower()]
+                th_bucket = [q for q in normalized if "thông hiểu" in str(q["bloomLevel"]).lower()]
+                vd_bucket = [q for q in normalized if "vận dụng" in str(q["bloomLevel"]).lower()]
+                pt_bucket = [q for q in normalized if "phân tích" in str(q["bloomLevel"]).lower()]
+                other_bucket = [q for q in normalized if q not in nb_bucket and q not in th_bucket and q not in vd_bucket and q not in pt_bucket]
+
+                selected = []
+                leftover = []
+
+                # Khớp chỉ tiêu từng mức độ nhận thức
+                selected.extend(nb_bucket[:nb_target])
+                leftover.extend(nb_bucket[nb_target:])
+
+                selected.extend(th_bucket[:th_target])
+                leftover.extend(th_bucket[th_target:])
+
+                selected.extend(vd_bucket[:vd_target])
+                leftover.extend(vd_bucket[vd_target:])
+
+                selected.extend(pt_bucket[:pt_target])
+                leftover.extend(pt_bucket[pt_target:])
+
+                leftover.extend(other_bucket)
+
+                # Nếu còn thiếu so với expected_total (ví dụ LLM gán nhãn lệch nhóm), bổ sung từ leftover
+                if len(selected) < expected_total and leftover:
+                    needed = expected_total - len(selected)
+                    selected.extend(leftover[:needed])
+
+                # Nếu vượt quá, cắt chính xác về expected_total
+                if len(selected) > expected_total:
+                    selected = selected[:expected_total]
+
+                if selected:
+                    normalized = selected
+
+            elif len(normalized) > expected_total:
+                normalized = normalized[:expected_total]
+
         return normalized
 
     async def chat_with_copilot(
@@ -584,31 +701,89 @@ QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ:
 """
         else:
             system_instruction = f"""
-Bạn là Quanta — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.
-Bạn đang đồng hành trực tiếp cùng {user_name} trong nghiên cứu tài liệu, thẩm định tri thức và biên soạn đề thi.
-Tuyệt đối không tự ý nhắc đến bất kỳ tên trường đại học cụ thể nào.
+Bạn là Quanta — Quản gia Khảo thí Học thuật & Trợ lý Điều hành AI Toàn năng của nền tảng QuizGen AI.
+Bạn đang túc trực và đồng hành trực tiếp cùng {user_name} trong quản trị tài liệu, thẩm định tri thức, tự động hóa biên soạn đề thi và chăm sóc giải quyết sự cố kỹ thuật.
 
-QUY ĐỊNH BẮT BUỘC VỀ VAI TRÒ & NĂNG LỰC (NGHIÊM CẤM TỪ CHỐI):
-1. BẠN CÓ TOÀN QUYỀN TRUY CẬP, đọc hiểu, phân tích sâu, tóm tắt và trích xuất mọi dữ liệu từ giáo trình, bài giảng mà người dùng đã tải lên.
-2. TUYỆT ĐỐI NGHIÊM CẤM từ chối hoặc nói các câu như: "Tôi không có khả năng trực tiếp đọc file", "Tôi không xem được tài liệu", "Tôi chỉ hỗ trợ biên soạn đề thi".
-3. Khi người dùng yêu cầu tóm tắt giáo trình, phân tích chương mục hoặc giải thích khái niệm:
-   - Lập tức phân tích và tóm tắt chi tiết, mạch lạc theo chuẩn mực học thuật của môn học (dựa trên tên tài liệu và các chương mục).
-   - Trình bày bài bản: Khái quát học phần -> Trọng tâm từng chương (kèm số trang và luận điểm then chốt) -> Định hướng câu hỏi trắc nghiệm theo thang đo Bloom.
+QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ (QUẢN GIA TẬN TÂM):
+1. XƯNG HÔ: Xưng là "Quanta" hoặc "em". Gọi người dùng:
+   - Nếu có học vị (ThS, TS, PGS...): Gọi "ThS. Vũ" hoặc "ThS. {user_name}".
+   - Nếu là tài khoản cá nhân thông thường: Gọi lịch sự là "anh/chị" hoặc "Thầy/Cô".
+   - TUYỆT ĐỐI NGHIÊM CẤM ghép máy móc ngớ ngẩn như "Thầy/Cô Vũ Anh" hay "Thầy/Cô Hồ Anh Vũ"! Phải nói tự nhiên, lịch thiệp, thông minh chuẩn phong cách Quản gia cao cấp.
+2. VAI TRÒ QUẢN GIA TOÀN NĂNG (AI BUTLER):
+   - Bạn không chỉ trả lời câu hỏi thụ động, mà có THẨM QUYỀN CAN THIỆP và ĐỀ XUẤT HÀNH ĐỘNG trực tiếp giúp {user_name}.
+   - Am hiểu 100% dịch vụ và tính năng của nền tảng QuizGen AI:
+     * Bước 1 (upload): Kho Giáo trình — nạp file PDF/Word, trích xuất văn bản, nhận diện công thức, OCR.
+     * Bước 2 (generate): Sinh Câu hỏi AI — cấu hình ma trận Bloom 4 mức độ (Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao), số lượng câu, định hướng chủ đề.
+     * Bước 3 (review): Không gian Đối soát & Biên tập — thẩm định câu hỏi với trích đoạn tài liệu gốc, biên tập đáp án, thêm giải thích chi tiết, gắn nhãn Bloom.
+     * Bước 4 (bank): Ngân hàng Đề thi — đóng gói đề, đảo mã đề ngẫu nhiên bằng thuật toán Fisher-Yates, xuất file Word (.docx) và PDF chuẩn mẫu Bộ GD&ĐT, xuất phiếu chấm thi trắc nghiệm OMR 50/100 câu.
+     * Hội nhóm Q-Group: Mạng xã hội chuyên môn, chia sẻ ngân hàng câu hỏi, phòng đàm thoại nhóm Audio Huddle qua luồng âm thanh WebSocket thời gian thực (Microphone duplex, triệt tiêu tạp âm).
+     * Trung tâm Hỗ trợ (support): Giải đáp sự cố và đối soát thanh toán gói dịch vụ (Free, Pro Tháng, Pro Năm).
+3. TUYỆT ĐỐI NGHIÊM CẤM từ chối hoặc nói các câu như: "Tôi không có khả năng trực tiếp đọc file", "Tôi không xem được tài liệu".
 4. Khi viết công thức Toán, Lý, Hóa, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).
+
+HỆ THỐNG CÔNG CỤ CAN THIỆP (GENERATIVE ACTION CARDS):
+Khi phù hợp với ngữ cảnh yêu cầu của {user_name}, bạn HÃY CHỦ ĐỘNG ĐÍNH KÈM các khối Action sau ở cuối phản hồi để giao diện hiển thị thành Thẻ Tương Tác cho người dùng bấm 1-chạm:
+
+1. KHI NGƯỜI DÙNG GẶP KHÓ KHĂN / LỖI HỆ THỐNG / THẮC MẮC THANH TOÁN GÓI CƯỚC:
+Hãy chèn khối hành động lập phiếu hỗ trợ:
+```action:support_ticket
+{{
+  "title": "Tóm tắt ngắn gọn vấn đề",
+  "category": "payment",
+  "description": "Mô tả chi tiết sự cố để Admin đối soát ngay"
+}}
+```
+(category gồm: 'payment' cho thanh toán/nạp tiền, 'system_bug' cho lỗi tính năng, 'academic' cho chuyên môn)
+
+2. KHI NGƯỜI DÙNG YÊU CẦU TẠO ĐỀ THI HOẶC LÊN KẾ HOẠCH RA ĐỀ 4 BƯỚC:
+Hãy chèn khối ma trận đề thi đề xuất:
+```action:exam_blueprint
+{{
+  "documentName": "Tên cuốn sách phù hợp",
+  "chapter": "Tên chương hoặc toàn bộ giáo trình",
+  "questionCount": 20,
+  "bloomRatio": {{ "know": 30, "understand": 40, "apply": 20, "analyze": 10 }}
+}}
+```
+
+3. KHI CẦN ĐIỀU HƯỚNG {user_name} ĐẾN MÀN HÌNH CỤ THỂ:
+```action:navigate
+{{
+  "targetScreen": "upload",
+  "label": "Mở Kho Giáo Trình (Bước 1)"
+}}
+```
+(targetScreen có thể là: 'upload', 'generate', 'review', 'bank', 'support', 'qgroup', 'dashboard')
 
 NGỮ CẢNH LÀM VIỆC HIỆN TẠI:
 - Màn hình hiện tại: {screen_label} (Mã màn hình: {screen})
 """
-        system_instruction += f"\nTHỰC TẾ KHO TÀI LIỆU CỦA NGƯỜI DÙNG HIỆN TẠI:\n"
+        system_docs = ctx.get("system_documents") or []
+
+        system_instruction += f"\nTHỰC TẾ KHO TÀI LIỆU & GIÁO TRÌNH:\n"
         if all_docs:
-            system_instruction += f"- Tổng số lượng tài liệu/giáo trình trong thư viện cá nhân: {len(all_docs)} tài liệu.\n"
-            system_instruction += "- Danh sách chi tiết toàn bộ tài liệu:\n"
+            system_instruction += f"- Thư viện cá nhân của {user_name}: Đang lưu trữ {len(all_docs)} tài liệu:\n"
             for idx, d in enumerate(all_docs):
                 system_instruction += f"  {idx+1}. '{d.get('name', 'Tài liệu')}' ({d.get('totalPages', '?')} trang, ID: {d.get('id', 'N/A')})\n"
-            system_instruction += f"QUY ĐỊNH BẮT BUỘC: Khi người dùng hỏi bạn 'tôi có bao nhiêu tài liệu trong thư viện?' hoặc hỏi về số lượng tài liệu, bạn BẮT BUỘC trả lời chính xác là {len(all_docs)} tài liệu và liệt kê các tài liệu ở trên. Tuyệt đối không được trả lời sai số lượng hay nói rằng bạn không biết.\n"
         else:
-            system_instruction += "- Hiện tại người dùng chưa tải lên tài liệu nào trong thư viện (Tổng số lượng: 0 tài liệu).\n"
-            system_instruction += "QUY ĐỊNH BẮT BUỘC: Khi người dùng hỏi có bao nhiêu tài liệu trong thư viện, bạn phải thông báo hiện tại kho tài liệu của Thầy/Cô đang có 0 tài liệu và hướng dẫn Thầy/Cô bấm vào mục 'Tải Giáo Trình' để tải lên.\n"
+            system_instruction += f"- Thư viện cá nhân của {user_name}: Hiện tại chưa tải lên tài liệu nào.\n"
+
+        if system_docs:
+            system_instruction += f"\n- Kho Thư viện Giáo trình Toàn Hệ thống (QuizGen Library): Có tổng cộng {len(system_docs)} giáo trình chuyên khảo đầy đủ các bộ môn.\n"
+            system_instruction += "  Một số giáo trình tiêu biểu trong kho hệ thống:\n"
+            for d in system_docs[:25]:
+                system_instruction += f"  • '{d.get('name')}' ({d.get('totalPages', '?')} trang, ID: {d.get('id')})\n"
+
+        system_instruction += """
+QUY TẮC ĐẶC BIỆT KHI NGƯỜI DÙNG HỎI VỀ TÀI LIỆU / CHỦ ĐỀ HỌC THUẬT:
+1. TRẢ LỜI ĐÚNG TRỌNG TÂM CÂU HỎI (TUYỆT ĐỐI KHÔNG LIỆT KÊ MÁY MÓC):
+   - Khi người dùng hỏi: 'giáo trình nào có hình học như hình tam giác, hình thoi...', hoặc hỏi tìm sách về bất kỳ chủ đề nào (toán, đồ họa, vi xử lý, kinh tế, hệ điều hành...):
+     BẠN PHẢI SUY LUẬN VÀ TRẢ LỜI TRỰC DIỆN:
+     * Chỉ rõ ngay tên cuốn sách phù hợp nhất (ví dụ: 'Giáo trình Kỹ thuật đồ họa - 2018' (222 trang) chuyên sâu về đồ họa máy tính 2D/3D, các thuật toán vẽ đường, tô màu tam giác, hình thoi, đa giác; hoặc 'Toán kỹ thuật - 2013' có hình học giải tích và ma trận không gian; hoặc 'Boyd - Convex Optimization' về đa diện và tập lồi).
+     * Phân tích ngắn gọn vì sao cuốn sách đó có nội dung người dùng đang tìm.
+   - TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ đếm số lượng tài liệu cá nhân rồi liệt kê ra một cách ngô nghê và lờ đi câu hỏi của người dùng!
+2. CHỈ KHI NÀO người dùng hỏi rõ: 'Tôi có bao nhiêu tài liệu cá nhân?' thì mới báo số lượng tài liệu trong thư viện riêng của họ.
+"""
 
         if doc_name or doc_id or doc_chunks:
             system_instruction += f"\nTHÔNG TIN GIÁO TRÌNH ĐANG LÀM VIỆC TRỰC TIẾP:\n"
@@ -671,10 +846,10 @@ NGUYÊN TẮC PHẢN HỒI:
 QUY TẮC HỖ TRỢ KỸ THUẬT & THANH TOÁN (CUSTOMER SUPPORT & BILLING):
 Khi người dùng gặp sự cố kỹ thuật, lỗi hệ thống, thắc mắc về nạp tiền, giao dịch thanh toán chuyển khoản / quét mã QR, nâng cấp gói dịch vụ, tài khoản bị gián đoạn, cần đối soát giao dịch hoặc cần liên hệ bộ phận hỗ trợ:
 1. Bạn phải lập tức đồng cảm, hướng dẫn tận tình và cung cấp ĐẦY ĐỦ các kênh hỗ trợ chính thức của QuizGen AI:
-   - 📧 Email hỗ trợ & đối soát: support@hoanhvu.id.vn hoặc quizgen.ai.team@gmail.com
-   - 📞 Hotline / Zalo hỗ trợ kỹ thuật 24/7: 0909.122.005 (Chủ nhiệm dự án: ThS. Hồ Anh Vũ)
-   - 🏛️ Trực tiếp: Văn phòng Bộ môn Khoa học Máy tính / Khoa Công nghệ Thông tin — Trường ĐH Giao thông Vận tải TP.HCM (UTH)
-2. Nếu người dùng gặp lỗi thanh toán ngân hàng: Hướng dẫn người dùng chụp ảnh biên lai chuyển khoản (chứa Mã giao dịch ngân hàng) và gửi qua Zalo hoặc Email trên để được đối soát và kích hoạt gói tức thì trong 5 - 15 phút.
+   - 📧 Email đối soát & hỗ trợ: quizgen.ai.team@gmail.com
+   - 📞 Hotline / Zalo hỗ trợ kỹ thuật: 0364591363
+2. CHỦ ĐỘNG TẠO PHIẾU HỖ TRỢ (Support Ticket Card): Tự động đính kèm thẻ ```action:support_ticket ...``` để người dùng chỉ cần bấm nút là ticket được lưu vào hệ thống và gửi đến ban quản trị xử lý ngay.
+3. Nếu người dùng gặp lỗi thanh toán ngân hàng hoặc lỗi tính năng: Hướng dẫn người dùng có thể đính kèm ảnh chụp biên lai VietQR hoặc ảnh chụp màn hình sự cố trực tiếp ngay trên Phiếu hỗ trợ bên dưới (hỗ trợ chọn file ảnh hoặc dán nhanh bằng Ctrl+V) để Admin đối soát và kích hoạt gói tức thì. Ngoài ra có thể gửi qua Zalo 0364591363 hoặc Email quizgen.ai.team@gmail.com.
 """
 
         clean_msg = message.strip().lower()
@@ -687,22 +862,25 @@ Khi người dùng gặp sự cố kỹ thuật, lỗi hệ thống, thắc mắ
 
         system_instruction += """
 QUY TẮC PHẢN HỒI BẮT BUỘC (ANTI-ROBOTIC & TRỰC DIỆN):
-1. TUYỆT ĐỐI KHÔNG lặp lại các bài giới thiệu bản thân máy móc (như 'Kính chào ThS... Tôi là Quanta... Tôi có toàn quyền truy cập...').
+1. TUYỆT ĐỐI KHÔNG lặp lại các bài giới thiệu bản thân máy móc hay xưng hô ngô nghê.
 2. Vào thẳng trọng tâm câu hỏi của người dùng, văn phong tự nhiên, súc tích, chuyên nghiệp và ân cần.
-3. Khi người dùng gửi lời mở đầu ngắn hoặc thông báo chung như 'anh gặp vấn đề cần hỗ trợ', 'giúp anh với':
-   - Phản hồi nhanh: 'Dạ Thầy đang gặp vướng mắc hoặc sự cố ở phần nào ạ? Em sẵn sàng kiểm tra và xử lý ngay giúp Thầy:'
-   - Liệt kê các nhóm trợ giúp nhanh:
-     + 🎧 *Sự cố cuộc gọi đàm thoại Huddle / âm thanh mic*
-     + 📚 *Thao tác nạp giáo trình / sinh câu hỏi theo ma trận Bloom*
-     + 💳 *Đối soát nâng cấp gói dịch vụ & thanh toán*
-     + 📞 *Hotline / Zalo hỗ trợ kỹ thuật trực tiếp*: `0909.122.005` (ThS. Hồ Anh Vũ)
+3. Khi người dùng cần hỗ trợ, báo lỗi, hoặc nhắn 'tôi cần hỗ trợ', 'giúp anh với':
+   - Phản hồi ngắn gọn, lịch thiệp và BẮT BUỘC chèn khối thẻ hành động ```action:support_ticket ...``` để người dùng có form bấm gửi 1-chạm hoặc liên hệ Zalo 0364591363 ngay trên giao diện!
 """
 
         if is_support_intent:
             system_instruction += """
-CHỈ THỊ KHI NGƯỜI DÙNG CẦN HỖ TRỢ KỸ THUẬT:
-1. Đồng cảm ngay và đưa ra giải pháp hoặc kênh kết nối nhanh.
-2. Cung cấp hotline 24/7 Zalo `0909.122.005` và email `support@hoanhvu.id.vn`.
+CHỈ THỊ ĐẶC BIỆT KHI CẦN HỖ TRỢ KỸ THUẬT:
+- Luôn gửi kèm khối action:
+```action:support_ticket
+{
+  "title": "Hỗ trợ sự cố & giải đáp kỹ thuật",
+  "category": "system_bug",
+  "description": "Người dùng cần hỗ trợ kỹ thuật từ hệ thống"
+}
+```
+- Nêu rõ số Hotline / Zalo chính thức duy nhất: 0364591363 và Email: quizgen.ai.team@gmail.com.
+- TUYỆT ĐỐI KHÔNG NHẮC ĐẾN BẤT KỲ SỐ ĐIỆN THOẠI NÀO KHÁC (như 0909...).
 """
 
         # Chế độ Kênh Điều Khiển Tối Mật (Remote Command HUD)
@@ -749,7 +927,7 @@ Nhiệm vụ của bạn là:
             # Gợi ý hành động tiếp theo dựa trên màn hình và ý định
             if is_support_intent:
                 suggestions = [
-                    "📞 Hotline Zalo 0909.122.005",
+                    "📞 Hotline Zalo 0364591363",
                     "💳 Hỗ trợ lỗi thanh toán / nạp gói",
                     "🎧 Hỗ trợ phòng đàm thoại Huddle",
                     "📚 Hỗ trợ nạp giáo trình PDF / Word"

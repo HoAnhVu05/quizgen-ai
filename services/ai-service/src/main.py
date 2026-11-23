@@ -176,6 +176,33 @@ async def generate_questions(
             detail=f"Không tìm thấy nội dung văn bản nào từ tài liệu '{textbook_name}' để sinh câu hỏi. Vui lòng kiểm tra lại tài liệu đã tải lên."
         )
 
+    # Bổ sung danh sách hình ảnh bóc tách từ Document Service nếu các chunks chưa có
+    if document_id and retrieved_chunks:
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}/chunks?limit=100")
+                if c_res.status_code == 200:
+                    raw_chunks_data = c_res.json().get("chunks", [])
+                    cid_images_map = {
+                        c.get("chunkId") or c.get("id"): c.get("images", [])
+                        for c in raw_chunks_data
+                        if c.get("images")
+                    }
+                    page_images_map = {
+                        c.get("pageNumber") or c.get("page_number"): c.get("images", [])
+                        for c in raw_chunks_data
+                        if c.get("images")
+                    }
+                    for r_chunk in retrieved_chunks:
+                        cid = r_chunk.get("chunkId") or r_chunk.get("id") or r_chunk.get("chunk_id")
+                        pnum = r_chunk.get("pageNumber") or r_chunk.get("page_number")
+                        imgs = cid_images_map.get(cid) or page_images_map.get(pnum, [])
+                        if imgs and not r_chunk.get("images"):
+                            r_chunk["images"] = imgs
+                            r_chunk["associated_images"] = imgs
+        except Exception as enrich_err:
+            print(f"[AI-SERVICE] Bổ qua cảnh báo nạp ảnh đính kèm: {enrich_err}")
+
     # 3. Kích hoạt sinh câu hỏi bằng LLM Gemini hoặc Fallback ma trận chuẩn
     try:
         questions = await generator.generate_questions_from_context(
@@ -330,8 +357,19 @@ async def chat_copilot_endpoint(
                     "admins": admins,
                     "verified": True
                 }
+
+        # Nạp toàn bộ danh mục tài liệu/giáo trình có trong kho hệ thống documents.db
+        docs_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../document-service/data/documents.db"))
+        if os.path.exists(docs_db_path):
+            with sqlite3.connect(docs_db_path) as d_conn:
+                dc = d_conn.cursor()
+                rows = dc.execute("SELECT id, name, total_pages FROM documents ORDER BY id ASC").fetchall()
+                context["system_documents"] = [
+                    {"id": r[0], "name": r[1], "totalPages": r[2]}
+                    for r in rows
+                ]
     except Exception as e:
-        print(f"[AI-SERVICE] Warning loading system stats: {e}")
+        print(f"[AI-SERVICE] Warning loading system stats or documents: {e}")
 
     result = await generator.chat_with_copilot(
         message=message,

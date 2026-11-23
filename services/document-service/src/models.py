@@ -74,6 +74,7 @@ class DocumentChunkDB(Base):
     chapter = Column(String(255), nullable=False)
     char_count = Column(Integer, nullable=False, default=0)
     text_snippet = Column(Text, nullable=False)
+    images_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     document = relationship("DocumentDB", back_populates="chunks")

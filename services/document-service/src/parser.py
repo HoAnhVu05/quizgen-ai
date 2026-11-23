@@ -91,26 +91,76 @@ class DocumentParser:
         return cleaned_pages
 
     @staticmethod
-    def parse_pdf(file_bytes: bytes) -> List[Dict[str, Any]]:
+    def parse_pdf(file_bytes: bytes, extract_images_dir: Any = None, document_id: str = "doc") -> List[Dict[str, Any]]:
         """
         Bóc tách từng trang PDF, làm sạch và áp dụng bộ lọc Header/Footer lặp lại.
         Sử dụng bộ tăng tốc PyMuPDF (fitz C++) cho tốc độ 300+ trang/giây, tự động fallback sang pypdf.
+        Đồng thời tự động trích xuất các hình vẽ/sơ đồ/đồ thị học thuật từ các trang tài liệu.
         Ném ngoại lệ ValueError nếu file hỏng, bị mã hóa hoặc không có text.
         """
         raw_pages_lines = []
+        raw_pages_images: List[List[Dict[str, Any]]] = []
         try:
             import fitz
+            from pathlib import Path
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             if doc.is_encrypted:
                 if not doc.authenticate(""):
                     raise ValueError("Tài liệu PDF được bảo vệ bằng mật khẩu. Vui lòng mở khóa trước khi tải lên.")
-            for page in doc:
+            
+            # Đảm bảo thư mục lưu ảnh tồn tại nếu được chỉ định
+            img_dir_path = None
+            if extract_images_dir:
+                img_dir_path = Path(extract_images_dir)
+                img_dir_path.mkdir(parents=True, exist_ok=True)
+
+            for page_idx, page in enumerate(doc):
                 try:
                     raw_text = page.get_text() or ""
                 except Exception:
                     raw_text = ""
                 lines = [DocumentParser._clean_text(l) for l in raw_text.split("\n") if l.strip()]
                 raw_pages_lines.append(lines)
+
+                # Trích xuất hình ảnh/sơ đồ từ trang
+                page_imgs = []
+                try:
+                    image_list = page.get_images(full=True)
+                    img_count = 0
+                    for img_idx, img_info in enumerate(image_list):
+                        if img_count >= 5:  # Tối đa 5 hình/trang để tối ưu tài nguyên
+                            break
+                        xref = img_info[0]
+                        base_image = doc.extract_image(xref)
+                        w = base_image.get("width", 0)
+                        h = base_image.get("height", 0)
+                        img_bytes = base_image.get("image")
+                        ext = base_image.get("ext", "png")
+
+                        # Lọc bỏ icon, bullet nhỏ, dải màu trang trí
+                        if w >= 80 and h >= 80 and img_bytes and len(img_bytes) >= 1200:
+                            img_count += 1
+                            filename = f"{document_id}_p{page_idx+1}_img{img_count}.{ext}"
+                            saved_path = None
+                            if img_dir_path:
+                                target_file = img_dir_path / filename
+                                target_file.write_bytes(img_bytes)
+                                saved_path = str(target_file)
+                            
+                            page_imgs.append({
+                                "id": f"img-{document_id}-p{page_idx+1}-{img_count}",
+                                "url": f"/api/v1/documents/images/{filename}",
+                                "path": saved_path,
+                                "page": page_idx + 1,
+                                "page_number": page_idx + 1,
+                                "width": w,
+                                "height": h,
+                                "caption": f"Hình sơ đồ / minh họa trang {page_idx+1}"
+                            })
+                except Exception:
+                    pass
+                raw_pages_images.append(page_imgs)
+
             doc.close()
         except ImportError:
             try:
@@ -135,6 +185,7 @@ class DocumentParser:
                     raw_text = ""
                 lines = [DocumentParser._clean_text(l) for l in raw_text.split("\n") if l.strip()]
                 raw_pages_lines.append(lines)
+                raw_pages_images.append([])
 
         # Áp dụng bộ lọc Header/Footer đa trang
         filtered_page_texts = DocumentParser._filter_running_headers_footers(raw_pages_lines)
@@ -145,9 +196,11 @@ class DocumentParser:
         for idx, text in enumerate(filtered_page_texts):
             clean_page_text = DocumentParser._clean_text(text)
             total_extracted_chars += len(clean_page_text)
+            page_imgs = raw_pages_images[idx] if idx < len(raw_pages_images) else []
             pages_content.append({
                 "page_number": idx + 1,
-                "text": clean_page_text
+                "text": clean_page_text,
+                "images": page_imgs
             })
 
         if total_extracted_chars == 0:

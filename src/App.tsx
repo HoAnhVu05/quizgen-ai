@@ -1751,6 +1751,8 @@ const AppContent: React.FC = () => {
           currentUser={currentUser}
           activeQuestion={questions.length > 0 ? questions[0] : null}
           onNavigate={(screen) => setCurrentScreen(screen)}
+          onGenerateSuccess={handleGenerateSuccess}
+          onShowToast={handleShowToast}
         />
       )}
     </div>

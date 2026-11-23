@@ -308,6 +308,13 @@ class TextChunker:
                 return char_page_map[-1][2], char_page_map[-1][3]
             return 1, current_chapter or "Nội dung tài liệu"
 
+        # Tạo bản đồ ảnh theo số trang
+        page_images_map: Dict[int, List[Dict[str, Any]]] = {
+            p.get("page_number", idx + 1): p.get("images", [])
+            for idx, p in enumerate(pages)
+            if p.get("images")
+        }
+
         # Bước 2: Cắt khối theo cửa sổ trượt liên tục (Continuous Sliding Window)
         chunks = []
         chunk_idx = 1
@@ -327,6 +334,7 @@ class TextChunker:
 
             if len(raw_chunk) >= min_chunk_chars:
                 page_num, chunk_chapter = resolve_page_and_chapter(curr_start)
+                chunk_images = page_images_map.get(page_num, [])
 
                 chunks.append({
                     "chunk_id": f"{document_id}_c{chunk_idx:04d}",
@@ -334,7 +342,9 @@ class TextChunker:
                     "page_number": page_num,
                     "chapter": chunk_chapter,
                     "text": raw_chunk,
-                    "char_count": len(raw_chunk)
+                    "char_count": len(raw_chunk),
+                    "images": chunk_images,
+                    "associated_images": chunk_images
                 })
                 chunk_idx += 1
 
@@ -353,13 +363,16 @@ class TextChunker:
         if not chunks:
             if total_len >= 20:
                 page_num, chunk_chapter = resolve_page_and_chapter(0)
+                chunk_images = page_images_map.get(page_num, [])
                 chunks.append({
                     "chunk_id": f"{document_id}_c0001",
                     "document_id": document_id,
                     "page_number": page_num,
                     "chapter": chunk_chapter,
                     "text": full_doc_text.strip(),
-                    "char_count": len(full_doc_text.strip())
+                    "char_count": len(full_doc_text.strip()),
+                    "images": chunk_images,
+                    "associated_images": chunk_images
                 })
             else:
                 raise EmptyChunksException(

@@ -216,16 +216,15 @@ export const TextbookPickerModal: React.FC<TextbookPickerModalProps> = ({
         } catch {}
       }
 
-      // 4. Kết hợp với kho mặc định chất lượng cao
-      const combined = [...loadedItems];
-      DEFAULT_FALLBACK_TEXTBOOKS.forEach((fb) => {
-        if (!combined.some((c) => c.name.toLowerCase() === fb.name.toLowerCase())) {
-          combined.push(fb);
-        }
-      });
+      // 4. Nếu API đã nạp thành công dữ liệu thật từ CSDL, TUYỆT ĐỐI không chèn thêm sách mock
+      let finalItems = loadedItems;
+      if (finalItems.length === 0) {
+        // Chỉ kích hoạt kho fallback khi hoàn toàn không có mạng hoặc CSDL trống
+        finalItems = [...DEFAULT_FALLBACK_TEXTBOOKS];
+      }
 
       // Deduplicate theo ID và Name
-      const deduped = combined.filter(
+      const deduped = finalItems.filter(
         (tb, idx, self) =>
           idx === self.findIndex((o) => o.id === tb.id || o.name.toLowerCase() === tb.name.toLowerCase())
       );

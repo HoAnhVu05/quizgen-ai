@@ -50,7 +50,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
 
   const handleGrantPlanSubmit = async (payload: GrantPlanPayload) => {
     try {
-      await apiClient.post(`/admin/users/${payload.userId}/grant-plan`, {
+      const res = await apiClient.post(`/admin/users/${payload.userId}/grant-plan`, {
         plan_tier: payload.planTier,
         duration_days: payload.durationDays,
         custom_quota_exams: payload.customQuotaExams,
@@ -63,6 +63,7 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
         target.planTier = payload.planTier;
       }
       setGrantPlanUser(null);
+      alert(`Đã cấp thành công gói ${payload.planTier.toUpperCase()} và đồng bộ đặc quyền sang CSDL hệ thống!`);
     } catch (err: any) {
       alert(`Lỗi cấp gói: ${err?.message || 'Không thể kết nối đến máy chủ.'}`);
     }
@@ -265,11 +266,13 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                               onClick={() => setGrantPlanUser(u)}
                               title="Bấm để cấp gói dịch vụ hoặc chỉnh sửa quota"
                               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer shadow-2xs hover:scale-105 ${
-                                (u.planTier || '').toLowerCase() === 'enterprise'
+                                (u.planTier || '').toUpperCase() === 'ENTERPRISE'
                                   ? 'bg-amber-50 text-amber-900 border-amber-300'
-                                  : (u.planTier || '').toLowerCase() === 'pro'
+                                  : (u.planTier || '').toUpperCase() === 'PRO_YEAR'
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                                  : (u.planTier || '').toUpperCase() === 'PRO_MONTH' || (u.planTier || '').toUpperCase() === 'PRO'
                                   ? 'bg-teal-50 text-[#008689] border-teal-300'
-                                  : (u.planTier || '').toLowerCase() === 'standard'
+                                  : (u.planTier || '').toUpperCase() === 'STANDARD'
                                   ? 'bg-sky-50 text-sky-800 border-sky-300'
                                   : 'bg-slate-50 text-slate-600 border-slate-200'
                               }`}

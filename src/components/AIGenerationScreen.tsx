@@ -3,6 +3,8 @@ import { Sparkles, History } from 'lucide-react';
 import { ScreenId, Question, BloomLevel, QuestionOption, UserProfile } from '../types';
 import { findKnowledgeForChapter } from '../constants/curriculumData';
 import apiClient from '../services/apiClient';
+import { DocumentPreviewModal } from './DocumentPreviewModal';
+import { downloadFileSafely } from '../utils/fileDownloadHelper';
 import {
   BloomDistribution,
   DocumentItem,
@@ -241,6 +243,29 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [librarySearchQuery, setLibrarySearchQuery] = useState('');
   const [chapterSearchQuery, setChapterSearchQuery] = useState('');
   const [pedagogicalPrompt, setPedagogicalPrompt] = useState<string>('');
+  const [previewDocumentFile, setPreviewDocumentFile] = useState<{
+    url: string;
+    name: string;
+    size?: string;
+    type?: string;
+  } | null>(null);
+
+  const handleViewOriginalDocument = () => {
+    if (!selectedBook) {
+      onShowToast('warning', 'Chưa chọn giáo trình', 'Vui lòng chọn một giáo trình trước khi xem tập gốc.');
+      return;
+    }
+    const docName = selectedDocument?.name || selectedBook;
+    const isWord = docName.toLowerCase().endsWith('.docx') || docName.toLowerCase().endsWith('.doc');
+    const isPdf = docName.toLowerCase().endsWith('.pdf');
+    const docUrl = `${API_BASE}/documents/documents/${selectedBook}/download?inline=true`;
+    setPreviewDocumentFile({
+      url: docUrl,
+      name: docName,
+      size: selectedDocument?.totalPages ? `${selectedDocument.totalPages} trang` : undefined,
+      type: isPdf ? 'pdf' : isWord ? 'docx' : 'file',
+    });
+  };
 
   const parseErrorMessage = async (res: Response): Promise<string> => {
     try {
@@ -331,6 +356,53 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         setSelectedBook('');
         setSelectedChapters([]);
       }
+
+      // ── Nạp cấu hình đề thi từ Quanta Butler nếu người dùng chọn 'Tự chỉnh' ──
+      try {
+        const pendingBlueprintStr = localStorage.getItem('quizgen_pending_exam_blueprint');
+        if (pendingBlueprintStr) {
+          const bp = JSON.parse(pendingBlueprintStr);
+          if (bp) {
+            // 1. Tự động chọn đúng sách
+            const targetDoc = uniqueCombined.find(
+              (d) =>
+                d.id === bp.documentId ||
+                (bp.documentName && d.name.toLowerCase().includes(bp.documentName.toLowerCase()))
+            );
+            if (targetDoc) {
+              setSelectedBook(targetDoc.id);
+              localStorage.setItem('quizgen_selected_book_id', targetDoc.id);
+            }
+
+            // 2. Tự động tính toán và điền ma trận Bloom
+            const count = Number(bp.questionCount || 20);
+            const ratio = bp.bloomRatio || { know: 30, understand: 40, apply: 20, analyze: 10 };
+            const nb = Math.round((count * (ratio.know || 25)) / 100);
+            const th = Math.round((count * (ratio.understand || 25)) / 100);
+            const vd = Math.round((count * (ratio.apply || 25)) / 100);
+            const vdc = Math.max(0, count - nb - th - vd);
+
+            setBloomDistribution({
+              nhanBiet: nb,
+              thongHieu: th,
+              vanDung: vd,
+              phanTich: vdc,
+            });
+
+            // 3. Tự động chọn chương
+            if (bp.chapter) {
+              setSelectedChapters([bp.chapter]);
+            }
+
+            onShowToast(
+              'info',
+              'Quanta Butler đã nạp ma trận',
+              `Đã tự động điền cấu hình ${count} câu hỏi theo đề xuất của Quanta. Bạn có thể thoải mái chỉnh sửa thêm!`
+            );
+            localStorage.removeItem('quizgen_pending_exam_blueprint');
+          }
+        }
+      } catch {}
     } catch {
       setMyDocuments([]);
       const fallbackShared: DocumentItem[] = FALLBACK_DOCUMENTS.map((item: any) => ({
@@ -599,7 +671,19 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         throw new Error('Mô hình Gemini không trả về câu hỏi nào phù hợp với ngữ cảnh đã chọn.');
       }
 
-      const mappedQuestions: Question[] = rawQuestions.map((item, index) =>
+      // [SỬA LỖI LỆCH SỐ LƯỢNG]: Đảm bảo số lượng câu hỏi nhận được khớp 100% với cấu hình ma trận Bloom
+      const expectedTotalQuestions =
+        bloomDistribution.nhanBiet +
+        bloomDistribution.thongHieu +
+        bloomDistribution.vanDung +
+        bloomDistribution.phanTich;
+
+      const trimmedRaw =
+        expectedTotalQuestions > 0 && rawQuestions.length > expectedTotalQuestions
+          ? rawQuestions.slice(0, expectedTotalQuestions)
+          : rawQuestions;
+
+      const mappedQuestions: Question[] = trimmedRaw.map((item, index) =>
         normalizeGeneratedQuestion(item, bookName, defaultChapter, index)
       );
 
@@ -821,6 +905,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
             setIsLibraryModalOpen(true);
           }}
           onNavigateUpload={() => onNavigate('upload')}
+          onViewOriginalDocument={handleViewOriginalDocument}
           bloomDistribution={bloomDistribution}
           onBloomDistributionChange={setBloomDistribution}
           totalQuestions={totalQuestions}
@@ -848,6 +933,21 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           onNavigate('upload');
         }}
       />
+
+      {/* Universal Document Preview Modal (Xem tập gốc) */}
+      {previewDocumentFile && (
+        <DocumentPreviewModal
+          isOpen={Boolean(previewDocumentFile)}
+          fileUrl={previewDocumentFile.url}
+          fileName={previewDocumentFile.name}
+          fileSize={previewDocumentFile.size}
+          fileType={previewDocumentFile.type}
+          onClose={() => setPreviewDocumentFile(null)}
+          onDownload={() => {
+            downloadFileSafely(previewDocumentFile.name, previewDocumentFile.url, onShowToast);
+          }}
+        />
+      )}
     </div>
   );
 };

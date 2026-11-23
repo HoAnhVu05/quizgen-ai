@@ -51,6 +51,10 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
 RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "300"))
 STORAGE_DIR = Path(os.getenv("DOCUMENT_STORAGE_DIR", "./data/uploads"))
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+EXTRACTED_IMAGES_DIR = STORAGE_DIR.parent / "extracted_images"
+EXTRACTED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+QUESTION_ATTACHMENTS_DIR = STORAGE_DIR.parent / "question_attachments"
+QUESTION_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # [SCRUM-99] Bộ điều phối hàng đợi tác vụ bóc tách (Max 3 tác vụ chạy đồng thời)
 # Ngăn chặn quá tải CPU/RAM khi người dùng tải lên đồng loạt 20-50 tài liệu
@@ -90,9 +94,15 @@ def get_user_plan_tier(user_id: str) -> str:
                 if exp:
                     exp_time = datetime.fromisoformat(exp.replace("Z", ""))
                     if datetime.now() <= exp_time:
-                        return row["plan_code"]
+                        code = (row["plan_code"] or "").strip().upper()
+                        if code in ["PRO", "STANDARD"]:
+                            return "PRO_MONTH"
+                        return code or "FREE"
                 else:
-                    return row["plan_code"]
+                    code = (row["plan_code"] or "").strip().upper()
+                    if code in ["PRO", "STANDARD"]:
+                        return "PRO_MONTH"
+                    return code or "FREE"
         except Exception:
             pass
 
@@ -102,14 +112,26 @@ def get_user_plan_tier(user_id: str) -> str:
             conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT role, plan_tier FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT role, plan_tier, plan_expires_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             conn.close()
             if row:
                 if row["role"] == "admin":
                     return "PRO_YEAR"
-                if row["plan_tier"]:
-                    return row["plan_tier"]
+                raw_tier = (row["plan_tier"] or "").strip().upper()
+                if raw_tier in ["PRO", "STANDARD"]:
+                    raw_tier = "PRO_MONTH"
+                
+                exp = row["plan_expires_at"]
+                if exp:
+                    try:
+                        exp_time = datetime.fromisoformat(str(exp).replace("Z", ""))
+                        if datetime.now() > exp_time:
+                            return "FREE"
+                    except Exception:
+                        pass
+                if raw_tier in ["PRO_MONTH", "PRO_YEAR", "ENTERPRISE"]:
+                    return raw_tier
         except Exception:
             pass
 
@@ -133,6 +155,11 @@ def startup_db():
                     conn.commit()
                 except Exception:
                     pass
+            try:
+                conn.execute(text("ALTER TABLE document_chunks ADD COLUMN images_json TEXT"))
+                conn.commit()
+            except Exception:
+                pass
     except Exception as e:
         print(f"[DOCUMENT-SERVICE] DB Startup Warning: {e}")
 
@@ -231,7 +258,7 @@ def process_document_pipeline(
         _update_doc_progress(document_id, progress=25, status="extracting")
         try:
             if ext == "pdf":
-                pages = DocumentParser.parse_pdf(content)
+                pages = DocumentParser.parse_pdf(content, extract_images_dir=EXTRACTED_IMAGES_DIR, document_id=document_id)
             else:
                 pages = DocumentParser.parse_docx(content)
         except Exception as e:
@@ -291,7 +318,8 @@ def process_document_pipeline(
                     page_number=c["page_number"],
                     chapter=c["chapter"],
                     char_count=c["char_count"],
-                    text_snippet=c["text"]
+                    text_snippet=c["text"],
+                    images_json=json.dumps(c.get("images", [])) if c.get("images") else None
                 )
                 for c in chunks
             ]
@@ -2493,6 +2521,61 @@ def download_forum_attachment(file_name: str):
     return FileResponse(target_path, media_type=content_type, headers=headers)
 
 
+# =========================================================================
+# QUẢN LÝ HÌNH ẢNH HỌC LIỆU VÀ CÂU HỎI (EXTRACTED IMAGES & QUESTION UPLOAD)
+# =========================================================================
+@app.get("/images/{file_name}")
+@app.get("/documents/images/{file_name}")
+def get_extracted_image(file_name: str):
+    import urllib.parse
+    raw_name = file_name
+    unquoted = urllib.parse.unquote(file_name)
+    target_path = EXTRACTED_IMAGES_DIR / unquoted
+    if not target_path.exists() or not target_path.is_file():
+        target_path = EXTRACTED_IMAGES_DIR / raw_name
+    if not target_path.exists() or not target_path.is_file():
+        target_path = QUESTION_ATTACHMENTS_DIR / unquoted
+    if not target_path.exists() or not target_path.is_file():
+        target_path = QUESTION_ATTACHMENTS_DIR / raw_name
+    if not target_path.exists() or not target_path.is_file():
+        target_path = FORUM_ATTACHMENTS_DIR / unquoted
+    if not target_path.exists() or not target_path.is_file():
+        target_path = FORUM_ATTACHMENTS_DIR / raw_name
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=404, detail="Hình ảnh không tồn tại")
+    
+    import mimetypes
+    content_type, _ = mimetypes.guess_type(target_path.name)
+    return FileResponse(
+        path=str(target_path),
+        media_type=content_type or "image/png",
+        content_disposition_type="inline",
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
+
+
+@app.post("/questions/upload-image")
+@app.post("/documents/questions/upload-image")
+async def upload_question_image(file: UploadFile = File(...)):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Tên file ảnh không hợp lệ")
+    
+    clean_name = f"qimg_{int(time.time()*1000)}_{file.filename.replace(' ', '_')}"
+    target_path = QUESTION_ATTACHMENTS_DIR / clean_name
+    content = await file.read()
+    target_path.write_bytes(content)
+    
+    return {
+        "status": "success",
+        "fileName": file.filename,
+        "savedName": clean_name,
+        "imageUrl": f"/api/v1/documents/images/{clean_name}",
+        "url": f"/api/v1/documents/images/{clean_name}",
+        "isImage": True
+    }
+
+
+
 @app.get("/{document_id}")
 @app.get("/documents/{document_id}")
 def get_document(document_id: str, db: Session = Depends(get_db)):
@@ -2530,17 +2613,38 @@ def get_document(document_id: str, db: Session = Depends(get_db)):
 
 @app.get("/{document_id}/download")
 @app.get("/documents/{document_id}/download")
-def download_document_file(document_id: str, db: Session = Depends(get_db)):
-    """Tải xuống tệp giáo trình gốc (PDF/Word) từ máy chủ lưu trữ"""
+@app.get("/{document_id}/stream")
+@app.get("/documents/{document_id}/stream")
+def download_document_file(
+    document_id: str, 
+    inline: Optional[bool] = Query(False),
+    db: Session = Depends(get_db)
+):
+    """Tải xuống hoặc xem trực tuyến (inline stream) tệp giáo trình gốc (PDF/Word) từ máy chủ lưu trữ"""
     doc = db.execute(select(DocumentDB).filter_by(id=document_id)).scalar_one_or_none()
-    if not doc or not doc.file_path or not os.path.exists(doc.file_path):
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy bản ghi tài liệu.")
+
+    target_path = doc.file_path if (doc.file_path and os.path.exists(doc.file_path)) else None
+    if not target_path:
+        alt_path = STORAGE_DIR / os.path.basename(doc.file_path) if doc.file_path else None
+        if alt_path and alt_path.exists():
+            target_path = str(alt_path)
+        else:
+            matched = list(STORAGE_DIR.glob(f"{doc.id}_*"))
+            if matched and matched[0].exists():
+                target_path = str(matched[0])
+
+    if not target_path or not os.path.exists(target_path):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tệp tài liệu gốc không tồn tại trên hệ thống lưu trữ.")
 
     media_type = "application/pdf" if doc.name.endswith(".pdf") else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    disp_type = "inline" if inline else "attachment"
     return FileResponse(
-        path=doc.file_path,
+        path=target_path,
         filename=doc.name,
-        media_type=media_type
+        media_type=media_type,
+        content_disposition_type=disp_type
     )
 
 
@@ -2600,7 +2704,9 @@ def get_document_chunks(
                 "chapter": c.chapter,
                 "charCount": c.char_count,
                 "text": c.text_snippet,
-                "textSnippet": c.text_snippet[:400]
+                "textSnippet": c.text_snippet[:400],
+                "images": json.loads(c.images_json) if getattr(c, "images_json", None) and c.images_json else [],
+                "associated_images": json.loads(c.images_json) if getattr(c, "images_json", None) and c.images_json else []
             }
             for c in chunks
         ]

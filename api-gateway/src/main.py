@@ -843,10 +843,155 @@ async def execute_remote_agent_command(prompt: str, caller_name: str, has_image:
         session_id
     )
 
+AGENT_COMMAND_QUEUE = []
+_is_agent_worker_running = False
+
+def format_iso_to_vietnam_time(iso_str: str) -> str:
+    """Chuyển đổi thời gian ISO UTC sang giờ Việt Nam (GMT+7) định dạng HH:mm"""
+    if not iso_str:
+        return ""
+    try:
+        import datetime
+        import re
+        cleaned = re.sub(r"(\.\d{6})\d+", r"\1", str(iso_str).strip())
+        cleaned = re.sub(r"Z$", "+00:00", cleaned)
+        dt = datetime.datetime.fromisoformat(cleaned)
+        vn_tz = datetime.timezone(datetime.timedelta(hours=7))
+        dt_vn = dt.astimezone(vn_tz)
+        return dt_vn.strftime("%H:%M")
+    except Exception:
+        if "T" in str(iso_str):
+            return str(iso_str).split("T")[1][:5]
+        return str(iso_str)
+
+def is_antigravity_agent_busy(session_id: str = None) -> bool:
+    """Kiểm tra xem Antigravity Agent trên laptop có đang suy nghĩ (thinking/running) hay không"""
+    try:
+        import json
+        brain_dir = Path.home() / ".gemini" / "antigravity" / "brain"
+        target_file = None
+        if session_id:
+            custom_path = brain_dir / session_id / ".system_generated" / "logs" / "transcript.jsonl"
+            if custom_path.exists():
+                target_file = custom_path
+        if not target_file:
+            default_current = brain_dir / "90dc8a84-74f3-4c42-b433-726bc4924226" / ".system_generated" / "logs" / "transcript.jsonl"
+            if default_current.exists():
+                target_file = default_current
+            else:
+                transcripts = list(brain_dir.glob("*/.system_generated/logs/transcript.jsonl"))
+                if not transcripts:
+                    return False
+                transcripts.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                target_file = transcripts[0]
+                
+        with open(target_file, "r", encoding="utf-8", errors="replace") as f:
+            lines = [l.strip() for l in f if l.strip()]
+            if not lines:
+                return False
+            last_obj = json.loads(lines[-1])
+            stype = last_obj.get("type")
+            has_tools = bool(last_obj.get("tool_calls"))
+            content = str(last_obj.get("content") or "").strip()
+            if stype == "PLANNER_RESPONSE" and not has_tools and content:
+                return False
+            return True
+    except Exception:
+        return False
+
+def start_queue_worker_if_needed():
+    global _is_agent_worker_running
+    if _is_agent_worker_running:
+        return
+    _is_agent_worker_running = True
+    
+    import threading
+    def worker():
+        global _is_agent_worker_running
+        while True:
+            try:
+                time.sleep(2.0)
+                if not AGENT_COMMAND_QUEUE:
+                    continue
+                
+                next_cmd = None
+                for cmd in AGENT_COMMAND_QUEUE:
+                    if cmd.get("status") == "queued":
+                        next_cmd = cmd
+                        break
+                if not next_cmd:
+                    continue
+                    
+                target_sid = next_cmd.get("sessionId")
+                if is_antigravity_agent_busy(target_sid):
+                    continue
+                    
+                next_cmd["status"] = "running"
+                logger.info(f"[Command Queue] Dispatching queued command: {next_cmd['prompt']}")
+                
+                output_reply, resolved_session_id = asyncio.run(execute_remote_agent_command(
+                    next_cmd["prompt"],
+                    next_cmd.get("callerName", "Hồ Anh Vũ"),
+                    next_cmd.get("hasImage", False),
+                    next_cmd.get("image"),
+                    session_id=target_sid,
+                    create_new=next_cmd.get("createNew", False)
+                ))
+                next_cmd["status"] = "completed"
+                if next_cmd in AGENT_COMMAND_QUEUE:
+                    AGENT_COMMAND_QUEUE.remove(next_cmd)
+            except Exception as e:
+                logger.warning(f"Error in queue worker: {e}")
+                
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+
 @app.get("/api/v1/agent-bridge/system-status")
 @app.get("/agent-bridge/system-status")
 def get_agent_bridge_status():
     return get_real_system_stats()
+
+@app.post("/api/v1/agent-bridge/cancel")
+@app.post("/agent-bridge/cancel")
+async def cancel_agent_command(request: Request):
+    """Hủy thực thi hoặc xóa các lệnh đang chờ trong hàng đợi theo yêu cầu của anh Vũ"""
+    global AGENT_COMMAND_QUEUE
+    try:
+        data = await request.json()
+        item_id = data.get("id")
+    except Exception:
+        item_id = None
+        
+    import datetime
+    now_vn = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).strftime("%H:%M")
+    
+    if item_id:
+        AGENT_COMMAND_QUEUE = [c for c in AGENT_COMMAND_QUEUE if c.get("id") != item_id]
+        return {"status": "success", "message": "Đã hủy lệnh trong hàng đợi"}
+    else:
+        cancelled_count = len([c for c in AGENT_COMMAND_QUEUE if c.get("status") == "queued"])
+        AGENT_COMMAND_QUEUE.clear()
+        
+        record = {
+            "id": f"cancel-{int(time.time()*1000)}",
+            "timestamp": time.time(),
+            "formattedTime": now_vn,
+            "callerName": "Hồ Anh Vũ",
+            "prompt": "[HỦY LỆNH / STOP]",
+            "status": "cancelled",
+            "output": "⛔ Quản trị viên Hồ Anh Vũ đã yêu cầu Dừng / Hủy thực thi từ điện thoại."
+        }
+        try:
+            with open(AGENT_INBOX_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+            
+        return {
+            "status": "success",
+            "message": f"Đã dừng thực thi và xóa {cancelled_count} lệnh chờ trong hàng đợi.",
+            "cancelledCount": cancelled_count
+        }
 
 @app.post("/api/v1/agent-bridge/command")
 @app.post("/agent-bridge/command")
@@ -861,7 +1006,39 @@ async def post_agent_remote_command(request: Request):
         session_id = data.get("sessionId")
         create_new = bool(data.get("createNew"))
         
-        # Execute command and obtain target session ID
+        start_queue_worker_if_needed()
+        
+        import datetime
+        now_vn = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).strftime("%H:%M")
+        
+        is_busy = is_antigravity_agent_busy(session_id)
+        if is_busy or len(AGENT_COMMAND_QUEUE) > 0:
+            # Cho vào hàng đợi an toàn, không làm trôi hay mất lệnh
+            queued_item = {
+                "id": cmd_id,
+                "prompt": prompt,
+                "callerName": caller_name,
+                "callerEmail": caller_email,
+                "hasImage": has_image,
+                "image": data.get("image"),
+                "sessionId": session_id,
+                "createNew": create_new,
+                "status": "queued",
+                "timestamp": time.time(),
+                "formattedTime": now_vn
+            }
+            AGENT_COMMAND_QUEUE.append(queued_item)
+            q_pos = len([c for c in AGENT_COMMAND_QUEUE if c.get("status") == "queued"])
+            return {
+                "status": "queued",
+                "id": cmd_id,
+                "sessionId": session_id,
+                "queuePosition": q_pos,
+                "output": f"⏳ Yêu cầu đã vào hàng đợi (vị trí #{q_pos}). Antigravity sẽ thực thi ngay khi xong tác vụ hiện tại.",
+                "timestamp": time.time()
+            }
+        
+        # Execute command immediately if idle
         output_reply, resolved_session_id = await execute_remote_agent_command(
             prompt, caller_name, has_image, data.get("image"), session_id=session_id, create_new=create_new
         )
@@ -869,7 +1046,7 @@ async def post_agent_remote_command(request: Request):
         record = {
             "id": cmd_id,
             "timestamp": time.time(),
-            "formattedTime": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "formattedTime": now_vn,
             "callerName": caller_name,
             "callerEmail": caller_email,
             "prompt": prompt,
@@ -960,7 +1137,7 @@ def get_live_antigravity_feed(session_id: str = None, limit=40):
                     source = obj.get("source")
                     stype = obj.get("type")
                     ts = obj.get("created_at") or ""
-                    formatted_time = ts.split("T")[1][:8] if "T" in ts else ts
+                    formatted_time = format_iso_to_vietnam_time(ts)
                             
                     content = str(obj.get("content") or "").strip()
                     tool_calls = obj.get("tool_calls") or []
@@ -1015,7 +1192,7 @@ def get_live_antigravity_feed(session_id: str = None, limit=40):
                             time_raw = match.group(1)
                             msg_content = match.group(3).strip()
                             if not msg_content.startswith("Task id ") and not msg_content.startswith("ping test"):
-                                time_str = time_raw.split("T")[1][:5] if "T" in time_raw else time_raw
+                                time_str = format_iso_to_vietnam_time(time_raw)
                                 chat_dialogue.append({
                                     "id": f"step-{idx}-user-remote",
                                     "sender": "user",
@@ -1069,11 +1246,21 @@ def get_agent_bridge_live_mirror(sessionId: Optional[str] = None):
     return {
         "status": "success",
         "isActive": True,
+        "isBusy": is_antigravity_agent_busy(resolved_cid),
         "session": agent_remote_session,
         "activeSessionId": resolved_cid,
         "liveFeed": feed,
         "chatDialogue": dialogue,
         "remoteInbox": inbox[-10:],
+        "commandQueue": [
+            {
+                "id": c["id"],
+                "prompt": c["prompt"],
+                "formattedTime": c.get("formattedTime", ""),
+                "status": c.get("status", "queued")
+            }
+            for c in AGENT_COMMAND_QUEUE if c.get("status") == "queued"
+        ],
         "workspace": r"D:\HKDN\Quizgen AI",
         "systemStats": get_real_system_stats()
     }
@@ -1160,11 +1347,21 @@ async def delete_session(request: Request):
     return {
         "status": "success",
         "isActive": True,
+        "isBusy": is_antigravity_agent_busy(resolved_cid),
         "session": agent_remote_session,
         "activeSessionId": resolved_cid,
         "liveFeed": feed,
         "chatDialogue": dialogue,
         "remoteInbox": inbox[-10:],
+        "commandQueue": [
+            {
+                "id": c["id"],
+                "prompt": c["prompt"],
+                "formattedTime": c.get("formattedTime", ""),
+                "status": c.get("status", "queued")
+            }
+            for c in AGENT_COMMAND_QUEUE if c.get("status") == "queued"
+        ],
         "workspace": r"D:\HKDN\Quizgen AI",
         "systemStats": get_real_system_stats()
     }

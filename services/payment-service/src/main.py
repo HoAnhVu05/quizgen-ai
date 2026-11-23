@@ -461,6 +461,59 @@ def get_my_subscription(user_id: str = Query(...)):
     ORDER BY s.created_at DESC LIMIT 1
     """, (user_id,))
     sub_row = cursor.fetchone()
+
+    # Tự động đồng bộ nếu user đã được Admin cấp gói trong auth.db nhưng chưa có subscription trong payment.db
+    if not sub_row and os.path.exists(AUTH_DB_PATH):
+        try:
+            auth_conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
+            auth_conn.row_factory = sqlite3.Row
+            auth_cur = auth_conn.cursor()
+            auth_cur.execute("SELECT role, plan_tier, plan_expires_at FROM users WHERE id = ?", (user_id,))
+            a_user = auth_cur.fetchone()
+            auth_conn.close()
+            if a_user:
+                auth_role = a_user["role"]
+                raw_tier = (a_user["plan_tier"] or "").strip().upper()
+                if raw_tier in ["PRO", "STANDARD"]:
+                    raw_tier = "PRO_MONTH"
+                if auth_role == "admin" and raw_tier == "FREE":
+                    raw_tier = "PRO_YEAR"
+
+                if raw_tier in ["PRO_MONTH", "PRO_YEAR", "ENTERPRISE"]:
+                    plan_exp = a_user["plan_expires_at"]
+                    not_expired = True
+                    if plan_exp:
+                        try:
+                            exp_time = datetime.fromisoformat(str(plan_exp).replace("Z", ""))
+                            if datetime.now() > exp_time:
+                                not_expired = False
+                        except Exception:
+                            pass
+                    
+                    if not_expired:
+                        cursor.execute("SELECT * FROM plans WHERE code = ? LIMIT 1", (raw_tier,))
+                        p_match = cursor.fetchone()
+                        p_id = p_match["id"] if p_match else f"plan_{raw_tier.lower()}"
+                        auto_sub_id = f"sub_auto_sync_{uuid.uuid4().hex[:10]}"
+                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        cursor.execute(
+                            """INSERT INTO subscriptions (id, user_id, plan_id, plan_code, status, starts_at, expires_at)
+                               VALUES (?, ?, ?, ?, 'active', ?, ?)""",
+                            (auto_sub_id, user_id, p_id, raw_tier, now_str, plan_exp)
+                        )
+                        conn.commit()
+
+                        # Re-fetch sub_row
+                        cursor.execute("""
+                        SELECT s.*, p.name as plan_name, p.max_documents, p.max_questions_month, p.max_exams_month, p.allow_qti_export, p.allow_full_bloom
+                        FROM subscriptions s
+                        JOIN plans p ON s.plan_id = p.id
+                        WHERE s.user_id = ? AND s.status = 'active'
+                        ORDER BY s.created_at DESC LIMIT 1
+                        """, (user_id,))
+                        sub_row = cursor.fetchone()
+        except Exception as e:
+            print(f"[PAYMENT-SERVICE] Fallback auth.db sync warning: {e}")
     
     # 2. Lấy hoặc tạo user_quota
     cursor.execute("SELECT * FROM user_quotas WHERE user_id = ?", (user_id,))

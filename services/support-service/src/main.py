@@ -399,11 +399,17 @@ async def upload_ticket_attachments(
 @app.get("/attachments/{file_name}")
 def get_attachment_file(file_name: str):
     """Tải hoặc xem trực tiếp ảnh chụp lỗi / tệp đính kèm học thuật"""
+    import mimetypes
     safe_name = os.path.basename(file_name)
     target_path = os.path.join(ATTACHMENTS_DIR, safe_name)
     if not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại.")
-    return FileResponse(target_path, filename=safe_name)
+    mime_type, _ = mimetypes.guess_type(target_path)
+    return FileResponse(
+        target_path,
+        media_type=mime_type or "application/octet-stream",
+        content_disposition_type="inline"
+    )
 
 @app.get("/unread-count")
 def get_unread_count(

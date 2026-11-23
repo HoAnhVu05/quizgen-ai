@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { usePinchZoom } from '../hooks/usePinchZoom';
+import apiClient from '../services/apiClient';
 
 interface DocumentPreviewModalProps {
   isOpen: boolean;
@@ -235,6 +236,9 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   const [excelError, setExcelError] = useState<string | null>(null);
   const [excelSearch, setExcelSearch] = useState('');
   const [visibleRowsLimit, setVisibleRowsLimit] = useState(100);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
 
   if (!isOpen || !fileUrl) return null;
 
@@ -314,6 +318,50 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
       isMounted = false;
     };
   }, [isOpen, fileUrl, isExcel]);
+
+  // ── Load PDF natively as Blob URL to avoid auto-download & allow embedded viewing ──
+  useEffect(() => {
+    if (!isOpen || !isPdf || !fileUrl) {
+      if (pdfBlobUrl) {
+        URL.revokeObjectURL(pdfBlobUrl);
+        setPdfBlobUrl(null);
+      }
+      setIsLoadingPdf(false);
+      setPdfError(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingPdf(true);
+    setPdfError(null);
+
+    const separator = fileUrl.includes('?') ? '&' : '?';
+    const streamUrl = fileUrl.includes('inline=') ? fileUrl : `${fileUrl}${separator}inline=true`;
+
+    apiClient
+      .fetch(streamUrl)
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(`Mã lỗi HTTP ${res.status}: Không thể tải tệp PDF.`);
+        }
+        const blob = await res.blob();
+        if (!isMounted) return;
+        const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+        const objUrl = URL.createObjectURL(pdfBlob);
+        setPdfBlobUrl(objUrl);
+        setIsLoadingPdf(false);
+      })
+      .catch((err: any) => {
+        if (!isMounted) return;
+        console.error('Lỗi khi nạp tài liệu PDF:', err);
+        setPdfError(err.message || 'Không thể tải nội dung tệp PDF.');
+        setIsLoadingPdf(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, fileUrl, isPdf]);
 
   // Extract raw rows of active sheet
   const rawSheetRows = useMemo(() => {
@@ -640,7 +688,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
 
             <div className="flex items-center gap-2 shrink-0">
               <a
-                href={fileUrl}
+                href={pdfBlobUrl || fileUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
@@ -668,12 +716,55 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             </div>
           </div>
 
-          <div className="flex-1 w-full bg-slate-100">
-            <iframe
-              src={`${fileUrl}#toolbar=0`}
-              title={fileName}
-              className="w-full h-full border-0 bg-white"
-            />
+          <div className="flex-1 w-full bg-slate-100 relative overflow-hidden">
+            {isLoadingPdf ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 bg-white gap-3">
+                <Loader2 className="w-8 h-8 text-teal-600 animate-spin" />
+                <p className="text-xs font-semibold text-slate-700">
+                  Đang nạp dữ liệu giáo trình PDF...
+                </p>
+                <span className="text-[11px] text-slate-400">
+                  Vui lòng đợi trong giây lát
+                </span>
+              </div>
+            ) : pdfError ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-white gap-3">
+                <AlertCircle className="w-10 h-10 text-rose-500" />
+                <p className="text-sm font-bold text-slate-800">
+                  Không thể hiển thị tệp PDF
+                </p>
+                <p className="text-xs text-slate-500 max-w-md">
+                  {pdfError}
+                </p>
+                <div className="flex items-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={onDownload}
+                    className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Tải tệp về máy</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSafeClose}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            ) : pdfBlobUrl ? (
+              <iframe
+                src={`${pdfBlobUrl}#toolbar=1`}
+                title={fileName}
+                className="w-full h-full border-0 bg-white"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                Chưa có dữ liệu PDF.
+              </div>
+            )}
           </div>
         </div>
       </div>

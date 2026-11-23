@@ -6,6 +6,7 @@ import {
   Check,
   Search,
   Sparkles,
+  Eye,
 } from 'lucide-react';
 import { BloomDistribution, DocumentItem } from './aigenTypes';
 import { PromptGuidanceSection } from './PromptGuidanceSection';
@@ -24,6 +25,7 @@ interface GenerationConfigPanelProps {
   onSelectAllChapters: (selectAll: boolean) => void;
   onOpenLibraryModal: (tab: 'my' | 'shared') => void;
   onNavigateUpload: () => void;
+  onViewOriginalDocument?: () => void;
   bloomDistribution: BloomDistribution;
   onBloomDistributionChange: (dist: BloomDistribution) => void;
   totalQuestions: number;
@@ -47,6 +49,7 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
   onSelectAllChapters,
   onOpenLibraryModal,
   onNavigateUpload,
+  onViewOriginalDocument,
   bloomDistribution,
   onBloomDistributionChange,
   totalQuestions,
@@ -75,9 +78,10 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
                   );
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#008689] bg-[#e0f7fa] hover:bg-[#b2ebf2] border border-[#008689]/30 rounded-xl transition-all shadow-2xs cursor-pointer"
+                title="Liên kết và mở Thư viện giáo trình"
               >
-                <BookOpen className="w-3.5 h-3.5" />
-                Đổi giáo trình khác
+                <Library className="w-3.5 h-3.5" />
+                Liên kết Thư viện
               </button>
             )}
           </div>
@@ -154,14 +158,19 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      onOpenLibraryModal(
-                        myDocuments.some((d) => d.id === selectedBook) ? 'my' : 'shared'
-                      );
+                      if (onViewOriginalDocument) {
+                        onViewOriginalDocument();
+                      } else {
+                        onOpenLibraryModal(
+                          myDocuments.some((d) => d.id === selectedBook) ? 'my' : 'shared'
+                        );
+                      }
                     }}
-                    className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl bg-white border border-teal-200 hover:bg-teal-50 text-[#008689] font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+                    title="Xem trước tệp giáo trình học liệu gốc (PDF/Word)"
                   >
-                    <BookOpen className="w-3.5 h-3.5 text-[#008689]" />
-                    Đổi giáo trình
+                    <Eye className="w-3.5 h-3.5 text-[#008689]" />
+                    Xem tập gốc
                   </button>
                 </div>
               </div>

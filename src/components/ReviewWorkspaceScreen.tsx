@@ -644,6 +644,17 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                       Chỉnh sửa (E)
                     </button>
                     <button
+                      onClick={() => {
+                        setIsEditing(true);
+                        setEditHasImage(true);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+                      title={activeQuestion.hasImage ? "Đổi sơ đồ/hình ảnh" : "Đính kèm hình ảnh/sơ đồ cho câu hỏi"}
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      {activeQuestion.hasImage ? 'Đổi ảnh' : 'Đính kèm ảnh'}
+                    </button>
+                    <button
                       onClick={handleQuickBloomCycle}
                       className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-[#008689] bg-[#e6f4f4] hover:bg-[#d5ecec]"
                     >
@@ -723,7 +734,22 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   {/* Multimodal Image Input Section */}
                   {editHasImage && (
                     <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
-                      <span className="font-bold text-slate-700 block">Hình ảnh / Sơ đồ minh chứng câu hỏi:</span>
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-700 block">Hình ảnh / Sơ đồ minh chứng câu hỏi:</span>
+                        {editImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditImageUrl('');
+                              setEditImageCaption('');
+                              setEditHasImage(false);
+                            }}
+                            className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold hover:underline"
+                          >
+                            ✕ Xóa ảnh này
+                          </button>
+                        )}
+                      </div>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input
                           type="text"
@@ -732,18 +758,40 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                           onChange={(e) => setEditImageUrl(e.target.value)}
                           className="flex-1 px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
                         />
-                        <label className="px-3 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold cursor-pointer shrink-0 text-center transition-colors">
+                        <label className="px-3 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold cursor-pointer shrink-0 text-center transition-colors flex items-center justify-center gap-1">
                           📁 Tải ảnh từ máy
                           <input
                             type="file"
                             accept="image/*"
                             className="hidden"
-                            onChange={(e) => {
+                            onChange={async (e) => {
                               const file = e.target.files?.[0];
                               if (file) {
+                                // Thử tải lên server trước
+                                try {
+                                  const formData = new FormData();
+                                  formData.append('file', file);
+                                  const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
+                                    method: 'POST',
+                                    body: formData,
+                                  });
+                                  if (uploadRes.ok) {
+                                    const uploadData = await uploadRes.json();
+                                    if (uploadData.imageUrl) {
+                                      setEditImageUrl(uploadData.imageUrl);
+                                      setEditHasImage(true);
+                                      return;
+                                    }
+                                  }
+                                } catch (err) {
+                                  console.warn('Lỗi tải ảnh lên server, chuyển sang Base64', err);
+                                }
+
+                                // Fallback sang Data URL nếu server lỗi hoặc offline
                                 const reader = new FileReader();
                                 reader.onload = () => {
                                   setEditImageUrl(reader.result as string);
+                                  setEditHasImage(true);
                                 };
                                 reader.readAsDataURL(file);
                               }
