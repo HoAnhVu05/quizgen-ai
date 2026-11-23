@@ -118,7 +118,7 @@ export const HuddleCallModal: React.FC<{
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const isMutedRef = useRef(false);
-  const nextRelayPlayTimeRef = useRef(0);
+  const peerPlayTimesRef = useRef<{ [peerId: string]: number }>({});
   const lastSpokeTimeRef = useRef(0);
   const speakingTimersRef = useRef<{ [peerId: string]: number }>({});
 
@@ -277,21 +277,37 @@ export const HuddleCallModal: React.FC<{
 
         const srcNode = ctx.createMediaStreamSource(stream);
 
-        // Pre-amp Boost: Tăng âm lượng micro laptop 2.5 lần để bù khoảng cách và độ nhạy mic máy tính
-        const micBoostNode = ctx.createGain();
-        micBoostNode.gain.value = 2.5;
-        srcNode.connect(micBoostNode);
+        // 1. Dynamics Compressor: Tự động cân bằng độ nhạy mic máy tính, nâng tiếng nói nhỏ và ghìm chặt tiếng to, chống vỡ tiếng
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.value = -24; // dB
+        compressor.knee.value = 12; // dB
+        compressor.ratio.value = 4; // 4:1
+        compressor.attack.value = 0.003; // 3ms
+        compressor.release.value = 0.25; // 250ms
+        srcNode.connect(compressor);
+
+        // 2. Makeup Gain: Tăng âm lượng nhẹ nhàng (1.35x) thay vì ép cứng 2.5x gây xén ngọn (clipping)
+        const makeupGain = ctx.createGain();
+        makeupGain.gain.value = 1.35;
+        compressor.connect(makeupGain);
+
+        // 3. Anti-Aliasing Low-pass Filter: Triệt tiêu mọi tần số > 7.5kHz trước khi hạ mẫu 16kHz, loại bỏ hoàn toàn tiếng rít rè radio
+        const lowpassFilter = ctx.createBiquadFilter();
+        lowpassFilter.type = 'lowpass';
+        lowpassFilter.frequency.value = 7500;
+        lowpassFilter.Q.value = 0.707;
+        makeupGain.connect(lowpassFilter);
 
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 64;
-        micBoostNode.connect(analyser);
+        lowpassFilter.connect(analyser);
 
         // Tạo ScriptProcessorNode để trích xuất tín hiệu micro thời gian thực
         const bufferSize = 2048;
         const processorNode = ctx.createScriptProcessor(bufferSize, 1, 1);
         processorRef.current = processorNode;
         (window as any).__huddleProcessor = processorNode;
-        micBoostNode.connect(processorNode);
+        lowpassFilter.connect(processorNode);
 
         // Nối vào silent gain (gain = 0) tới destination để kích hoạt onaudioprocess theo chuẩn W3C
         // Tuyệt đối không phát ra loa để chống loopback vọng tiếng sidetone
@@ -344,7 +360,7 @@ export const HuddleCallModal: React.FC<{
           }
           const rms = Math.sqrt(sumSquares / input.length);
 
-          // Ngưỡng nhận diện tiếng nói cực nhạy (0.0006) kèm mic boost 2.5x đảm bảo mic laptop thu rõ 100%
+          // Ngưỡng nhận diện tiếng nói cực nhạy (0.0006) kèm Dynamics Compressor đảm bảo mic laptop thu rõ 100%
           const isUserTalking = rms > 0.0006;
 
           if (isUserTalking) {
@@ -355,18 +371,29 @@ export const HuddleCallModal: React.FC<{
           const shouldTransmit = !isMutedRef.current && (Date.now() - lastSpokeTimeRef.current < 1200 || rms > 0.0004);
           if (!shouldTransmit) return;
 
-          // Downsample chất lượng cao bằng Linear Interpolation từ native sampleRate (44.1/48kHz) về 16kHz
+          // Downsample chất lượng cao bằng Linear Interpolation kèm Anti-Aliasing & Soft-Limiter (tanh)
           const ratio = ctx.sampleRate / 16000;
           const outLength = Math.floor(input.length / ratio);
           const pcm16 = new Int16Array(outLength);
+          const fadeLen = Math.min(32, Math.floor(outLength / 4));
+
           for (let i = 0; i < outLength; i++) {
             const srcIdx = i * ratio;
             const idx0 = Math.floor(srcIdx);
             const idx1 = Math.min(input.length - 1, idx0 + 1);
             const frac = srcIdx - idx0;
-            const sample = input[idx0] * (1 - frac) + input[idx1] * frac;
-            const clamped = Math.max(-1, Math.min(1, sample));
-            pcm16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+            let sample = input[idx0] * (1 - frac) + input[idx1] * frac;
+
+            // Micro crossfade 32 mẫu ở đầu và cuối mỗi khối để triệt tiêu tiếng lách tách
+            if (i < fadeLen) {
+              sample *= (i / fadeLen);
+            } else if (i >= outLength - fadeLen) {
+              sample *= ((outLength - 1 - i) / fadeLen);
+            }
+
+            // Soft saturation bão hòa mềm bằng hàm tanh: âm thanh mượt mà, không bao giờ bị xén ngọn thành sóng vuông
+            const limited = Math.tanh(sample);
+            pcm16[i] = limited < 0 ? limited * 0x8000 : limited * 0x7FFF;
           }
 
           // Chuyển Int16 thành chuỗi Base64
@@ -419,6 +446,7 @@ export const HuddleCallModal: React.FC<{
               if (connectionStatus !== 'connected') setConnectionStatus('connected');
             } else if (msgType === 'peer_left') {
               const leftId = data.peerId;
+              delete peerPlayTimesRef.current[leftId];
               setActivePeers((prev) => prev.filter((p) => p.peerId !== leftId));
               setPeerStates((prev) => {
                 const next = { ...prev };
@@ -445,7 +473,7 @@ export const HuddleCallModal: React.FC<{
                 );
               }, 400);
 
-              // Giải mã PCM và phát ra Loa Ngoài (Loudspeaker) qua Web Audio Queue
+              // Giải mã PCM và phát ra Loa Ngoài (Loudspeaker) qua Web Audio Queue độc lập theo từng Peer
               try {
                 const playCtx = audioContextRef.current;
                 if (!playCtx) return;
@@ -464,21 +492,30 @@ export const HuddleCallModal: React.FC<{
                   float32[i] = pcm16[i] / 32768.0;
                 }
 
+                // Micro fade 32 mẫu ở đầu và cuối buffer nhận được để chống tiếng nổ pop/click khi ghép nối
+                const edgeSamples = Math.min(32, Math.floor(float32.length / 4));
+                for (let i = 0; i < edgeSamples; i++) {
+                  float32[i] *= (i / edgeSamples);
+                  float32[float32.length - 1 - i] *= (i / edgeSamples);
+                }
+
                 const sr = data.sampleRate || 16000;
                 const audioBuf = playCtx.createBuffer(1, float32.length, sr);
                 audioBuf.copyToChannel(float32, 0);
 
                 const now = playCtx.currentTime;
-                // Jitter buffer 35ms: đảm bảo các mẩu âm thanh ghép nối liền mạch không ngắt quãng
-                if (nextRelayPlayTimeRef.current < now || nextRelayPlayTimeRef.current > now + 0.3) {
-                  nextRelayPlayTimeRef.current = now + 0.035;
+                // Quản lý Jitter Buffer độc lập theo từng Peer (35ms): nhiều người nói cùng lúc không bị đè hay reset thời gian của nhau
+                const peerLastPlayTime = peerPlayTimesRef.current[fromPeer] || 0;
+                let targetPlayTime = peerLastPlayTime;
+                if (targetPlayTime < now || targetPlayTime > now + 0.25) {
+                  targetPlayTime = now + 0.035;
                 }
 
                 const source = playCtx.createBufferSource();
                 source.buffer = audioBuf;
                 source.connect(playCtx.destination);
-                source.start(nextRelayPlayTimeRef.current);
-                nextRelayPlayTimeRef.current += audioBuf.duration;
+                source.start(targetPlayTime);
+                peerPlayTimesRef.current[fromPeer] = targetPlayTime + audioBuf.duration;
               } catch (e) {
                 console.warn('[AudioRelay] Phát âm thanh lỗi:', e);
               }
@@ -538,6 +575,7 @@ export const HuddleCallModal: React.FC<{
       }
       Object.values(speakingTimersRef.current).forEach((t) => clearTimeout(t));
       speakingTimersRef.current = {};
+      peerPlayTimesRef.current = {};
 
       if (wsRef.current) {
         wsRef.current.close();
