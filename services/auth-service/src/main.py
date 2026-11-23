@@ -93,6 +93,10 @@ def serialize_user(user: UserDB) -> dict:
         "lock_reason": getattr(user, "lock_reason", None),
         "locked_until": getattr(user, "locked_until", None),
         "locked_at": getattr(user, "locked_at", None),
+        "plan_tier": getattr(user, "plan_tier", "free") or "free",
+        "plan_expires_at": getattr(user, "plan_expires_at", None),
+        "custom_quota_exams": getattr(user, "custom_quota_exams", None),
+        "custom_quota_storage_mb": getattr(user, "custom_quota_storage_mb", None),
         "profile_completed": has_info,
         "created_at": user.created_at or datetime.utcnow()
     }
@@ -150,7 +154,10 @@ def startup_db():
             "lock_reason TEXT",
             "locked_until TIMESTAMP",
             "locked_at TIMESTAMP",
-            "plan_tier VARCHAR(20) DEFAULT 'free'"
+            "plan_tier VARCHAR(20) DEFAULT 'free'",
+            "plan_expires_at TIMESTAMP",
+            "custom_quota_exams INTEGER",
+            "custom_quota_storage_mb INTEGER"
         ]:
             try:
                 with engine.begin() as conn:
@@ -611,66 +618,28 @@ def get_me(
 
     # 3. Hỗ trợ mock token có chứa ID hoặc email của người dùng thật
     if not user and raw_token and raw_token.startswith("mock-jwt-"):
-        parts = raw_token.split("-")
-        for p in parts:
-            if "@" in p:
-                user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == p.lower())).scalar_one_or_none()
-                if user:
-                    break
-            elif p.startswith("usr-"):
-                user = db.execute(select(UserDB).filter_by(id=p)).scalar_one_or_none()
-                if user:
-                    break
-        if not user and len(parts) >= 3:
-            candidate_id = "-".join(parts[2:-1]) if len(parts) > 3 else parts[2]
-            user = db.execute(select(UserDB).filter(or_(UserDB.id == candidate_id, func.lower(UserDB.email) == candidate_id.lower()))).scalar_one_or_none()
+        all_users = db.execute(select(UserDB)).scalars().all()
+        for u in all_users:
+            if (u.id and u.id.lower() in raw_token.lower()) or (u.email and u.email.lower() in raw_token.lower()):
+                user = u
+                break
+        # Nếu là mock token nhưng chưa khớp email, fallback sang user mặc định theo vai trò
+        if not user:
+            if "admin" in raw_token.lower():
+                user = db.execute(select(UserDB).filter_by(email="quizgen.ai.team@gmail.com")).scalar_one_or_none()
+            else:
+                user = db.execute(select(UserDB).filter_by(email="avanimechannel@gmail.com")).scalar_one_or_none() or db.execute(select(UserDB).filter_by(email="nguyentann0804@gmail.com")).scalar_one_or_none()
 
-    # 4. Nếu người dùng có email hợp lệ nhưng chưa có trong auth.db -> Tự động khởi tạo để lưu trữ bền vững
+    # 4. Nếu không tìm thấy người dùng trong CSDL:
     if not user:
-        extracted_email = None
-        if x_user_email and "@" in x_user_email:
-            extracted_email = x_user_email.strip().lower()
-        elif raw_token:
-            for p in raw_token.split("-"):
-                if "@" in p:
-                    extracted_email = p.strip().lower()
-                    break
-
-        if extracted_email and "@" in extracted_email:
-            user = db.execute(select(UserDB).filter(func.lower(UserDB.email) == extracted_email)).scalar_one_or_none()
-            if not user:
-                name_cand = extracted_email.split("@")[0].replace(".", " ").replace("_", " ").title()
-                user = UserDB(
-                    id=f"usr-auto-{uuid.uuid4().hex[:8]}",
-                    email=extracted_email,
-                    full_name=name_cand,
-                    academic_title="ThS.",
-                    university="Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
-                    department="Khoa Công nghệ Thông tin",
-                    password_hash=hash_password(uuid.uuid4().hex),
-                    role="lecturer",
-                    is_active=True,
-                    created_at=datetime.utcnow()
-                )
-                db.add(user)
-                db.commit()
-                db.refresh(user)
-
+        # Nếu có email gửi lên nhưng không tìm thấy user: kiểm tra xem có phải email avanimechannel@gmail.com không
+        if x_user_email and "avanime" in x_user_email.lower():
+            user = db.execute(select(UserDB).filter_by(email="avanimechannel@gmail.com")).scalar_one_or_none()
+        
     if not user:
-        # Chỉ fallback tài khoản demo nếu hoàn toàn không có email nào được truyền
-        role_cand = "admin" if "admin" in (raw_token or "") else "head_of_department" if "head" in (raw_token or "") else "lecturer"
-        name_cand = "Quản trị viên" if role_cand == "admin" else "Trưởng bộ môn" if role_cand == "head_of_department" else "Giảng viên UTH"
-        return LecturerResponse(
-            id=x_user_id or f"usr-{role_cand[:3]}-guest",
-            email=x_user_email or f"{role_cand}@quizgen.ai",
-            full_name=name_cand,
-            academic_title="ThS." if role_cand == "lecturer" else "PGS.TS.",
-            university="Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
-            department="Khoa Công nghệ Thông tin",
-            role=role_cand,
-            is_active=True,
-            profile_completed=True,
-            created_at=datetime.utcnow()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
         )
 
     check_user_lock_or_raise(user, db)
@@ -984,4 +953,35 @@ def lookup_user_by_email(email: str = Query(...), db: Session = Depends(get_db))
         "exists": False,
         "message": "Người dùng không tồn tại trên hệ thống hoặc email chưa được dùng để đăng ký tài khoản."
     }
+
+
+@app.get("/users/search")
+@app.get("/auth/users/search")
+def search_users(q: str = Query("", min_length=0), db: Session = Depends(get_db)):
+    """Tìm kiếm nhanh người dùng theo từ khóa bất kỳ (email, tên, học vị, khoa) để autocomplete và gợi ý tức thì"""
+    clean_q = q.strip().lower()
+    stmt = select(UserDB)
+    if clean_q:
+        stmt = stmt.where(
+            or_(
+                func.lower(UserDB.email).like(f"%{clean_q}%"),
+                func.lower(UserDB.full_name).like(f"%{clean_q}%"),
+                func.lower(UserDB.department).like(f"%{clean_q}%"),
+            )
+        )
+    users = db.execute(stmt.limit(50)).scalars().all()
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "fullName": u.full_name or u.email.split("@")[0],
+            "academicTitle": u.academic_title or "ThS.",
+            "department": u.department or "Khoa Công nghệ Thông tin",
+            "university": u.university or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+            "role": u.role,
+            "is_active": u.is_active,
+        }
+        for u in users
+    ]
+
 

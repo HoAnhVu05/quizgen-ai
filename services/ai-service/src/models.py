@@ -70,6 +70,8 @@ class GenerateRequest(BaseModel):
     bloom_matrix: Optional[Dict[str, int]] = None
     bloomMatrix: Optional[Dict[str, int]] = None
     images: Optional[List[Dict[str, Any]]] = None
+    pedagogical_prompt: Optional[str] = None
+    pedagogicalPrompt: Optional[str] = None
 
     def get_document_id(self) -> str:
         return self.documentId or self.document_id or "tb-001"
@@ -79,3 +81,6 @@ class GenerateRequest(BaseModel):
 
     def get_images(self) -> List[Dict[str, Any]]:
         return self.images or []
+
+    def get_pedagogical_prompt(self) -> str:
+        return (self.pedagogicalPrompt or self.pedagogical_prompt or "").strip()

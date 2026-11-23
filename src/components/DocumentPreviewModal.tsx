@@ -4,6 +4,7 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  RotateCw,
   Download,
   ExternalLink,
   FileText,
@@ -17,8 +18,10 @@ import {
   ChevronDown,
   AlertCircle,
   Loader2,
+  Move,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { usePinchZoom } from '../hooks/usePinchZoom';
 
 interface DocumentPreviewModalProps {
   isOpen: boolean;
@@ -39,6 +42,150 @@ const getColumnLetter = (colIndex: number): string => {
     temp = Math.floor(temp / 26) - 1;
   }
   return letter;
+};
+
+// Subcomponent chuyên biệt cho ảnh, hỗ trợ Pinch-to-zoom 2 ngón & Lăn chuột có tâm tại con trỏ (đặt ngoài component cha để tránh unmount)
+const ImageLightboxView: React.FC<{
+  fileUrl: string;
+  fileName: string;
+  handleSafeClose: () => void;
+  onDownload: () => void;
+}> = ({ fileUrl, fileName, handleSafeClose, onDownload }) => {
+  const {
+    scale,
+    containerRef,
+    zoomIn,
+    zoomOut,
+    rotate,
+    reset,
+    transformStyle,
+    bind,
+  } = usePinchZoom({ minScale: 0.5, maxScale: 5, step: 0.25 });
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-md animate-fadeIn select-none"
+      onClick={handleSafeClose}
+    >
+      {/* Mobile-Safe Fixed Top Header */}
+      <div
+        className="fixed top-0 left-0 right-0 z-50 px-3 py-3 sm:px-6 bg-gradient-to-b from-black/90 via-black/60 to-transparent flex items-center justify-between"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={handleSafeClose}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white font-medium text-xs backdrop-blur-sm transition-all cursor-pointer shadow-md"
+          title="Quay lại"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="hidden sm:inline">Quay lại</span>
+        </button>
+
+        <span className="text-xs text-white/90 font-medium truncate max-w-[150px] sm:max-w-md mx-2 text-center">
+          {fileName}
+        </span>
+
+        {/* Action Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center bg-black/50 border border-white/20 rounded-full p-0.5 sm:p-1 backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={zoomIn}
+              className="p-1 sm:p-1.5 hover:bg-white/20 rounded-full text-white/90 hover:text-white transition-colors cursor-pointer"
+              title="Phóng to"
+            >
+              <ZoomIn className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={zoomOut}
+              className="p-1 sm:p-1.5 hover:bg-white/20 rounded-full text-white/90 hover:text-white transition-colors cursor-pointer"
+              title="Thu nhỏ"
+            >
+              <ZoomOut className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={rotate}
+              className="p-1 sm:p-1.5 hover:bg-white/20 rounded-full text-white/90 hover:text-white transition-colors cursor-pointer"
+              title="Xoay 90°"
+            >
+              <RotateCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={reset}
+              className="px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs text-white/80 hover:text-white font-mono cursor-pointer"
+              title="Khôi phục kích thước ban đầu"
+            >
+              {Math.round(scale * 100)}%
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSafeClose}
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center transition-all cursor-pointer shadow-md"
+            title="Đóng xem ảnh"
+          >
+            <X className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Image Viewport with full 2-finger pinch & mouse-wheel zoom centered at cursor */}
+      <div
+        ref={containerRef}
+        className="relative max-w-5xl w-full h-[75vh] sm:h-[80vh] flex flex-col items-center justify-center mt-12 sm:mt-10 overflow-hidden touch-none cursor-grab active:cursor-grabbing"
+        onClick={(e) => e.stopPropagation()}
+        {...bind}
+      >
+        <div style={transformStyle} className="flex items-center justify-center pointer-events-none">
+          <img
+            src={fileUrl}
+            alt={fileName}
+            draggable={false}
+            className="max-w-full max-h-[68vh] sm:max-h-[75vh] object-contain rounded-xl shadow-2xl border border-white/10 select-none pointer-events-none"
+          />
+        </div>
+
+        {/* Floating Mobile Tip */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 text-[10px] sm:text-xs text-white/80 flex items-center gap-1.5 pointer-events-none shadow-lg whitespace-nowrap">
+          <Move className="w-3 h-3 text-teal-400" />
+          <span>Chụm 2 ngón thu/phóng • Lăn chuột phóng to tại con trỏ • Kéo rê di chuyển</span>
+        </div>
+      </div>
+
+      {/* Floating Bottom Download Pill */}
+      <div
+        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 sm:gap-4 bg-slate-900/90 text-white px-4 py-2 rounded-full text-xs shadow-2xl backdrop-blur-md border border-white/15"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="font-medium truncate max-w-[120px] sm:max-w-sm">{fileName}</span>
+        <div className="h-3 w-[1px] bg-white/20 mx-1" />
+        <button
+          type="button"
+          onClick={onDownload}
+          className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 font-bold cursor-pointer hover:underline"
+        >
+          <Download className="w-4 h-4" />
+          <span>Tải về</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleSafeClose}
+          className="flex items-center gap-1 text-rose-300 hover:text-rose-200 font-semibold px-2 py-0.5 rounded hover:bg-white/10 cursor-pointer"
+          title="Đóng xem ảnh"
+        >
+          <X className="w-3.5 h-3.5" />
+          <span>Đóng</span>
+        </button>
+      </div>
+    </div>
+  );
 };
 
 export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
@@ -205,123 +352,12 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   // ── 1. IMAGE LIGHTBOX (Ultra-clean Floating View) ──────────────────────────
   if (isImage) {
     return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in select-none"
-        onClick={handleSafeClose}
-      >
-        {/* Mobile-Safe Fixed Top Header */}
-        <div
-          className="fixed top-0 left-0 right-0 z-50 px-3 py-3 sm:px-6 bg-gradient-to-b from-black/90 via-black/50 to-transparent flex items-center justify-between"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={handleSafeClose}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white font-medium text-xs backdrop-blur-md transition-all cursor-pointer shadow-md"
-            title="Quay lại"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            <span>Quay lại</span>
-          </button>
-
-          <span className="text-xs text-white/90 font-medium truncate max-w-[180px] sm:max-w-md mx-2">
-            {fileName}
-          </span>
-
-          <button
-            type="button"
-            onClick={handleSafeClose}
-            className="w-9 h-9 rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 text-white flex items-center justify-center backdrop-blur-md cursor-pointer transition-all shadow-md"
-            title="Đóng xem ảnh"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <div
-          className="relative max-w-5xl w-full max-h-[85vh] flex flex-col items-center mt-12 sm:mt-6"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Floating Image */}
-          <div className="overflow-auto max-h-[70vh] sm:max-h-[76vh] flex items-center justify-center p-2">
-            <img
-              src={fileUrl}
-              alt={fileName}
-              style={{
-                transform: `scale(${zoomScale}) rotate(${rotation}deg)`,
-                transition: 'transform 0.15s ease-out',
-              }}
-              className="max-w-full max-h-[66vh] sm:max-h-[72vh] object-contain rounded-xl shadow-2xl select-none"
-            />
-          </div>
-
-          {/* Sleek Floating Glass Pill Toolbar */}
-          <div className="mt-3 flex items-center gap-2 bg-slate-900/90 backdrop-blur-md border border-white/10 text-white px-3 sm:px-4 py-2 rounded-full shadow-2xl text-xs flex-wrap justify-center">
-            <span className="font-medium truncate max-w-[120px] sm:max-w-xs text-slate-200 pr-2 border-r border-white/10 hidden sm:inline">
-              {fileName}
-            </span>
-
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={handleZoomOut}
-                className="p-1 hover:bg-white/15 rounded-md transition-colors cursor-pointer"
-                title="Thu nhỏ"
-              >
-                <ZoomOut className="w-3.5 h-3.5 text-slate-300" />
-              </button>
-              <button
-                type="button"
-                onClick={handleResetZoom}
-                className="px-1.5 py-0.5 text-[10px] font-mono hover:bg-white/15 rounded text-slate-300 cursor-pointer"
-                title="Đặt lại 100%"
-              >
-                {Math.round(zoomScale * 100)}%
-              </button>
-              <button
-                type="button"
-                onClick={handleZoomIn}
-                className="p-1 hover:bg-white/15 rounded-md transition-colors cursor-pointer"
-                title="Phóng to"
-              >
-                <ZoomIn className="w-3.5 h-3.5 text-slate-300" />
-              </button>
-              <button
-                type="button"
-                onClick={handleRotate}
-                className="p-1 hover:bg-white/15 rounded-md transition-colors cursor-pointer ml-1"
-                title="Xoay 90°"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-slate-300" />
-              </button>
-            </div>
-
-            <div className="h-3 w-[1px] bg-white/20 mx-1" />
-
-            <button
-              type="button"
-              onClick={onDownload}
-              className="flex items-center gap-1 text-teal-400 hover:text-teal-300 font-semibold px-2 py-1 rounded-md hover:bg-white/10 transition-colors cursor-pointer"
-              title="Tải ảnh về máy"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Tải về</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSafeClose}
-              className="flex items-center gap-1 text-rose-300 hover:text-rose-200 font-semibold px-2 py-1 rounded-md hover:bg-white/10 transition-colors cursor-pointer"
-              title="Đóng cửa sổ"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Đóng</span>
-            </button>
-          </div>
-        </div>
-      </div>
+      <ImageLightboxView
+        fileUrl={fileUrl}
+        fileName={fileName}
+        handleSafeClose={handleSafeClose}
+        onDownload={onDownload}
+      />
     );
   }
 

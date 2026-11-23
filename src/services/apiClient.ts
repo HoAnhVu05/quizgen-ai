@@ -20,12 +20,15 @@ class ApiClient {
   private isRefreshing = false;
   private refreshPromise: Promise<string | null> | null = null;
   private onAuthExpiredListeners: Array<() => void> = [];
+  private lastRevokeTime = 0;
 
   public getAccessToken(): string | null {
     try {
       return (
         localStorage.getItem('quizgen_auth_token') ||
-        localStorage.getItem('quizgen_token')
+        localStorage.getItem('quizgen_token') ||
+        sessionStorage.getItem('quizgen_auth_token') ||
+        sessionStorage.getItem('quizgen_token')
       );
     } catch {
       return null;
@@ -36,8 +39,11 @@ class ApiClient {
     try {
       return (
         localStorage.getItem('quizgen_refresh_token') ||
+        sessionStorage.getItem('quizgen_refresh_token') ||
         localStorage.getItem('quizgen_auth_token') ||
-        localStorage.getItem('quizgen_token')
+        localStorage.getItem('quizgen_token') ||
+        sessionStorage.getItem('quizgen_auth_token') ||
+        sessionStorage.getItem('quizgen_token')
       );
     } catch {
       return null;
@@ -49,12 +55,15 @@ class ApiClient {
       if (accessToken) {
         localStorage.setItem('quizgen_auth_token', accessToken);
         localStorage.setItem('quizgen_token', accessToken);
+        sessionStorage.setItem('quizgen_auth_token', accessToken);
+        sessionStorage.setItem('quizgen_token', accessToken);
       }
       if (refreshToken) {
         localStorage.setItem('quizgen_refresh_token', refreshToken);
+        sessionStorage.setItem('quizgen_refresh_token', refreshToken);
       }
     } catch (e) {
-      console.warn('[API Client] Không thể lưu token vào localStorage:', e);
+      console.warn('[API Client] Không thể lưu token:', e);
     }
   }
 
@@ -64,6 +73,9 @@ class ApiClient {
       localStorage.removeItem('quizgen_token');
       localStorage.removeItem('quizgen_refresh_token');
       localStorage.removeItem('quizgen_user');
+      localStorage.removeItem('quizgen_remember_me');
+      localStorage.removeItem('quizgen_last_active');
+      sessionStorage.clear();
     } catch (e) {
       console.warn('[API Client] Không thể xóa phiên đăng nhập:', e);
     }
@@ -76,13 +88,34 @@ class ApiClient {
     };
   }
 
-  private notifyAuthExpired(): void {
-    // Không bao giờ tự động đăng xuất nếu còn thông tin người dùng hợp lệ trong bộ nhớ cục bộ
-    const savedUser = localStorage.getItem('quizgen_user');
-    if (savedUser) {
-      console.warn('[API Client] Giữ phiên làm việc từ bộ nhớ cục bộ, tránh tự động đăng xuất.');
-      return;
+  public notifyAuthRevoked(detail?: string): void {
+    const now = Date.now();
+    // Chặn bắn liên tiếp nhiều thông báo thu hồi phiên trùng lặp trong vòng 3 giây
+    if (now - this.lastRevokeTime < 3000) return;
+    this.lastRevokeTime = now;
+
+    this.clearAuth();
+    this.onAuthExpiredListeners.forEach((cb) => {
+      try {
+        cb();
+      } catch (err) {
+        console.error('[API Client] Lỗi khi kích hoạt callback đăng xuất:', err);
+      }
+    });
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('quizgen:auth-revoked', {
+          detail: detail || 'Phiên làm việc đã bị thu hồi do tài khoản không còn tồn tại trên hệ thống.',
+        })
+      );
     }
+  }
+
+  private notifyAuthExpired(): void {
+    const now = Date.now();
+    if (now - this.lastRevokeTime < 3000) return;
+    this.lastRevokeTime = now;
 
     this.clearAuth();
     this.onAuthExpiredListeners.forEach((cb) => {
@@ -186,7 +219,7 @@ class ApiClient {
     }
 
     try {
-      const userStr = localStorage.getItem('quizgen_user');
+      const userStr = localStorage.getItem('quizgen_user') || sessionStorage.getItem('quizgen_user');
       if (userStr) {
         const u = JSON.parse(userStr);
         if (u?.email && !headers.has('X-User-Email')) {
@@ -233,6 +266,16 @@ class ApiClient {
 
     // Nếu gặp 401 Unauthorized và không phải endpoint đăng nhập/làm mới
     if (res.status === 401 && !isAuthEndpoint) {
+      try {
+        const cloned = res.clone();
+        const data = await cloned.json();
+        const msg = String(data?.detail || '');
+        if (msg.includes('ACCOUNT_REVOKED') || msg.includes('không còn tồn tại') || msg.includes('đã bị xóa')) {
+          this.notifyAuthRevoked(msg);
+          return res;
+        }
+      } catch {}
+
       const newToken = await this.refreshAccessToken();
       if (newToken) {
         // Thử lại yêu cầu ban đầu với Access Token vừa tái cấp
@@ -243,6 +286,14 @@ class ApiClient {
           headers: retryHeaders,
         };
         return await fetch(input, retryInit);
+      } else {
+        // Chỉ thu hồi phiên nếu người dùng không còn dữ liệu tài khoản cục bộ hợp lệ
+        const hasSavedUser =
+          typeof window !== 'undefined' &&
+          Boolean(localStorage.getItem('quizgen_user') || sessionStorage.getItem('quizgen_user'));
+        if (!hasSavedUser) {
+          this.notifyAuthRevoked();
+        }
       }
     }
 
@@ -272,6 +323,35 @@ class ApiClient {
       body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
     });
 
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  public async patch<T = any>(endpoint: string, body?: any, init?: RequestInit): Promise<T> {
+    const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
+    const headers = new Headers(init?.headers || {});
+    if (body && !(body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+
+    const res = await this.fetch(url, {
+      ...init,
+      method: 'PATCH',
+      headers,
+      body: body instanceof FormData ? body : body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  public async delete<T = any>(endpoint: string, init?: RequestInit): Promise<T> {
+    const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
+    const res = await this.fetch(url, { ...init, method: 'DELETE' });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }

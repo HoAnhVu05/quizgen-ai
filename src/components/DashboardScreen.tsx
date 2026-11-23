@@ -449,7 +449,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             label: 'Giáo trình đã nạp',
             value: String(statsSummary.textbooksIndexed),
             sub: 'Tài liệu cá nhân sẵn sàng sinh đề',
-            icon: BookOpen,
+            icon: UploadCloud,
             color: 'text-[#008689]',
             bg: 'bg-[#cbf0ee]',
             cardBg: 'bg-[#f0faf9]',
@@ -476,7 +476,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             value: String(pendingReviewCount),
             valueColor: pendingReviewCount > 0 ? 'text-amber-600' : 'text-slate-800',
             sub: pendingReviewCount > 0 ? 'Cần kiểm tra trích dẫn & gửi duyệt' : 'Chưa có câu hỏi chờ duyệt ở Bước 3',
-            icon: Clock,
+            icon: CheckSquare,
             color: 'text-amber-600',
             bg: 'bg-amber-100',
             cardBg: 'bg-[#fffbeb]',
@@ -494,7 +494,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             sub: (approvedCount > 0 || (JSON.parse(localStorage.getItem('quizgen_saved_exams') || '[]').length) > 0)
               ? 'Đề thi sẵn sàng xuất Word, PDF, OMR'
               : 'Chưa có đề thi được lưu ở Bước 4',
-            icon: FileText,
+            icon: Database,
             color: 'text-purple-600',
             bg: 'bg-purple-100',
             cardBg: 'bg-[#faf5ff]',

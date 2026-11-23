@@ -127,6 +127,14 @@ class UpdateThemeRequest(BaseModel):
     theme_id: str
     actor_email: Optional[str] = None
 
+class GrantPlanRequest(BaseModel):
+    plan_tier: str = "pro"  # 'free' | 'standard' | 'pro' | 'enterprise'
+    duration_days: int = 30  # 0 means permanent
+    custom_quota_exams: Optional[int] = 100
+    custom_quota_storage_mb: Optional[int] = 2048
+    reason: Optional[str] = "Admin cấp đặc quyền"
+    actor_email: Optional[str] = None
+
 # ─── Khởi tạo cấu hình mặc định (Seed Config) ───────────────────────────────
 def init_admin_config():
     db = SessionLocal()
@@ -298,7 +306,18 @@ def list_real_users(
         )
         conn.commit()
 
-        sql = "SELECT id, email, full_name, academic_title, university, department, role, is_active, status, lock_type, lock_reason, locked_until, locked_at, created_at FROM users WHERE 1=1"
+        for col in [
+            "plan_tier VARCHAR(30) DEFAULT 'free'",
+            "plan_expires_at TIMESTAMP",
+            "custom_quota_exams INTEGER",
+            "custom_quota_storage_mb INTEGER"
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except Exception:
+                pass
+
+        sql = "SELECT id, email, full_name, academic_title, university, department, role, is_active, status, lock_type, lock_reason, locked_until, locked_at, created_at, plan_tier, plan_expires_at, custom_quota_exams, custom_quota_storage_mb FROM users WHERE 1=1"
         params = []
 
         if role and role != "all":
@@ -342,7 +361,11 @@ def list_real_users(
                 "lockReason": r["lock_reason"],
                 "lockedUntil": r["locked_until"],
                 "lockedAt": r["locked_at"],
-                "createdAt": r["created_at"] or "Chưa rõ"
+                "createdAt": r["created_at"] or "Chưa rõ",
+                "planTier": r["plan_tier"] or "free",
+                "planExpiresAt": r["plan_expires_at"],
+                "customQuotaExams": r["custom_quota_exams"],
+                "customQuotaStorageMb": r["custom_quota_storage_mb"]
             })
         return result
 
@@ -556,6 +579,64 @@ def update_user_role_endpoint(user_id: str, req: UpdateUserRoleRequest, db: Sess
         "message": f"Đã cập nhật vai trò cho {user_email} thành {req.role}.",
         "userId": user_id,
         "newRole": req.role
+    }
+
+@app.post("/users/{user_id}/grant-plan")
+def grant_user_plan_endpoint(user_id: str, req: GrantPlanRequest, db: Session = Depends(get_db)):
+    """Cấp gói dịch vụ và tùy biến Quota đặc quyền cho người dùng trực tiếp trong auth.db"""
+    clean_actor = (req.actor_email or "").strip().lower() or ROOT_ADMIN_EMAIL
+
+    with get_auth_connection() as conn:
+        user = conn.execute("SELECT id, email, role, plan_tier FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Không tìm thấy người dùng.")
+
+        user_email = user["email"].strip().lower()
+        old_plan = user["plan_tier"] or "free"
+
+        # Đảm bảo schema có đủ các cột
+        for col in [
+            "plan_tier VARCHAR(30) DEFAULT 'free'",
+            "plan_expires_at TIMESTAMP",
+            "custom_quota_exams INTEGER",
+            "custom_quota_storage_mb INTEGER"
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col}")
+            except Exception:
+                pass
+
+        expires_at_str = None
+        if req.duration_days > 0:
+            exp_date = datetime.utcnow() + timedelta(days=req.duration_days)
+            expires_at_str = exp_date.strftime("%Y-%m-%d %H:%M:%S")
+
+        now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            """UPDATE users 
+               SET plan_tier = ?, plan_expires_at = ?, custom_quota_exams = ?, custom_quota_storage_mb = ?, updated_at = ?
+               WHERE id = ?""",
+            (req.plan_tier, expires_at_str, req.custom_quota_exams, req.custom_quota_storage_mb, now_str, user_id)
+        )
+        conn.commit()
+
+    dur_text = f"{req.duration_days} ngày" if req.duration_days > 0 else "Vĩnh viễn"
+    db.add(AdminAuditLogDB(
+        actor_email=clean_actor,
+        action="ADMIN_GRANT_PLAN",
+        detail=f"Cấp gói '{req.plan_tier.upper()}' (Thời hạn: {dur_text}, Đề thi: {req.custom_quota_exams}, RAG: {req.custom_quota_storage_mb}MB) cho {user_email}. Lý do: {req.reason or 'N/A'}",
+        severity="info"
+    ))
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Đã cấp thành công gói {req.plan_tier.upper()} cho {user_email}.",
+        "userId": user_id,
+        "planTier": req.plan_tier,
+        "planExpiresAt": expires_at_str,
+        "customQuotaExams": req.custom_quota_exams,
+        "customQuotaStorageMb": req.custom_quota_storage_mb
     }
 
 @app.delete("/users/{user_id}")

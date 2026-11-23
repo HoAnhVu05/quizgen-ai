@@ -15,8 +15,9 @@ logger = logging.getLogger("document-service")
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Depends, Query, status, Body, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, text
 import httpx
 import sqlite3
 
@@ -117,9 +118,21 @@ def get_user_plan_tier(user_id: str) -> str:
 
 @app.on_event("startup")
 def startup_db():
-    """Tự động khởi tạo bảng cơ sở dữ liệu nếu chưa tồn tại"""
+    """Tự động khởi tạo bảng cơ sở dữ liệu nếu chưa tồn tại và nâng cấp schema nếu thiếu cột"""
     try:
         Base.metadata.create_all(bind=engine)
+        with engine.connect() as conn:
+            for col, col_def in [
+                ("is_approved", "INTEGER DEFAULT 0"),
+                ("approved_by", "VARCHAR(100)"),
+                ("approved_at", "DATETIME"),
+                ("usage_count", "INTEGER DEFAULT 0"),
+            ]:
+                try:
+                    conn.execute(text(f"ALTER TABLE documents ADD COLUMN {col} {col_def}"))
+                    conn.commit()
+                except Exception:
+                    pass
     except Exception as e:
         print(f"[DOCUMENT-SERVICE] DB Startup Warning: {e}")
 
@@ -392,10 +405,11 @@ async def upload_document(
 
     filename = Path(file.filename).name
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in ["pdf", "docx"]:
+    ALLOWED_EXTENSIONS = ["pdf", "docx", "doc", "txt"]
+    if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Định dạng tệp '.{ext}' không được hỗ trợ. Chỉ chấp nhận .pdf và .docx",
+            detail=f"Định dạng tệp '.{ext}' không được hỗ trợ. Hệ thống chỉ cho phép tải lên các tệp giáo trình học thuật: PDF (.pdf), Microsoft Word (.docx, .doc) và Văn bản thuần (.txt).",
         )
 
     content = await file.read()
@@ -405,6 +419,18 @@ async def upload_document(
             detail="Tệp rỗng (0 bytes). Vui lòng chọn tệp có nội dung hợp lệ.",
         )
 
+    # Magic byte validation to prevent disguised binaries
+    if ext == "pdf" and not content.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cấu trúc tệp PDF không hợp lệ hoặc đã bị đổi phần mở rộng. Vui lòng tải lên tệp PDF chuẩn.",
+        )
+    elif ext == "docx" and not content.startswith(b"PK\x03\x04"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cấu trúc tệp Word (.docx) không hợp lệ. Vui lòng tải lên tệp DOCX chuẩn.",
+        )
+
     max_bytes = max_upload_mb * 1024 * 1024
     if len(content) > max_bytes:
         raise HTTPException(
@@ -412,7 +438,7 @@ async def upload_document(
             detail=f"Kích thước tệp ({_format_file_size(len(content))}) vượt quá giới hạn cho phép {max_upload_mb} MB của gói {plan_tier}.",
         )
 
-    # [SCRUM-99] Tính toán SHA-256 để chống trùng lặp dữ liệu (Deduplication)
+    # [SCRUM-99] Tính toán SHA-256 để chống trùng lặp dữ liệu (Deduplication Layer 1)
     file_hash = hashlib.sha256(content).hexdigest()
     existing_doc = db.query(DocumentDB).filter(
         DocumentDB.user_id == user_id,
@@ -421,7 +447,12 @@ async def upload_document(
     ).first()
     if existing_doc:
         return {
-            "message": "Tài liệu này đã tồn tại trong tài khoản của bạn (đang sẵn sàng hoặc đang được xử lý).",
+            "status": "duplicate",
+            "isDuplicate": True,
+            "duplicateType": "exact",
+            "existingDocId": existing_doc.id,
+            "existingDocName": existing_doc.name,
+            "message": f"Tài liệu này đã tồn tại trong thư viện của bạn với tên '{existing_doc.name}' (trùng khớp 100% nội dung SHA-256). Hệ thống đã tự động chuyển đến tài liệu này để tiết kiệm thời gian và dung lượng lưu trữ.",
             "document": {
                 "id": existing_doc.id,
                 "userId": user_id,
@@ -433,6 +464,7 @@ async def upload_document(
                 "progress": existing_doc.progress,
                 "fileHash": file_hash,
                 "isDuplicate": True,
+                "duplicateType": "exact",
                 "uploadedAt": "Tái sử dụng (Deduplicated)"
             }
         }
@@ -699,6 +731,10 @@ def list_documents(
             "authorName": getattr(d, "author_name", "Giảng viên UTH") or "Giảng viên UTH",
             "isShared": bool(getattr(d, "is_shared", 0)),
             "sharingScope": getattr(d, "sharing_scope", "private") or "private",
+            "isApproved": bool(getattr(d, "is_approved", 0)),
+            "approvedBy": getattr(d, "approved_by", None),
+            "approvedAt": d.approved_at.strftime("%d/%m/%Y, %H:%M") if getattr(d, "approved_at", None) else None,
+            "usageCount": getattr(d, "usage_count", 0) or 0,
             "uploadedAt": d.created_at.strftime("%d/%m/%Y, %H:%M") if d.created_at else "Hôm nay"
         }
         for d in docs
@@ -714,7 +750,8 @@ def toggle_document_share(
 ):
     """
     Chia sẻ hoặc thu hồi chia sẻ giáo trình vào Ngân hàng Giáo trình dùng chung.
-    Hỗ trợ gói Enterprise / Khoa & Bộ môn và giảng viên.
+    Hỗ trợ kiểm duyệt 2 cấp:
+    - Cấp 1 (Hệ thống tự động): Kiểm tra số trang, độ dài, trạng thái xử lý, từ khóa rác trước khi cho phép vào thư viện.
     """
     doc = db.query(DocumentDB).filter(DocumentDB.id == document_id).first()
     if not doc:
@@ -726,6 +763,27 @@ def toggle_document_share(
         doc.user_id = caller_id
 
     target_shared = payload.get("is_shared", not bool(doc.is_shared))
+
+    # Cấp 1: Kiểm duyệt tự động trước khi chia sẻ vào Thư viện dùng chung
+    if target_shared:
+        if doc.status != "ready":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tài liệu đang xử lý bóc tách hoặc chưa sẵn sàng, chưa thể chia sẻ lên Thư viện dùng chung."
+            )
+        if (doc.total_pages or 0) < 2 and (doc.chapters_count or 0) < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tài liệu không đạt chuẩn học thuật (dưới 2 trang hoặc không có nội dung học phần hợp lệ) để chia sẻ vào Ngân hàng dùng chung."
+            )
+        banned_words = ["test", "rác", "spam", "junk", "xxx", "bậy", "troll"]
+        name_lower = (doc.name or "").lower()
+        if any(w in name_lower.split() for w in banned_words) and len(doc.name) < 10:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tên tài liệu chứa từ khóa thử nghiệm hoặc không phù hợp tiêu chuẩn học thuật. Vui lòng đổi tên tài liệu rõ ràng trước khi chia sẻ."
+            )
+
     doc.is_shared = 1 if target_shared else 0
     doc.sharing_scope = payload.get("sharing_scope", "department" if target_shared else "private")
     if payload.get("author_name"):
@@ -740,7 +798,123 @@ def toggle_document_share(
         "is_shared": bool(doc.is_shared),
         "sharingScope": doc.sharing_scope,
         "authorName": doc.author_name,
-        "message": "Đã chia sẻ giáo trình lên Ngân hàng Dùng chung UTH!" if doc.is_shared else "Đã chuyển giáo trình về chế độ Riêng tư."
+        "isApproved": bool(getattr(doc, "is_approved", 0)),
+        "approvedBy": getattr(doc, "approved_by", None),
+        "message": "Đã kiểm duyệt Cấp 1 thành công & Chia sẻ giáo trình lên Ngân hàng Dùng chung!" if doc.is_shared else "Đã chuyển giáo trình về chế độ Riêng tư."
+    }
+
+
+@app.post("/documents/{document_id}/approve")
+def toggle_document_approve(
+    document_id: str,
+    payload: Dict[str, Any] = Body(default={}),
+    current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
+    db: Session = Depends(get_db)
+):
+    """
+    Cấp 2: Thẩm định & Đóng dấu bởi Trưởng bộ môn (HOD) hoặc Quản trị viên (Admin).
+    Gán huy hiệu: 🛡️ Giáo trình chuẩn — Đã được Trưởng bộ môn phê duyệt.
+    """
+    role = (current_user_info.get("role") or "").lower() if current_user_info else ""
+    if role not in ["head_of_department", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Chỉ Trưởng bộ môn (HOD) hoặc Quản trị viên mới có thẩm quyền thẩm định và đóng dấu phê duyệt giáo trình."
+        )
+
+    doc = db.query(DocumentDB).filter(DocumentDB.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tài liệu.")
+
+    current_approved = bool(getattr(doc, "is_approved", 0))
+    target_approved = payload.get("is_approved", not current_approved)
+    doc.is_approved = 1 if target_approved else 0
+
+    if target_approved:
+        caller_name = (
+            current_user_info.get("full_name") or
+            current_user_info.get("fullName") or
+            current_user_info.get("email") or
+            "Trưởng bộ môn"
+        )
+        academic_title = current_user_info.get("academic_title") or current_user_info.get("academicTitle") or ""
+        doc.approved_by = f"{academic_title} {caller_name}".strip() if academic_title else caller_name
+        doc.approved_at = datetime.utcnow()
+    else:
+        doc.approved_by = None
+        doc.approved_at = None
+
+    db.commit()
+    db.refresh(doc)
+
+    return {
+        "status": "success",
+        "document_id": doc.id,
+        "isApproved": bool(doc.is_approved),
+        "approvedBy": doc.approved_by,
+        "approvedAt": doc.approved_at.strftime("%d/%m/%Y, %H:%M") if doc.approved_at else None,
+        "message": f"Đã đóng dấu thẩm định giáo trình thành công bởi {doc.approved_by}" if doc.is_approved else "Đã thu hồi con dấu thẩm định giáo trình."
+    }
+
+
+@app.post("/documents/{document_id}/increment-usage")
+def increment_document_usage(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """Ghi nhận số lần giáo trình được các giảng viên nạp để biên soạn đề thi (Usage Count)"""
+    doc = db.query(DocumentDB).filter(DocumentDB.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy tài liệu.")
+    doc.usage_count = (doc.usage_count or 0) + 1
+    db.commit()
+    db.refresh(doc)
+    return {
+        "status": "success",
+        "document_id": doc.id,
+        "usageCount": doc.usage_count
+    }
+
+class UpdateDocMetaRequest(BaseModel):
+    name: Optional[str] = None
+    is_shared: Optional[bool] = None
+    sharing_scope: Optional[str] = None
+    author_name: Optional[str] = None
+
+@app.patch("/documents/{document_id}")
+@app.put("/documents/{document_id}")
+def update_document_metadata(
+    document_id: str,
+    req: UpdateDocMetaRequest,
+    current_user_info: Optional[Dict[str, Any]] = Depends(get_optional_user_info),
+    db: Session = Depends(get_db)
+):
+    """Admin hoặc chủ sở hữu chỉnh sửa metadata giáo trình (Tên, Tác giả, Phạm vi chia sẻ)"""
+    doc = db.query(DocumentDB).filter(DocumentDB.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Không tìm thấy tài liệu.")
+
+    if req.name is not None and req.name.strip():
+        doc.name = req.name.strip()
+    if req.is_shared is not None:
+        doc.is_shared = 1 if req.is_shared else 0
+    if req.sharing_scope is not None:
+        doc.sharing_scope = req.sharing_scope
+    if req.author_name is not None:
+        doc.author_name = req.author_name.strip()
+
+    db.commit()
+    db.refresh(doc)
+    return {
+        "status": "success",
+        "message": "Đã cập nhật thông tin tài liệu thành công.",
+        "document": {
+            "id": doc.id,
+            "name": doc.name,
+            "isShared": bool(doc.is_shared),
+            "sharingScope": doc.sharing_scope,
+            "authorName": doc.author_name
+        }
     }
 
 
@@ -815,18 +989,43 @@ _CACHED_INVITATIONS = None
 _CACHED_FRIEND_REQUESTS = None
 
 def deduplicate_qgroups(groups: list) -> list:
-    seen = set()
     unique = []
+    seen_channel_keys = set()
+    dm_map = {}
+
     for g in groups:
         if not isinstance(g, dict):
             continue
-        # Deduplicate primarily by group code, or by id
-        key = str(g.get("code") or g.get("id") or "").strip()
-        if not key:
-            continue
-        if key not in seen:
-            seen.add(key)
+        
+        # Xử lý gộp Tin nhắn trực tiếp 1-1: Mỗi cặp người dùng chỉ có duy nhất 1 phòng DM
+        if g.get("isDirect"):
+            raw_members = g.get("members") or [g.get("ownerEmail"), g.get("directPartnerEmail")]
+            clean_members = sorted(list(set(str(m).strip().lower() for m in raw_members if m)))
+            if not clean_members:
+                continue
+            pair_key = "<->".join(clean_members)
+            if pair_key in dm_map:
+                # Merge messages và cập nhật timestamp mới nhất
+                target = dm_map[pair_key]
+                existing_msgs = {str(m.get("id")): m for m in target.get("messages", []) if m.get("id")}
+                for m in g.get("messages", []):
+                    mid = str(m.get("id", ""))
+                    if mid and mid not in existing_msgs:
+                        target.setdefault("messages", []).append(m)
+                        existing_msgs[mid] = m
+                target["updatedAt"] = max(target.get("updatedAt", 0) or 0, g.get("updatedAt", 0) or 0)
+                continue
+            else:
+                dm_map[pair_key] = g
+                unique.append(g)
+        else:
+            # Deduplicate kênh chuyên môn theo code hoặc id
+            key = str(g.get("code") or g.get("id") or "").strip()
+            if not key or key in seen_channel_keys:
+                continue
+            seen_channel_keys.add(key)
             unique.append(g)
+            
     return unique
 
 def load_server_qgroups() -> list:
@@ -884,6 +1083,11 @@ def save_server_invitations(invitations: list):
 async def upload_qgroup_attachment(file: UploadFile = File(...)):
     try:
         content = await file.read()
+        if len(content) > 25 * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Dung lượng tệp vượt quá giới hạn tối đa 25MB ({len(content) / (1024*1024):.1f} MB)."
+            )
         orig_name = file.filename or "file"
         clean_name = "".join(c for c in orig_name if c.isalnum() or c in "._- ")
         disk_name = f"{uuid.uuid4().hex[:8]}_{clean_name}"
@@ -938,13 +1142,15 @@ async def get_qgroup_attachment(filename: str, download: bool = False):
     elif not content_type:
         content_type = "application/octet-stream"
 
-    if download:
-        return FileResponse(file_path, filename=orig_name, media_type=content_type)
-    else:
-        headers = {
-            "Content-Disposition": f'inline; filename="{orig_name}"'
-        }
-        return FileResponse(file_path, media_type=content_type, headers=headers)
+    disp_type = "attachment" if download else "inline"
+    import urllib.parse
+    encoded_filename = urllib.parse.quote(orig_name)
+    ascii_filename = orig_name.encode("ascii", "ignore").decode("ascii").strip() or "attachment"
+    headers = {
+        "Content-Disposition": f"{disp_type}; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}",
+        "Access-Control-Allow-Origin": "*",
+    }
+    return FileResponse(file_path, media_type=content_type, headers=headers)
 
 @app.get("/qgroups")
 @app.get("/documents/qgroups")
@@ -1195,20 +1401,47 @@ async def unfriend_endpoint(request: Request):
     if not my_email or not target_email:
         return {"status": "error", "message": "myEmail và targetEmail là bắt buộc"}
     
-    # 1. Xóa trong friend_requests.json
-    reqs = load_friend_requests()
-    reqs = [r for r in reqs if not (
-        {r.get("senderEmail", "").strip().lower(), r.get("targetEmail", "").strip().lower()} == {my_email, target_email}
-    )]
-    save_friend_requests(reqs)
+    # 1. Xóa trong friend_requests.json (xét cả senderEmail, targetEmail, recipientEmail)
+    try:
+        reqs = load_friend_requests()
+        reqs = [
+            r for r in reqs
+            if not (
+                {
+                    str(r.get("senderEmail", "")).strip().lower(),
+                    str(r.get("targetEmail") or r.get("recipientEmail") or "").strip().lower(),
+                } == {my_email, target_email}
+            )
+        ]
+        save_friend_requests(reqs)
+    except Exception as e:
+        logger.warning(f"Lỗi khi dọn dẹp friend_requests: {e}")
 
     # 2. Xóa phòng chat 1-1 trong qgroups.json
-    groups = load_server_qgroups()
-    groups = [g for g in groups if not (
-        (g.get("isDirect") or g.get("type") == "direct") and
-        {my_email, target_email}.issubset({str(m).strip().lower() for m in g.get("members", [])})
-    )]
-    save_server_qgroups(groups)
+    try:
+        groups = load_server_qgroups()
+        def is_dm_match(g):
+            if not (g.get("isDirect") or g.get("type") == "direct"):
+                return False
+            owner = str(g.get("ownerEmail", "")).strip().lower()
+            partner = str(g.get("directPartnerEmail", "")).strip().lower()
+            mems = {str(m).strip().lower() for m in (g.get("members") or [])}
+            # Khớp qua owner và directPartner
+            if {owner, partner} == {my_email, target_email}:
+                return True
+            # Khớp qua members
+            if {my_email, target_email}.issubset(mems):
+                return True
+            # Khớp chéo giữa members và owner/partner
+            has_my = my_email in mems or my_email in (owner, partner)
+            has_target = target_email in mems or target_email in (owner, partner)
+            return has_my and has_target
+
+        groups = [g for g in groups if not is_dm_match(g)]
+        save_server_qgroups(groups)
+    except Exception as e:
+        logger.warning(f"Lỗi khi xóa qgroups: {e}")
+
     return {"status": "success", "message": "Đã hủy kết bạn thành công."}
 
 @app.post("/qgroups/{group_id}/join-by-code")
@@ -2223,6 +2456,13 @@ def get_document(document_id: str, db: Session = Depends(get_db)):
         "chapters": [c[0] for c in chapters],
         "status": doc.status,
         "progress": doc.progress,
+        "authorName": getattr(doc, "author_name", "Giảng viên UTH") or "Giảng viên UTH",
+        "isShared": bool(getattr(doc, "is_shared", 0)),
+        "sharingScope": getattr(doc, "sharing_scope", "private") or "private",
+        "isApproved": bool(getattr(doc, "is_approved", 0)),
+        "approvedBy": getattr(doc, "approved_by", None),
+        "approvedAt": doc.approved_at.strftime("%d/%m/%Y, %H:%M") if getattr(doc, "approved_at", None) else None,
+        "usageCount": getattr(doc, "usage_count", 0) or 0,
         "uploadedAt": doc.created_at.strftime("%d/%m/%Y, %H:%M") if doc.created_at else "Hôm nay"
     }
 

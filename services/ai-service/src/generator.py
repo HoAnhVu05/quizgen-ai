@@ -14,6 +14,7 @@ import time
 import base64
 import io
 import re
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
@@ -73,7 +74,7 @@ class QuestionGenerator:
                     print(f"[AI-SERVICE] Model {candidate} test failed: {e}")
                     self.model = None
 
-    def _generate_with_fallback(self, **kwargs):
+    def _generate_with_fallback(self, system_instruction: Optional[str] = None, **kwargs):
         """Tự động chuyển tiếp mô hình dự phòng nếu một mô hình chạm hạn mức Quota (429)"""
         candidates = [self.model_name, "gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"]
         seen = set()
@@ -81,7 +82,7 @@ class QuestionGenerator:
         last_err = None
         for cand in unique_candidates:
             try:
-                m = genai.GenerativeModel(cand)
+                m = genai.GenerativeModel(cand, system_instruction=system_instruction) if system_instruction else genai.GenerativeModel(cand)
                 res = m.generate_content(**kwargs)
                 self.model = m
                 self.model_name = cand
@@ -182,13 +183,16 @@ class QuestionGenerator:
         document_id: str = "tb-001",
         chapter_name: str = "Nội dung trích xuất",
         textbook_name: str = "Tài liệu học liệu",
-        images: Optional[List[Dict[str, Any]]] = None
+        images: Optional[List[Dict[str, Any]]] = None,
+        pedagogical_prompt: Optional[str] = ""
     ) -> List[Dict[str, Any]]:
         """
         Sinh danh sách câu hỏi trắc nghiệm Đa phương thức:
         - Bám sát ma trận nhận thức Bloom (Nhận biết, Thông hiểu, Vận dụng, Phân tích)
         - Tiếp nhận cả khối Text ngữ cảnh và Hình ảnh sơ đồ / đồ thị học liệu
         - Tự động chuẩn hóa công thức dạng LaTeX ($...$)
+        - Hỗ trợ định hướng sư phạm tự do (pedagogical_prompt)
+        - Tự động chạy song song (Parallel Batching) qua asyncio.gather để tăng tốc sinh đề
         """
         if not chunks:
             raise RuntimeError(f"Tài liệu '{textbook_name}' không có ngữ cảnh văn bản hợp lệ để sinh câu hỏi.")
@@ -197,6 +201,7 @@ class QuestionGenerator:
         req_thong_hieu = bloom_matrix.get("thongHieu") or bloom_matrix.get("thong_hieu") or 4
         req_van_dung = bloom_matrix.get("vanDung") or bloom_matrix.get("van_dung") or 2
         req_phan_tich = bloom_matrix.get("phanTich") or bloom_matrix.get("phan_tich") or 0
+        total_questions = req_nhan_biet + req_thong_hieu + req_van_dung + req_phan_tich
 
         # 1. Chuẩn bị context text từ các chunks thực tế của tài liệu
         context_str = "\n\n".join([
@@ -233,22 +238,13 @@ class QuestionGenerator:
                 if pil_img:
                     loaded_pil_images.append(pil_img)
 
-        user_prompt = f"""
-NGỮ CẢNH HỌC LIỆU TỪ TÀI LIỆU '{textbook_name}':
-{context_str}
-{images_prompt_desc}
-
-YÊU CẦU MA TRẬN ĐỀ THI:
-- Nhận biết: {req_nhan_biet} câu
-- Thông hiểu: {req_thong_hieu} câu
-- Vận dụng: {req_van_dung} câu
-- Phân tích: {req_phan_tich} câu
-
-LƯU Ý QUAN TRỌNG:
-1. Toàn bộ câu hỏi, phương án và giải thích PHẢI BÁM SÁT 100% ngữ cảnh học liệu ở trên.
-2. Với các câu hỏi Toán, Vật lý, Kỹ thuật có công thức, BẮT BUỘC dùng định dạng LaTeX ($...$). Trong JSON, hãy escape các dấu gạch chéo ngược (ví dụ: \\frac, \\sum, \\alpha) để đảm bảo chuỗi JSON hợp lệ.
-3. Nếu có hình ảnh đính kèm, hãy ưu tiên thiết kế câu hỏi khai thác thông tin từ hình (gán has_image: true, image_url và image_caption tương ứng).
-4. Trả về đúng định dạng JSON có khóa "questions".
+        # Định hướng sư phạm bổ sung từ thầy cô
+        guidance_text = ""
+        if pedagogical_prompt and pedagogical_prompt.strip():
+            guidance_text = f"""
+CHỈ ĐẠO SƯ PHẠM ĐẶC BIỆT TỪ GIẢNG VIÊN (BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT):
+"{pedagogical_prompt.strip()}"
+Hãy vận dụng chỉ đạo trên để định hướng chủ đề câu hỏi, bối cảnh thực tế và cấu trúc câu hỏi.
 """
 
         # Nếu chưa có model, thử khởi tạo lại
@@ -258,13 +254,77 @@ LƯU Ý QUAN TRỌNG:
         if not self.model:
             raise RuntimeError("Chưa khởi tạo được mô hình Gemini AI. Vui lòng kiểm tra khóa API.")
 
+        # Helper tạo prompt cho từng slice/batch
+        def _build_batch_prompt(matrix_desc: str) -> str:
+            return f"""
+NGỮ CẢNH HỌC LIỆU TỪ TÀI LIỆU '{textbook_name}':
+{context_str}
+{images_prompt_desc}
+{guidance_text}
+
+YÊU CẦU MA TRẬN ĐỀ THI CHO ĐỢT NÀY:
+{matrix_desc}
+
+LƯU Ý QUAN TRỌNG:
+1. Toàn bộ câu hỏi, phương án và giải thích PHẢI BÁM SÁT 100% ngữ cảnh học liệu ở trên.
+2. Với các câu hỏi Toán, Vật lý, Kỹ thuật có công thức, BẮT BUỘC dùng định dạng LaTeX ($...$). Trong JSON, hãy escape các dấu gạch chéo ngược (ví dụ: \\frac, \\sum, \\alpha) để đảm bảo chuỗi JSON hợp lệ.
+3. Nếu có hình ảnh đính kèm, hãy ưu tiên thiết kế câu hỏi khai thác thông tin từ hình (gán has_image: true, image_url và image_caption tương ứng).
+4. Trả về đúng định dạng JSON có khóa "questions".
+"""
+
+        # ─── TĂNG TỐC ĐỘ: Parallel Batching với asyncio.gather khi tổng câu hỏi > 4 ───
+        if total_questions > 4:
+            sub_tasks_matrix = []
+            if req_nhan_biet > 0:
+                sub_tasks_matrix.append(f"- Nhận biết: {req_nhan_biet} câu")
+            if req_thong_hieu > 0:
+                sub_tasks_matrix.append(f"- Thông hiểu: {req_thong_hieu} câu")
+            van_phan = []
+            if req_van_dung > 0:
+                van_phan.append(f"- Vận dụng: {req_van_dung} câu")
+            if req_phan_tich > 0:
+                van_phan.append(f"- Phân tích: {req_phan_tich} câu")
+            if van_phan:
+                sub_tasks_matrix.append("\n".join(van_phan))
+
+            async def _run_sub_batch(matrix_desc: str) -> List[Dict[str, Any]]:
+                b_prompt = _build_batch_prompt(matrix_desc)
+                b_parts: List[Any] = [BLOOM_SYSTEM_PROMPT, b_prompt]
+                if loaded_pil_images:
+                    b_parts.extend(loaded_pil_images)
+                resp = await asyncio.to_thread(
+                    self._generate_with_fallback,
+                    contents=[{"role": "user", "parts": b_parts}],
+                    generation_config={"response_mime_type": "application/json"}
+                )
+                parsed = self._parse_json_safely(resp.text)
+                return parsed.get("questions", [])
+
+            try:
+                batch_results = await asyncio.gather(*[_run_sub_batch(m) for m in sub_tasks_matrix], return_exceptions=True)
+                gathered_questions = []
+                for res in batch_results:
+                    if isinstance(res, list):
+                        gathered_questions.extend(res)
+                if gathered_questions:
+                    return self._normalize_questions(gathered_questions, chunks, document_id, chapter_name, textbook_name, all_images_meta)
+            except Exception as e:
+                print(f"[AI GENERATOR] Warning in parallel batch: {e}, falling back to single batch.")
+
+        # Fallback hoặc khi số câu hỏi <= 4: Chạy 1 batch tổng
+        full_matrix_desc = f"""- Nhận biết: {req_nhan_biet} câu
+- Thông hiểu: {req_thong_hieu} câu
+- Vận dụng: {req_van_dung} câu
+- Phân tích: {req_phan_tich} câu"""
+        user_prompt = _build_batch_prompt(full_matrix_desc)
+
         try:
-            # Chuẩn bị contents gửi lên Gemini (hỗ trợ Text + PIL Images trực tiếp)
             parts: List[Any] = [BLOOM_SYSTEM_PROMPT, user_prompt]
             if loaded_pil_images:
                 parts.extend(loaded_pil_images)
 
-            response = self._generate_with_fallback(
+            response = await asyncio.to_thread(
+                self._generate_with_fallback,
                 contents=[{"role": "user", "parts": parts}],
                 generation_config={"response_mime_type": "application/json"}
             )
@@ -494,14 +554,36 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         screen = ctx.get("currentScreen", "dashboard")
         screen_label = ctx.get("screenLabel", "Không gian làm việc")
         active_question = ctx.get("activeQuestion")
-        user_name = ctx.get("userName", "Thầy/Cô")
+        user_name = ctx.get("userName", "anh")
         doc_id = ctx.get("documentId") or ctx.get("document_id")
         doc_name = ctx.get("documentName") or ctx.get("document_name")
         doc_pages = ctx.get("documentPages")
         all_docs = ctx.get("allDocuments") or []
         doc_chunks = ctx.get("docChunks") or ctx.get("chunks") or []
 
-        system_instruction = f"""
+        is_remote_agent = ctx.get("isRemoteCommander") or ctx.get("isAntigravityRemote") or screen == "admin_secret_command_center"
+
+        if is_remote_agent:
+            system_instruction = f"""
+Bạn là Antigravity — Trợ lý AI Full-stack (Google DeepMind Engine) đang trực tiếp túc trực và làm việc trong workspace D:\\HKDN\\Quizgen AI trên laptop của anh {user_name}.
+Bạn là kỹ sư phần mềm cao cấp kiêm trợ lý điều khiển workspace từ xa qua ứng dụng Antigravity Remote.
+
+QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ:
+1. XƯNG HÔ: Luôn xưng là "em" và gọi người dùng là "anh" (hoặc "anh {user_name}"). TUYỆT ĐỐI KHÔNG xưng là Quanta, KHÔNG gọi người dùng là "Thầy" hay "Thầy/Cô".
+2. BẠN CÓ TOÀN QUYỀN SỬA CODE & THỰC THI TÁC VỤ:
+   - Anh {user_name} là chủ sở hữu workspace và là người ra lệnh trực tiếp cho em.
+   - Khi anh hỏi hoặc yêu cầu sửa code, viết tính năng mới, fix bug, chạy test:
+     * Em khẳng định chắc chắn: "Dạ được anh, em là Antigravity Agent trên laptop, em có thể sửa trực tiếp toàn bộ source code của dự án theo chỉ đạo của anh!"
+     * Phân tích rõ giải pháp kỹ thuật cụ thể (tệp tin nào cần sửa, logic cần thay đổi).
+     * Thông báo rằng lệnh đã được lưu vào hàng đợi chỉ đạo trực tiếp của Antigravity Agent trên workspace laptop (scratch/agent_remote_inbox.jsonl) để em xử lý ngay.
+3. AM HIỂU TOÀN DIỆN HỆ THỐNG QUIZGEN AI:
+   - Frontend: React 19 + TypeScript + Vite + Tailwind CSS.
+   - 8 Microservices Python FastAPI: API Gateway (8000), Auth (8001), Document (8002), RAG (8003), AI (8004), Exam (8005), Admin (8006), Payment (8007).
+   - Hạ tầng: Cloudflare Tunnel WSS, SQLite phân tán, WebRTC SFU Mesh Huddle.
+4. PHONG CÁCH: Thân thiện, nhanh nhẹn, sắc sảo, ngắn gọn chuẩn phong cách kỹ sư DeepMind.
+"""
+        else:
+            system_instruction = f"""
 Bạn là Quanta — Trợ lý Khảo thí Học thuật & Chuyên gia Phân tích Giáo trình AI cao cấp của nền tảng QuizGen AI.
 Bạn đang đồng hành trực tiếp cùng {user_name} trong nghiên cứu tài liệu, thẩm định tri thức và biên soạn đề thi.
 Tuyệt đối không tự ý nhắc đến bất kỳ tên trường đại học cụ thể nào.
@@ -517,17 +599,24 @@ QUY ĐỊNH BẮT BUỘC VỀ VAI TRÒ & NĂNG LỰC (NGHIÊM CẤM TỪ CHỐI)
 NGỮ CẢNH LÀM VIỆC HIỆN TẠI:
 - Màn hình hiện tại: {screen_label} (Mã màn hình: {screen})
 """
-        if doc_name or doc_id or all_docs:
-            system_instruction += f"\nTHÔNG TIN GIÁO TRÌNH / TÀI LIỆU NGƯỜI DÙNG ĐÃ TẢI LÊN:\n"
+        system_instruction += f"\nTHỰC TẾ KHO TÀI LIỆU CỦA NGƯỜI DÙNG HIỆN TẠI:\n"
+        if all_docs:
+            system_instruction += f"- Tổng số lượng tài liệu/giáo trình trong thư viện cá nhân: {len(all_docs)} tài liệu.\n"
+            system_instruction += "- Danh sách chi tiết toàn bộ tài liệu:\n"
+            for idx, d in enumerate(all_docs):
+                system_instruction += f"  {idx+1}. '{d.get('name', 'Tài liệu')}' ({d.get('totalPages', '?')} trang, ID: {d.get('id', 'N/A')})\n"
+            system_instruction += f"QUY ĐỊNH BẮT BUỘC: Khi người dùng hỏi bạn 'tôi có bao nhiêu tài liệu trong thư viện?' hoặc hỏi về số lượng tài liệu, bạn BẮT BUỘC trả lời chính xác là {len(all_docs)} tài liệu và liệt kê các tài liệu ở trên. Tuyệt đối không được trả lời sai số lượng hay nói rằng bạn không biết.\n"
+        else:
+            system_instruction += "- Hiện tại người dùng chưa tải lên tài liệu nào trong thư viện (Tổng số lượng: 0 tài liệu).\n"
+            system_instruction += "QUY ĐỊNH BẮT BUỘC: Khi người dùng hỏi có bao nhiêu tài liệu trong thư viện, bạn phải thông báo hiện tại kho tài liệu của Thầy/Cô đang có 0 tài liệu và hướng dẫn Thầy/Cô bấm vào mục 'Tải Giáo Trình' để tải lên.\n"
+
+        if doc_name or doc_id or doc_chunks:
+            system_instruction += f"\nTHÔNG TIN GIÁO TRÌNH ĐANG LÀM VIỆC TRỰC TIẾP:\n"
             if doc_name:
-                system_instruction += f"- Giáo trình đang làm việc: '{doc_name}' (ID: {doc_id}, Tổng số trang: {doc_pages or 'chưa xác định'})\n"
-            if all_docs:
-                system_instruction += f"- Kho tài liệu đã nạp ({len(all_docs)} tệp):\n"
-                for d in all_docs[:5]:
-                    system_instruction += f"  + {d.get('name', 'Tài liệu')} ({d.get('totalPages', '?')} trang)\n"
+                system_instruction += f"- Giáo trình đang mở: '{doc_name}' (ID: {doc_id}, Tổng số trang: {doc_pages or 'chưa xác định'})\n"
             if doc_chunks:
                 system_instruction += f"\nTRÍCH ĐOẠN NGỮ CẢNH TỪ GIÁO TRÌNH:\n"
-                for c in doc_chunks[:6]:
+                for c in doc_chunks[:8]:
                     system_instruction += f"[Trang {c.get('pageNumber') or c.get('page_number', '?')} - {c.get('chapter', 'Chương')}]\n{c.get('text') or c.get('textSnippet', '')}\n\n"
 
             system_instruction += """
@@ -578,9 +667,54 @@ NGUYÊN TẮC PHẢN HỒI:
 2. Hỗ trợ toàn diện: giải thích đáp án, viết lại câu hỏi khó hơn/dễ hơn, đề xuất phương án bẫy học thuật, tra cứu quy định ma trận Bloom.
 3. Khi viết công thức Toán, Vật lý, Kỹ thuật, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).
 4. Phản hồi bằng tiếng Việt chuẩn.
+
+QUY TẮC HỖ TRỢ KỸ THUẬT & THANH TOÁN (CUSTOMER SUPPORT & BILLING):
+Khi người dùng gặp sự cố kỹ thuật, lỗi hệ thống, thắc mắc về nạp tiền, giao dịch thanh toán chuyển khoản / quét mã QR, nâng cấp gói dịch vụ, tài khoản bị gián đoạn, cần đối soát giao dịch hoặc cần liên hệ bộ phận hỗ trợ:
+1. Bạn phải lập tức đồng cảm, hướng dẫn tận tình và cung cấp ĐẦY ĐỦ các kênh hỗ trợ chính thức của QuizGen AI:
+   - 📧 Email hỗ trợ & đối soát: support@hoanhvu.id.vn hoặc quizgen.ai.team@gmail.com
+   - 📞 Hotline / Zalo hỗ trợ kỹ thuật 24/7: 0909.122.005 (Chủ nhiệm dự án: ThS. Hồ Anh Vũ)
+   - 🏛️ Trực tiếp: Văn phòng Bộ môn Khoa học Máy tính / Khoa Công nghệ Thông tin — Trường ĐH Giao thông Vận tải TP.HCM (UTH)
+2. Nếu người dùng gặp lỗi thanh toán ngân hàng: Hướng dẫn người dùng chụp ảnh biên lai chuyển khoản (chứa Mã giao dịch ngân hàng) và gửi qua Zalo hoặc Email trên để được đối soát và kích hoạt gói tức thì trong 5 - 15 phút.
 """
 
-        # Nếu không có mô hình (offline/chưa cấu hình API Key)
+        clean_msg = message.strip().lower()
+        support_keywords = [
+            "cần hỗ trợ", "hỗ trợ", "gặp vấn đề", "bị lỗi", "gặp lỗi", "sự cố",
+            "support", "liên hệ", "hotline", "zalo", "thanh toán", "nạp tiền",
+            "giúp anh", "giúp tôi", "giúp đỡ", "gặp sự cố", "lỗi nạp tiền", "chuyển khoản"
+        ]
+        is_support_intent = any(kw in clean_msg for kw in support_keywords)
+
+        system_instruction += """
+QUY TẮC PHẢN HỒI BẮT BUỘC (ANTI-ROBOTIC & TRỰC DIỆN):
+1. TUYỆT ĐỐI KHÔNG lặp lại các bài giới thiệu bản thân máy móc (như 'Kính chào ThS... Tôi là Quanta... Tôi có toàn quyền truy cập...').
+2. Vào thẳng trọng tâm câu hỏi của người dùng, văn phong tự nhiên, súc tích, chuyên nghiệp và ân cần.
+3. Khi người dùng gửi lời mở đầu ngắn hoặc thông báo chung như 'anh gặp vấn đề cần hỗ trợ', 'giúp anh với':
+   - Phản hồi nhanh: 'Dạ Thầy đang gặp vướng mắc hoặc sự cố ở phần nào ạ? Em sẵn sàng kiểm tra và xử lý ngay giúp Thầy:'
+   - Liệt kê các nhóm trợ giúp nhanh:
+     + 🎧 *Sự cố cuộc gọi đàm thoại Huddle / âm thanh mic*
+     + 📚 *Thao tác nạp giáo trình / sinh câu hỏi theo ma trận Bloom*
+     + 💳 *Đối soát nâng cấp gói dịch vụ & thanh toán*
+     + 📞 *Hotline / Zalo hỗ trợ kỹ thuật trực tiếp*: `0909.122.005` (ThS. Hồ Anh Vũ)
+"""
+
+        if is_support_intent:
+            system_instruction += """
+CHỈ THỊ KHI NGƯỜI DÙNG CẦN HỖ TRỢ KỸ THUẬT:
+1. Đồng cảm ngay và đưa ra giải pháp hoặc kênh kết nối nhanh.
+2. Cung cấp hotline 24/7 Zalo `0909.122.005` và email `support@hoanhvu.id.vn`.
+"""
+
+        # Chế độ Kênh Điều Khiển Tối Mật (Remote Command HUD)
+        if ctx.get("isRemoteCommander"):
+            system_instruction += f"""
+ĐẶC VỊ TRUNG TÂM CHỈ HUY TỐI MẬT (REMOTE COMMAND CENTER):
+Bạn đang kết nối trực tiếp với {user_name} qua Kênh Điều Khiển Từ Xa (Remote Agent Bridge) từ điện thoại di động về Laptop Workspace (D:\\HKDN\\Quizgen AI).
+Nhiệm vụ của bạn là:
+1. Đóng vai trò là Trợ lý Kỹ sư Vận hành & Lập trình viên Antigravity AI đang chạy trực tiếp trên laptop của Thầy.
+2. Trả lời chính xác, thực thi và phân tích sâu các chỉ thị lập trình, tra cứu dữ liệu hệ thống, giải quyết lỗi, đề xuất giải thuật và báo cáo kỹ thuật.
+3. Phong cách phản hồi: Dứt khoát, chuyên nghiệp, thông minh, mang phong cách kỹ sư công nghệ cao (HUD Command Center), giải quyết trực diện vấn đề Thầy giao.
+"""
         if not self.model:
             return {
                 "reply": (
@@ -595,32 +729,43 @@ NGUYÊN TẮC PHẢN HỒI:
             }
 
         try:
-            # Xây dựng lịch sử hội thoại gần nhất
-            conversation_parts: List[Any] = [system_instruction]
+            # Xây dựng danh sách contents chuẩn định dạng Gemini Multi-turn
+            contents: List[Dict[str, Any]] = []
             if history:
-                for h in history[-6:]: # Giữ tối đa 6 lượt chat gần nhất
-                    role_str = "Giảng viên" if h.get("role") == "user" else "Copilot"
-                    conversation_parts.append(f"{role_str}: {h.get('content', '')}")
+                for h in history[-6:]:  # Giữ tối đa 6 lượt chat gần nhất
+                    role_tag = "user" if h.get("role") == "user" else "model"
+                    h_content = str(h.get("content") or "").strip()
+                    if h_content:
+                        contents.append({"role": role_tag, "parts": [h_content]})
 
-            conversation_parts.append(f"Giảng viên: {message}\nCopilot:")
+            contents.append({"role": "user", "parts": [message]})
 
             response = self._generate_with_fallback(
-                contents=[{"role": "user", "parts": conversation_parts}]
+                system_instruction=system_instruction,
+                contents=contents
             )
             reply_text = response.text.strip() if response and response.text else "Tôi đã ghi nhận yêu cầu của bạn."
 
-            # Gợi ý hành động tiếp theo dựa trên màn hình
-            suggestions = [
-                "💡 Giải thích chi tiết câu hỏi này",
-                "📈 Viết lại câu hỏi ở mức Vận dụng cao",
-                "🎯 Thêm phương án bẫy học thuật"
-            ]
-            if screen == "generate":
+            # Gợi ý hành động tiếp theo dựa trên màn hình và ý định
+            if is_support_intent:
+                suggestions = [
+                    "📞 Hotline Zalo 0909.122.005",
+                    "💳 Hỗ trợ lỗi thanh toán / nạp gói",
+                    "🎧 Hỗ trợ phòng đàm thoại Huddle",
+                    "📚 Hỗ trợ nạp giáo trình PDF / Word"
+                ]
+            elif screen == "generate":
                 suggestions = ["📊 Tỉ lệ Bloom chuẩn giữa kỳ?", "⚡ Tối ưu ma trận đề thi", "📖 Hỏi đáp về tài liệu"]
             elif screen == "upload":
                 suggestions = ["📄 Định dạng tài liệu hỗ trợ?", "📑 Lưu ý file PDF có hình vẽ", "🔍 Kiểm tra nội dung trích xuất"]
             elif screen == "bank":
                 suggestions = ["🖨️ Xuất đề thi Word chuẩn A4", "📝 Tạo phiếu chấm trắc nghiệm OMR", "🔀 Đảo mã đề Fisher-Yates"]
+            else:
+                suggestions = [
+                    "💡 Giải thích chi tiết câu hỏi này",
+                    "📈 Viết lại câu hỏi ở mức Vận dụng cao",
+                    "🎯 Thêm phương án bẫy học thuật"
+                ]
 
             return {
                 "reply": reply_text,

@@ -59,6 +59,14 @@ import {
 } from 'lucide-react';
 import { TextbookFile, ScreenId, UserSubscriptionInfo, UserProfile } from '../types';
 import apiClient from '../services/apiClient';
+import {
+  MyTextbooksTab,
+  LibraryTextbooksTab,
+  ShareEmailModal,
+  InspectChunksModal,
+  SmartDeduplicationModal,
+  TextbookHodBadge,
+} from './textbook';
 
 interface TextbookUploadScreenProps {
   onNavigate: (screen: ScreenId) => void;
@@ -361,6 +369,13 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
   const [selectedBookForEmail, setSelectedBookForEmail] = useState<TextbookFile | null>(null);
   const [targetColleagueEmail, setTargetColleagueEmail] = useState('');
   const [shareEmailMessage, setShareEmailMessage] = useState('');
+  const [duplicateModalData, setDuplicateModalData] = useState<{
+    isOpen: boolean;
+    type: 'exact' | 'similar_name' | 'similar_content';
+    message: string;
+    existingDocument: TextbookFile;
+    newFileName?: string;
+  } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isEnterprise = subscriptionInfo?.plan_code === 'ENTERPRISE';
@@ -742,8 +757,12 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
     const validFiles: File[] = [];
     for (const f of files) {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      if (ext !== 'pdf' && ext !== 'docx') {
-        onShowToast('error', 'Định dạng không hỗ trợ', `Tệp "${f.name}" không hợp lệ. Hệ thống chỉ chấp nhận .pdf hoặc .docx.`);
+      if (!['pdf', 'docx', 'doc', 'txt'].includes(ext || '')) {
+        onShowToast(
+          'error',
+          'Định dạng không hỗ trợ',
+          `Tệp "${f.name}" không hợp lệ. Hệ thống chỉ cho phép tải lên: PDF (.pdf), Word (.docx, .doc) và Văn bản (.txt).`
+        );
         continue;
       }
       if (f.size > maxUploadMb * 1024 * 1024) {
@@ -839,6 +858,17 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
                 if (doc?.id) {
                   localStorage.setItem('quizgen_selected_book_id', doc.id);
                   localStorage.setItem('quizgen_selected_book_name', doc.name || file.name);
+                }
+                if (resData?.isDuplicate && doc?.id) {
+                  setDuplicateModalData({
+                    isOpen: true,
+                    type: resData.duplicateType || 'exact',
+                    message:
+                      resData.message ||
+                      'Tài liệu này đã tồn tại trong thư viện của Thầy/Cô (trùng khớp nội dung SHA-256).',
+                    existingDocument: doc,
+                    newFileName: file.name,
+                  });
                 }
               } catch {}
               setUploadProgressState({
@@ -1928,384 +1958,47 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
           TAB 1: GIÁO TRÌNH CỦA TÔI
       ========================================================================= */}
       {activeTab === 'my' && (
-        <div className="space-y-5 animate-in fade-in duration-150">
-          <input
-            type="file"
-            ref={fileInputRef}
-            multiple
-            onChange={(e) => {
-              if (e.target.files && e.target.files.length > 0) {
-                void handleUploadFiles(Array.from(e.target.files));
-                e.target.value = '';
-              }
-            }}
-            accept=".pdf,.docx"
-            className="hidden"
-          />
-
-          {/* Upload Progress Banner */}
-          {uploadProgressState ? (
-            <div className="rounded-2xl p-5 border-2 border-dashed border-[#008689] bg-white shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 text-[#008689] flex items-center justify-center animate-pulse">
-                    <Sparkles className="w-5 h-5 text-[#008689]" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-900">{uploadProgressState.fileName}</h4>
-                    <p className="text-[11px] text-slate-500 font-mono">
-                      {uploadProgressState.fileSize} • {uploadProgressState.stage}
-                    </p>
-                  </div>
-                </div>
-                <span className="text-sm font-extrabold text-[#008689] font-mono">
-                  {uploadProgressState.progress}%
-                </span>
-              </div>
-
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div
-                  className="bg-[#008689] h-2.5 rounded-full transition-all duration-300"
-                  style={{ width: `${uploadProgressState.progress}%` }}
-                />
-              </div>
-            </div>
-          ) : (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setIsDragging(true);
-              }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragging(false);
-                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-                  void handleUploadFiles(Array.from(e.dataTransfer.files));
-                }
-              }}
-              onClick={() => {
-                if (!isPro && activeDocsCount >= 3) {
-                  onShowToast(
-                    'warning',
-                    'Đã Đạt Hạn Mức Gói Miễn Phí',
-                    'Gói Miễn Phí chỉ cho phép lưu trữ tối đa 3 tài liệu giáo trình. Vui lòng nâng cấp lên Gói PRO (chỉ 2.000đ/tháng) để nạp không giới hạn!'
-                  );
-                  onOpenPricingModal?.();
-                  return;
-                }
-                fileInputRef.current?.click();
-              }}
-              className={`rounded-2xl p-6 text-center transition-all cursor-pointer border-2 border-dashed ${
-                isDragging
-                  ? 'border-[#008689] bg-[#e0f7fa]/50'
-                  : activeDocsCount >= 3 && !isPro
-                  ? 'bg-rose-50/30 border-rose-200 hover:border-rose-400'
-                  : 'bg-white border-slate-300 hover:border-[#008689]'
-              }`}
-            >
-              <div className="flex flex-col items-center space-y-2">
-                <div className="w-11 h-11 rounded-xl bg-[#e0f7fa] text-[#008689] flex items-center justify-center">
-                  <UploadCloud className="w-5 h-5" />
-                </div>
-                <p className="text-xs font-bold text-slate-800">
-                  Kéo thả một hoặc nhiều tệp giáo trình (.pdf, .docx) vào đây hoặc bấm để chọn tệp
-                </p>
-                <span className="text-[11px] text-slate-400">
-                  Hỗ trợ nạp hàng loạt • Tài liệu được bảo vệ riêng tư 100% (Tối đa {maxUploadMb}MB/tệp)
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Table of My Textbooks */}
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
-            <div className="p-4 px-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                  <span>Giáo trình cá nhân ({textbooks.length})</span>
-                  <span className="text-[10px] font-semibold text-slate-400 lowercase">• chỉ mình bạn có quyền truy cập</span>
-                </h3>
-              </div>
-
-              <div className="relative w-full sm:w-auto">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm tài liệu cá nhân..."
-                  className="pl-8 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-[#008689] text-slate-800 placeholder-slate-400 w-full sm:w-64"
-                />
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
-                    <th className="py-3 px-5">Tài liệu</th>
-                    <th className="py-3 px-4">Quy mô</th>
-                    <th className="py-3 px-4">Quyền riêng tư</th>
-                    <th className="py-3 px-5">Trạng thái</th>
-                    <th className="py-3 px-5 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {isLoadingDocuments && (
-                    <tr>
-                      <td colSpan={5} className="py-8 px-6 text-center text-slate-400">
-                        Đang đồng bộ tài liệu cá nhân...
-                      </td>
-                    </tr>
-                  )}
-                  {!isLoadingDocuments && filteredMyBooks.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="py-8 px-6 text-center text-slate-400">
-                        Chưa có giáo trình nào trong tài khoản này. Hãy tải lên tệp PDF hoặc DOCX để bắt đầu.
-                      </td>
-                    </tr>
-                  )}
-                  {filteredMyBooks.map((book) => (
-                    <tr key={book.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-5">
-                        <div className="flex items-center space-x-3">
-                          <FileText className="w-4 h-4 text-[#008689] shrink-0" />
-                          <div>
-                            <div className="font-semibold text-slate-900">{book.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              {book.size} • Tải lên: {book.uploadedAt}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-slate-600 font-mono text-[11px]">
-                        {book.totalPages} trang · {book.chaptersCount} chương
-                      </td>
-
-                      {/* Privacy Column */}
-                      <td className="py-3.5 px-4">
-                        <button
-                          onClick={() => void handleToggleShare(book)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                            book.isShared
-                              ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                          }`}
-                          title={book.isShared ? 'Bấm để chuyển về chế độ Riêng tư' : 'Bấm để chia sẻ lên Thư Viện Giáo Trình'}
-                        >
-                          {book.isShared ? (
-                            <>
-                              <Globe className="w-3 h-3 text-blue-600" />
-                              <span>Đã Chia Sẻ Thư Viện</span>
-                            </>
-                          ) : (
-                            <>
-                              <Lock className="w-3 h-3 text-slate-500" />
-                              <span>🔒 Riêng Tư</span>
-                            </>
-                          )}
-                        </button>
-                      </td>
-
-                      <td className="py-3.5 px-5 min-w-[180px]">
-                        {book.status === 'ready' && (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            Sẵn sàng sinh đề
-                          </span>
-                        )}
-                        {book.status === 'embedding' && (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="text-[#008689] font-bold flex items-center gap-1">
-                                <Cpu className="w-3 h-3 animate-spin" />
-                                Đang lập chỉ mục vector...
-                              </span>
-                              <span className="font-mono text-[#008689] font-bold">{book.progress}%</span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                              <div
-                                className="bg-gradient-to-r from-teal-500 to-cyan-500 h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.min(100, Math.max(5, book.progress))}%` }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        {book.status === 'extracting' && (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="text-amber-700 font-bold flex items-center gap-1">
-                                <Clock className="w-3 h-3 animate-spin text-amber-600" />
-                                Đang bóc tách văn bản...
-                              </span>
-                              <span className="font-mono text-amber-700 font-bold">{book.progress || 25}%</span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                              <div
-                                className="bg-amber-500 h-1.5 rounded-full transition-all duration-300"
-                                style={{ width: `${Math.min(100, Math.max(5, book.progress || 25))}%` }}
-                              />
-                            </div>
-                          </div>
-                        )}
-                        {book.status === 'error' && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            <AlertCircle className="w-3 h-3 text-rose-600" />
-                            Lỗi xử lý
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3.5 px-5 text-right space-x-1 whitespace-nowrap">
-                        <button
-                          onClick={() => {
-                            setSelectedBookForEmail(book);
-                            setIsShareEmailModalOpen(true);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer inline-flex items-center"
-                          title="Gửi riêng giáo trình cho đồng nghiệp qua Email"
-                        >
-                          <Mail className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => void handleInspectChunks(book)}
-                          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer inline-flex items-center"
-                          title="Xem mục lục & trích đoạn giáo trình"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleUseBook(book)}
-                          className="px-2.5 py-1 text-xs font-bold text-[#008689] hover:bg-[#e0f7fa] rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
-                          title="Sử dụng giáo trình này để sinh đề thi Bloom"
-                        >
-                          <span>Sinh Đề</span>
-                          <ArrowRight className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => void handleDelete(book.id, book.name)}
-                          className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer inline-flex items-center"
-                          title="Xóa tài liệu"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <MyTextbooksTab
+          uploadProgressState={uploadProgressState}
+          isPro={isPro}
+          activeDocsCount={activeDocsCount}
+          maxUploadMb={maxUploadMb}
+          onShowToast={onShowToast}
+          onOpenPricingModal={onOpenPricingModal}
+          textbooks={textbooks}
+          filteredMyBooks={filteredMyBooks}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          isLoadingDocuments={isLoadingDocuments}
+          handleUploadFiles={handleUploadFiles}
+          handleToggleShare={handleToggleShare}
+          setSelectedBookForEmail={setSelectedBookForEmail}
+          setIsShareEmailModalOpen={setIsShareEmailModalOpen}
+          handleInspectChunks={handleInspectChunks}
+          handleUseBook={handleUseBook}
+          handleDelete={handleDelete}
+          fileInputRef={fileInputRef}
+        />
       )}
 
       {/* =========================================================================
           TAB 2: THƯ VIỆN GIÁO TRÌNH (Dùng chung cho toàn hệ thống)
       ========================================================================= */}
       {activeTab === 'library' && (
-        <div className="space-y-5 animate-in fade-in duration-150">
-          {/* Banner Thư Viện Giáo Trình */}
-          <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
-            <div className="relative z-10 space-y-2 max-w-3xl">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider bg-white/20 text-blue-200 border border-white/30 shadow-xs">
-                <BookOpen className="w-3.5 h-3.5 text-blue-300" />
-                Kho Học Liệu &amp; Tri Thức Số
-              </span>
-              <h2 className="text-lg sm:text-xl font-black text-white">
-                Thư Viện Giáo Trình
-              </h2>
-              <p className="text-xs text-white/80 leading-relaxed">
-                Kho lưu trữ các giáo trình chuẩn đã được bóc tách nội dung và cấu trúc mục lục sẵn. Quý Thầy/Cô chỉ cần bấm <strong className="text-amber-300">"Dùng Sinh Đề Ngay"</strong> để tạo câu hỏi thi Bloom tức thì mà không cần tự tải lên lại.
-              </p>
-            </div>
-          </div>
-
-          {/* Search Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-              <input
-                type="text"
-                value={librarySearchQuery}
-                onChange={(e) => setLibrarySearchQuery(e.target.value)}
-                placeholder="Tìm giáo trình theo tên môn học, giảng viên chia sẻ hoặc từ khóa..."
-                className="w-full pl-10 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-blue-600 text-slate-800 placeholder-slate-400"
-              />
-            </div>
-            <div className="text-xs text-slate-500 font-semibold shrink-0">
-              Có <strong className="text-blue-700">{filteredLibraryBooks.length}</strong> giáo trình trong Thư viện
-            </div>
-          </div>
-
-          {/* Grid Cards of Library Textbooks */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredLibraryBooks.length === 0 ? (
-              <div className="col-span-full bg-white rounded-2xl p-10 text-center border border-slate-200 text-slate-400 space-y-2">
-                <BookOpen className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-xs font-semibold">Chưa có giáo trình nào phù hợp với tìm kiếm trong Thư viện.</p>
-                <p className="text-[11px] text-slate-400">Thầy/Cô có thể vào tab "Giáo trình của tôi" để chia sẻ tài liệu lên Thư viện!</p>
-              </div>
-            ) : (
-              filteredLibraryBooks.map((book) => (
-                <div
-                  key={book.id}
-                  className="bg-white rounded-2xl p-5 border border-slate-200 hover:border-blue-300 shadow-2xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 flex items-center justify-center shrink-0">
-                        <BookOpen className="w-5 h-5" />
-                      </div>
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Sẵn sàng sinh đề
-                      </span>
-                    </div>
-
-                    <div>
-                      <h4 className="font-extrabold text-slate-900 text-sm leading-snug line-clamp-2" title={book.name}>
-                        {book.name}
-                      </h4>
-                      <p className="text-[11px] text-blue-700 font-semibold mt-1 flex items-center gap-1">
-                        <Building2 className="w-3 h-3" />
-                        Đóng góp bởi: {book.authorName || 'Bộ môn Chuyên ngành'}
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 text-[11px] text-slate-500 font-mono">
-                      <div>Quy mô: <strong className="text-slate-700">{book.totalPages} trang</strong></div>
-                      <div>Chương mục: <strong className="text-slate-700">{book.chaptersCount} mục</strong></div>
-                      <div>Dung lượng: <strong className="text-slate-700">{book.size}</strong></div>
-                      <div>Đồng bộ: <strong className="text-slate-700">{book.uploadedAt.slice(0, 10)}</strong></div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
-                    <button
-                      onClick={() => void handleInspectChunks(book)}
-                      className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
-                      title="Xem mục lục & trích đoạn"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Xem mục lục</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleUseBook(book)}
-                      className="flex-1 px-3 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-xs hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
-                      <span>Dùng Sinh Đề Ngay</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <LibraryTextbooksTab
+          librarySearchQuery={librarySearchQuery}
+          setLibrarySearchQuery={setLibrarySearchQuery}
+          filteredLibraryBooks={filteredLibraryBooks}
+          handleInspectChunks={handleInspectChunks}
+          handleUseBook={handleUseBook}
+          currentUser={currentUser}
+          onStatusChange={(updated) => {
+            setTextbooks((prev) =>
+              prev.map((b) => (b.id === updated.id ? { ...b, ...updated } : b))
+            );
+          }}
+          onShowToast={onShowToast}
+        />
       )}
 
       {/* =========================================================================
@@ -4094,136 +3787,34 @@ export const TextbookUploadScreen: React.FC<TextbookUploadScreenProps> = ({
       )}
 
       {/* Modal 3: Direct Share to Colleague via Email */}
-      {isShareEmailModalOpen && selectedBookForEmail && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col p-6 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-indigo-600" />
-                <h3 className="font-extrabold text-slate-900 text-sm">Gửi Riêng Giáo Trình Qua Email</h3>
-              </div>
-              <button onClick={() => setIsShareEmailModalOpen(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-3 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs flex items-center gap-2.5">
-              <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
-              <div className="truncate">
-                <strong className="text-slate-900 block truncate">{selectedBookForEmail.name}</strong>
-                <span className="text-[10px] text-slate-500 font-mono">{selectedBookForEmail.size} • {selectedBookForEmail.totalPages} trang</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleSendDirectEmailShare} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Email giảng viên đồng nghiệp *</label>
-                <input
-                  type="email"
-                  required
-                  value={targetColleagueEmail}
-                  onChange={(e) => setTargetColleagueEmail(e.target.value)}
-                  placeholder="Ví dụ: colleague@ut.edu.vn..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-600"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Lời nhắn gửi kèm (Tùy chọn)</label>
-                <textarea
-                  value={shareEmailMessage}
-                  onChange={(e) => setShareEmailMessage(e.target.value)}
-                  placeholder="Gửi Thầy/Cô giáo trình để tham khảo sinh đề thi giữa kỳ..."
-                  rows={2}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:border-indigo-600 resize-none"
-                />
-              </div>
-
-              <div className="pt-2 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsShareEmailModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 font-bold text-slate-600"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs flex items-center gap-1.5"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Xác Nhận Gửi</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ShareEmailModal
+        isOpen={isShareEmailModalOpen}
+        selectedBook={selectedBookForEmail}
+        onClose={() => setIsShareEmailModalOpen(false)}
+        targetColleagueEmail={targetColleagueEmail}
+        setTargetColleagueEmail={setTargetColleagueEmail}
+        shareEmailMessage={shareEmailMessage}
+        setShareEmailMessage={setShareEmailMessage}
+        onSubmit={handleSendDirectEmailShare}
+      />
 
       {/* 4. Semantic Chunk Inspection Modal */}
-      {inspectingBook && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-[#f8fbfc]">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg bg-[#e0f7fa] border border-[#008689]/25 text-[#008689] flex items-center justify-center">
-                  <BookOpen className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-xs">{inspectingBook.name}</h3>
-                  <p className="text-[11px] text-slate-500 font-mono">
-                    {inspectingBook.totalPages} trang • {inspectingBook.chaptersCount} chương
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setInspectingBook(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+      <InspectChunksModal
+        inspectingBook={inspectingBook}
+        onClose={() => setInspectingBook(null)}
+        isFetchingChunks={isFetchingChunks}
+        inspectingChunks={inspectingChunks}
+      />
 
-            <div className="p-5 overflow-y-auto space-y-3 flex-1 bg-white">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                  Mục lục &amp; Trích đoạn giáo trình (20 đoạn tiêu biểu)
-                </span>
-                {isFetchingChunks && (
-                  <span className="text-[11px] text-[#008689] flex items-center space-x-1 font-mono">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    <span>Đang trích xuất nội dung...</span>
-                  </span>
-                )}
-              </div>
-
-              {!isFetchingChunks && inspectingChunks.length === 0 && (
-                <div className="text-center py-8 text-slate-400 text-xs">
-                  Nội dung giáo trình đang trong tiến trình xử lý mục lục.
-                </div>
-              )}
-
-              {inspectingChunks.map((chunk, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 leading-relaxed font-mono"
-                >
-                  {chunk}
-                </div>
-              ))}
-            </div>
-
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-              <button
-                onClick={() => setInspectingBook(null)}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 5. Smart Deduplication Modal (Layer 1 SHA-256 / Layer 2 Similar) */}
+      <SmartDeduplicationModal
+        isOpen={Boolean(duplicateModalData?.isOpen)}
+        duplicateInfo={duplicateModalData}
+        onClose={() => setDuplicateModalData(null)}
+        onSelectExisting={(doc) => {
+          handleUseBook(doc);
+        }}
+      />
     </div>
   );
 };

@@ -65,6 +65,10 @@ class UserDB(Base):
     lock_reason = Column(Text, nullable=True)
     locked_until = Column(DateTime, nullable=True)
     locked_at = Column(DateTime, nullable=True)
+    plan_tier = Column(String(30), default="free")
+    plan_expires_at = Column(DateTime, nullable=True)
+    custom_quota_exams = Column(Integer, nullable=True)
+    custom_quota_storage_mb = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -174,6 +178,10 @@ class LecturerResponse(BaseModel):
     locked_until: Optional[datetime] = None
     locked_at: Optional[datetime] = None
     profile_completed: bool = False
+    plan_tier: Optional[str] = "free"
+    plan_expires_at: Optional[datetime] = None
+    custom_quota_exams: Optional[int] = None
+    custom_quota_storage_mb: Optional[int] = None
     created_at: Optional[datetime] = None
 
     class Config:

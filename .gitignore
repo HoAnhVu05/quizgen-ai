@@ -35,7 +35,12 @@ share/python-wheels/
 MANIFEST
 
 # Local databases & storage
-data/
+/data/
+!src/data/
+services/**/data/
+services/**/*.db
+*.db
+scratch/
 chroma_data/
 backups/
 *.sqlite

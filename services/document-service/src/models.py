@@ -25,6 +25,10 @@ class DocumentDB(Base):
     author_name = Column(String(100), nullable=True, default="Giảng viên UTH")
     is_shared = Column(Integer, default=0, index=True) # 0: Private (Riêng tư), 1: Shared (Chia sẻ)
     sharing_scope = Column(String(50), default="private", index=True) # 'private', 'department', 'public'
+    is_approved = Column(Integer, default=0, index=True) # 0: Chưa thẩm định, 1: HOD đã thẩm định
+    approved_by = Column(String(100), nullable=True) # Tên/học vị của HOD hoặc Admin phê duyệt
+    approved_at = Column(DateTime, nullable=True) # Thời điểm thẩm định
+    usage_count = Column(Integer, default=0) # Số lần giáo trình được dùng để tạo đề thi
     status = Column(String(20), default="extracting", index=True) # extracting, embedding, ready, error
     progress = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)

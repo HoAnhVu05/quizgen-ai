@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   GraduationCap,
   Mail,
@@ -17,10 +17,18 @@ import {
   Check,
   School,
   FileCheck,
+  ChevronDown,
+  Search,
+  Plus,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import { ThemeCornerSticker, ThemeLogoBadge, ThemeHangingScrolls } from './ThemeStickers';
+import {
+  ACADEMIC_TITLES,
+  VIETNAMESE_UNIVERSITIES,
+  getFacultiesForUniversity,
+} from '../data/academicInstitutions';
 
 interface RegisterScreenProps {
   onRegister: (user: UserProfile) => void;
@@ -49,41 +57,10 @@ interface FormErrors {
   general?: string;
 }
 
-const ACADEMIC_TITLES = ['ThS.', 'TS.', 'PGS.'];
-
-const UNIVERSITY_OPTIONS = [
-  'Đại học Quốc gia TP.HCM (VNU-HCM)',
-  'Trường ĐH Bách Khoa - ĐHQG TP.HCM',
-  'Trường ĐH Khoa học Tự nhiên - ĐHQG TP.HCM',
-  'Trường ĐH Công nghệ Thông tin (UIT) - ĐHQG TP.HCM',
-  'Trường ĐH Kinh tế - Luật (UEL) - ĐHQG TP.HCM',
-  'Trường ĐH Quốc tế (IU) - ĐHQG TP.HCM',
-  'Trường ĐH KHXH&NV - ĐHQG TP.HCM',
-  'Đại học Quốc gia Hà Nội (VNU-HN)',
-  'Đại học Bách Khoa Hà Nội (HUST)',
-  'Đại học Kinh tế TP.HCM (UEH)',
-  'Trường Đại học Sư phạm Kỹ thuật TP.HCM',
-  'Cơ sở giáo dục đại học khác...',
-];
-
-const FACULTY_OPTIONS = [
-  'Khoa Kinh tế & Quản trị',
-  'Khoa Công nghệ Thông tin',
-  'Khoa Khoa học & Kỹ thuật Máy tính',
-  'Khoa Khoa học Tự nhiên',
-  'Khoa Luật & Hành chính công',
-  'Khoa Sư phạm & Giáo dục học',
-  'Khoa Y Dược',
-  'Khoa Ngoại ngữ & Ngôn ngữ học',
-  'Khoa Kỹ thuật Xây dựng & Cơ khí',
-  'Phòng Khảo thi & Đảm bảo Chất lượng',
-  'Viện Trí tuệ Nhân tạo & Khoa học Dữ liệu',
-];
-
 const ROLES_OPTIONS: Array<{ id: UserRole; title: string; subtitle: string; icon: any }> = [
-  { id: 'lecturer', title: 'Giảng viên', subtitle: 'Soạn đề & Giáo trình', icon: GraduationCap },
-  { id: 'head_of_department', title: 'Trưởng bộ môn', subtitle: 'Thẩm định đề thi', icon: Award },
-  { id: 'admin', title: 'Quản trị Khảo thi', subtitle: 'Quản trị hệ thống', icon: ShieldCheck },
+  { id: 'lecturer', title: 'Giảng viên', subtitle: 'Soạn đề & RAG tri thức', icon: GraduationCap },
+  { id: 'head_of_department', title: 'Trưởng bộ môn', subtitle: 'Thẩm định & Duyệt ma trận đề thi', icon: Award },
+  { id: 'admin', title: 'Quản trị Khảo thi', subtitle: 'Quản trị hệ thống & Khảo thí', icon: ShieldCheck },
 ];
 
 const SYSTEM_DEFAULT_EMAILS = [
@@ -108,11 +85,43 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
     academicTitle: 'TS.',
     email: '',
     role: 'lecturer',
-    university: UNIVERSITY_OPTIONS[0],
-    faculty: FACULTY_OPTIONS[1],
+    university: '',
+    faculty: '',
     password: '',
     confirmPassword: '',
   });
+
+  const [isUnivDropdownOpen, setIsUnivDropdownOpen] = useState(false);
+  const [isCustomFaculty, setIsCustomFaculty] = useState(false);
+  const [customFacultyText, setCustomFacultyText] = useState('');
+  const univDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Đóng dropdown trường đại học khi click ngoài
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (univDropdownRef.current && !univDropdownRef.current.contains(e.target as Node)) {
+        setIsUnivDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Lọc danh sách trường đại học theo từ khóa nhập
+  const filteredUniversities = useMemo(() => {
+    const q = form.university.trim().toLowerCase();
+    if (!q) return VIETNAMESE_UNIVERSITIES;
+    return VIETNAMESE_UNIVERSITIES.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.shortName.toLowerCase().includes(q)
+    );
+  }, [form.university]);
+
+  // Danh sách khoa hiện tại theo trường đại học đang chọn
+  const currentFaculties = useMemo(() => {
+    return getFacultiesForUniversity(form.university);
+  }, [form.university]);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -311,8 +320,8 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
 
       existingUsers.push({
         ...newUser,
-        role: 'lecturer',
-        roleLabel: 'Giảng viên',
+        role: form.role,
+        roleLabel: getRoleLabel(form.role),
         status: 'active',
         password: form.password,
       });
@@ -415,13 +424,17 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
             )}
 
             <form onSubmit={handleSubmit} className="space-y-3.5" noValidate>
-              {/* 1. Loại tài khoản cố định: Giảng viên (Strict Whitelist) */}
-              <div className="p-2.5 rounded-xl bg-[#e6f4f4]/70 border border-[#008689]/25 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 text-[#006d70] font-semibold">
-                  <GraduationCap className="w-4 h-4 text-[#008689]" />
-                  <span>Tài khoản Giảng viên Biên soạn & Xuất bản Đề thi</span>
+              {/* Loại tài khoản: Giảng viên (Mặc định cho người dùng) */}
+              <div className="p-3 rounded-xl bg-[#e6f4f4] border border-[#008689]/30 flex items-center justify-between text-[#006d70]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-[#008689] text-white flex items-center justify-center shrink-0">
+                    <GraduationCap className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-xs">Tài khoản Giảng viên Biên soạn & Xuất bản Đề thi</p>
+                  </div>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white text-[#008689] border border-[#008689]/20">
+                <span className="text-[10px] font-semibold bg-white/90 text-[#006d70] border border-[#008689]/20 px-2 py-0.5 rounded-md shrink-0">
                   Mặc định
                 </span>
               </div>
@@ -429,15 +442,15 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
               {/* 2. Học vị & Họ tên */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Học vị</label>
+                  <label className="text-xs font-semibold text-slate-700">Học vị / Học hàm</label>
                   <select
                     value={form.academicTitle}
                     onChange={(e) => setField('academicTitle', e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer"
                   >
                     {ACADEMIC_TITLES.map((t) => (
-                      <option key={t} value={t} className="bg-white text-slate-900">
-                        {t}
+                      <option key={t.value} value={t.value} className="bg-white text-slate-900">
+                        {t.label}
                       </option>
                     ))}
                   </select>
@@ -483,43 +496,159 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
                 )}
               </div>
 
-              {/* 4. Trường & Khoa */}
+              {/* 4. Trường & Khoa - Tự động gợi ý & cập nhật theo khoa */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Trường đại học</label>
+                {/* Trường đại học - Searchable Combobox */}
+                <div className="space-y-1 relative" ref={univDropdownRef}>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">Trường đại học</label>
+                    <span className="text-[10px] text-slate-400">Gõ tên để lọc</span>
+                  </div>
                   <div className="relative">
-                    <School className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <School className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 z-10" />
                     <input
                       type="text"
                       value={form.university}
-                      onChange={(e) => setField('university', e.target.value)}
-                      placeholder="ĐH GTVT TP.HCM (UTH)"
-                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
+                      onFocus={() => setIsUnivDropdownOpen(true)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setField('university', val);
+                        setIsUnivDropdownOpen(true);
+                        const newFaculties = getFacultiesForUniversity(val);
+                        if (!newFaculties.includes(form.faculty)) {
+                          setField('faculty', newFaculties[0] || 'Khoa Công nghệ Thông tin');
+                        }
+                      }}
+                      placeholder="Nhập hoặc tìm tên trường..."
+                      className={`w-full bg-slate-50 border rounded-xl pl-9 pr-7 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none transition-all focus:bg-white ${
                         errors.university ? 'border-[#da1c2d]' : 'border-slate-200 focus:border-[#008689]'
                       }`}
                     />
+                    <button
+                      type="button"
+                      onClick={() => setIsUnivDropdownOpen((prev) => !prev)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                   {errors.university && (
                     <p className="text-[11px] text-[#da1c2d]">{errors.university}</p>
                   )}
+
+                  {/* Dropdown danh sách gợi ý trường đại học */}
+                  {isUnivDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto z-50 py-1 divide-y divide-slate-50 animate-fadeIn">
+                      {filteredUniversities.length > 0 ? (
+                        filteredUniversities.map((u) => {
+                          const isSelected = form.university === u.name;
+                          return (
+                            <button
+                              key={u.id}
+                              type="button"
+                              onClick={() => {
+                                setField('university', u.name);
+                                setIsUnivDropdownOpen(false);
+                                const newFaculties = u.faculties;
+                                setField('faculty', newFaculties[0] || 'Khoa Công nghệ Thông tin');
+                                setIsCustomFaculty(false);
+                              }}
+                              className={`w-full px-3 py-2 text-left text-xs transition-colors flex items-center justify-between hover:bg-[#e6f4f4]/60 cursor-pointer ${
+                                isSelected ? 'bg-[#e6f4f4] text-[#006d70] font-bold' : 'text-slate-800'
+                              }`}
+                            >
+                              <div className="min-w-0 pr-2">
+                                <p className="truncate font-semibold text-xs">{u.name}</p>
+                                <p className="text-[10px] text-slate-400 font-normal">
+                                  {u.faculties.length} khoa / đơn vị
+                                </p>
+                              </div>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">
+                                {u.shortName}
+                              </span>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div className="px-3 py-2.5 text-xs text-slate-500 text-center">
+                          <p className="font-semibold text-slate-700">Dùng: "{form.university}"</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Trường chưa có trong danh mục mẫu, bạn vẫn có thể tiếp tục.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
+                {/* Khoa / Đơn vị theo trường */}
                 <div className="space-y-1">
-                  <label className="text-xs font-semibold text-slate-700">Khoa / Đơn vị</label>
-                  <div className="relative">
-                    <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <select
-                      value={form.faculty}
-                      onChange={(e) => setField('faculty', e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer truncate"
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-700">Khoa / Đơn vị</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomFaculty(!isCustomFaculty);
+                        if (!isCustomFaculty) {
+                          setCustomFacultyText('');
+                        }
+                      }}
+                      className="text-[10px] text-[#008689] hover:underline font-medium cursor-pointer"
                     >
-                      {FACULTY_OPTIONS.map((f) => (
-                        <option key={f} value={f} className="bg-white text-slate-900">
-                          {f}
-                        </option>
-                      ))}
-                    </select>
+                      {isCustomFaculty ? '← Chọn từ danh sách' : '+ Nhập khoa khác'}
+                    </button>
                   </div>
+
+                  {isCustomFaculty ? (
+                    <div className="relative">
+                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={customFacultyText}
+                        onChange={(e) => {
+                          setCustomFacultyText(e.target.value);
+                          setField('faculty', e.target.value);
+                        }}
+                        placeholder="Nhập tên Khoa / Viện / Bộ môn..."
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689]"
+                        autoFocus
+                      />
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                      <select
+                        value={form.faculty}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '__custom__') {
+                            setIsCustomFaculty(true);
+                            setCustomFacultyText('');
+                          } else {
+                            setField('faculty', val);
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-[#008689] cursor-pointer truncate"
+                      >
+                        {!form.faculty && (
+                          <option value="" disabled className="text-slate-400">
+                            -- Chọn Khoa / Đơn vị --
+                          </option>
+                        )}
+                        {currentFaculties.map((f) => (
+                          <option key={f} value={f} className="bg-white text-slate-900">
+                            {f}
+                          </option>
+                        ))}
+                        <option value="__custom__" className="text-[#008689] font-bold">
+                          + Nhập Khoa / Đơn vị khác...
+                        </option>
+                      </select>
+                    </div>
+                  )}
+                  {errors.faculty && (
+                    <p className="text-[11px] text-[#da1c2d]">{errors.faculty}</p>
+                  )}
                 </div>
               </div>
 
