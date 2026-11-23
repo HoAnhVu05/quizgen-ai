@@ -52,6 +52,7 @@ export interface MentionCandidate {
 
 interface ChatComposerProps {
   isMemberOfChannel: boolean;
+  isDirectChat?: boolean;
   replyingToMessage: QGroupMessage | null;
   onCancelReply: () => void;
   selectedAttachments?: SelectedAttachment[];
@@ -84,6 +85,7 @@ interface ChatComposerProps {
 
 export const ChatComposer: React.FC<ChatComposerProps> = ({
   isMemberOfChannel,
+  isDirectChat = false,
   replyingToMessage,
   onCancelReply,
   selectedAttachments,
@@ -244,8 +246,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.rar"
         />
 
-        {/* Autocomplete Mention Popover */}
-        {isMentionOpen && mentionCandidates.length > 0 && (
+        {/* Autocomplete Mention Popover - Chỉ kích hoạt trong Kênh nhóm, không áp dụng cho tin nhắn riêng 1-1 */}
+        {!isDirectChat && isMentionOpen && mentionCandidates.length > 0 && (
           <div
             onClick={(e) => e.stopPropagation()}
             className="absolute left-2 bottom-full mb-2 z-40 w-72 sm:w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden animate-fadeIn"
@@ -457,19 +459,21 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                   )}
                 </div>
 
-                {/* 4. NÚT TAG / MENTION THÀNH VIÊN (@) */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onChatInputChange(chatInput + '@');
-                    textareaRef.current?.focus();
-                  }}
-                  className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 transition-colors"
-                  title="Nhắc đến thành viên (@mention)"
-                >
-                  <AtSign className="w-4 h-4 text-slate-600 hover:text-teal-700" />
-                </button>
+                {/* 4. NÚT TAG / MENTION THÀNH VIÊN (@) - Chỉ hiển thị trong Kênh nhóm, ẩn hoàn toàn trong nhắn tin riêng 1-1 */}
+                {!isDirectChat && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onChatInputChange(chatInput + '@');
+                      textareaRef.current?.focus();
+                    }}
+                    className="p-1.5 rounded-lg text-slate-600 hover:text-teal-700 hover:bg-teal-50 transition-colors"
+                    title="Nhắc đến thành viên (@mention)"
+                  >
+                    <AtSign className="w-4 h-4 text-slate-600 hover:text-teal-700" />
+                  </button>
+                )}
 
                 {/* 5. NÚT GHI ÂM TIN NHẮN THOẠI (MIC) */}
                 <button

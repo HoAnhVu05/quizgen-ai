@@ -2343,28 +2343,23 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     } catch {}
   };
 
-  // ── @Mention Candidate List ───────────────────────────────────────────────
+  // ── @Mention Candidate List (Chỉ kích hoạt trong Nhóm/Kênh, không áp dụng cho tin nhắn riêng 1-1) ──────────
   const mentionCandidates = useMemo(() => {
-    if (!activeGroup) return [];
+    if (!activeGroup || activeGroup.isDirect) return [];
     const list: { id: string; tag: string; role: string; email?: string }[] = [];
 
-    if (!activeGroup.isDirect) {
-      list.push({
-        id: 'all',
-        tag: 'all',
-        role: 'Thông báo cho tất cả thành viên trong nhóm (@all)',
-      });
-    }
+    list.push({
+      id: 'all',
+      tag: 'all',
+      role: 'Thông báo cho tất cả thành viên trong nhóm (@all)',
+    });
 
     // Members of active group
     const memberEmails = activeGroup.members || [];
     memberEmails.forEach((email) => {
       const isOwner = email.toLowerCase() === (activeGroup.ownerEmail || '').toLowerCase();
       const isMe = email.toLowerCase() === myEmail.toLowerCase();
-      let displayName = isOwner && activeGroup.ownerName ? activeGroup.ownerName : email.split('@')[0];
-      if (activeGroup.isDirect && activeGroup.directPartnerName) {
-        displayName = activeGroup.directPartnerName;
-      }
+      const displayName = isOwner && activeGroup.ownerName ? activeGroup.ownerName : email.split('@')[0];
       list.push({
         id: email,
         tag: displayName,
@@ -5117,6 +5112,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             <div className="p-3 sm:px-4 sm:py-3 border-t border-slate-200 bg-white space-y-2">
               <ChatComposer
                 isMemberOfChannel={Boolean(activeGroup.isDirect || isCurrentUserMember)}
+                isDirectChat={Boolean(activeGroup.isDirect)}
                 replyingToMessage={replyingToMessage}
                 onCancelReply={() => setReplyingToMessage(null)}
                 selectedAttachments={selectedAttachments}
@@ -5128,6 +5124,13 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                 chatInput={chatInput}
                 onChatInputChange={(val) => {
                   setChatInput(val);
+                  if (activeGroup.isDirect) {
+                    if (isMentionOpen) {
+                      setIsMentionOpen(false);
+                      setMentionSearch(null);
+                    }
+                    return;
+                  }
                   const cursorPos = textareaRef.current?.selectionStart || val.length;
                   const textBefore = val.slice(0, cursorPos);
                   const atMatch = textBefore.match(/@([a-zA-Z0-9_\.\u00C0-\u1EF9]*)$/);
