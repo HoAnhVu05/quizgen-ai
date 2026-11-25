@@ -1,7 +1,8 @@
-import React from 'react';
-import { Printer, FileQuestion } from 'lucide-react';
+import React, { useState } from 'react';
+import { Printer, FileQuestion, Image as ImageIcon } from 'lucide-react';
 import MathRenderer from '../MathRenderer';
 import { ExamVariantQuestion } from './types';
+import { resolveImageUrl } from '../../services/apiClient';
 
 interface PaperPreviewViewProps {
   activeExamCode: string;
@@ -32,6 +33,7 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
   onImageClick,
   onViewAnswerKey,
 }) => {
+  const [brokenImageIds, setBrokenImageIds] = useState<Record<string, boolean>>({});
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       {/* Left: A4 Exam Paper Preview */}
@@ -132,22 +134,52 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
                     </div>
 
                     {/* Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi */}
-                    {q.imageUrl && (
-                      <div className="my-2.5 flex flex-col items-center justify-center">
-                        <img
-                          src={q.imageUrl}
-                          alt={q.imageCaption || `Sơ đồ câu ${index + 1}`}
-                          className="max-h-56 max-w-full rounded-md object-contain border border-slate-200 shadow-2xs bg-white p-1 cursor-pointer hover:opacity-90 transition-opacity"
-                          loading="lazy"
-                          onClick={() => onImageClick(q.imageUrl!, q.imageCaption)}
-                        />
-                        {q.imageCaption && (
-                          <span className="text-[11px] text-slate-500 italic mt-1 text-center font-medium">
-                            ({q.imageCaption})
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const rawImg = q.imageUrl || (q as any).image_url;
+                      if (!rawImg) return null;
+                      const normalizedSrc = resolveImageUrl(rawImg);
+                      const isBroken = brokenImageIds[q.id];
+
+                      return (
+                        <div className="my-2.5 flex flex-col items-center justify-center print:break-inside-avoid print:my-2">
+                          {!isBroken ? (
+                            <img
+                              src={normalizedSrc}
+                              alt={q.imageCaption || (q as any).image_caption || `Sơ đồ câu ${index + 1}`}
+                              className="max-h-64 max-w-full rounded-md object-contain border border-slate-200 shadow-2xs bg-white p-1 cursor-pointer hover:opacity-90 transition-opacity print:border-none print:shadow-none"
+                              loading="eager"
+                              onError={(e) => {
+                                if (rawImg && e.currentTarget.src !== rawImg && !e.currentTarget.dataset.retried) {
+                                  e.currentTarget.dataset.retried = 'true';
+                                  e.currentTarget.src = rawImg;
+                                } else {
+                                  setBrokenImageIds((prev) => ({ ...prev, [q.id]: true }));
+                                }
+                              }}
+                              onClick={() => onImageClick(normalizedSrc, q.imageCaption || (q as any).image_caption)}
+                            />
+                          ) : (
+                            <div
+                              className="w-full max-w-md p-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center text-center space-y-1 cursor-pointer hover:bg-slate-100 transition-colors print:bg-white print:border-slate-300"
+                              onClick={() => onImageClick(normalizedSrc, q.imageCaption || (q as any).image_caption)}
+                            >
+                              <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                                <ImageIcon className="w-4 h-4 text-slate-500" />
+                                <span>{q.imageCaption || (q as any).image_caption || `Sơ đồ câu ${index + 1}`}</span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 italic">
+                                (Hình vẽ sơ đồ học thuật đính kèm theo đề thi)
+                              </span>
+                            </div>
+                          )}
+                          {(q.imageCaption || (q as any).image_caption) && !isBroken && (
+                            <span className="text-[11px] text-slate-500 italic mt-1 text-center font-medium print:text-[10px] print:text-slate-600">
+                              ({q.imageCaption || (q as any).image_caption})
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
                       {q.options.map((opt) => (
                         <div key={opt.id} className="text-xs sm:text-sm text-slate-800 flex items-start gap-1">

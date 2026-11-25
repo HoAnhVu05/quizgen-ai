@@ -13,6 +13,7 @@ import {
 import { Question, BloomLevel } from '../../types';
 import MathRenderer from '../MathRenderer';
 import { BLOOM_ORDER, BLOOM_STYLE } from './types';
+import { resolveImageUrl } from '../../services/apiClient';
 
 interface QuestionListViewProps {
   searchQuery: string;
@@ -186,10 +187,10 @@ export const QuestionListView: React.FC<QuestionListViewProps> = ({
                       {(q.hasImage || !!qImg) && qImg && (
                         <div className="mt-2.5 p-2 bg-slate-50 border border-slate-200 rounded max-w-sm">
                           <img
-                            src={qImg}
+                            src={resolveImageUrl(qImg)}
                             alt={qCaption || 'Hình sơ đồ'}
                             className="max-h-48 rounded object-contain mx-auto cursor-pointer hover:opacity-90 transition-opacity"
-                            onClick={() => onImageClick(qImg, qCaption)}
+                            onClick={() => onImageClick(resolveImageUrl(qImg), qCaption)}
                           />
                           {qCaption && (
                             <p className="text-[10px] text-slate-500 italic mt-1 text-center">

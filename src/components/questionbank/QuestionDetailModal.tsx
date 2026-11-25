@@ -13,6 +13,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { Question, BloomLevel } from '../../types';
+import { resolveImageUrl } from '../../services/apiClient';
 
 export interface QuestionDetailModalProps {
   question: Question | null;
@@ -155,20 +156,32 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
           </div>
 
           {/* Image context if available */}
-          {question.hasImage && question.imageUrl && (
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex flex-col items-center">
-              <img
-                src={question.imageUrl}
-                alt={question.imageCaption || 'Sơ đồ câu hỏi'}
-                className="max-h-60 rounded-xl object-contain"
-              />
-              {question.imageCaption && (
-                <span className="text-[11px] text-slate-500 mt-2 italic text-center">
-                  {question.imageCaption}
-                </span>
-              )}
-            </div>
-          )}
+          {(() => {
+            const rawImg = question.imageUrl || (question as any).image_url;
+            if (!rawImg) return null;
+            const normalizedSrc = resolveImageUrl(rawImg);
+
+            return (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 flex flex-col items-center">
+                <img
+                  src={normalizedSrc}
+                  alt={question.imageCaption || (question as any).image_caption || 'Sơ đồ câu hỏi'}
+                  className="max-h-60 rounded-xl object-contain"
+                  onError={(e) => {
+                    if (rawImg && e.currentTarget.src !== rawImg && !e.currentTarget.dataset.retried) {
+                      e.currentTarget.dataset.retried = 'true';
+                      e.currentTarget.src = rawImg;
+                    }
+                  }}
+                />
+                {(question.imageCaption || (question as any).image_caption) && (
+                  <span className="text-[11px] text-slate-500 mt-2 italic text-center">
+                    {question.imageCaption || (question as any).image_caption}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Options List */}
           <div className="space-y-2.5">

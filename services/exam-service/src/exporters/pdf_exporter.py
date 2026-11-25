@@ -154,24 +154,34 @@ def _resolve_image_stream(img_source: Any) -> Optional[Tuple[io.BytesIO, float, 
                 except Exception:
                     pass
 
-            # 4. Web URL (http/https)
-            if not raw_bytes and (img_source.startswith("http://") or img_source.startswith("https://")):
-                try:
-                    req = urllib.request.Request(
-                        img_source,
-                        headers={"User-Agent": "QuizGenAI-PDFExporter/1.0"}
-                    )
-                    with urllib.request.urlopen(req, timeout=6) as resp:
-                        raw_bytes = resp.read()
-                except Exception:
-                    pass
+            # 4. Web URL (http/https hoặc /api/ nội bộ)
+            if not raw_bytes:
+                target_url = img_source
+                if img_source.startswith("/"):
+                    target_url = f"http://127.0.0.1:8000{img_source}"
+                if target_url.startswith("http://") or target_url.startswith("https://"):
+                    try:
+                        req = urllib.request.Request(
+                            target_url,
+                            headers={"User-Agent": "QuizGenAI-PDFExporter/1.0"}
+                        )
+                        with urllib.request.urlopen(req, timeout=4) as resp:
+                            raw_bytes = resp.read()
+                    except Exception:
+                        pass
 
-            # 5. File path cục bộ
+            # 5. File path cục bộ và media nội bộ của document-service
             if not raw_bytes:
                 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+                clean_fname = os.path.basename(img_source.split("?")[0])
+                doc_data = os.path.join(repo_root, "services", "document-service", "data")
                 candidates = [
                     img_source,
                     os.path.abspath(img_source),
+                    os.path.join(doc_data, "extracted_images", clean_fname),
+                    os.path.join(doc_data, "question_attachments", clean_fname),
+                    os.path.join(doc_data, "forum_attachments", clean_fname),
+                    os.path.join(doc_data, "uploads", clean_fname),
                     os.path.join(repo_root, img_source.lstrip("/\\")),
                     os.path.join(repo_root, "services", "document-service", img_source.lstrip("/\\")),
                     os.path.join(repo_root, "services", "document-service", "data", img_source.lstrip("/\\")),
@@ -179,6 +189,11 @@ def _resolve_image_stream(img_source: Any) -> Optional[Tuple[io.BytesIO, float, 
                     os.path.join(repo_root, "uploads", img_source.lstrip("/\\")),
                     os.path.join(os.getcwd(), img_source.lstrip("/\\")),
                 ]
+                stem = os.path.splitext(clean_fname)[0]
+                for ext in [".png", ".jpg", ".jpeg", ".webp"]:
+                    candidates.append(os.path.join(doc_data, "extracted_images", f"{stem}{ext}"))
+                    candidates.append(os.path.join(doc_data, "question_attachments", f"{stem}{ext}"))
+
                 for p in candidates:
                     if os.path.isfile(p):
                         try:
@@ -191,7 +206,35 @@ def _resolve_image_stream(img_source: Any) -> Optional[Tuple[io.BytesIO, float, 
         if not raw_bytes:
             return None
 
-        pil_img = PILImage.open(io.BytesIO(raw_bytes))
+        # Xử lý nếu dữ liệu là SVG hoặc cần vẽ khung đồ họa thay thế
+        if raw_bytes.strip().startswith(b"<svg") or raw_bytes.strip().startswith(b"<?xml"):
+            try:
+                from PIL import ImageDraw
+                fallback_img = PILImage.new('RGB', (560, 160), color='#F8FAFC')
+                draw = ImageDraw.Draw(fallback_img)
+                draw.rectangle([(2, 2), (557, 157)], outline='#CBD5E1', width=2)
+                draw.rectangle([(250, 20), (310, 70)], outline='#94A3B8', fill='#F1F5F9', width=1)
+                draw.text((280, 95), f"So do hoc thuat: {clean_fname[:40]}", fill='#1E293B', anchor='mm')
+                draw.text((280, 125), "(Hinh anh dinh kem theo de thi)", fill='#64748B', anchor='mm')
+                buf = io.BytesIO()
+                fallback_img.save(buf, format="PNG")
+                buf.seek(0)
+                return buf, 560.0, 160.0
+            except Exception:
+                return None
+
+        try:
+            pil_img = PILImage.open(io.BytesIO(raw_bytes))
+        except Exception:
+            from PIL import ImageDraw
+            fallback_img = PILImage.new('RGB', (560, 160), color='#F8FAFC')
+            draw = ImageDraw.Draw(fallback_img)
+            draw.rectangle([(2, 2), (557, 157)], outline='#CBD5E1', width=2)
+            draw.text((280, 80), f"So do dinh kem: {clean_fname[:40]}", fill='#1E293B', anchor='mm')
+            buf = io.BytesIO()
+            fallback_img.save(buf, format="PNG")
+            buf.seek(0)
+            return buf, 560.0, 160.0
         w_px, h_px = pil_img.size
 
         buf = io.BytesIO()

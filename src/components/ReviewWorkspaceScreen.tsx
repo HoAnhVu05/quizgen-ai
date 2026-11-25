@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   Edit3,
@@ -25,11 +25,18 @@ import {
   FileCheck,
   Maximize2,
   Image as ImageIcon,
+  Upload,
+  Link2,
+  Trash2,
+  PenTool,
+  Plus,
 } from 'lucide-react';
 import { Question, BloomLevel, ScreenId, UserProfile, QuestionStatus } from '../types';
 import MathRenderer from './MathRenderer';
+import { resolveImageUrl } from '../services/apiClient';
 import { LatexFormulaToolbar } from './LatexFormulaToolbar';
 import { ImageLightboxModal } from './ImageLightboxModal';
+import { DiagramStudioModal } from './DiagramStudioModal';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -43,6 +50,7 @@ interface ReviewWorkspaceScreenProps {
   ) => void;
   currentUser?: UserProfile | null;
   onLoadQuestions?: (questions: Question[]) => void;
+  onSelectQuestion?: (question: Question) => void;
 }
 
 const SAMPLE_REVIEW_QUESTIONS: Question[] = [
@@ -192,6 +200,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   onShowToast,
   currentUser,
   onLoadQuestions,
+  onSelectQuestion,
 }) => {
   const [selectedId, setSelectedId] = useState<string>(questions[0]?.id || '');
   const [filterStatus, setFilterStatus] = useState<'all' | QuestionStatus>('all');
@@ -237,6 +246,23 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
     url: '',
     caption: '',
   });
+  const [imgErrorMap, setImgErrorMap] = useState<Record<string, boolean>>({});
+  const [isDiagramStudioOpen, setIsDiagramStudioOpen] = useState(false);
+  const [isAttachPopoverOpen, setIsAttachPopoverOpen] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const attachPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (attachPopoverRef.current && !attachPopoverRef.current.contains(event.target as Node)) {
+        setIsAttachPopoverOpen(false);
+      }
+    }
+    if (isAttachPopoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isAttachPopoverOpen]);
 
   const filteredQuestions = questions.filter((q) => {
     const matchStatus = filterStatus === 'all' || q.status === filterStatus;
@@ -258,8 +284,9 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
       setEditImageUrl(activeQuestion.imageUrl || '');
       setEditImageCaption(activeQuestion.imageCaption || '');
       setIsEditing(false);
+      onSelectQuestion?.(activeQuestion);
     }
-  }, [activeQuestion?.id]);
+  }, [activeQuestion?.id, onSelectQuestion]);
 
   const handleStatusChange = useCallback(
     (status: QuestionStatus) => {
@@ -622,13 +649,13 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   {getStatusBadge(activeQuestion.status).label}
                 </span>
                 {(activeQuestion.hasFormula || activeQuestion.question.includes('$')) && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-purple-50 text-purple-700 border-purple-200">
-                    ∑ Toán - Lý (LaTeX)
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-slate-100 text-slate-700 border-slate-300">
+                    Toán - Lý (LaTeX)
                   </span>
                 )}
                 {activeQuestion.hasImage && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">
-                    📷 Sơ đồ / Hình vẽ
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded border bg-slate-100 text-slate-700 border-slate-300">
+                    Sơ đồ minh họa
                   </span>
                 )}
               </div>
@@ -638,25 +665,14 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                   <>
                     <button
                       onClick={() => setIsEditing(true)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100 border border-slate-200"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-300 shadow-2xs transition-colors"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      Chỉnh sửa (E)
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEditing(true);
-                        setEditHasImage(true);
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors"
-                      title={activeQuestion.hasImage ? "Đổi sơ đồ/hình ảnh" : "Đính kèm hình ảnh/sơ đồ cho câu hỏi"}
-                    >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      {activeQuestion.hasImage ? 'Đổi ảnh' : 'Đính kèm ảnh'}
+                      <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+                      Chỉnh sửa câu hỏi (E)
                     </button>
                     <button
                       onClick={handleQuickBloomCycle}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-[#008689] bg-[#e6f4f4] hover:bg-[#d5ecec]"
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#008689] bg-[#e6f4f4] hover:bg-[#d5ecec] transition-colors"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
                       Đổi Bloom
@@ -703,6 +719,19 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                     className="w-full p-3 rounded-lg border border-slate-300 text-sm text-slate-800 focus:outline-none focus:border-[#008689]"
                     placeholder="Nhập nội dung câu hỏi (sử dụng $...$ cho công thức toán)..."
                   />
+
+                  {/* Live KaTeX Preview for Question Stem */}
+                  {(editStem.includes('$') || editStem.includes('\\')) && (
+                    <div className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 flex items-start gap-2">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 font-semibold tracking-wider shrink-0 mt-0.5">
+                        KaTeX:
+                      </span>
+                      <div className="flex-1 overflow-x-auto">
+                        <MathRenderer content={editStem} inline />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-semibold text-slate-600">Mức độ Bloom:</span>
@@ -719,105 +748,213 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                       </select>
                     </div>
 
-                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-md transition-colors">
-                      <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
-                      <input
-                        type="checkbox"
-                        checked={editHasImage}
-                        onChange={(e) => setEditHasImage(e.target.checked)}
-                        className="rounded text-[#008689]"
-                      />
-                      <span>Đính kèm hình vẽ / sơ đồ</span>
-                    </label>
-                  </div>
+                    {/* Compact Media Attachment Trigger */}
+                    {!editImageUrl && (
+                      <div className="relative inline-block" ref={attachPopoverRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsAttachPopoverOpen(!isAttachPopoverOpen)}
+                          className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Đính kèm sơ đồ / ảnh</span>
+                        </button>
 
-                  {/* Multimodal Image Input Section */}
-                  {editHasImage && (
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-slate-700 block">Hình ảnh / Sơ đồ minh chứng câu hỏi:</span>
-                        {editImageUrl && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditImageUrl('');
-                              setEditImageCaption('');
-                              setEditHasImage(false);
-                            }}
-                            className="text-[11px] text-rose-600 hover:text-rose-700 font-semibold hover:underline"
-                          >
-                            ✕ Xóa ảnh này
-                          </button>
+                        {isAttachPopoverOpen && (
+                          <div className="absolute right-0 mt-1.5 w-60 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 text-xs animate-in fade-in slide-in-from-top-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsDiagramStudioOpen(true);
+                                setIsAttachPopoverOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#008689] text-left transition-colors font-medium"
+                            >
+                              <PenTool className="w-4 h-4 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Mở Studio vẽ kỹ thuật</div>
+                                <div className="text-[10px] text-slate-400">Draw.io, GeoGebra, Desmos, MolView</div>
+                              </div>
+                            </button>
+                            <label className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 hover:text-slate-900 text-left cursor-pointer transition-colors font-medium">
+                              <Upload className="w-4 h-4 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Tải file ảnh từ máy</div>
+                                <div className="text-[10px] text-slate-400">PNG, JPG, SVG, WebP</div>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setIsAttachPopoverOpen(false);
+                                    try {
+                                      const formData = new FormData();
+                                      formData.append('file', file);
+                                      const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
+                                        method: 'POST',
+                                        body: formData,
+                                      });
+                                      if (uploadRes.ok) {
+                                        const uploadData = await uploadRes.json();
+                                        if (uploadData.imageUrl) {
+                                          setEditImageUrl(uploadData.imageUrl);
+                                          setEditHasImage(true);
+                                          return;
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.warn('Lỗi tải ảnh server, dùng Data URL', err);
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                      setEditImageUrl(reader.result as string);
+                                      setEditHasImage(true);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowUrlInput(true);
+                                setIsAttachPopoverOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 text-left transition-colors font-medium"
+                            >
+                              <Link2 className="w-4 h-4 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Dán URL liên kết</div>
+                                <div className="text-[10px] text-slate-400">Hình ảnh từ internet</div>
+                              </div>
+                            </button>
+                          </div>
                         )}
                       </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="text"
-                          placeholder="Nhập URL hình ảnh (https://...)"
-                          value={editImageUrl}
-                          onChange={(e) => setEditImageUrl(e.target.value)}
-                          className="flex-1 px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
-                        />
-                        <label className="px-3 py-1.5 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold cursor-pointer shrink-0 text-center transition-colors flex items-center justify-center gap-1">
-                          📁 Tải ảnh từ máy
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                // Thử tải lên server trước
-                                try {
-                                  const formData = new FormData();
-                                  formData.append('file', file);
-                                  const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
-                                    method: 'POST',
-                                    body: formData,
-                                  });
-                                  if (uploadRes.ok) {
-                                    const uploadData = await uploadRes.json();
-                                    if (uploadData.imageUrl) {
-                                      setEditImageUrl(uploadData.imageUrl);
-                                      setEditHasImage(true);
-                                      return;
-                                    }
-                                  }
-                                } catch (err) {
-                                  console.warn('Lỗi tải ảnh lên server, chuyển sang Base64', err);
-                                }
+                    )}
+                  </div>
 
-                                // Fallback sang Data URL nếu server lỗi hoặc offline
-                                const reader = new FileReader();
-                                reader.onload = () => {
-                                  setEditImageUrl(reader.result as string);
-                                  setEditHasImage(true);
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            }}
-                          />
-                        </label>
-                      </div>
+                  {/* Inline URL Input */}
+                  {showUrlInput && !editImageUrl && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
                       <input
                         type="text"
-                        placeholder="Chú thích hình ảnh (ví dụ: Sơ đồ khối nguyên lý hoạt động)"
-                        value={editImageCaption}
-                        onChange={(e) => setEditImageCaption(e.target.value)}
-                        className="w-full px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
+                        placeholder="Dán URL hình ảnh rồi nhấn Enter..."
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.target as HTMLInputElement).value) {
+                            setEditImageUrl((e.target as HTMLInputElement).value);
+                            setEditHasImage(true);
+                            setShowUrlInput(false);
+                          } else if (e.key === 'Escape') {
+                            setShowUrlInput(false);
+                          }
+                        }}
+                        className="flex-1 px-2.5 py-1 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
                       />
-                      {editImageUrl && (
-                        <div className="pt-1 flex items-center gap-3">
-                          <img
-                            src={editImageUrl}
-                            alt="Xem trước"
-                            className="max-h-24 rounded border border-slate-200 object-contain bg-white p-1"
-                          />
-                          <div className="text-[11px] text-slate-500 italic">
-                            Xem trước hiển thị sơ đồ trong câu hỏi
+                      <button
+                        type="button"
+                        onClick={() => setShowUrlInput(false)}
+                        className="text-slate-400 hover:text-slate-600 px-1 text-xs"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Compact Media Card when image is attached */}
+                  {editImageUrl && (
+                    <div className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                      <div className="relative group shrink-0 w-20 h-16 rounded overflow-hidden border border-slate-200 bg-white flex items-center justify-center">
+                        <img
+                          src={resolveImageUrl(editImageUrl)}
+                          alt="Minh họa"
+                          className="w-full h-full object-contain p-0.5"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setLightboxData({ isOpen: true, url: resolveImageUrl(editImageUrl), caption: editImageCaption })}
+                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity text-[10px] font-medium"
+                        >
+                          Phóng to
+                        </button>
+                      </div>
+
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-700">Sơ đồ đính kèm:</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setIsDiagramStudioOpen(true)}
+                              className="px-2 py-0.5 rounded text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 transition-colors flex items-center gap-1"
+                            >
+                              <PenTool className="w-3 h-3 text-slate-500" />
+                              <span>Sửa trong Studio</span>
+                            </button>
+                            <label className="px-2 py-0.5 rounded text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer transition-colors flex items-center gap-1">
+                              <Upload className="w-3 h-3 text-slate-500" />
+                              <span>Đổi ảnh</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    try {
+                                      const formData = new FormData();
+                                      formData.append('file', file);
+                                      const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
+                                        method: 'POST',
+                                        body: formData,
+                                      });
+                                      if (uploadRes.ok) {
+                                        const uploadData = await uploadRes.json();
+                                        if (uploadData.imageUrl) {
+                                          setEditImageUrl(uploadData.imageUrl);
+                                          return;
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.warn('Lỗi tải ảnh server, dùng Data URL', err);
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                      setEditImageUrl(reader.result as string);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditImageUrl('');
+                                setEditImageCaption('');
+                                setEditHasImage(false);
+                              }}
+                              className="px-1.5 py-0.5 rounded text-[11px] font-medium text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center gap-1"
+                              title="Gỡ bỏ hình ảnh"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Gỡ</span>
+                            </button>
                           </div>
                         </div>
-                      )}
+                        <input
+                          type="text"
+                          placeholder="Ghi chú chú thích sơ đồ (tùy chọn)..."
+                          value={editImageCaption}
+                          onChange={(e) => setEditImageCaption(e.target.value)}
+                          className="w-full px-2.5 py-1 text-xs rounded border border-slate-200 bg-white focus:outline-none focus:border-[#008689] text-slate-700 placeholder-slate-400"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -827,37 +964,91 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                     <MathRenderer content={activeQuestion.question} />
                   </div>
                   {activeQuestion.hasImage && activeQuestion.imageUrl && (
-                    <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg max-w-md mx-auto text-center shadow-xs group relative">
-                      <img
-                        src={activeQuestion.imageUrl}
-                        alt={activeQuestion.imageCaption || 'Sơ đồ câu hỏi'}
-                        className="max-h-60 mx-auto rounded object-contain border border-slate-100 cursor-pointer hover:opacity-95 transition-opacity"
-                        onClick={() =>
-                          setLightboxData({
-                            isOpen: true,
-                            url: activeQuestion.imageUrl!,
-                            caption: activeQuestion.imageCaption,
-                          })
-                        }
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setLightboxData({
-                            isOpen: true,
-                            url: activeQuestion.imageUrl!,
-                            caption: activeQuestion.imageCaption,
-                          })
-                        }
-                        className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium transition-colors"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        Phóng to hình ảnh / Xem chi tiết
-                      </button>
-                      {activeQuestion.imageCaption && (
-                        <p className="text-[11px] text-slate-500 italic mt-1 font-normal">
-                          {activeQuestion.imageCaption}
-                        </p>
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg max-w-md mx-auto text-center shadow-xs group relative">
+                      {imgErrorMap[activeQuestion.id] ? (
+                        <div className="py-3 px-4 bg-amber-50/90 border border-amber-200 rounded-xl text-center space-y-2">
+                          <p className="text-xs text-amber-800 font-semibold">
+                            Hình ảnh của câu hỏi này không tồn tại hoặc bị lỗi liên kết
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditing(true);
+                                setEditHasImage(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold shadow-xs transition-colors"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>Tải ảnh từ máy</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsEditing(true);
+                                setEditHasImage(true);
+                                setIsDiagramStudioOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#008689] hover:bg-[#006f72] text-white text-xs font-semibold shadow-xs transition-colors"
+                            >
+                              <PenTool className="w-3.5 h-3.5" />
+                              <span>Vẽ hình trong Studio</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateQuestion({
+                                  ...activeQuestion,
+                                  hasImage: false,
+                                  imageUrl: undefined,
+                                  imageCaption: undefined,
+                                });
+                                setImgErrorMap((prev) => ({ ...prev, [activeQuestion.id]: false }));
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Gỡ liên kết ảnh</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <img
+                            src={resolveImageUrl(activeQuestion.imageUrl)}
+                            alt={activeQuestion.imageCaption || 'Sơ đồ câu hỏi'}
+                            className="max-h-60 mx-auto rounded object-contain border border-slate-100 cursor-pointer hover:opacity-95 transition-opacity"
+                            onError={() => {
+                              setImgErrorMap((prev) => ({ ...prev, [activeQuestion.id]: true }));
+                            }}
+                            onClick={() =>
+                              setLightboxData({
+                                isOpen: true,
+                                url: resolveImageUrl(activeQuestion.imageUrl) || activeQuestion.imageUrl!,
+                                caption: activeQuestion.imageCaption,
+                              })
+                            }
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setLightboxData({
+                                isOpen: true,
+                                url: resolveImageUrl(activeQuestion.imageUrl) || activeQuestion.imageUrl!,
+                                caption: activeQuestion.imageCaption,
+                              })
+                            }
+                            className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-medium transition-colors"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" />
+                            Phóng to hình ảnh / Xem chi tiết
+                          </button>
+                          {activeQuestion.imageCaption && (
+                            <p className="text-[11px] text-slate-500 italic mt-1 font-normal">
+                              {activeQuestion.imageCaption}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -895,13 +1086,25 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                       {opt.label}
                     </button>
                     {isEditing ? (
-                      <input
-                        type="text"
-                        value={opt.text}
-                        onFocus={() => setActiveFocusedField(opt.id)}
-                        onChange={(e) => handleOptionTextChange(opt.id, e.target.value)}
-                        className="flex-1 bg-white px-2.5 py-1 rounded border border-slate-300 text-sm focus:outline-none focus:border-[#008689]"
-                      />
+                      <div className="flex-1 space-y-1">
+                        <input
+                          type="text"
+                          value={opt.text}
+                          onFocus={() => setActiveFocusedField(opt.id)}
+                          onChange={(e) => handleOptionTextChange(opt.id, e.target.value)}
+                          className="w-full bg-white px-2.5 py-1 rounded border border-slate-300 text-sm focus:outline-none focus:border-[#008689]"
+                        />
+                        {(opt.text.includes('$') || opt.text.includes('\\')) && (
+                          <div className="px-2 py-1 rounded bg-slate-50 border border-slate-200 text-xs text-slate-800 flex items-start gap-2">
+                            <span className="text-[10px] font-mono uppercase text-slate-400 font-semibold tracking-wider shrink-0 mt-0.5">
+                              KaTeX:
+                            </span>
+                            <div className="flex-1 overflow-x-auto text-xs">
+                              <MathRenderer content={opt.text} inline />
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="flex-1 leading-relaxed">
                         <MathRenderer content={opt.text} />
@@ -918,13 +1121,25 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                 Giải thích đáp án & Hướng dẫn chấm
               </span>
               {isEditing ? (
-                <textarea
-                  rows={2}
-                  value={editExplanation}
-                  onFocus={() => setActiveFocusedField('explanation')}
-                  onChange={(e) => setEditExplanation(e.target.value)}
-                  className="w-full p-2 rounded border border-slate-300 text-xs text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
-                />
+                <div className="space-y-1">
+                  <textarea
+                    rows={2}
+                    value={editExplanation}
+                    onFocus={() => setActiveFocusedField('explanation')}
+                    onChange={(e) => setEditExplanation(e.target.value)}
+                    className="w-full p-2 rounded border border-slate-300 text-xs text-slate-700 bg-white focus:outline-none focus:border-[#008689]"
+                  />
+                  {(editExplanation.includes('$') || editExplanation.includes('\\')) && (
+                    <div className="px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-xs text-slate-800 flex items-start gap-2">
+                      <span className="text-[10px] font-mono uppercase text-slate-400 font-semibold tracking-wider shrink-0 mt-0.5">
+                        KaTeX:
+                      </span>
+                      <div className="flex-1 overflow-x-auto text-xs">
+                        <MathRenderer content={editExplanation} inline />
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="text-xs text-slate-600 leading-relaxed">
                   <MathRenderer content={activeQuestion.explanation} />
@@ -1000,6 +1215,30 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
         imageUrl={lightboxData.url}
         imageCaption={lightboxData.caption}
         onClose={() => setLightboxData({ isOpen: false, url: '', caption: '' })}
+      />
+
+      {/* Multimodal Diagram Studio Modal */}
+      <DiagramStudioModal
+        isOpen={isDiagramStudioOpen}
+        onClose={() => setIsDiagramStudioOpen(false)}
+        initialCaption={editImageCaption || activeQuestion?.imageCaption}
+        initialImageUrl={editImageUrl || activeQuestion?.imageUrl}
+        onApplyImage={(imgUrl, cap) => {
+          setEditImageUrl(imgUrl);
+          setEditHasImage(true);
+          if (cap) setEditImageCaption(cap);
+          if (activeQuestion) {
+            setImgErrorMap((prev) => ({ ...prev, [activeQuestion.id]: false }));
+            if (!isEditing) {
+              onUpdateQuestion({
+                ...activeQuestion,
+                hasImage: true,
+                imageUrl: imgUrl,
+                imageCaption: cap || activeQuestion.imageCaption,
+              });
+            }
+          }
+        }}
       />
     </div>
   );

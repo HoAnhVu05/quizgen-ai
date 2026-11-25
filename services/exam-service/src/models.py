@@ -561,7 +561,12 @@ class UnifiedExportRequest(BaseModel):
 
     def get_code(self) -> str:
         cfg = self.config if isinstance(self.config, dict) else {}
-        return str(self.examCode or self.exam_code or self.code or cfg.get("examCode") or cfg.get("code") or "101")
+        code_val = (
+            self.examCode or self.exam_code or self.code or
+            cfg.get("examCode") or cfg.get("exam_code") or cfg.get("code") or
+            cfg.get("baseExamCode") or self.baseExamCode or self.base_exam_code
+        )
+        return str(code_val or "101")
 
     def get_base_code(self) -> int:
         cfg = self.config if isinstance(self.config, dict) else {}

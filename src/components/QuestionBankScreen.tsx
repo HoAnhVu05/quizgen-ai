@@ -504,11 +504,19 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           ? selectedSubject.replace(/\.[^/.]+$/, '')
           : targetExamQuestions[0]?.textbookName?.replace(/\.[^/.]+$/, '') || 'Chưa đặt tên học phần');
 
+      const currentQuestionsToExport =
+        activeVariantQuestions && activeVariantQuestions.length > 0
+          ? activeVariantQuestions
+          : targetExamQuestions;
+
       const response = await apiClient.fetch(`${API_BASE}/exams/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           format,
+          examCode: activeExamCode,
+          exam_code: activeExamCode,
+          code: activeExamCode,
           universityName,
           facultyName,
           university: universityName,
@@ -524,17 +532,19 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             subject: currentSubject,
             examTitle,
             durationMinutes: examDuration,
+            examCode: activeExamCode,
+            exam_code: activeExamCode,
             examCodeCount: availableCodes.length,
             examCodes: availableCodes,
-            shuffleQuestions: true,
-            shuffleOptions: true,
+            shuffleQuestions: false,
+            shuffleOptions: false,
             includeAnswerKey: true,
             includeExplanation: true,
             includeOmrSheet: format === 'pdf',
             baseExamCode: Number(activeExamCode),
             format,
           },
-          questions: targetExamQuestions,
+          questions: currentQuestionsToExport,
         }),
       });
 
