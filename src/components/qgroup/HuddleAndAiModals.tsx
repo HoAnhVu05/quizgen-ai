@@ -8,6 +8,7 @@ import {
   getOptimalAudioDeviceId,
   setPreferredAudioDeviceId,
 } from '../../utils/audioDeviceManager';
+import { UserAvatar } from '../common/UserAvatar';
 
 // Helper chèn tham số chống vọng tiếng và triệt tiêu tạp âm phòng Opus DTX vào SDP
 const setOpusDtx = (sdp?: string) => {
@@ -643,15 +644,18 @@ export const HuddleCallModal: React.FC<{
             {/* My Avatar */}
             <div className="flex flex-col items-center gap-1.5">
               <div className="relative">
-                <div
-                  className={`w-14 h-14 rounded-2xl bg-slate-800 border flex items-center justify-center font-bold text-base text-white transition-all ${
+                <UserAvatar
+                  avatarUrl={currentUser?.avatarUrl}
+                  name={myName}
+                  email={myEmail}
+                  size="xl"
+                  rounded="rounded-2xl"
+                  className={`w-14 h-14 border transition-all ${
                     isSpeaking && !isMuted
                       ? 'border-emerald-400 ring-4 ring-emerald-500/30 shadow-lg scale-105'
                       : 'border-slate-700'
                   }`}
-                >
-                  {initials(myName)}
-                </div>
+                />
                 {isMuted ? (
                   <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-rose-600 ring-2 ring-slate-900 flex items-center justify-center text-[10px]">
                     <MicOff className="w-3 h-3 text-white" />
@@ -673,17 +677,19 @@ export const HuddleCallModal: React.FC<{
               return (
                 <div key={p.peerId} className="flex flex-col items-center gap-1.5 animate-fadeIn">
                   <div className="relative">
-                    <div
-                      className={`w-14 h-14 rounded-2xl bg-slate-800 border flex items-center justify-center font-bold text-base text-white transition-all ${
+                    <UserAvatar
+                      name={p.name}
+                      email={p.email}
+                      size="xl"
+                      rounded="rounded-2xl"
+                      className={`w-14 h-14 border transition-all ${
                         p.isSpeaking
                           ? 'border-emerald-400 ring-4 ring-emerald-500/30 shadow-lg scale-105'
                           : isConnected
                           ? 'border-emerald-500/60'
                           : 'border-slate-700'
                       }`}
-                    >
-                      {initials(p.name)}
-                    </div>
+                    />
                     {isConnected ? (
                       <span
                         className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 ring-2 ring-slate-900"

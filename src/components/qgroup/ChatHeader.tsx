@@ -28,11 +28,13 @@ import {
 } from 'lucide-react';
 import { QGroup } from '../../types';
 import { isConversationPinned } from '../../utils/notificationPrefs';
+import { UserAvatar } from '../common/UserAvatar';
 
 export interface ActiveChatInfo {
   displayName: string;
   avatarInitials: string;
   partnerEmail?: string;
+  avatarUrl?: string;
   displayRoleOrMembers: string;
 }
 
@@ -130,15 +132,24 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               onOpenDetails(activeGroup);
             }
           }}
-          className="w-9 h-9 rounded-lg bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
+          className="shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
         >
           {activeGroup.isDirect ? (
-            <div className="relative">
-              <span>{activeInfo.avatarInitials}</span>
-              <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
-            </div>
+            <UserAvatar
+              avatarUrl={activeInfo.avatarUrl}
+              name={activeInfo.displayName}
+              email={activeInfo.partnerEmail}
+              size="md"
+              rounded="rounded-lg"
+              className="w-9 h-9"
+              showOnlineIndicator
+              isOnline
+              title={`Xem hồ sơ của ${activeInfo.displayName}`}
+            />
           ) : (
-            <Hash className="w-5 h-5 text-slate-700" />
+            <div className="w-9 h-9 rounded-lg bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center">
+              <Hash className="w-5 h-5 text-slate-700" />
+            </div>
           )}
         </div>
 
@@ -154,10 +165,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
               }}
               className="text-sm font-bold text-slate-900 truncate cursor-pointer hover:underline flex items-center gap-1"
             >
-              {!activeGroup.isDirect ? (
+              {!activeGroup.isDirect && (
                 <Hash className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-              ) : (
-                <span className="text-slate-500 font-bold shrink-0 text-xs">@</span>
               )}
               <span className="truncate">{activeInfo.displayName}</span>
             </h3>

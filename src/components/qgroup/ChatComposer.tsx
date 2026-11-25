@@ -55,6 +55,7 @@ interface ChatComposerProps {
   isDirectChat?: boolean;
   replyingToMessage: QGroupMessage | null;
   onCancelReply: () => void;
+  onJumpToReplyingMessage?: (msgId: string) => void;
   selectedAttachments?: SelectedAttachment[];
   selectedAttachment?: SelectedAttachment | null;
   onRemoveAttachment?: (index: number) => void;
@@ -88,6 +89,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   isDirectChat = false,
   replyingToMessage,
   onCancelReply,
+  onJumpToReplyingMessage,
   selectedAttachments,
   selectedAttachment,
   onRemoveAttachment,
@@ -145,16 +147,23 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     <>
       {/* Replying Banner */}
       {replyingToMessage && (
-        <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-xs mb-2 animate-fadeIn">
+        <div
+          onClick={() => onJumpToReplyingMessage?.(replyingToMessage.id)}
+          className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-teal-50 border border-teal-200 text-xs mb-2 animate-fadeIn cursor-pointer hover:bg-teal-100/70 transition-colors group/replybanner shadow-2xs"
+          title="Bấm để cuộn đến câu hỏi / tin nhắn đang trả lời"
+        >
           <div className="flex items-center gap-2 min-w-0">
-            <Reply className="w-3.5 h-3.5 text-teal-700 shrink-0" />
-            <span className="font-bold text-slate-800">Đang trả lời {replyingToMessage.senderName}:</span>
+            <Reply className="w-3.5 h-3.5 text-teal-700 shrink-0 group-hover/replybanner:scale-110 transition-transform" />
+            <span className="font-bold text-slate-800 shrink-0">Đang trả lời {replyingToMessage.senderName}:</span>
             <span className="text-slate-600 truncate italic">&ldquo;{replyingToMessage.text}&rdquo;</span>
           </div>
           <button
             type="button"
-            onClick={onCancelReply}
-            className="p-1 rounded-md hover:bg-teal-100 text-slate-400 hover:text-slate-600 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancelReply();
+            }}
+            className="p-1 rounded-md hover:bg-teal-200 text-slate-400 hover:text-slate-600 transition-colors shrink-0 ml-2"
             title="Hủy trả lời"
           >
             <X className="w-3.5 h-3.5" />
@@ -298,22 +307,10 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           rows={2}
           value={chatInput}
           onFocus={() => {
-            // Đảm bảo không bị cuộn window đẩy thanh TopHeader mất hút trên điện thoại
-            if (typeof window !== 'undefined') {
-              window.scrollTo(0, 0);
-              document.body.scrollTop = 0;
-              document.documentElement.scrollTop = 0;
-              setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-                document.documentElement.scrollTop = 0;
-              }, 50);
-              setTimeout(() => {
-                window.scrollTo(0, 0);
-                document.body.scrollTop = 0;
-                document.documentElement.scrollTop = 0;
-              }, 150);
-            }
+            // Giữ khung soạn thảo luôn hiển thị trong tầm nhìn khi mở bàn phím ảo
+            setTimeout(() => {
+              textareaRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }, 100);
           }}
           onChange={(e) => onChatInputChange(e.target.value)}
           onPaste={onComposerPaste}

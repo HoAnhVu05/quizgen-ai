@@ -105,10 +105,13 @@ import { ChatComposer } from './qgroup/ChatComposer';
 import { MediaLightboxModal } from './qgroup/MediaLightboxModal';
 import { SharedMediaDrawer } from './qgroup/SharedMediaDrawer';
 import { TextbookPickerModal } from './qgroup/TextbookPickerModal';
+import { compressImageFile } from '../utils/imageCompressor';
 import { deduplicateDMsAndChannels, isExcludedAdminAccount } from './qgroup/chatUtils';
 import { isGroupMuted, toggleGroupMute, isConversationPinned, toggleConversationPin } from '../utils/notificationPrefs';
 import { openUserProfile } from '../utils/userProfileModalHelper';
 import { downloadFileSafely } from '../utils/fileDownloadHelper';
+import { UserAvatar } from './common/UserAvatar';
+import { getUserAvatarUrl, saveUserAvatarSync } from '../utils/avatarHelper';
 import {
   getOptimalAudioDeviceId,
   cycleToNextMicrophone,
@@ -270,6 +273,7 @@ export interface ResolvedChatInfo {
   displayName: string;
   displayEmail?: string;
   partnerEmail?: string;
+  avatarUrl?: string;
   displayRoleOrMembers: string;
   isDirect: boolean;
   avatarInitials: string;
@@ -300,6 +304,7 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
       displayName: name,
       displayEmail: cleanPartnerEmail,
       partnerEmail: cleanPartnerEmail,
+      avatarUrl: getUserAvatarUrl(cleanPartnerEmail, name) || undefined,
       displayRoleOrMembers: 'Đồng nghiệp • Tin nhắn 1-1',
       isDirect: true,
       avatarInitials: name.slice(0, 2).toUpperCase(),
@@ -313,6 +318,7 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
       displayName: name,
       displayEmail: cleanOwnerEmail,
       partnerEmail: cleanOwnerEmail,
+      avatarUrl: getUserAvatarUrl(cleanOwnerEmail, name) || undefined,
       displayRoleOrMembers: 'Đồng nghiệp • Tin nhắn 1-1',
       isDirect: true,
       avatarInitials: name.slice(0, 2).toUpperCase(),
@@ -331,6 +337,7 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
       displayName: name,
       displayEmail: otherEmail,
       partnerEmail: otherEmail,
+      avatarUrl: getUserAvatarUrl(otherEmail, name) || undefined,
       displayRoleOrMembers: 'Đồng nghiệp • Tin nhắn 1-1',
       isDirect: true,
       avatarInitials: name.slice(0, 2).toUpperCase(),
@@ -342,6 +349,7 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
     displayName: group.name,
     displayEmail: fbEmail,
     partnerEmail: fbEmail,
+    avatarUrl: getUserAvatarUrl(fbEmail, group.name) || undefined,
     displayRoleOrMembers: 'Tin nhắn riêng 1-1',
     isDirect: true,
     avatarInitials: (group.name || 'DM').slice(0, 2).toUpperCase(),
@@ -623,14 +631,19 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           const list = await res.json();
           if (Array.isArray(list) && isMounted) {
             setSystemUsersList((prev) => {
-              const map = new Map<string, { email: string; fullName: string; academicTitle?: string; department?: string }>();
+              const map = new Map<string, { email: string; fullName: string; academicTitle?: string; department?: string; avatarUrl?: string }>();
               list.forEach((u: any) => {
                 if (u.email && !isExcludedAdminAccount(u.email, u.fullName, u.academicTitle, u.role)) {
+                  const avt = (u.avatarUrl || u.avatar_url || '').trim();
+                  if (avt) {
+                    saveUserAvatarSync(u.email, avt);
+                  }
                   map.set(u.email.toLowerCase(), {
                     email: u.email,
                     fullName: u.fullName || u.email.split('@')[0],
                     academicTitle: u.academicTitle || 'ThS.',
                     department: u.department || 'Khoa Công nghệ Thông tin',
+                    avatarUrl: avt || undefined,
                   });
                 }
               });
@@ -914,6 +927,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
   // Message Actions: Reply, Inline Edit, Reaction, Recall
   const [replyingToMessage, setReplyingToMessage] = useState<QGroupMessage | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
 
@@ -1133,6 +1147,33 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const prevMsgCount = useRef<Record<string, number>>({});
+
+  // Theo dõi visualViewport để đẩy ChatComposer lên khi bàn phím ảo bật trên iPad/iOS/Mobile
+  const [viewportBottomOffset, setViewportBottomOffset] = useState<number>(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateViewportOffset = () => {
+      if (window.visualViewport) {
+        const offset = Math.max(0, window.innerHeight - (window.visualViewport.height + window.visualViewport.offsetTop));
+        setViewportBottomOffset(offset);
+        if (offset > 50 && chatContainerRef.current) {
+          setTimeout(() => {
+            if (chatContainerRef.current) {
+              chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+            }
+          }, 80);
+        }
+      }
+    };
+
+    window.visualViewport?.addEventListener('resize', updateViewportOffset);
+    window.visualViewport?.addEventListener('scroll', updateViewportOffset);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', updateViewportOffset);
+      window.visualViewport?.removeEventListener('scroll', updateViewportOffset);
+    };
+  }, []);
 
   // Đóng Slack Header Menu khi nhấp chuột ra ngoài
   useEffect(() => {
@@ -1434,6 +1475,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       const seen = new Set<string>();
       const deduped: QGroup[] = [];
       for (const g of merged) {
+        if ((g as any).ownerAvatarUrl && g.ownerEmail) {
+          saveUserAvatarSync(g.ownerEmail, (g as any).ownerAvatarUrl);
+        }
+        if ((g as any).directPartnerAvatarUrl && g.directPartnerEmail) {
+          saveUserAvatarSync(g.directPartnerEmail, (g as any).directPartnerAvatarUrl);
+        }
+        (g.messages || []).forEach((m) => {
+          if (m.senderEmail && m.senderAvatarUrl) {
+            saveUserAvatarSync(m.senderEmail, m.senderAvatarUrl);
+          }
+        });
+
         const key = (g.code || g.id || '').trim();
         const isActiveMember = isGroupMemberOrOwner(g, myEmail);
         if (!key || !isActiveMember || bl.has(key)) continue;
@@ -1857,8 +1910,23 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   const MAX_TOTAL_BATCH_SIZE_MB = isEnterpriseUser ? 200 : isProUser ? 100 : 50;
   const MAX_TOTAL_BATCH_SIZE = MAX_TOTAL_BATCH_SIZE_MB * 1024 * 1024;
 
-  const handleFilesSelect = async (files: File[]) => {
-    if (!files || files.length === 0) return;
+  const handleFilesSelect = async (rawFiles: File[]) => {
+    if (!rawFiles || rawFiles.length === 0) return;
+
+    // Tự động nén nhanh ảnh chụp từ camera hoặc ảnh dung lượng lớn trên client trước khi upload
+    const files: File[] = [];
+    for (const f of rawFiles) {
+      if (f.type.startsWith('image/')) {
+        try {
+          const compressed = await compressImageFile(f);
+          files.push(compressed);
+        } catch {
+          files.push(f);
+        }
+      } else {
+        files.push(f);
+      }
+    }
 
     // 1. Giới hạn số lượng tệp tối đa (5 tệp trong 1 tin nhắn)
     if (selectedAttachments.length + files.length > MAX_ATTACHMENTS_COUNT) {
@@ -2252,6 +2320,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             senderEmail: myEmail,
             senderName: myName,
             senderTitle: currentUser?.academicTitle || 'GV',
+            senderAvatarUrl: currentUser?.avatarUrl || '',
             avatarColor: 'bg-slate-700',
             text: `🎙️ Tin nhắn thoại (${formatDuration(duration)})`,
             timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
@@ -2398,6 +2467,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         senderEmail: myEmail,
         senderName: myName,
         senderTitle: currentUser?.academicTitle || 'GV',
+        senderAvatarUrl: currentUser?.avatarUrl || '',
         avatarColor: 'bg-slate-700',
         text: chatInput.trim(),
         replyTo: replyingToMessage
@@ -2420,6 +2490,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         senderEmail: myEmail,
         senderName: myName,
         senderTitle: currentUser?.academicTitle || 'GV',
+        senderAvatarUrl: currentUser?.avatarUrl || '',
         avatarColor: 'bg-slate-700',
         text: chatInput.trim(),
         replyTo: replyingToMessage
@@ -2442,6 +2513,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           senderEmail: myEmail,
           senderName: myName,
           senderTitle: currentUser?.academicTitle || 'GV',
+          senderAvatarUrl: currentUser?.avatarUrl || '',
           avatarColor: 'bg-slate-700',
           text: '',
           attachment: att as any,
@@ -2461,6 +2533,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
           senderEmail: myEmail,
           senderName: myName,
           senderTitle: currentUser?.academicTitle || 'GV',
+          senderAvatarUrl: currentUser?.avatarUrl || '',
           avatarColor: 'bg-slate-700',
           text: '',
           attachment: att as any,
@@ -3165,6 +3238,24 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
     setReplyingToMessage(msg);
     textareaRef.current?.focus();
   }, []);
+
+  // ── Jump to Message (Reply Quote / Pin / Search) ───────────────────────────
+  const handleJumpToMessage = useCallback(
+    (msgId?: string) => {
+      if (!msgId) return;
+      const el = document.getElementById(`chat-msg-${msgId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedMsgId(msgId);
+        setTimeout(() => {
+          setHighlightedMsgId((curr) => (curr === msgId ? null : curr));
+        }, 2500);
+      } else {
+        onShowToast('info', 'Không tìm thấy tin nhắn gốc', 'Tin nhắn có thể ở kênh khác hoặc đã bị xóa.');
+      }
+    },
+    [onShowToast]
+  );
 
   // ── Inline Edit Message (Persistent to DB) ────────────────────────────────
   const handleStartEditMessage = useCallback((msg: QGroupMessage) => {
@@ -3933,6 +4024,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
       senderEmail: myEmail,
       senderName: myName,
       senderTitle: currentUser?.academicTitle || 'ThS.',
+      senderAvatarUrl: currentUser?.avatarUrl || '',
       targetEmail: email,
       recipientEmail: email,
       requestedAt: new Date().toISOString(),
@@ -3984,7 +4076,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'accept', userEmail: myEmail, userName: myName }),
+          body: JSON.stringify({
+            action: 'accept',
+            userEmail: myEmail,
+            userName: myName,
+            userAvatarUrl: currentUser?.avatarUrl || '',
+          }),
         }
       );
       if (res.ok) {
@@ -4018,7 +4115,12 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'accept', userEmail: myEmail, userName: myName }),
+          body: JSON.stringify({
+            action: 'accept',
+            userEmail: myEmail,
+            userName: myName,
+            userAvatarUrl: currentUser?.avatarUrl || '',
+          }),
         }
       );
       setGroupInvitations((prev) => prev.filter((i) => i.id !== inv.id));
@@ -4433,16 +4535,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               activePinnedIdx={activePinnedIdx}
               onNextPinned={() => setActivePinnedIdx((prev) => (prev + 1) % pinnedMessages.length)}
               onUnpin={(msgId) => handleTogglePinMessage(msgId)}
-              onScrollToMessage={(msgId) => {
-                const el = document.getElementById(`chat-msg-${msgId}`);
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                  el.classList.add('ring-2', 'ring-amber-400', 'bg-amber-100/70');
-                  setTimeout(() => {
-                    el.classList.remove('ring-2', 'ring-amber-400', 'bg-amber-100/70');
-                  }, 2500);
-                }
-              }}
+              onScrollToMessage={(msgId) => handleJumpToMessage(msgId)}
             />
 
             {/* Message Stream (Slack Linear Flow) */}
@@ -4461,27 +4554,30 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               {activeGroup.isDirect ? (
                 <div className="p-4 sm:p-5 rounded-xl bg-white border border-slate-200 text-left space-y-3 max-w-xl mb-4 shadow-2xs">
                   <div className="flex items-center gap-3">
-                    <div
-                      onClick={() => openUserProfile(activeInfo.partnerEmail, activeInfo.displayName)}
-                      className="w-10 h-10 rounded-lg bg-slate-700 hover:bg-[#008689] text-white flex items-center justify-center font-bold text-sm cursor-pointer transition-colors shadow-2xs"
+                    <UserAvatar
+                      avatarUrl={activeInfo.avatarUrl}
+                      name={activeInfo.displayName}
+                      email={activeInfo.partnerEmail}
+                      size="md"
+                      rounded="rounded-lg"
+                      className="cursor-pointer hover:opacity-90 transition-opacity shadow-2xs shrink-0"
                       title={`Xem hồ sơ của ${activeInfo.displayName}`}
-                    >
-                      {activeInfo.avatarInitials}
-                    </div>
+                      onClick={() => openUserProfile(activeInfo.partnerEmail, activeInfo.displayName)}
+                    />
                     <div>
                       <h4
                         onClick={() => openUserProfile(activeInfo.partnerEmail, activeInfo.displayName)}
                         className="text-sm font-bold text-slate-900 hover:text-[#008689] flex items-center gap-1.5 cursor-pointer hover:underline transition-colors"
                         title={`Xem hồ sơ của ${activeInfo.displayName}`}
                       >
-                        <span>@{activeInfo.displayName}</span>
+                        <span>{activeInfo.displayName}</span>
                         <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
                       </h4>
                       <p className="text-xs text-slate-400 font-mono">{activeInfo.partnerEmail}</p>
                     </div>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200">
-                    Đây là không gian trao đổi chuyên môn trực tiếp riêng tư giữa bạn và <strong>@{activeInfo.displayName}</strong> ({activeInfo.displayRoleOrMembers}). Toàn bộ tài liệu giáo trình và câu hỏi thi chia sẻ tại đây được đồng bộ hai chiều.
+                    Đây là không gian trao đổi chuyên môn trực tiếp riêng tư giữa bạn và <strong>{activeInfo.displayName}</strong> ({activeInfo.displayRoleOrMembers}). Toàn bộ tài liệu giáo trình và câu hỏi thi chia sẻ tại đây được đồng bộ hai chiều.
                   </p>
                   <div className="flex items-center gap-2">
                     <button
@@ -4604,21 +4700,30 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
                   <div
                     key={msg.id}
                     id={`chat-msg-${msg.id}`}
-                    className="flex items-start gap-3 px-3 py-2 -mx-2 rounded-lg hover:bg-slate-100/70 transition-all duration-300 group relative select-text"
+                    className={`flex items-start gap-3 px-3 py-2 -mx-2 rounded-lg transition-all duration-500 group relative select-text ${
+                      highlightedMsgId === msg.id
+                        ? 'bg-amber-100/90 ring-2 ring-amber-400 shadow-md scale-[1.01]'
+                        : 'hover:bg-slate-100/70'
+                    }`}
                   >
-                    <div
+                    <UserAvatar
+                      avatarUrl={
+                        isMe
+                          ? currentUser?.avatarUrl
+                          : msg.senderAvatarUrl || (activeGroup.isDirect && msg.senderEmail === activeInfo?.partnerEmail ? activeInfo?.avatarUrl : undefined)
+                      }
+                      name={msg.senderName || (isMe ? myName : activeInfo?.displayName)}
+                      email={msg.senderEmail || (isMe ? myEmail : activeInfo?.partnerEmail)}
+                      size="sm"
+                      rounded="rounded-md"
+                      className="mt-0.5 cursor-pointer hover:opacity-90 transition-opacity shadow-2xs"
+                      title={isMe ? 'Xem hồ sơ của bạn' : `Xem trang cá nhân của ${msg.senderName}`}
                       onClick={() => {
                         const targetEmail = msg.senderEmail || (isMe ? myEmail : activeInfo?.partnerEmail);
                         const targetName = msg.senderName || (isMe ? myName : activeInfo?.displayName);
                         handleOpenUserProfile(targetEmail, targetName);
                       }}
-                      className={`w-8 h-8 rounded-md text-white text-xs font-bold flex items-center justify-center shrink-0 mt-0.5 cursor-pointer hover:opacity-90 transition-opacity shadow-2xs ${
-                        isMe ? 'bg-slate-800' : 'bg-teal-700'
-                      }`}
-                      title={isMe ? 'Xem hồ sơ của bạn' : `Xem trang cá nhân của ${msg.senderName}`}
-                    >
-                      {initials(msg.senderName || msg.senderEmail || '')}
-                    </div>
+                    />
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-baseline gap-2 flex-wrap">
@@ -4660,17 +4765,26 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
 
                       {/* Reply Quote Banner (nếu đang trả lời 1 tin nhắn trước đó) */}
                       {msg.replyTo && !msg.isRecalled && (
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500 my-1 pl-2 border-l-2 border-teal-500 bg-slate-50/70 py-0.5 rounded-r">
-                          <Reply className="w-3 h-3 text-teal-600 shrink-0" />
+                        <div
+                          onClick={() => handleJumpToMessage(msg.replyTo?.id)}
+                          className="flex items-center gap-1.5 text-[11px] text-slate-500 my-1 pl-2.5 pr-2 py-1 border-l-2 border-teal-500 bg-teal-50/50 hover:bg-teal-100/70 rounded-r cursor-pointer max-w-fit transition-all duration-150 group/quote shadow-2xs hover:shadow-xs"
+                          title="Bấm để xem lại câu hỏi / tin nhắn gốc"
+                        >
+                          <Reply className="w-3 h-3 text-teal-600 shrink-0 group-hover/quote:scale-110 transition-transform" />
                           <button
                             type="button"
-                            onClick={() => handleOpenUserProfile(undefined, msg.replyTo?.senderName)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenUserProfile(undefined, msg.replyTo?.senderName);
+                            }}
                             className="font-semibold text-slate-700 hover:text-[#008689] hover:underline cursor-pointer transition-colors"
                             title={`Xem hồ sơ của ${msg.replyTo.senderName}`}
                           >
                             {msg.replyTo.senderName}:
                           </button>
-                          <span className="truncate italic text-slate-600">&ldquo;{msg.replyTo.text}&rdquo;</span>
+                          <span className="truncate italic text-slate-600 max-w-xs group-hover/quote:text-slate-900 transition-colors">
+                            &ldquo;{msg.replyTo.text}&rdquo;
+                          </span>
                         </div>
                       )}
 
@@ -5109,12 +5223,18 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             {/* ================================================================
                 SLACK RICH TEXT COMPOSER OR INACTIVE CHANNEL BANNER
             ================================================================ */}
-            <div className="p-3 sm:px-4 sm:py-3 border-t border-slate-200 bg-white space-y-2">
+            <div
+              className="p-3 sm:px-4 sm:py-3 border-t border-slate-200 bg-white space-y-2 transition-all duration-150"
+              style={{
+                paddingBottom: viewportBottomOffset > 0 ? `${Math.max(12, viewportBottomOffset + 8)}px` : undefined
+              }}
+            >
               <ChatComposer
                 isMemberOfChannel={Boolean(activeGroup.isDirect || isCurrentUserMember)}
                 isDirectChat={Boolean(activeGroup.isDirect)}
                 replyingToMessage={replyingToMessage}
                 onCancelReply={() => setReplyingToMessage(null)}
+                onJumpToReplyingMessage={handleJumpToMessage}
                 selectedAttachments={selectedAttachments}
                 selectedAttachment={selectedAttachment}
                 onRemoveAttachment={(idx) =>

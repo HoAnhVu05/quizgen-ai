@@ -11,6 +11,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { isExcludedAdminAccount } from './chatUtils';
+import { UserAvatar } from '../common/UserAvatar';
 
 interface FriendModalProps {
   isOpen: boolean;
@@ -122,9 +123,13 @@ export const FriendModal: React.FC<FriendModalProps> = ({
                     key={m.email}
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white text-[#008689] border border-teal-300 text-xs font-semibold shadow-2xs animate-scale-up"
                   >
-                    <span className="w-4 h-4 rounded-full bg-[#008689] text-white text-[9px] font-bold flex items-center justify-center shrink-0">
-                      {initials(m.fullName)}
-                    </span>
+                    <UserAvatar
+                      name={m.fullName}
+                      email={m.email}
+                      size="xs"
+                      rounded="rounded-full"
+                      className="w-4 h-4 text-[9px] shrink-0"
+                    />
                     <span className="truncate max-w-[140px]">{m.fullName}</span>
                     {m.academicTitle && (
                       <span className="text-[9px] font-normal text-teal-700 shrink-0">({m.academicTitle})</span>
@@ -212,9 +217,13 @@ export const FriendModal: React.FC<FriendModalProps> = ({
                           className="p-2.5 hover:bg-teal-50/70 flex items-center justify-between gap-3 cursor-pointer transition-colors group"
                         >
                           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                            <div className="w-8 h-8 rounded-lg bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0 group-hover:bg-[#008689] transition-colors">
-                              {initials(sug.name)}
-                            </div>
+                            <UserAvatar
+                              name={sug.name}
+                              email={sug.email}
+                              size="sm"
+                              rounded="rounded-lg"
+                              className="w-8 h-8 text-xs shrink-0"
+                            />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className="font-bold text-xs text-slate-800 truncate">{sug.name}</span>
@@ -265,9 +274,13 @@ export const FriendModal: React.FC<FriendModalProps> = ({
             return (
               <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-2.5 animate-fade-in">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center shrink-0 shadow-2xs">
-                    {initials(friendLookedUpUser.fullName)}
-                  </div>
+                  <UserAvatar
+                    name={friendLookedUpUser.fullName}
+                    email={friendLookedUpUser.email}
+                    size="md"
+                    rounded="rounded-xl"
+                    className="w-10 h-10 shrink-0 shadow-2xs"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
                       <span className="font-bold text-xs text-slate-900 truncate">{friendLookedUpUser.fullName}</span>
@@ -403,9 +416,13 @@ export const FriendModal: React.FC<FriendModalProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <div className="w-8 h-8 rounded-lg bg-teal-700 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                          {initials(f.name)}
-                        </div>
+                        <UserAvatar
+                          name={f.name}
+                          email={f.email}
+                          size="sm"
+                          rounded="rounded-lg"
+                          className="w-8 h-8 text-xs shrink-0"
+                        />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
                             <span className="font-bold text-xs text-slate-800 truncate">{f.name}</span>

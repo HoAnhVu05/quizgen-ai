@@ -34,7 +34,9 @@ import { UserProfile, ScreenId } from '../types';
 import apiClient, { API_BASE } from '../services/apiClient';
 import { openUserProfile } from '../utils/userProfileModalHelper';
 import { ImageLightboxModal } from './ImageLightboxModal';
+import { compressImageFile } from '../utils/imageCompressor';
 import { downloadFileSafely } from '../utils/fileDownloadHelper';
+import { UserAvatar } from './common/UserAvatar';
 
 interface ForumScreenProps {
   currentUser?: UserProfile | null;
@@ -47,6 +49,7 @@ export interface ForumPost {
   title: string;
   authorEmail?: string;
   authorName: string;
+  authorAvatarUrl?: string;
   authorTitle?: string;
   authorRole: string;
   department: string;
@@ -70,6 +73,7 @@ export interface ForumPost {
     id: string;
     authorEmail?: string;
     authorName: string;
+    authorAvatarUrl?: string;
     authorTitle?: string;
     content: string;
     createdAt: string;
@@ -77,15 +81,38 @@ export interface ForumPost {
   }>;
 }
 
-// Chuẩn hóa tiếng Việt không dấu để tìm kiếm chính xác
-const removeVietnameseTones = (str: string) => {
+// Chuẩn hóa tiếng Việt không dấu & loại bỏ dấu câu để tìm kiếm chính xác
+export const removeVietnameseTones = (str?: string | null) => {
+  if (!str || typeof str !== 'string') return '';
   return str
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D')
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"'’]/g, ' ')
+    .replace(/\s+/g, ' ')
     .toLowerCase()
     .trim();
+};
+
+// Tách từ viết liền PascalCase/camelCase (ví dụ: HeDieuHanh -> He Dieu Hanh, CS101 -> CS101)
+export const splitCamelCase = (str?: string | null) => {
+  if (!str) return '';
+  return str.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+};
+
+// Danh sách đại từ nhân xưng, học vị thường dùng khi tìm kiếm giảng viên
+const VIETNAMESE_HONORIFICS = new Set([
+  'thay', 'co', 'gv', 'giangvien', 'ban', 'ts', 'ths', 'kts', 'gs', 'pgs', 'ks', 'th'
+]);
+
+// Chuẩn hóa tên hiển thị tác giả kèm học vị (tránh lặp "TS. TS. Tên")
+export const getFormattedAuthorName = (name: string, title?: string) => {
+  if (!name) return '';
+  if (!title) return name;
+  const cleanTitle = title.trim();
+  if (name.toLowerCase().startsWith(cleanTitle.toLowerCase())) return name;
+  return `${cleanTitle} ${name}`;
 };
 
 // Định dạng thời gian tương đối chuẩn xác theo mốc thời gian thực
@@ -211,6 +238,81 @@ const DEFAULT_POSTS: ForumPost[] = [
   }
 ];
 
+// Chuyển đổi dữ liệu bài viết để lưu trữ trên Server đồng bộ đa thiết bị
+export const serializeForServer = (post: ForumPost) => {
+  const meta = {
+    title: post.title,
+    category: post.category,
+    tags: post.tags,
+    linkUrl: post.linkUrl,
+    linkLabel: post.linkLabel,
+    attachmentUrl: post.attachmentUrl,
+    authorAvatarUrl: post.authorAvatarUrl,
+    authorTitle: post.authorTitle,
+  };
+  const enrichedContent = `<!--FORUM_META:${JSON.stringify(meta)}-->\n${post.content || ''}`;
+
+  return {
+    id: post.id,
+    authorEmail: post.authorEmail || '',
+    authorName: post.authorName,
+    authorTitle: post.authorTitle || 'TS.',
+    authorRole: post.authorRole,
+    department: post.department,
+    tag: (post.tags && post.tags.find((t) => t && t !== 'Chung')) || 'Chuyên môn',
+    content: enrichedContent,
+    imageUrl: post.imageUrl || null,
+    attachmentFileName: post.attachmentFileName || null,
+    attachmentFileSize: post.attachmentFileSize || null,
+    attachmentDownloadUrl: post.attachmentUrl || null,
+    videoUrl: post.linkUrl || null,
+  };
+};
+
+// Khôi phục đầy đủ thông tin bài viết nhận từ Server
+export const parseServerPost = (sp: any, userEmail?: string): ForumPost => {
+  let content = sp.content || '';
+  let meta: any = {};
+  const metaMatch = content.match(/^<!--FORUM_META:(.*?)-->\s*\n?/);
+  if (metaMatch) {
+    try {
+      meta = JSON.parse(metaMatch[1]);
+      content = content.replace(/^<!--FORUM_META:(.*?)-->\s*\n?/, '');
+    } catch {}
+  }
+
+  const tags = meta.tags || (sp.tag ? [sp.tag] : ['Chuyên môn']);
+  const category = meta.category || (sp.category === 'exam' || sp.category === 'textbook' ? sp.category : 'qa');
+  const title = meta.title || sp.title || (content.split('\n')[0].slice(0, 80) || 'Thảo luận chuyên môn');
+
+  return {
+    id: sp.id,
+    title,
+    authorEmail: sp.authorEmail,
+    authorName: sp.authorName || 'Giảng viên UTH',
+    authorAvatarUrl: sp.authorAvatarUrl || meta.authorAvatarUrl || '',
+    authorTitle: meta.authorTitle || sp.authorTitle || 'TS.',
+    authorRole: sp.authorRole || 'Giảng viên',
+    department: sp.department || 'Khoa Công nghệ Thông tin',
+    createdAt: sp.createdAt || new Date().toISOString(),
+    timestamp: sp.timestamp,
+    category,
+    tags: Array.isArray(tags) ? tags : [tags],
+    content,
+    imageUrl: sp.imageUrl || meta.imageUrl,
+    attachmentFileName: sp.attachmentFileName || meta.attachmentFileName,
+    attachmentFileSize: sp.attachmentFileSize || meta.attachmentFileSize,
+    attachmentUrl: sp.attachmentDownloadUrl || sp.attachmentUrl || meta.attachmentUrl,
+    videoUrl: sp.videoUrl || meta.videoUrl,
+    linkUrl: meta.linkUrl || sp.videoUrl,
+    linkLabel: meta.linkLabel,
+    likes: sp.likes || 0,
+    hasLiked: sp.likedByEmails && userEmail ? sp.likedByEmails.includes(userEmail) : false,
+    isBookmarked: sp.bookmarkedByEmails && userEmail ? sp.bookmarkedByEmails.includes(userEmail) : false,
+    comments: Array.isArray(sp.comments) ? sp.comments : [],
+  };
+};
+
 export const ForumScreen: React.FC<ForumScreenProps> = ({
   currentUser,
   onNavigate,
@@ -233,6 +335,44 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     return DEFAULT_POSTS;
   });
 
+  // Đồng bộ danh sách bài viết từ Backend Server để các máy/tài khoản khác nhau cùng thấy bài mới của nhau
+  const fetchServerPosts = async () => {
+    try {
+      const res = await fetch('/api/v1/documents/forum/posts');
+      if (res.ok) {
+        const serverData = await res.json();
+        if (Array.isArray(serverData) && serverData.length > 0) {
+          const parsedServerPosts = serverData.map((sp) => parseServerPost(sp, currentUser?.email));
+
+          setPosts((prevPosts) => {
+            const map = new Map<string, ForumPost>();
+            DEFAULT_POSTS.forEach((p) => map.set(p.id, p));
+            prevPosts.forEach((p) => map.set(p.id, p));
+            parsedServerPosts.forEach((p) => map.set(p.id, p));
+
+            const merged = Array.from(map.values()).sort((a, b) => {
+              const tA = new Date(a.createdAt || a.timestamp || 0).getTime();
+              const tB = new Date(b.createdAt || b.timestamp || 0).getTime();
+              return tB - tA;
+            });
+
+            try {
+              localStorage.setItem('quizgen_academic_forum_posts_v3', JSON.stringify(merged));
+            } catch {}
+
+            return merged;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Lỗi đồng bộ bài viết diễn đàn từ server:', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchServerPosts();
+  }, [currentUser?.email]);
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'exam' | 'qa' | 'textbook'>('all');
   const [filterWithFileOnly, setFilterWithFileOnly] = useState(false);
@@ -241,9 +381,32 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
   const [lightboxImage, setLightboxImage] = useState<{ url: string; title?: string } | null>(null);
 
-  // Tự động kiểm tra và cuộn tới bài viết được điều hướng từ Q-Group
+  // Sao chép liên kết trực tiếp tới bài viết trên diễn đàn
+  const handleCopyPostLink = (post: ForumPost) => {
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const postLink = `${origin}${pathname}?post=${encodeURIComponent(post.id)}#${encodeURIComponent(post.id)}`;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(postLink)
+        .then(() => {
+          onShowToast('success', 'Đã sao chép liên kết bài viết', 'Bạn có thể gửi liên kết này cho đồng nghiệp để vào xem trực tiếp bài thảo luận.');
+        })
+        .catch(() => {
+          onShowToast('info', 'Liên kết bài viết', postLink);
+        });
+    } else {
+      onShowToast('info', 'Liên kết bài viết', postLink);
+    }
+  };
+
+  // Tự động kiểm tra và cuộn tới bài viết được điều hướng từ Q-Group hoặc Deep-link URL (?post=... hoặc #post-...)
   useEffect(() => {
-    const focusPostId = sessionStorage.getItem('quizgen_focus_post_id');
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlPostId = urlParams.get('post') || urlParams.get('postId') || urlParams.get('focus_post');
+    const hashPostId = window.location.hash ? window.location.hash.replace(/^#/, '') : null;
+    const focusPostId = sessionStorage.getItem('quizgen_focus_post_id') || urlPostId || hashPostId;
+
     if (!focusPostId) return;
 
     // Reset bộ lọc về 'all' và xóa search để bài viết chắc chắn được render trong DOM
@@ -253,10 +416,13 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     setHighlightedPostId(focusPostId);
 
     const scrollToTarget = () => {
+      const cleanId = focusPostId.replace(/^forum-post-/, '').replace(/^post-/, '');
       const el =
+        document.getElementById(focusPostId) ||
         document.getElementById(`post-${focusPostId}`) ||
         document.getElementById(`forum-post-${focusPostId}`) ||
-        document.getElementById(focusPostId);
+        document.getElementById(`post-${cleanId}`) ||
+        document.getElementById(cleanId);
 
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -268,8 +434,8 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
     // Cuộn ngay hoặc chờ render DOM
     if (!scrollToTarget()) {
-      const t1 = setTimeout(scrollToTarget, 200);
-      const t2 = setTimeout(scrollToTarget, 600);
+      const t1 = setTimeout(scrollToTarget, 300);
+      const t2 = setTimeout(scrollToTarget, 800);
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
@@ -278,7 +444,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
     const tHighlight = setTimeout(() => {
       setHighlightedPostId(null);
-    }, 5000);
+    }, 6000);
 
     return () => clearTimeout(tHighlight);
   }, [posts]);
@@ -383,6 +549,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       title: newTitle.trim(),
       authorEmail: currentUser?.email,
       authorName: currentUser?.fullName || 'TS. Hồ Anh Vũ',
+      authorAvatarUrl: currentUser?.avatarUrl || '',
       authorTitle: currentUser?.academicTitle || 'TS.',
       authorRole: currentUser?.role === 'admin' ? 'Quản trị viên' : 'Giảng viên',
       department: (currentUser as any)?.department || 'Khoa Công nghệ Thông tin',
@@ -402,6 +569,15 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     };
 
     savePosts([newPost, ...posts]);
+
+    // Đồng bộ tức thời lên Server backend để các thiết bị/tài khoản khác cùng thấy
+    try {
+      fetch('/api/v1/documents/forum/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serializeForServer(newPost)),
+      }).catch((err) => console.warn('Lỗi lưu bài viết lên server:', err));
+    } catch {}
 
     // Reset Form
     setNewTitle('');
@@ -434,18 +610,25 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       return;
     }
 
-    setAttachedFileName(file.name);
+    let fileToUpload = file;
+    if (file.type.startsWith('image/')) {
+      try {
+        fileToUpload = await compressImageFile(file);
+      } catch {}
+    }
+
+    setAttachedFileName(fileToUpload.name);
     const sizeStr =
-      file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.round(file.size / 1024)} KB`;
+      fileToUpload.size > 1024 * 1024
+        ? `${(fileToUpload.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(fileToUpload.size / 1024)} KB`;
     setAttachedFileSize(sizeStr);
     setShowAttachFile(true);
     setIsUploadingFile(true);
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', fileToUpload);
       const res = await apiClient
         .fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
           method: 'POST',
@@ -500,6 +683,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       id: `c-${Date.now()}`,
       authorEmail: currentUser?.email,
       authorName: currentUser?.fullName || 'TS. Hồ Anh Vũ',
+      authorAvatarUrl: currentUser?.avatarUrl || '',
       authorTitle: currentUser?.academicTitle || 'TS.',
       content: draft,
       createdAt: new Date().toISOString()
@@ -557,6 +741,11 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     if (window.confirm('Thầy/Cô có chắc chắn muốn xóa chủ đề thảo luận này không?')) {
       savePosts(posts.filter((p) => p.id !== postId));
       setActiveMenuId(null);
+      try {
+        fetch(`/api/v1/documents/forum/posts/${encodeURIComponent(postId)}`, {
+          method: 'DELETE',
+        }).catch((err) => console.warn('Lỗi xóa bài trên server:', err));
+      } catch {}
       onShowToast('success', 'Đã xóa', 'Chủ đề đã được gỡ bỏ khỏi Diễn đàn.');
     }
   };
@@ -590,17 +779,24 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       return;
     }
 
-    setEditAttachedFileName(file.name);
+    let fileToUpload = file;
+    if (file.type.startsWith('image/')) {
+      try {
+        fileToUpload = await compressImageFile(file);
+      } catch {}
+    }
+
+    setEditAttachedFileName(fileToUpload.name);
     const sizeStr =
-      file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.round(file.size / 1024)} KB`;
+      fileToUpload.size > 1024 * 1024
+        ? `${(fileToUpload.size / (1024 * 1024)).toFixed(1)} MB`
+        : `${Math.round(fileToUpload.size / 1024)} KB`;
     setEditAttachedFileSize(sizeStr);
     setIsEditUploadingFile(true);
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', fileToUpload);
       const res = await apiClient
         .fetch(`${API_BASE}/documents/qgroups/upload-attachment`, {
           method: 'POST',
@@ -653,25 +849,32 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       finalTags.push(pendingTag);
     }
 
-    const updated = posts.map((p) =>
-      p.id === editingPost.id
-        ? {
-            ...p,
-            title: editTitle.trim(),
-            content: editContent.trim(),
-            category: editCategory,
-            tags: finalTags,
-            attachmentFileName: editAttachedFileName.trim() || undefined,
-            attachmentFileSize: editAttachedFileSize.trim() || undefined,
-            attachmentUrl: editAttachedFileUrl.trim() || undefined,
-            imageUrl: editImageUrl.trim() || undefined,
-            linkUrl: editLinkUrl.trim() || undefined,
-            linkLabel: editLinkLabel.trim() || undefined,
-          }
-        : p
-    );
+    const updatedPost = {
+      ...editingPost,
+      title: editTitle.trim(),
+      content: editContent.trim(),
+      category: editCategory,
+      tags: finalTags,
+      attachmentFileName: editAttachedFileName.trim() || undefined,
+      attachmentFileSize: editAttachedFileSize.trim() || undefined,
+      attachmentUrl: editAttachedFileUrl.trim() || undefined,
+      imageUrl: editImageUrl.trim() || undefined,
+      linkUrl: editLinkUrl.trim() || undefined,
+      linkLabel: editLinkLabel.trim() || undefined,
+    };
+
+    const updated = posts.map((p) => (p.id === editingPost.id ? updatedPost : p));
     savePosts(updated);
     setEditingPost(null);
+
+    try {
+      fetch(`/api/v1/documents/forum/posts/${encodeURIComponent(editingPost.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(serializeForServer(updatedPost)),
+      }).catch((err) => console.warn('Lỗi cập nhật bài lên server:', err));
+    } catch {}
+
     onShowToast('success', 'Cập nhật thành công', 'Nội dung và tệp đính kèm đã được lưu thay đổi.');
   };
 
@@ -740,7 +943,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
         id: sharingPost.id,
         tag: (sharingPost.tags && sharingPost.tags.filter((t) => t && t !== 'Chung')[0]) || 'Chuyên môn',
         title: sharingPost.title,
-        authorName: `${sharingPost.authorTitle ? sharingPost.authorTitle + ' ' : ''}${sharingPost.authorName}`,
+        authorName: getFormattedAuthorName(sharingPost.authorName, sharingPost.authorTitle),
         department: sharingPost.department,
         content: sharingPost.content.slice(0, 150) + '...',
         fullContent: sharingPost.content,
@@ -805,7 +1008,8 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
   // Filter Logic
   const filteredPosts = posts.filter((p) => {
     // 1. Phân loại theo chuyên mục
-    if (selectedCategory !== 'all' && p.category !== selectedCategory) {
+    // Khi đang nhập từ khóa tìm kiếm (searchQuery), tự động tìm kiếm trên toàn bộ diễn đàn để không bỏ sót tác giả hoặc chủ đề
+    if (!searchQuery.trim() && selectedCategory !== 'all' && p.category !== selectedCategory) {
       return false;
     }
 
@@ -814,16 +1018,81 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       return false;
     }
 
-    // 3. Tìm kiếm tiếng Việt không dấu
+    // 3. Tìm kiếm thông minh tiếng Việt không dấu & word-boundary (hỗ trợ Tên tác giả kèm học vị TS/ThS/KTS, tiêu đề, nội dung, thẻ tag & bình luận)
     if (searchQuery.trim()) {
-      const q = removeVietnameseTones(searchQuery);
-      const titleMatch = removeVietnameseTones(p.title).includes(q);
-      const contentMatch = removeVietnameseTones(p.content).includes(q);
-      const authorMatch = removeVietnameseTones(p.authorName).includes(q);
-      const deptMatch = removeVietnameseTones(p.department).includes(q);
-      const tagMatch = p.tags.some((t) => removeVietnameseTones(t).includes(q));
+      const qNorm = removeVietnameseTones(searchQuery);
+      const rawTokens = qNorm.split(' ').filter(Boolean);
+      if (rawTokens.length === 0) return true;
 
-      if (!titleMatch && !contentMatch && !authorMatch && !deptMatch && !tagMatch) {
+      // Lọc bỏ từ xưng hô nếu có từ khác đi kèm (ví dụ: "Thầy Vũ" -> tìm "Vũ", "Cô Hân" -> tìm "Hân", "Thầy Hiệu" -> tìm "Hiệu")
+      let searchTokens = rawTokens;
+      const meaningfulTokens = rawTokens.filter((t) => !VIETNAMESE_HONORIFICS.has(t));
+      if (meaningfulTokens.length > 0) {
+        searchTokens = meaningfulTokens;
+      }
+
+      // Tách từ cho Tác giả
+      const authorNorm = removeVietnameseTones(`${p.authorTitle || ''} ${p.authorName || ''} ${p.authorRole || ''}`);
+      const authorWords = authorNorm.split(' ').filter(Boolean);
+
+      // Tách từ cho Tiêu đề
+      const titleNorm = removeVietnameseTones(p.title || '');
+      const titleWords = titleNorm.split(' ').filter(Boolean);
+
+      // Tách từ cho Tags (xử lý cả camelCase như #HeDieuHanh -> "he dieu hanh")
+      const tagsExpanded = (p.tags || []).map((t) => splitCamelCase(t)).join(' ');
+      const tagsNorm = removeVietnameseTones(tagsExpanded);
+      const tagsWords = tagsNorm.split(' ').filter(Boolean);
+
+      // Tách từ cho Nội dung
+      const contentNorm = removeVietnameseTones(p.content || '');
+      const contentWords = contentNorm.split(' ').filter(Boolean);
+
+      // Phòng ban & Bình luận
+      const deptNorm = removeVietnameseTones(p.department || '');
+      const deptWords = deptNorm.split(' ').filter(Boolean);
+
+      const commentsNorm = removeVietnameseTones(
+        (p.comments || []).map((c) => `${c.authorTitle || ''} ${c.authorName || ''} ${c.content || ''}`).join(' ')
+      );
+      const commentsWords = commentsNorm.split(' ').filter(Boolean);
+
+      const fullTextNorm = `${authorNorm} ${titleNorm} ${contentNorm} ${deptNorm} ${tagsNorm} ${commentsNorm}`;
+
+      // A. Nếu cụm từ nguyên văn khớp (exact phrase match)
+      if (
+        fullTextNorm.includes(` ${qNorm} `) ||
+        fullTextNorm.startsWith(`${qNorm} `) ||
+        fullTextNorm.endsWith(` ${qNorm}`) ||
+        fullTextNorm === qNorm
+      ) {
+        return true;
+      }
+
+      // B. Từng token trong câu tìm kiếm phải khớp ít nhất một trường dữ liệu thích hợp
+      const allTokensMatch = searchTokens.every((tok) => {
+        // 1. Khớp chính xác từ tác giả (ví dụ: "Vũ", "Hiệu", "Hân", "Bích")
+        if (authorWords.includes(tok)) return true;
+
+        // 2. Khớp từ trong tiêu đề hoặc tags
+        if (titleWords.includes(tok) || tagsWords.includes(tok)) return true;
+
+        // 3. Khớp từ trong bình luận hoặc phòng ban
+        if (commentsWords.includes(tok) || deptWords.includes(tok)) return true;
+
+        // 4. Khớp từ trong nội dung bài viết
+        if (contentWords.includes(tok)) return true;
+
+        // 5. Nếu mã môn / tag viết hoa viết liền (ví dụ: "cs101" bằng đúng tag)
+        if ((p.tags || []).some((t) => removeVietnameseTones(t) === tok)) return true;
+
+        // 6. Với token dài (>= 5 ký tự), cho phép tìm substring trong toàn bộ bài viết
+        if (tok.length >= 5 && fullTextNorm.includes(tok)) return true;
+
+        return false;
+      });
+
+      if (!allTokensMatch) {
         return false;
       }
     }
@@ -1260,30 +1529,38 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
             return (
               <article
                 key={post.id}
-                id={`post-${post.id}`}
+                id={post.id}
+                data-post-id={post.id}
                 className={`bg-white rounded-xl p-3.5 sm:p-5 border transition-all shadow-2xs space-y-2.5 sm:space-y-3 ${
-                  isHighlighted
+                  isHighlighted || highlightedPostId === post.id || highlightedPostId === `post-${post.id}`
                     ? 'ring-2 ring-teal-500 border-teal-500 bg-teal-50/20 shadow-lg scale-[1.005]'
                     : 'border-slate-200/90 hover:border-slate-300'
                 }`}
               >
-                {/* Highlight banner khi được chuyển từ Q-Group */}
-                {isHighlighted && (
+                {/* Highlight banner khi được chuyển từ Q-Group hoặc Deep-link */}
+                {(isHighlighted || highlightedPostId === post.id || highlightedPostId === `post-${post.id}`) && (
                   <div className="px-3 py-1.5 rounded-lg bg-teal-100/90 border border-teal-300 text-teal-800 text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs animate-pulse">
                     <Sparkles className="w-3.5 h-3.5 text-teal-700" />
-                    <span>Đang xem bài viết được chuyển từ Q-Group</span>
+                    <span>Đang xem bài viết được chia sẻ</span>
                   </div>
                 )}
                 {/* 1. Header: Author info & Context Menu (Không bị ép chữ trên mobile) */}
                 <div className="flex items-start justify-between gap-2.5 text-xs">
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div
-                      onClick={() => openUserProfile(post.authorEmail || `${post.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, post.authorName)}
-                      className="w-8 h-8 rounded-lg bg-slate-900 hover:bg-[#008689] text-white font-bold text-xs flex items-center justify-center shrink-0 cursor-pointer transition-colors shadow-2xs"
+                    <UserAvatar
+                      avatarUrl={
+                        post.authorEmail && currentUser?.email && post.authorEmail.toLowerCase() === currentUser.email.toLowerCase()
+                          ? currentUser.avatarUrl
+                          : post.authorAvatarUrl
+                      }
+                      name={post.authorName}
+                      email={post.authorEmail || `${post.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`}
+                      size="sm"
+                      rounded="rounded-lg"
+                      className="cursor-pointer hover:opacity-90 transition-opacity shadow-2xs"
                       title={`Xem hồ sơ của ${post.authorName}`}
-                    >
-                      {post.authorName.slice(0, 2).toUpperCase()}
-                    </div>
+                      onClick={() => openUserProfile(post.authorEmail || `${post.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, post.authorName)}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <button
@@ -1292,7 +1569,7 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           className="font-bold text-slate-900 hover:text-[#008689] hover:underline truncate cursor-pointer text-left transition-colors"
                           title={`Xem hồ sơ của ${post.authorName}`}
                         >
-                          {post.authorTitle ? `${post.authorTitle} ` : ''}{post.authorName}
+                          {getFormattedAuthorName(post.authorName, post.authorTitle)}
                         </button>
                         <span className="text-slate-300 hidden sm:inline">•</span>
                         <span className="text-slate-500 text-[11px] truncate hidden sm:inline">{post.department}</span>
@@ -1337,10 +1614,22 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                         <button
                           type="button"
                           onClick={() => handleOpenShareModal(post)}
-                          className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                          className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
                         >
                           <Share2 className="w-3.5 h-3.5 text-slate-500" />
                           <span>Chia sẻ vào QGroup</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            handleCopyPostLink(post);
+                          }}
+                          className="w-full px-3 py-1.5 text-left text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+                        >
+                          <LinkIcon className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Sao chép liên kết</span>
                         </button>
 
                         <div className="h-px bg-slate-100 my-1" />
@@ -1493,14 +1782,26 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleOpenShareModal(post)}
-                    className="text-slate-400 hover:text-slate-700 font-medium flex items-center gap-1 transition-colors cursor-pointer"
-                  >
-                    <Share2 className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Chia sẻ vào QGroup</span>
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleCopyPostLink(post)}
+                      className="text-slate-400 hover:text-slate-700 font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Sao chép liên kết trực tiếp tới bài viết này"
+                    >
+                      <LinkIcon className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Sao chép link</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenShareModal(post)}
+                      className="text-slate-400 hover:text-slate-700 font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Chia sẻ vào QGroup</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 9. Collapsible Comments Section with Edit & Delete */}
@@ -1522,14 +1823,30 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           return (
                             <div key={cm.id} className="p-2.5 bg-slate-50 rounded-lg text-xs space-y-1 group">
                               <div className="flex items-center justify-between">
-                                <button
-                                  type="button"
-                                  onClick={() => openUserProfile(cm.authorEmail || `${cm.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, cm.authorName)}
-                                  className="font-bold text-slate-900 hover:text-[#008689] hover:underline cursor-pointer text-left transition-colors"
-                                  title={`Xem hồ sơ của ${cm.authorName}`}
-                                >
-                                  {cm.authorTitle ? `${cm.authorTitle} ` : ''}{cm.authorName}
-                                </button>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <UserAvatar
+                                    avatarUrl={
+                                      cm.authorEmail && currentUser?.email && cm.authorEmail.toLowerCase() === currentUser.email.toLowerCase()
+                                        ? currentUser.avatarUrl
+                                        : cm.authorAvatarUrl
+                                    }
+                                    name={cm.authorName}
+                                    email={cm.authorEmail || `${cm.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`}
+                                    size="xs"
+                                    rounded="rounded-md"
+                                    className="cursor-pointer hover:opacity-90 transition-opacity shadow-2xs shrink-0"
+                                    title={`Xem hồ sơ của ${cm.authorName}`}
+                                    onClick={() => openUserProfile(cm.authorEmail || `${cm.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, cm.authorName)}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => openUserProfile(cm.authorEmail || `${cm.authorName.toLowerCase().replace(/\s+/g, '')}@uth.edu.vn`, cm.authorName)}
+                                    className="font-bold text-slate-900 hover:text-[#008689] hover:underline cursor-pointer text-left transition-colors truncate"
+                                    title={`Xem hồ sơ của ${cm.authorName}`}
+                                  >
+                                    {getFormattedAuthorName(cm.authorName, cm.authorTitle)}
+                                  </button>
+                                </div>
 
                                 <div className="flex items-center gap-2">
                                   <span className="text-[10px] text-slate-400 font-mono">{cmTime}</span>
@@ -1601,6 +1918,14 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
 
                     {/* Quick Reply Input */}
                     <div className="flex items-center gap-2 pt-1">
+                      <UserAvatar
+                        avatarUrl={currentUser?.avatarUrl}
+                        name={currentUser?.fullName}
+                        email={currentUser?.email}
+                        size="xs"
+                        rounded="rounded-md"
+                        className="shadow-2xs shrink-0"
+                      />
                       <input
                         type="text"
                         value={replyDrafts[post.id] || ''}

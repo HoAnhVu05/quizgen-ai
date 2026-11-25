@@ -1,10 +1,12 @@
 import type { QGroup } from '../../types';
+import { getUserAvatarUrl } from '../../utils/avatarHelper';
 
 // ─── Direct Partner Resolution for Dual-Sided DM Rooms ──────────────────────
 export interface ResolvedChatInfo {
   displayName: string;
   displayEmail?: string;
   partnerEmail?: string;
+  avatarUrl?: string;
   displayRoleOrMembers: string;
   isDirect: boolean;
   avatarInitials: string;
@@ -31,10 +33,12 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
   // If I am the creator/owner -> Partner is the directPartner
   if (cleanMyEmail === cleanOwnerEmail && cleanPartnerEmail) {
     const name = group.directPartnerName || cleanPartnerEmail.split('@')[0];
+    const avt = (group as any).directPartnerAvatarUrl || getUserAvatarUrl(cleanPartnerEmail, name) || undefined;
     return {
       displayName: name,
       displayEmail: cleanPartnerEmail,
       partnerEmail: cleanPartnerEmail,
+      avatarUrl: avt,
       displayRoleOrMembers: 'Đồng nghiệp • Tin nhắn 1-1',
       isDirect: true,
       avatarInitials: name.slice(0, 2).toUpperCase(),
@@ -44,10 +48,12 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
   // If I am the recipient -> Partner is the owner!
   if (cleanMyEmail !== cleanOwnerEmail && cleanOwnerEmail) {
     const name = group.ownerName || cleanOwnerEmail.split('@')[0];
+    const avt = (group as any).ownerAvatarUrl || getUserAvatarUrl(cleanOwnerEmail, name) || undefined;
     return {
       displayName: name,
       displayEmail: cleanOwnerEmail,
       partnerEmail: cleanOwnerEmail,
+      avatarUrl: avt,
       displayRoleOrMembers: 'Đồng nghiệp • Tin nhắn 1-1',
       isDirect: true,
       avatarInitials: name.slice(0, 2).toUpperCase(),
@@ -62,10 +68,12 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
     const name = group.directPartnerName && group.directPartnerName !== group.ownerName
       ? group.directPartnerName
       : otherEmail.split('@')[0];
+    const avt = (group as any).directPartnerAvatarUrl || (group as any).ownerAvatarUrl || getUserAvatarUrl(otherEmail, name) || undefined;
     return {
       displayName: name,
       displayEmail: otherEmail,
       partnerEmail: otherEmail,
+      avatarUrl: avt,
       displayRoleOrMembers: 'Đồng nghiệp • Tin nhắn 1-1',
       isDirect: true,
       avatarInitials: name.slice(0, 2).toUpperCase(),
@@ -73,10 +81,12 @@ export function resolveChatDisplayInfo(group: QGroup, myEmail: string): Resolved
   }
 
   const fbEmail = group.directPartnerEmail || group.ownerEmail;
+  const avt = (group as any).directPartnerAvatarUrl || (group as any).ownerAvatarUrl || getUserAvatarUrl(fbEmail, group.name) || undefined;
   return {
     displayName: group.name,
     displayEmail: fbEmail,
     partnerEmail: fbEmail,
+    avatarUrl: avt,
     displayRoleOrMembers: 'Tin nhắn riêng 1-1',
     isDirect: true,
     avatarInitials: (group.name || 'DM').slice(0, 2).toUpperCase(),
