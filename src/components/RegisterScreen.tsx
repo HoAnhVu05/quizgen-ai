@@ -399,7 +399,6 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onRegister, onNa
                 }}
               >
                 <span>{currentTheme.seasonLabel}</span>
-                <span>{currentTheme.greetingTitle}</span>
               </div>
             )}
           </div>

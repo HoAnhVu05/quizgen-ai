@@ -601,9 +601,13 @@ def grant_user_plan_endpoint(user_id: str, req: GrantPlanRequest, db: Session = 
     now_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
 
     expires_at_str = None
-    if req.duration_days > 0:
+    if norm_tier != "FREE" and req.duration_days > 0:
         exp_date = now_dt + timedelta(days=req.duration_days)
         expires_at_str = exp_date.strftime("%Y-%m-%d %H:%M:%S")
+
+    # Nếu hạ về FREE, reset quota về mặc định gói trải nghiệm nếu chưa truyền custom
+    custom_quota_exams = req.custom_quota_exams if norm_tier != "FREE" else (req.custom_quota_exams if req.custom_quota_exams is not None else 2)
+    custom_quota_storage_mb = req.custom_quota_storage_mb if norm_tier != "FREE" else (req.custom_quota_storage_mb if req.custom_quota_storage_mb is not None else 100)
 
     with get_auth_connection() as conn:
         user = conn.execute("SELECT id, email, role, plan_tier FROM users WHERE id = ?", (user_id,)).fetchone()
@@ -628,7 +632,7 @@ def grant_user_plan_endpoint(user_id: str, req: GrantPlanRequest, db: Session = 
             """UPDATE users 
                SET plan_tier = ?, plan_expires_at = ?, custom_quota_exams = ?, custom_quota_storage_mb = ?, updated_at = ?
                WHERE id = ?""",
-            (norm_tier, expires_at_str, req.custom_quota_exams, req.custom_quota_storage_mb, now_str, user_id)
+            (norm_tier, expires_at_str, custom_quota_exams, custom_quota_storage_mb, now_str, user_id)
         )
         conn.commit()
 

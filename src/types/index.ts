@@ -208,6 +208,7 @@ export interface QGroupMessage {
   senderEmail: string;
   senderName: string;
   senderTitle?: string;
+  senderAvatarUrl?: string;
   avatarColor?: string;
   text?: string;
   timestamp: string;
@@ -271,6 +272,8 @@ export interface QGroup {
   isDirect?: boolean;
   directPartnerEmail?: string;
   directPartnerName?: string;
+  directPartnerAvatarUrl?: string;
+  ownerAvatarUrl?: string;
   unreadCount?: number;
   muted?: boolean;
   updatedAt?: number;
@@ -295,6 +298,7 @@ export interface FriendRequest {
   senderEmail: string;
   senderName: string;
   senderTitle?: string;
+  senderAvatarUrl?: string;
   senderAvatarColor?: string;
   targetEmail: string;
   recipientEmail?: string;
@@ -308,12 +312,14 @@ export interface PublicUserProfile {
   fullName: string;
   academicTitle?: string;
   role: UserRole;
+  university?: string;
   faculty?: string;
   department?: string;
   office?: string;
   subjects?: string;
   researchFocus?: string;
   bio?: string;
+  avatarUrl?: string;
   avatarColor?: string;
   isFriend?: boolean;
   hasPendingRequest?: boolean;

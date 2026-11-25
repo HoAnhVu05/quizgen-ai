@@ -15,6 +15,7 @@ import { formatVietnameseDateTime } from '../../utils/dateUtils';
 import { AdminGrantPlanModal, GrantPlanPayload } from './AdminGrantPlanModal';
 import apiClient from '../../services/apiClient';
 import { openUserProfile } from '../../utils/userProfileModalHelper';
+import { UserAvatar } from '../common/UserAvatar';
 
 export interface AdminUsersTabProps {
   usersList: UserProfile[];
@@ -61,6 +62,10 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
       const target = usersList.find((u) => u.id === payload.userId || u.email === payload.userEmail);
       if (target) {
         target.planTier = payload.planTier;
+      }
+      if (currentUser && (currentUser.id === payload.userId || currentUser.email.toLowerCase() === payload.userEmail.toLowerCase())) {
+        const updated = { ...currentUser, planTier: payload.planTier.toUpperCase() };
+        localStorage.setItem('quizgen_user', JSON.stringify(updated));
       }
       setGrantPlanUser(null);
       alert(`Đã cấp thành công gói ${payload.planTier.toUpperCase()} và đồng bộ đặc quyền sang CSDL hệ thống!`);
@@ -179,19 +184,16 @@ export const AdminUsersTab: React.FC<AdminUsersTabProps> = ({
                         <tr key={u.id || u.email} className={`transition-colors ${isLocked ? 'bg-rose-50/30' : 'hover:bg-slate-50/70'}`}>
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
-                              <div
-                                onClick={() => openUserProfile(u.email, u.fullName)}
-                                className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs cursor-pointer hover:scale-105 transition-all shadow-2xs ${
-                                  u.role === 'admin'
-                                    ? 'bg-rose-50 text-[#da1c2d] border border-rose-200'
-                                    : u.role === 'head_of_department'
-                                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                                    : 'bg-teal-50 text-[#008689] border border-teal-200'
-                                }`}
+                              <UserAvatar
+                                avatarUrl={(u as any).avatar_url || (u as any).avatarUrl}
+                                name={u.fullName}
+                                email={u.email}
+                                size="sm"
+                                rounded="rounded-full"
+                                className="cursor-pointer hover:scale-105 transition-all shadow-2xs shrink-0"
                                 title="Bấm để xem hồ sơ cá nhân"
-                              >
-                                {u.fullName ? u.fullName.slice(0, 2).toUpperCase() : 'ND'}
-                              </div>
+                                onClick={() => openUserProfile(u.email, u.fullName)}
+                              />
                               <div>
                                 <div className="font-bold text-slate-900 flex items-center gap-1.5">
                                   <button

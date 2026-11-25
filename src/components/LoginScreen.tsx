@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   GraduationCap,
   Mail,
@@ -28,6 +28,7 @@ import { UserProfile, UserRole } from '../types';
 import apiClient from '../services/apiClient';
 import { useTheme } from '../context/ThemeContext';
 import { ThemeCornerSticker, ThemeLogoBadge, ThemeHangingScrolls } from './ThemeStickers';
+import { saveUserAvatarSync } from '../utils/avatarHelper';
 
 declare global {
   interface Window {
@@ -57,6 +58,27 @@ declare global {
 }
 
 const GOOGLE_GSI_SRC = 'https://accounts.google.com/gsi/client';
+
+const FORGOT_PW_STORAGE_KEY = 'quizgen_forgot_password_session';
+
+const loadSavedForgotSession = () => {
+  try {
+    const raw = sessionStorage.getItem(FORGOT_PW_STORAGE_KEY) || localStorage.getItem(FORGOT_PW_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.expiresAt && Date.now() < parsed.expiresAt) {
+      return parsed;
+    }
+  } catch {}
+  return null;
+};
+
+const clearSavedForgotSession = () => {
+  try {
+    sessionStorage.removeItem(FORGOT_PW_STORAGE_KEY);
+    localStorage.removeItem(FORGOT_PW_STORAGE_KEY);
+  } catch {}
+};
 
 const isValidGoogleClientId = (clientId: string): boolean => {
   const trimmed = clientId.trim();
@@ -249,11 +271,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   const [admin2FAFailedCount, setAdmin2FAFailedCount] = useState(0);
 
   // ─── Forgot Password Modal States (2-Step OTP Flow) ───────────────────────
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
-  const [forgotEmail, setForgotEmail] = useState('');
+  const savedForgotSession = useMemo(() => loadSavedForgotSession(), []);
+
+  const [showForgotModal, setShowForgotModal] = useState<boolean>(() => {
+    return savedForgotSession?.showModal ?? false;
+  });
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(() => {
+    return (savedForgotSession?.step as 1 | 2 | 3) || 1;
+  });
+  const [forgotEmail, setForgotEmail] = useState<string>(() => {
+    return savedForgotSession?.email || '';
+  });
   const [forgotOtp, setForgotOtp] = useState('');
-  const [forgotDevOtp, setForgotDevOtp] = useState('');
+  const [forgotDevOtp, setForgotDevOtp] = useState<string>(() => {
+    return savedForgotSession?.devOtp || '';
+  });
   const [forgotNewPass, setForgotNewPass] = useState('');
   const [forgotConfirmPass, setForgotConfirmPass] = useState('');
   const [showForgotNewPass, setShowForgotNewPass] = useState(false);
@@ -261,7 +293,34 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
   const [forgotLoading, setForgotLoading] = useState(false);
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const [isSubmittingReset, setIsSubmittingReset] = useState(false);
-  const [forgotResendTimer, setForgotResendTimer] = useState(0);
+  const [forgotResendTimer, setForgotResendTimer] = useState<number>(() => {
+    if (savedForgotSession?.resendTimerExpiresAt) {
+      const remaining = Math.round((savedForgotSession.resendTimerExpiresAt - Date.now()) / 1000);
+      return Math.max(0, remaining);
+    }
+    return 0;
+  });
+
+  // Tự động lưu và đồng bộ tiến trình nhập OTP để không bị mất khi người dùng chuyển sang Gmail xem mã
+  useEffect(() => {
+    if (showForgotModal && (forgotStep === 1 || forgotStep === 2) && forgotEmail) {
+      try {
+        const payload = {
+          showModal: true,
+          step: forgotStep,
+          email: forgotEmail,
+          devOtp: forgotDevOtp,
+          resendTimerExpiresAt: forgotResendTimer > 0 ? Date.now() + forgotResendTimer * 1000 : undefined,
+          expiresAt: Date.now() + 15 * 60 * 1000,
+        };
+        const str = JSON.stringify(payload);
+        sessionStorage.setItem(FORGOT_PW_STORAGE_KEY, str);
+        localStorage.setItem(FORGOT_PW_STORAGE_KEY, str);
+      } catch {}
+    } else if (!showForgotModal || forgotStep === 3) {
+      clearSavedForgotSession();
+    }
+  }, [showForgotModal, forgotStep, forgotEmail, forgotDevOtp, forgotResendTimer]);
 
   useEffect(() => {
     let timer: any = null;
@@ -389,6 +448,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
     localStorage.setItem('quizgen_remember_me', remember ? 'true' : 'false');
     if (remember) {
       localStorage.setItem('quizgen_last_active', now);
+    }
+    if (user.avatarUrl && user.email) {
+      saveUserAvatarSync(user.email, user.avatarUrl);
     }
   };
 
@@ -1358,7 +1420,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 }}
               >
                 <span>{currentTheme.seasonLabel}</span>
-                <span>{currentTheme.greetingTitle}</span>
               </div>
             )}
           </div>
@@ -1617,7 +1678,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
           <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4 animate-slideUp">
             <button
               type="button"
-              onClick={() => setShowForgotModal(false)}
+              onClick={() => {
+                setShowForgotModal(false);
+                setForgotStep(1);
+                clearSavedForgotSession();
+              }}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
               title="Đóng"
             >
@@ -1823,7 +1888,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowForgotModal(false)}
+                  onClick={() => {
+                    setShowForgotModal(false);
+                    setForgotStep(1);
+                    clearSavedForgotSession();
+                  }}
                   className="w-full py-2.5 rounded-xl font-bold text-xs text-white bg-[#008689] hover:bg-[#1d999d] transition-colors shadow-md shadow-[#008689]/20"
                 >
                   Đăng nhập bằng mật khẩu mới ngay

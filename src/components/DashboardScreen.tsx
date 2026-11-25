@@ -424,7 +424,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const roleHeaderConfig = {
     lecturer: {
       badge: 'Không gian Biên soạn Giảng viên',
-      title: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+      title: 'Không gian Khảo thí & Biên soạn Học thuật',
       subtitle:
         'Tải lên giáo trình môn học, cấu hình ma trận Bloom và đối soát trích dẫn trước khi gửi đề thi lên Bộ môn.'
     },

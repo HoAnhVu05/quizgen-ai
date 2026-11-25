@@ -16,6 +16,45 @@ export interface TokenPayload {
 
 export const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
+/**
+ * Chuẩn hóa URL hình ảnh an toàn tuyệt đối, loại trừ hoàn toàn lỗi nối chuỗi kép /api/v1/api/v1
+ * Hỗ trợ Data URI base64, Blob URL, HTTP/HTTPS bên ngoài và đường dẫn nội bộ (/documents/images/...)
+ */
+export function resolveImageUrl(rawUrl?: string | null): string {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return '';
+
+  // Data URI base64, Blob URL hoặc URL đầy đủ
+  if (
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://')
+  ) {
+    return trimmed;
+  }
+
+  // Loại bỏ các tiền tố trùng lặp /api/v1 hoặc api/v1 ở đầu chuỗi rawUrl
+  let cleanPath = trimmed.replace(/^\/?api\/v1\/?/, '');
+
+  // Nếu chuỗi chỉ là tên tệp (vd: tb-055_p13_img1.jpeg) không có dấu gạch chéo
+  if (!cleanPath.includes('/')) {
+    cleanPath = `documents/images/${cleanPath}`;
+  }
+
+  // Lấy base URL từ môi trường hoặc fallback về /api/v1
+  const rawBase = ((import.meta as any).env?.VITE_API_BASE_URL || '/api/v1').trim();
+  const baseNormalized = rawBase.replace(/\/+$/, '');
+
+  // Tránh nối lặp /api/v1 nếu base đã có /api/v1 và cleanPath cũng bắt đầu bằng api/v1
+  if (cleanPath.startsWith('api/v1/')) {
+    cleanPath = cleanPath.substring(7);
+  }
+
+  return `${baseNormalized}/${cleanPath.replace(/^\/+/, '')}`;
+}
+
 class ApiClient {
   private isRefreshing = false;
   private refreshPromise: Promise<string | null> | null = null;

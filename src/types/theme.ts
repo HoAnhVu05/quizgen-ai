@@ -80,7 +80,7 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
     name: 'Tết & Mùa Xuân (Spring & Tet)',
     seasonLabel: '🌸 Xuân Đinh Mùi 2027',
     tagline: 'Mai vàng nở rộ, đào thắm khoe sắc, mừng xuân Đinh Mùi 2027',
-    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingTitle: 'Hệ Thống Khảo Thí & Ngân Hàng Đề Thi UTH',
     greetingSubtitle: 'Chào mừng Xuân Đinh Mùi 2027. 🧧 Kính chúc quý thầy cô sức khỏe, thành công và nhiều may mắn!',
     colors: {
       primary: '#B82025',
@@ -106,7 +106,7 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
     name: 'Mùa Hạ Rực Rỡ (Modern Tropical Summer)',
     seasonLabel: '☀️ Mùa Hạ',
     tagline: 'Biển xanh, cát vàng, ánh dương nhiệt đới và bứt phá sáng tạo',
-    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingTitle: 'Hệ Thống Khảo Thí & Ngân Hàng Đề Thi UTH',
     greetingSubtitle: 'Chào đón mùa hè rực rỡ! ☀️ Khơi nguồn tri thức – Bứt phá sáng tạo – Chinh phục những mục tiêu mới!',
     colors: {
       primary: '#087EAD',
@@ -132,7 +132,7 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
     name: 'Mùa Thu Tri Thức (Modern Autumn Academic)',
     seasonLabel: '🍂 Mùa Thu',
     tagline: 'Lá phong vàng ấm áp, thu hoạch tri thức và gặt hái thành công',
-    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingTitle: 'Hệ Thống Khảo Thí & Ngân Hàng Đề Thi UTH',
     greetingSubtitle: 'Chào mùa thu tri thức! 🍂 Thu hoạch kiến thức – Gặt hái thành công – Không ngừng phát triển!',
     colors: {
       primary: '#B85C38',
@@ -158,7 +158,7 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
     name: 'Mùa Đông Tinh Khiết (Modern Winter Academic)',
     seasonLabel: '❄️ Mùa Đông',
     tagline: 'Tuyết trắng tinh khôi, rừng thông tuyết phủ và vẻ đẹp thanh khiết',
-    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingTitle: 'Hệ Thống Khảo Thí & Ngân Hàng Đề Thi UTH',
     greetingSubtitle: 'Chào mùa đông! ❄️ Giữ lửa đam mê – Vững bước tri thức – Chinh phục những đỉnh cao mới!',
     colors: {
       primary: '#2563A6',
@@ -184,7 +184,7 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
     name: 'Kỷ Niệm Ngày 30/4 (Modern Vietnamese Heritage)',
     seasonLabel: '⭐ Kỷ Niệm 30/4',
     tagline: 'Dấu mốc lịch sử 30/04/1975 – 30/04/2027: Thống nhất non sông, tự hào dân tộc',
-    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingTitle: 'Hệ Thống Khảo Thí & Ngân Hàng Đề Thi UTH',
     greetingSubtitle: 'Kỷ niệm Ngày Giải phóng miền Nam, thống nhất đất nước 30/4 (30/04/1975 – 30/04/2027). ⭐ Tự hào lịch sử – Tiếp bước tương lai – Phát triển tri thức Việt Nam!',
     colors: {
       primary: '#DA251D',
@@ -210,7 +210,7 @@ export const SYSTEM_THEMES: Record<SystemThemeId, ThemeConfig> = {
     name: 'Kỷ Niệm Quốc Khánh 2/9 (Modern Vietnamese National Day)',
     seasonLabel: '🇻🇳 Quốc Khánh 2/9',
     tagline: 'Dấu mốc lịch sử 02/09/1945 – 02/09/2027: Độc lập – Tự do – Hạnh phúc',
-    greetingTitle: 'Tổng quan Biên soạn Học thuật (QuizGen AI)',
+    greetingTitle: 'Hệ Thống Khảo Thí & Ngân Hàng Đề Thi UTH',
     greetingSubtitle: 'Chào mừng Quốc khánh nước Cộng hòa Xã hội Chủ nghĩa Việt Nam 2/9 (02/09/1945 – 02/09/2027). 🇻🇳 Độc lập – Tự do – Hạnh phúc. Tự hào Việt Nam, vững bước tương lai!',
     colors: {
       primary: '#DA251D',

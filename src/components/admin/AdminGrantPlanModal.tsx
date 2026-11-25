@@ -95,7 +95,9 @@ export const AdminGrantPlanModal: React.FC<AdminGrantPlanModalProps> = ({
     if (matched) {
       setCustomQuotaExams(matched.defaultExams);
       setCustomQuotaStorageMb(matched.defaultStorage);
-      if (matched.defaultDuration) {
+      if (planId === 'FREE') {
+        setDurationOption('permanent');
+      } else if (matched.defaultDuration) {
         setDurationOption(matched.defaultDuration);
       }
     }
@@ -106,11 +108,11 @@ export const AdminGrantPlanModal: React.FC<AdminGrantPlanModalProps> = ({
     setIsSubmitting(true);
     try {
       let days = 30;
-      if (durationOption === '7d') days = 7;
+      if (selectedPlan === 'FREE' || durationOption === 'permanent') days = 0;
+      else if (durationOption === '7d') days = 7;
       else if (durationOption === '30d') days = 30;
       else if (durationOption === '90d') days = 90;
       else if (durationOption === '365d') days = 365;
-      else if (durationOption === 'permanent') days = 0;
 
       await onGrantPlan({
         userId: user.id,

@@ -161,6 +161,7 @@ class UpdateProfileRequest(BaseModel):
     university: Optional[str] = "Trường Đại học Giao thông Vận tải TP.HCM (UTH)"
     department: Optional[str] = "Khoa Công nghệ Thông tin"
     role: Optional[str] = "lecturer"
+    avatar_url: Optional[str] = None
 
 
 class LecturerResponse(BaseModel):
@@ -171,6 +172,7 @@ class LecturerResponse(BaseModel):
     university: str = ""
     department: str = ""
     role: str = "lecturer"
+    avatar_url: Optional[str] = None
     is_active: bool = True
     status: Optional[str] = "active"
     lock_type: Optional[str] = None

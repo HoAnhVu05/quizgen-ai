@@ -28,6 +28,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { IncomingHuddleModal, IncomingHuddleData } from './components/qgroup/IncomingHuddleModal';
 import { isGroupMuted } from './utils/notificationPrefs';
 import { ringtoneManager } from './utils/huddleRingtone';
+import { syncGlobalAvatarsFromBackend } from './utils/avatarHelper';
+import { saveUserAvatarSync } from './utils/avatarHelper';
 
 const INITIAL_QUESTIONS: Question[] = [];
 
@@ -133,6 +135,27 @@ const AppContent: React.FC = () => {
       fetchSubscription(currentUser.id);
     }
   }, [currentUser?.id, fetchSubscription]);
+
+  // Đồng bộ Avatar toàn hệ thống từ backend (Đảm bảo mọi tài khoản nhìn thấy đúng avatar của nhau)
+  useEffect(() => {
+    syncGlobalAvatarsFromBackend();
+    const interval = setInterval(syncGlobalAvatarsFromBackend, 45000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Tự động đẩy avatar hiện tại của user lên database backend nếu có
+  useEffect(() => {
+    if (currentUser?.email && currentUser?.avatarUrl) {
+      apiClient.fetch(`${API_BASE}/auth/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: currentUser.email,
+          avatar_url: currentUser.avatarUrl,
+        }),
+      }).catch(() => {});
+    }
+  }, [currentUser?.email, currentUser?.avatarUrl]);
 
   // ─── App State ────────────────────────────────────────────────────────────
   const [currentScreen, setCurrentScreen] = useState<ScreenId>(() => {
@@ -346,6 +369,7 @@ const AppContent: React.FC = () => {
     }
     return INITIAL_QUESTIONS;
   });
+  const [activeReviewQuestion, setActiveReviewQuestion] = useState<Question | null>(null);
   // Dọn dẹp dữ liệu mẫu còn lưu trong localStorage nếu có
   useEffect(() => {
     try {
@@ -491,9 +515,11 @@ const AppContent: React.FC = () => {
                 : 'Giảng viên',
             avatarUrl: data.avatar_url || data.avatarUrl,
             authProvider: data.auth_provider || data.authProvider,
+            planTier: (data.plan_tier || data.planTier || 'FREE').toUpperCase(),
           };
           setCurrentUser(profile);
           setIsAuthenticated(true);
+          fetchSubscription(profile.id);
           const isRemembered = localStorage.getItem('quizgen_remember_me') === 'true';
           if (isRemembered) {
             localStorage.setItem('quizgen_user', JSON.stringify(profile));
@@ -588,34 +614,63 @@ const AppContent: React.FC = () => {
             setIsAuthenticated(false);
             setAuthScreen('login');
             setLockedAlert({ isOpen: true, message: lockMsg });
-          } else if (data.email !== 'lecturer@quizgen.ai' && data.role && currentUser && data.role !== currentUser.role) {
-            const newRole = data.role as UserRole;
-            const updatedUser: UserProfile = {
-              ...currentUser,
-              role: newRole,
-              roleLabel:
-                newRole === 'head_of_department'
-                  ? 'Trưởng bộ môn'
-                  : newRole === 'admin'
-                  ? 'Quản trị Hệ thống'
-                  : 'Giảng viên',
-            };
-            setCurrentUser(updatedUser);
-            localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
-            if (newRole !== 'admin' && currentScreen === 'admin_portal') {
-              setCurrentScreen('dashboard');
-              handleShowToast(
-                'info',
-                'Thay đổi phân quyền',
-                `Vai trò của bạn đã được chuyển sang: ${updatedUser.roleLabel}.`
-              );
-            } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
-              setCurrentScreen('admin_portal');
-              handleShowToast(
-                'info',
-                'Cấp quyền Quản trị viên',
-                'Tài khoản của bạn đã được nâng cấp lên Quản trị viên (Admin).'
-              );
+          } else {
+            // 1. Đồng bộ thay đổi vai trò (Role)
+            if (data.email !== 'lecturer@quizgen.ai' && data.role && currentUser && data.role !== currentUser.role) {
+              const newRole = data.role as UserRole;
+              const updatedUser: UserProfile = {
+                ...currentUser,
+                role: newRole,
+                roleLabel:
+                  newRole === 'head_of_department'
+                    ? 'Trưởng bộ môn'
+                    : newRole === 'admin'
+                    ? 'Quản trị Hệ thống'
+                    : 'Giảng viên',
+              };
+              setCurrentUser(updatedUser);
+              localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+              if (newRole !== 'admin' && currentScreen === 'admin_portal') {
+                setCurrentScreen('dashboard');
+                handleShowToast(
+                  'info',
+                  'Thay đổi phân quyền',
+                  `Vai trò của bạn đã được chuyển sang: ${updatedUser.roleLabel}.`
+                );
+              } else if (newRole === 'admin' && currentScreen !== 'admin_portal') {
+                setCurrentScreen('admin_portal');
+                handleShowToast(
+                  'info',
+                  'Cấp quyền Quản trị viên',
+                  'Tài khoản của bạn đã được nâng cấp lên Quản trị viên (Admin).'
+                );
+              }
+            }
+
+            // 2. Đồng bộ gói dịch vụ (Plan Tier) theo thời gian thực (Thu hồi / Nâng cấp tức thì)
+            const serverTier = (data.plan_tier || data.planTier || 'FREE').toUpperCase();
+            const localTier = (currentUser?.planTier || 'FREE').toUpperCase();
+            if (serverTier !== localTier && currentUser) {
+              const updatedUser: UserProfile = {
+                ...currentUser,
+                planTier: serverTier,
+              };
+              setCurrentUser(updatedUser);
+              localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+              fetchSubscription(currentUser.id);
+              if (serverTier === 'FREE' && localTier !== 'FREE') {
+                handleShowToast(
+                  'warning',
+                  'Thu hồi gói dịch vụ',
+                  'Gói dịch vụ của bạn đã được điều chỉnh về Gói Trải Nghiệm (Free).'
+                );
+              } else if (serverTier !== 'FREE') {
+                handleShowToast(
+                  'success',
+                  'Cập nhật gói dịch vụ',
+                  `Tài khoản của bạn đã được cập nhật lên gói: ${serverTier}.`
+                );
+              }
             }
           }
         }
@@ -1081,7 +1136,7 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleGenerateSuccess = (newQuestions?: Question[]) => {
+  const handleGenerateSuccess = (newQuestions?: Question[], targetScreen?: ScreenId) => {
     if (newQuestions && newQuestions.length > 0) {
       setQuestions(newQuestions);
       try {
@@ -1089,10 +1144,11 @@ const AppContent: React.FC = () => {
         localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(newQuestions));
       } catch {}
     }
-    setCurrentScreen('review');
+    const dest = targetScreen || 'review';
+    setCurrentScreen(dest);
     try {
-      localStorage.setItem('quizgen_active_screen', 'review');
-      sessionStorage.setItem('quizgen_active_screen', 'review');
+      localStorage.setItem('quizgen_active_screen', dest);
+      sessionStorage.setItem('quizgen_active_screen', dest);
     } catch {}
   };
 
@@ -1196,6 +1252,9 @@ const AppContent: React.FC = () => {
     const nextDept = (updates.department || currentUser.department || '').trim();
     const nextFaculty = (updates.faculty || currentUser.faculty || '').trim();
     const nextUniv = (updates.university || currentUser.university || '').trim();
+    const nextAvatar = updates.avatarUrl !== undefined ? updates.avatarUrl : (currentUser.avatarUrl || '');
+    const isAvatarChanged = updates.avatarUrl !== undefined && updates.avatarUrl !== currentUser.avatarUrl;
+
     const updatedUser: UserProfile = {
       ...currentUser,
       ...updates,
@@ -1204,12 +1263,18 @@ const AppContent: React.FC = () => {
       department: nextDept,
       faculty: nextFaculty,
       university: nextUniv,
+      avatarUrl: nextAvatar,
     };
 
     setCurrentUser(updatedUser);
     localStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
+    sessionStorage.setItem('quizgen_user', JSON.stringify(updatedUser));
 
     if (updatedUser.email) {
+      if (nextAvatar) {
+        saveUserAvatarSync(updatedUser.email, nextAvatar);
+      }
+
       try {
         const profiles = JSON.parse(localStorage.getItem('quizgen_google_profiles') || '{}');
         profiles[updatedUser.email.toLowerCase()] = {
@@ -1218,6 +1283,7 @@ const AppContent: React.FC = () => {
           department: nextDept,
           faculty: nextFaculty,
           university: nextUniv,
+          avatarUrl: nextAvatar,
         };
         localStorage.setItem('quizgen_google_profiles', JSON.stringify(profiles));
       } catch {}
@@ -1231,6 +1297,7 @@ const AppContent: React.FC = () => {
             full_name: updatedUser.fullName,
             academic_title: updatedUser.academicTitle || '',
             department: nextDept,
+            avatar_url: nextAvatar,
           }),
         });
       } catch {}
@@ -1238,7 +1305,7 @@ const AppContent: React.FC = () => {
 
     handleShowToast(
       'success',
-      'Đã cập nhật hồ sơ',
+      isAvatarChanged ? 'Đã cập nhật ảnh đại diện & hồ sơ' : 'Đã cập nhật hồ sơ',
       `Tên hiển thị mới: ${updatedUser.academicTitle ? updatedUser.academicTitle + ' ' : ''}${updatedUser.fullName}`
     );
   };
@@ -1477,7 +1544,10 @@ const AppContent: React.FC = () => {
         onOpenPricingModal={() => setIsPricingModalOpen(true)}
         isMobileOpen={isMobileMenuOpen}
         onCloseMobile={() => setIsMobileMenuOpen(false)}
-        onOpenProfileModal={() => setIsProfileModalOpen(true)}
+        onOpenProfileModal={() => {
+          setIsMobileMenuOpen(false);
+          setIsProfileModalOpen(true);
+        }}
       />
 
       {/* Main Content Area */}
@@ -1574,6 +1644,7 @@ const AppContent: React.FC = () => {
                 onNavigate={setCurrentScreen}
                 onShowToast={handleShowToast}
                 currentUser={currentUser}
+                onSelectQuestion={setActiveReviewQuestion}
                 onLoadQuestions={(loadedQs) => {
                   setQuestions(loadedQs);
                   try {
@@ -1749,9 +1820,10 @@ const AppContent: React.FC = () => {
         <AIChatCopilot
           currentScreen={currentScreen}
           currentUser={currentUser}
-          activeQuestion={questions.length > 0 ? questions[0] : null}
+          activeQuestion={currentScreen === 'review' ? (activeReviewQuestion || (questions.length > 0 ? questions[0] : null)) : null}
           onNavigate={(screen) => setCurrentScreen(screen)}
           onGenerateSuccess={handleGenerateSuccess}
+          onUpdateQuestion={handleUpdateQuestion}
           onShowToast={handleShowToast}
         />
       )}

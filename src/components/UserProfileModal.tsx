@@ -18,8 +18,12 @@ import {
   Hash,
   MapPin,
   FileText,
+  Camera,
+  Upload,
+  Trash2,
 } from 'lucide-react';
 import { UserProfile } from '../types';
+import { UserAvatar } from './common/UserAvatar';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -63,7 +67,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [draftSubjects, setDraftSubjects] = useState('');
   const [draftResearch, setDraftResearch] = useState('');
   const [draftBio, setDraftBio] = useState('');
+  const [draftAvatarUrl, setDraftAvatarUrl] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (currentUser) {
@@ -79,10 +85,60 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       setDraftSubjects(currentUser.primarySubjects || '');
       setDraftResearch(currentUser.researchInterests || '');
       setDraftBio(currentUser.bio || '');
+      setDraftAvatarUrl(currentUser.avatarUrl || '');
     }
   }, [currentUser, isOpen]);
 
   if (!isOpen) return null;
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      onShowToast('error', 'Định dạng không hợp lệ', 'Vui lòng chọn tệp hình ảnh (PNG, JPG, WEBP, GIF).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      onShowToast('warning', 'Tệp quá lớn', 'Kích thước ảnh đại diện tối đa là 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = event.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 400;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          setDraftAvatarUrl(optimizedDataUrl);
+          onShowToast('info', 'Đã tải ảnh lên', 'Ảnh đã sẵn sàng. Nhấn "Lưu thay đổi" để đồng bộ toàn hệ thống.');
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+    // Reset file input để có thể chọn lại cùng 1 file nếu muốn
+    e.target.value = '';
+  };
 
   const handleReverseName = () => {
     const parts = draftName.trim().split(/\s+/);
@@ -114,6 +170,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         primarySubjects: draftSubjects.trim(),
         researchInterests: draftResearch.trim(),
         bio: draftBio.trim(),
+        avatarUrl: draftAvatarUrl.trim(),
       });
       onShowToast(
         'success',
@@ -137,7 +194,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     : 'GV';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn">
       <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Top Header with UTH Teal Theme */}
         <div className="relative bg-gradient-to-r from-[#008689] via-[#007073] to-[#005a5c] px-6 py-5 text-white">
@@ -150,12 +207,28 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           </button>
 
           <div className="flex items-center gap-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-2xl bg-white text-[#008689] font-black text-xl flex items-center justify-center shadow-lg border-2 border-white/30">
-                {initials}
+            <div
+              className="relative group/topavatar cursor-pointer shrink-0"
+              onClick={() => fileInputRef.current?.click()}
+              title="Nhấp để tải lên ảnh đại diện mới"
+            >
+              <UserAvatar
+                avatarUrl={draftAvatarUrl}
+                name={draftName || currentUser?.fullName}
+                email={currentUser?.email}
+                size="xl"
+                rounded="rounded-2xl"
+                className="shadow-lg border-2 border-white/60 ring-2 ring-white/20 group-hover/topavatar:scale-105 transition-transform"
+              />
+              <div className="absolute inset-0 bg-black/50 rounded-2xl opacity-0 group-hover/topavatar:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[10px] font-bold gap-0.5">
+                <Camera className="w-5 h-5" />
+                <span>Đổi ảnh</span>
               </div>
-              <span className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-400 border-2 border-white flex items-center justify-center text-[10px] text-white">
-                ✓
+              <span
+                className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-[10px] text-white shadow-xs"
+                title="Tải lên ảnh mới"
+              >
+                <Camera className="w-3.5 h-3.5" />
               </span>
             </div>
 
@@ -220,8 +293,84 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         {/* Modal Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Ẩn input file tải ảnh */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={handleAvatarFileChange}
+          />
+
           {activeTab === 'profile' && (
             <div className="space-y-4">
+              {/* Avatar Upload & Synchronization Section */}
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-50/70 via-slate-50 to-teal-50/40 border border-teal-200/80 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5">
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <div
+                      className="relative group/cardavatar cursor-pointer shrink-0"
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Nhấp để thay đổi ảnh đại diện"
+                    >
+                      <UserAvatar
+                        avatarUrl={draftAvatarUrl}
+                        name={draftName || currentUser?.fullName}
+                        email={currentUser?.email}
+                        size="lg"
+                        rounded="rounded-2xl"
+                        className="shadow-md border-2 border-white ring-2 ring-teal-500/20 group-hover/cardavatar:scale-105 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/40 rounded-2xl opacity-0 group-hover/cardavatar:opacity-100 transition-opacity flex items-center justify-center text-white">
+                        <Camera className="w-4 h-4" />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                        <span>Ảnh đại diện người dùng</span>
+                        {draftAvatarUrl ? (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
+                            Ảnh tùy chỉnh
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold border border-slate-200">
+                            Tự động theo tên
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        Avatar được đồng bộ nhất quán 100% trên toàn ứng dụng: Trang cá nhân, Diễn đàn, Q-Group chat, Huddle...
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3.5 py-2 rounded-xl bg-[#008689] hover:bg-[#007073] text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs hover:shadow-xs cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{draftAvatarUrl ? 'Thay đổi ảnh' : 'Tải ảnh lên'}</span>
+                    </button>
+                    {draftAvatarUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDraftAvatarUrl('');
+                          onShowToast('info', 'Đã đặt lại', 'Ảnh đại diện sẽ hiển thị mặc định theo tên viết tắt.');
+                        }}
+                        className="p-2 rounded-xl border border-rose-200 bg-rose-50/50 hover:bg-rose-100 text-rose-600 text-xs transition-colors cursor-pointer"
+                        title="Xóa ảnh tùy chỉnh, quay về avatar mặc định theo tên"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Academic Title Grid */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">

@@ -23,6 +23,9 @@ import {
   Clock,
 } from 'lucide-react';
 import { PublicUserProfile, UserProfile } from '../types';
+import { UserAvatar } from './common/UserAvatar';
+import { getUserAvatarUrl, saveUserAvatarSync } from '../utils/avatarHelper';
+import apiClient, { API_BASE } from '../services/apiClient';
 
 interface PublicProfileModalProps {
   userEmail: string | null;
@@ -194,12 +197,45 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
       subjects,
       researchFocus,
       bio,
+      avatarUrl: isMe ? (currentUser?.avatarUrl || '') : (getUserAvatarUrl(email, userName) || ''),
       avatarColor: 'bg-gradient-to-tr from-purple-600 to-indigo-600',
       isFriend: isFriend,
       hasPendingRequest: hasSentRequest,
       sharedTextbooks: publicBooks,
       forumPosts: userPosts,
     });
+
+    // Khi xem tài khoản người khác, gọi trực tiếp API backend để đồng bộ ảnh đại diện thực tế (Google/upload)
+    let isMounted = true;
+    if (!isMe && email && email.includes('@')) {
+      apiClient
+        .fetch(`${API_BASE}/auth/users/lookup?email=${encodeURIComponent(email)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!isMounted || !data?.exists || !data?.user) return;
+          const u = data.user;
+          const serverAvatar = (u.avatarUrl || u.avatar_url || '').trim();
+          if (serverAvatar) {
+            saveUserAvatarSync(email, serverAvatar);
+          }
+          setProfile((prev) => {
+            if (!prev || prev.email.toLowerCase() !== email) return prev;
+            return {
+              ...prev,
+              fullName: u.fullName || prev.fullName,
+              academicTitle: u.academicTitle || prev.academicTitle,
+              department: u.department || prev.department,
+              university: u.university || prev.university,
+              avatarUrl: serverAvatar || prev.avatarUrl,
+            };
+          });
+        })
+        .catch(() => {});
+    }
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, userEmail, userName, currentUser, isFriend, hasSentRequest]);
 
   if (!isOpen || !profile) return null;
@@ -255,9 +291,14 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 -mt-12 mb-3">
             <div className="flex items-end gap-3.5">
               <div className="w-24 h-24 rounded-3xl bg-white p-1 shadow-lg shrink-0">
-                <div className="w-full h-full rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white font-black text-2xl flex items-center justify-center shadow-inner">
-                  {profile.fullName.slice(0, 2).toUpperCase()}
-                </div>
+                <UserAvatar
+                  avatarUrl={isMe ? currentUser?.avatarUrl : profile.avatarUrl}
+                  name={profile.fullName}
+                  email={profile.email}
+                  size="2xl"
+                  rounded="rounded-2xl"
+                  className="w-full h-full shadow-inner"
+                />
               </div>
               <div className="pb-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">

@@ -3,6 +3,8 @@ import uuid
 import json
 import random
 import hashlib
+import ssl
+import logging
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -11,6 +13,8 @@ from typing import List, Optional, Tuple
 from fastapi import FastAPI, HTTPException, status, Depends, Header, Query
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
+
+logger = logging.getLogger("auth-service")
 
 try:
     from jose import jwt
@@ -97,6 +101,7 @@ def serialize_user(user: UserDB) -> dict:
         "plan_expires_at": getattr(user, "plan_expires_at", None),
         "custom_quota_exams": getattr(user, "custom_quota_exams", None),
         "custom_quota_storage_mb": getattr(user, "custom_quota_storage_mb", None),
+        "avatar_url": getattr(user, "avatar_url", None) or "",
         "profile_completed": has_info,
         "created_at": user.created_at or datetime.utcnow()
     }
@@ -348,6 +353,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 
 @app.put("/profile", response_model=LecturerResponse)
+@app.put("/auth/profile", response_model=LecturerResponse)
 def update_profile(
     profile_in: UpdateProfileRequest,
     token: Optional[str] = Depends(oauth2_scheme),
@@ -384,6 +390,28 @@ def update_profile(
     if not user and profile_in.email:
         clean_email = profile_in.email.strip().lower()
         user = db.query(UserDB).filter(func.lower(UserDB.email) == clean_email).first()
+        if not user:
+            # Tự động tạo user mới nếu hoàn thiện hồ sơ từ phiên đăng nhập Google
+            new_uid = f"usr-gg-{uuid.uuid4().hex[:8]}"
+            user = UserDB(
+                id=new_uid,
+                email=clean_email,
+                full_name=profile_in.full_name or clean_email.split("@")[0],
+                academic_title=profile_in.academic_title or "ThS.",
+                university=profile_in.university or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
+                department=profile_in.department or "Khoa Công nghệ Thông tin",
+                password_hash=hash_password(uuid.uuid4().hex),
+                role=profile_in.role or "lecturer",
+                avatar_url=profile_in.avatar_url or "",
+                is_active=True,
+                auth_provider="google",
+                status="active",
+                plan_tier="FREE",
+                created_at=datetime.utcnow()
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
     if not user:
         raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization hợp lệ hoặc email tài khoản đã đăng ký trên hệ thống.")
@@ -399,6 +427,8 @@ def update_profile(
             user.department = profile_in.department.strip()
         if profile_in.role:
             user.role = profile_in.role.strip()
+        if profile_in.avatar_url is not None:
+            user.avatar_url = profile_in.avatar_url.strip()
         user.updated_at = datetime.utcnow()
 
         db.commit()
@@ -711,6 +741,7 @@ def _fetch_google_json(req_url: str, headers: Optional[dict] = None) -> Optional
 
 
 @app.post("/google")
+@app.post("/auth/google")
 def login_with_google(req_data: GoogleAuthRequest, db: Session = Depends(get_db)):
     """Xác thực tài khoản qua Google OAuth 2.0 (hỗ trợ UserInfo API, TokenInfo và Client fallback)."""
     google_access_token = (req_data.google_access_token or req_data.access_token or "").strip()
@@ -784,11 +815,28 @@ def login_with_google(req_data: GoogleAuthRequest, db: Session = Depends(get_db)
             password_hash=hash_password(uuid.uuid4().hex),
             role=requested_role,
             is_active=True,
+            auth_provider="google",
+            avatar_url=avatar_url or "",
+            status="active",
+            plan_tier="FREE",
             created_at=datetime.utcnow()
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        # Nếu tài khoản đã tồn tại: Luôn tự động đồng bộ avatar mới nhất nếu có
+        needs_commit = False
+        if avatar_url and (not user.avatar_url or user.avatar_url.startswith("https://lh3.googleusercontent.com") or avatar_url.startswith("data:image")):
+            user.avatar_url = avatar_url
+            needs_commit = True
+        if full_name and (not user.full_name or user.full_name.startswith("usr-") or "@" in user.full_name):
+            user.full_name = full_name
+            needs_commit = True
+        if needs_commit:
+            user.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(user)
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản này hiện đang bị tạm khóa.")
@@ -927,6 +975,8 @@ def lookup_user_by_email(email: str = Query(...), db: Session = Depends(get_db))
                 "department": user.department or "Khoa Công nghệ Thông tin",
                 "university": user.university or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
                 "role": user.role,
+                "avatar_url": getattr(user, "avatar_url", None) or "",
+                "avatarUrl": getattr(user, "avatar_url", None) or "",
                 "is_active": user.is_active
             }
         }
@@ -987,9 +1037,29 @@ def search_users(q: str = Query("", min_length=0), db: Session = Depends(get_db)
             "department": u.department or "Khoa Công nghệ Thông tin",
             "university": u.university or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
             "role": u.role,
+            "avatar_url": getattr(u, "avatar_url", None) or "",
+            "avatarUrl": getattr(u, "avatar_url", None) or "",
             "is_active": u.is_active,
         }
         for u in filtered_users
     ]
+
+
+@app.get("/users/avatars")
+@app.get("/auth/users/avatars")
+def get_all_users_avatars(db: Session = Depends(get_db)):
+    """Trả về từ điển ánh xạ avatar { email: avatar_url } của toàn bộ người dùng để mọi client đồng bộ tức thì 100%."""
+    users = db.execute(
+        select(UserDB.email, UserDB.avatar_url).filter(
+            UserDB.avatar_url.isnot(None),
+            UserDB.avatar_url != ""
+        )
+    ).all()
+    avatar_map = {}
+    for email, avt in users:
+        if email and avt:
+            avatar_map[email.strip().lower()] = avt.strip()
+    return {"avatars": avatar_map}
+
 
 

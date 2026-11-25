@@ -320,7 +320,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         'x-user-id': currentUser?.id || 'usr-lec-001',
         'x-user-email': currentUser?.email || 'nguyentann0804@gmail.com',
         'x-user-role': (currentUser?.role || 'lecturer').toUpperCase(),
-        'x-user-tier': currentUser?.planTier || 'PRO'
+        'x-user-tier': currentUser?.planTier || 'FREE'
       };
       const token = localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
       if (token) {
@@ -419,7 +419,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         'x-user-id': currentUser?.id || 'usr-lec-001',
         'x-user-email': currentUser?.email || 'nguyentann0804@gmail.com',
         'x-user-role': (currentUser?.role || 'lecturer').toUpperCase(),
-        'x-user-tier': currentUser?.planTier || 'PRO'
+        'x-user-tier': currentUser?.planTier || 'FREE'
       };
       const token = localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
       if (token) {
@@ -472,7 +472,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         'x-user-id': currentUser?.id || 'usr-lec-001',
         'x-user-email': currentUser?.email || 'lecturer@uth.edu.vn',
         'x-user-role': (currentUser?.role || 'lecturer').toUpperCase(),
-        'x-user-tier': currentUser?.planTier || 'PRO'
+        'x-user-tier': currentUser?.planTier || 'FREE'
       };
 
       const payload = {
@@ -480,7 +480,7 @@ export const SupportCenterScreen: React.FC<SupportCenterScreenProps> = ({
         description: formDescription,
         category: formCategory,
         priority: formPriority,
-        user_tier: currentUser?.planTier || 'PRO',
+        user_tier: currentUser?.planTier || 'FREE',
         error_context_json: getAutoErrorContext()
       };
 

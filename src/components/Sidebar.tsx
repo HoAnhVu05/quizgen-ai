@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutDashboard,
   UploadCloud,
@@ -40,9 +40,13 @@ import {
   Zap,
   Gauge,
   LifeBuoy,
+  Camera,
+  Upload,
+  Trash2,
 } from 'lucide-react';
 import { ScreenId, UserProfile, UserRole } from '../types';
 import { apiClient, API_BASE } from '../services/apiClient';
+import { UserAvatar } from './common/UserAvatar';
 import { useTheme } from '../context/ThemeContext';
 import { ThemeLogoBadge } from './ThemeStickers';
 import { ThemeChibiMascot, ThemeSidebarHeaderCorner } from './ThemeFestiveComponents';
@@ -192,15 +196,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [draftSubjects, setDraftSubjects] = useState('');
   const [draftResearch, setDraftResearch] = useState('');
   const [draftBio, setDraftBio] = useState('');
+  const [draftAvatarUrl, setDraftAvatarUrl] = useState('');
   const [userOrders, setUserOrders] = useState<any[]>([]);
+  const [orderFilterTab, setOrderFilterTab] = useState<'all' | 'completed' | 'expired'>('all');
   const [userSub, setUserSub] = useState<any>(null);
   const [loadingBilling, setLoadingBilling] = useState(false);
   const [isWorkflowExpanded, setIsWorkflowExpanded] = useState<boolean>(true);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, WEBP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Kích thước ảnh tối đa là 5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = event.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 400;
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const optimized = canvas.toDataURL('image/jpeg', 0.88);
+          setDraftAvatarUrl(optimized);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const isWorkflowActive = ['upload', 'generate', 'review', 'bank'].includes(currentScreen);
 
   const openProfileEditor = async (tab: 'profile' | 'billing' = 'profile') => {
     if (!currentUser) return;
+    onCloseMobile?.();
     setDraftName(currentUser.fullName || '');
     setDraftTitle(currentUser.academicTitle || '');
     setDraftStaffId(currentUser.staffId || '');
@@ -213,14 +266,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setDraftSubjects(currentUser.primarySubjects || '');
     setDraftResearch(currentUser.researchInterests || '');
     setDraftBio(currentUser.bio || '');
+    setDraftAvatarUrl(currentUser.avatarUrl || '');
     setProfileModalTab(tab);
     setShowProfileModal(true);
 
     setLoadingBilling(true);
     try {
+      const emailQuery = currentUser.email ? `&email=${encodeURIComponent(currentUser.email.trim())}` : '';
       const [subRes, ordRes] = await Promise.all([
-        apiClient.fetch(`${API_BASE}/payment/subscription/my?user_id=${currentUser.id}`).catch(() => null),
-        apiClient.fetch(`${API_BASE}/payment/orders/history?user_id=${currentUser.id}`).catch(() => null),
+        apiClient.fetch(`${API_BASE}/payment/subscription/my?user_id=${currentUser.id}${emailQuery}`).catch(() => null),
+        apiClient.fetch(`${API_BASE}/payment/orders/history?user_id=${currentUser.id}${emailQuery}`).catch(() => null),
       ]);
       if (subRes && subRes.ok) {
         const subData = await subRes.json();
@@ -228,7 +283,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       }
       if (ordRes && ordRes.ok) {
         const ordData = await ordRes.json();
-        setUserOrders(ordData.orders || []);
+        const rawOrders = ordData.orders || [];
+        // Lọc an toàn 2 tầng: Chỉ giữ đơn của tài khoản đang đăng nhập
+        const myOrders = rawOrders.filter((ord: any) => {
+          const matchEmail = currentUser.email && ord.user_email && ord.user_email.toLowerCase() === currentUser.email.toLowerCase();
+          const matchId = currentUser.id && ord.user_id === currentUser.id;
+          return matchEmail || matchId;
+        });
+        setUserOrders(myOrders);
       }
     } catch (e) {
       console.error('[SIDEBAR PROFILE] Lỗi tải dữ liệu gói cước:', e);
@@ -648,6 +710,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-2.5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex items-center justify-between gap-2 group hover:border-[#008689]/60 transition-all">
           <div
             onClick={() => {
+              onCloseMobile?.();
               if (onOpenProfileModal) {
                 onOpenProfileModal();
               } else {
@@ -657,24 +720,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             className="flex items-center space-x-2.5 min-w-0 cursor-pointer group/prof flex-1"
             title="Nhấp để xem & cập nhật hồ sơ tài khoản (Học vị, Họ tên, Đơn vị)"
           >
-            {currentUser?.avatarUrl ? (
-              <img
-                src={currentUser.avatarUrl}
-                alt={displayName}
-                referrerPolicy="no-referrer"
-                className="w-9 h-9 rounded-xl object-cover border border-[#E5EDF5] shrink-0 bg-white group-hover/prof:border-[#008F95] transition-colors shadow-2xs"
-              />
-            ) : (
-              <div
-                className={`w-9 h-9 rounded-xl ${
-                  isSystemAdmin 
-                    ? 'bg-gradient-to-tr from-[#da1c2d] to-rose-400' 
-                    : 'bg-gradient-to-tr from-[#008689] to-teal-400'
-                } flex items-center justify-center font-black text-white text-xs shrink-0 shadow-xs group-hover/prof:scale-105 transition-transform`}
-              >
-                {initials}
-              </div>
-            )}
+            <UserAvatar
+              avatarUrl={currentUser?.avatarUrl}
+              name={displayName}
+              email={currentUser?.email}
+              size="md"
+              rounded="rounded-xl"
+              className="w-9 h-9 border border-[#E5EDF5] bg-white group-hover/prof:border-[#008F95] transition-all shadow-2xs group-hover/prof:scale-105 shrink-0"
+            />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-bold text-[#142B45] truncate group-hover/prof:text-[#008F95] transition-colors leading-tight">
                 {displayName}
@@ -690,7 +743,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <>
                 <button
                   type="button"
-                  onClick={() => openProfileEditor('billing')}
+                  onClick={() => {
+                    onCloseMobile?.();
+                    openProfileEditor('billing');
+                  }}
                   title="Xem gói cước & lịch sử mua"
                   className="text-slate-400 hover:text-amber-600 transition-colors p-1.5 rounded-lg hover:bg-amber-50 cursor-pointer"
                 >
@@ -699,6 +755,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    onCloseMobile?.();
                     if (onOpenProfileModal) {
                       onOpenProfileModal();
                     } else {
@@ -723,38 +780,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
       </div>
+    </aside>
 
-      {/* Account Profile, Subscription & Payment History Modal */}
-      {showProfileModal && (
+    {/* Account Profile, Subscription & Payment History Modal */}
+    {showProfileModal && (
+      <div
+        className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5 bg-slate-900/60 backdrop-blur-xs select-text overflow-y-auto"
+        onClick={() => setShowProfileModal(false)}
+      >
         <div
-          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm select-text"
-          onClick={() => setShowProfileModal(false)}
+          className="w-full max-w-2xl sm:max-w-3xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150 my-auto"
+          onClick={(e) => e.stopPropagation()}
         >
-          <div
-            className="w-full max-w-2xl rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#008689]/10 text-[#008689] flex items-center justify-center font-bold">
-                  {initials}
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Tài Khoản Giảng Viên &amp; Gói Cước
-                  </h3>
-                  <p className="text-[11px] text-slate-400 font-mono">{currentUser?.email}</p>
-                </div>
+          {/* Modal Header */}
+          <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50/70 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <UserAvatar
+                avatarUrl={draftAvatarUrl || currentUser?.avatarUrl}
+                name={displayName}
+                email={currentUser?.email}
+                size="md"
+                rounded="rounded-xl"
+                className="shrink-0"
+              />
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">
+                  Tài Khoản Giảng Viên &amp; Gói Cước
+                </h3>
+                <p className="text-[11px] text-slate-500 font-mono truncate">{currentUser?.email}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowProfileModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setShowProfileModal(false)}
+              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center transition-colors shrink-0 cursor-pointer ml-2 shadow-2xs"
+              title="Đóng cửa sổ"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
 
             {/* Modal Internal Tabs */}
             <div className="flex items-center gap-1 px-5 pt-2 border-b border-slate-200 bg-slate-50/40">
@@ -799,6 +863,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     e.preventDefault();
                     if (!draftName.trim()) return;
                     onUpdateProfile({
+                      avatarUrl: draftAvatarUrl,
                       fullName: draftName.trim(),
                       academicTitle: draftTitle,
                       staffId: draftStaffId.trim(),
@@ -816,6 +881,72 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   }}
                   className="space-y-4"
                 >
+                  {/* Nhóm 0: Ảnh đại diện & Nhận diện Học thuật Toàn Hệ Thống */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-teal-500/10 via-sky-500/5 to-white border border-teal-200/80 flex flex-col sm:flex-row items-center gap-4">
+                    <div className="relative group shrink-0">
+                      <UserAvatar
+                        avatarUrl={draftAvatarUrl || currentUser?.avatarUrl}
+                        name={draftName || currentUser?.fullName || ''}
+                        email={currentUser?.email}
+                        size="xl"
+                        className="w-18 h-18 text-xl ring-4 ring-white shadow-md rounded-2xl"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarFileInputRef.current?.click()}
+                        className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-[#008689] text-white shadow-md hover:bg-[#006d70] transition-transform hover:scale-110 cursor-pointer"
+                        title="Tải ảnh chân dung mới"
+                      >
+                        <Camera className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-1.5 text-center sm:text-left flex-1 min-w-0">
+                      <div className="flex items-center justify-center sm:justify-start gap-2">
+                        <span className="text-xs font-bold text-slate-800">Ảnh đại diện Giảng viên</span>
+                        {draftAvatarUrl ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                            Đã tải ảnh lên
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                            Ảnh mặc định theo tên
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500">
+                        Ảnh đại diện này sẽ tự động đồng bộ 100% trên Diễn đàn học thuật, Nhóm Q-Group, Tin nhắn và Toàn bộ hệ thống.
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                        <input
+                          ref={avatarFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarFileSelect}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-[#008689] text-[#008689] hover:bg-teal-50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Tải ảnh từ máy</span>
+                        </button>
+                        {draftAvatarUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setDraftAvatarUrl('')}
+                            className="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 hover:bg-rose-100 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Xóa / Dùng mặc định</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Nhóm 1: Học hàm / Học vị & Định danh */}
                   <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-3">
                     <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
@@ -1123,13 +1254,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   )}
 
                   {/* Orders History List */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-slate-900 text-xs">Lịch Sử Mua Gói Cước</h4>
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-xs">Lịch Sử Giao Dịch Gói Cước</h4>
+                        <p className="text-[11px] text-slate-500">Chỉ hiển thị các đơn hàng thanh toán được tạo bởi tài khoản của bạn</p>
+                      </div>
                       <span className="text-[11px] text-slate-400 font-mono">
                         {userOrders.length} giao dịch
                       </span>
                     </div>
+
+                    {/* Bộ lọc trạng thái đơn hàng */}
+                    {userOrders.length > 0 && (
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl w-fit text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setOrderFilterTab('all')}
+                          className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                            orderFilterTab === 'all'
+                              ? 'bg-white text-slate-900 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Tất cả ({userOrders.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOrderFilterTab('completed')}
+                          className={`px-3 py-1 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                            orderFilterTab === 'completed'
+                              ? 'bg-emerald-600 text-white shadow-2xs'
+                              : 'text-emerald-700 hover:bg-emerald-50'
+                          }`}
+                        >
+                          <Check className="w-3 h-3" />
+                          <span>Thành công ({userOrders.filter((o) => o.status === 'COMPLETED').length})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOrderFilterTab('expired')}
+                          className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                            orderFilterTab === 'expired'
+                              ? 'bg-amber-600 text-white shadow-2xs'
+                              : 'text-amber-800 hover:bg-amber-50'
+                          }`}
+                        >
+                          Hết hạn / Đang chờ ({userOrders.filter((o) => o.status !== 'COMPLETED').length})
+                        </button>
+                      </div>
+                    )}
 
                     {loadingBilling ? (
                       <div className="py-8 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
@@ -1156,8 +1330,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         )}
                       </div>
                     ) : (
-                      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-                        <table className="w-full text-left text-xs">
+                      <div className="border border-slate-200 rounded-xl overflow-x-auto bg-white">
+                        <table className="w-full text-left text-xs min-w-[500px]">
                           <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
                             <tr>
                               <th className="py-2.5 px-3">Mã Đơn</th>
@@ -1168,7 +1342,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
-                            {userOrders.map((ord: any) => (
+                            {userOrders
+                              .filter((ord: any) => {
+                                if (orderFilterTab === 'completed') return ord.status === 'COMPLETED';
+                                if (orderFilterTab === 'expired') return ord.status !== 'COMPLETED';
+                                return true;
+                              })
+                              .map((ord: any) => (
                               <tr key={ord.id} className="hover:bg-slate-50">
                                 <td className="py-2.5 px-3 font-mono font-bold text-slate-800">
                                   #{ord.order_code}
@@ -1177,10 +1357,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                   {ord.plan_name}
                                 </td>
                                 <td className="py-2.5 px-3 font-mono font-bold text-amber-600">
-                                  {ord.amount_vnd.toLocaleString('vi-VN')}đ
+                                  {ord.amount_vnd?.toLocaleString('vi-VN')}đ
                                 </td>
                                 <td className="py-2.5 px-3 font-mono text-[11px] text-slate-500">
-                                  {ord.created_at.slice(0, 16)}
+                                  {ord.created_at?.slice(0, 16)}
                                 </td>
                                 <td className="py-2.5 px-3">
                                   <span
@@ -1209,10 +1389,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Modal Footer */}
+            <div className="px-4 sm:px-6 py-3 border-t border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-400">
+                QuizGen AI • Bản quyền học thuật UTH
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowProfileModal(false)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs cursor-pointer transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
-    </aside>
     </>
   );
 };

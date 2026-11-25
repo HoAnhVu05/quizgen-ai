@@ -462,56 +462,68 @@ def get_my_subscription(user_id: str = Query(...)):
     """, (user_id,))
     sub_row = cursor.fetchone()
 
-    # Tự động đồng bộ nếu user đã được Admin cấp gói trong auth.db nhưng chưa có subscription trong payment.db
-    if not sub_row and os.path.exists(AUTH_DB_PATH):
+    # 1.1 Thẩm tra chéo với auth.db để đồng bộ trạng thái thực tế
+    if os.path.exists(AUTH_DB_PATH):
         try:
             auth_conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
             auth_conn.row_factory = sqlite3.Row
             auth_cur = auth_conn.cursor()
-            auth_cur.execute("SELECT role, plan_tier, plan_expires_at FROM users WHERE id = ?", (user_id,))
+            auth_cur.execute("SELECT email, role, plan_tier, plan_expires_at FROM users WHERE id = ?", (user_id,))
             a_user = auth_cur.fetchone()
             auth_conn.close()
             if a_user:
                 auth_role = a_user["role"]
+                auth_email = (a_user["email"] or "").strip().lower()
                 raw_tier = (a_user["plan_tier"] or "").strip().upper()
                 if raw_tier in ["PRO", "STANDARD"]:
                     raw_tier = "PRO_MONTH"
-                if auth_role == "admin" and raw_tier == "FREE":
-                    raw_tier = "PRO_YEAR"
 
-                if raw_tier in ["PRO_MONTH", "PRO_YEAR", "ENTERPRISE"]:
-                    plan_exp = a_user["plan_expires_at"]
-                    not_expired = True
-                    if plan_exp:
-                        try:
-                            exp_time = datetime.fromisoformat(str(plan_exp).replace("Z", ""))
-                            if datetime.now() > exp_time:
-                                not_expired = False
-                        except Exception:
-                            pass
-                    
-                    if not_expired:
-                        cursor.execute("SELECT * FROM plans WHERE code = ? LIMIT 1", (raw_tier,))
-                        p_match = cursor.fetchone()
-                        p_id = p_match["id"] if p_match else f"plan_{raw_tier.lower()}"
-                        auto_sub_id = f"sub_auto_sync_{uuid.uuid4().hex[:10]}"
-                        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        cursor.execute(
-                            """INSERT INTO subscriptions (id, user_id, plan_id, plan_code, status, starts_at, expires_at)
-                               VALUES (?, ?, ?, ?, 'active', ?, ?)""",
-                            (auto_sub_id, user_id, p_id, raw_tier, now_str, plan_exp)
-                        )
+                # NẾU USER BỊ ADMIN THU HỒI VỀ GÓI FREE:
+                if raw_tier == "FREE":
+                    if sub_row:
+                        # Hủy ngay lập tức mọi subscription active trong payment.db
+                        cursor.execute("UPDATE subscriptions SET status = 'cancelled' WHERE user_id = ? AND status = 'active'", (user_id,))
+                        cursor.execute("UPDATE user_quotas SET plan_code = 'FREE' WHERE user_id = ?", (user_id,))
                         conn.commit()
+                        sub_row = None
+                else:
+                    # Chỉ tài khoản root admin tối cao mới được cấp mặc định PRO_YEAR nếu chưa có gói
+                    if auth_email == "quizgen.ai.team@gmail.com" and not raw_tier:
+                        raw_tier = "PRO_YEAR"
 
-                        # Re-fetch sub_row
-                        cursor.execute("""
-                        SELECT s.*, p.name as plan_name, p.max_documents, p.max_questions_month, p.max_exams_month, p.allow_qti_export, p.allow_full_bloom
-                        FROM subscriptions s
-                        JOIN plans p ON s.plan_id = p.id
-                        WHERE s.user_id = ? AND s.status = 'active'
-                        ORDER BY s.created_at DESC LIMIT 1
-                        """, (user_id,))
-                        sub_row = cursor.fetchone()
+                    if not sub_row and raw_tier in ["PRO_MONTH", "PRO_YEAR", "ENTERPRISE"]:
+                        plan_exp = a_user["plan_expires_at"]
+                        not_expired = True
+                        if plan_exp:
+                            try:
+                                exp_time = datetime.fromisoformat(str(plan_exp).replace("Z", ""))
+                                if datetime.now() > exp_time:
+                                    not_expired = False
+                            except Exception:
+                                pass
+                        
+                        if not_expired:
+                            cursor.execute("SELECT * FROM plans WHERE code = ? LIMIT 1", (raw_tier,))
+                            p_match = cursor.fetchone()
+                            p_id = p_match["id"] if p_match else f"plan_{raw_tier.lower()}"
+                            auto_sub_id = f"sub_auto_sync_{uuid.uuid4().hex[:10]}"
+                            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            cursor.execute(
+                                """INSERT INTO subscriptions (id, user_id, plan_id, plan_code, status, starts_at, expires_at)
+                                   VALUES (?, ?, ?, ?, 'active', ?, ?)""",
+                                (auto_sub_id, user_id, p_id, raw_tier, now_str, plan_exp)
+                            )
+                            conn.commit()
+
+                            # Re-fetch sub_row
+                            cursor.execute("""
+                            SELECT s.*, p.name as plan_name, p.max_documents, p.max_questions_month, p.max_exams_month, p.allow_qti_export, p.allow_full_bloom
+                            FROM subscriptions s
+                            JOIN plans p ON s.plan_id = p.id
+                            WHERE s.user_id = ? AND s.status = 'active'
+                            ORDER BY s.created_at DESC LIMIT 1
+                            """, (user_id,))
+                            sub_row = cursor.fetchone()
         except Exception as e:
             print(f"[PAYMENT-SERVICE] Fallback auth.db sync warning: {e}")
     
@@ -1036,7 +1048,7 @@ def get_revenue_breakdown():
     }
 
 @app.get("/orders/history")
-def get_order_history(user_id: Optional[str] = None, status: Optional[str] = None):
+def get_order_history(user_id: Optional[str] = None, email: Optional[str] = None, status: Optional[str] = None):
     """Lịch sử giao dịch thanh toán kèm tự động quét hết hạn (EXPIRED) và lọc trạng thái."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1052,9 +1064,20 @@ def get_order_history(user_id: Optional[str] = None, status: Optional[str] = Non
 
     query = "SELECT * FROM orders WHERE 1=1"
     params = []
-    if user_id:
+    clean_email = email.strip().lower() if email else None
+    clean_uid = user_id.strip() if user_id else None
+
+    # Bảo vệ quyền riêng tư: Nếu có user_id hoặc email thì chỉ lấy đơn của người đó
+    if clean_uid and clean_email:
+        query += " AND (user_id = ? OR LOWER(user_email) = ?)"
+        params.extend([clean_uid, clean_email])
+    elif clean_uid:
         query += " AND user_id = ?"
-        params.append(user_id)
+        params.append(clean_uid)
+    elif clean_email:
+        query += " AND LOWER(user_email) = ?"
+        params.append(clean_email)
+
     if status and status.upper() != "ALL":
         query += " AND status = ?"
         params.append(status.upper())
