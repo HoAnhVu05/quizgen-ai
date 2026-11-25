@@ -167,6 +167,16 @@ async def generate_questions(
         except Exception as e:
             print(f"[AI-SERVICE] Cảnh báo kết nối Document Service: {e}")
 
+    # Lọc bỏ triệt để các chunk rác mục lục (chứa chuỗi dấu chấm .....) hoặc trang bìa xuất bản
+    if retrieved_chunks:
+        valid_academic_chunks = [
+            c for c in retrieved_chunks
+            if not re.search(r"\.{5,}", c.get("text") or c.get("text_snippet") or "")
+            and not re.search(r"^\s*MỤC\s*LỤC\b", c.get("text") or c.get("text_snippet") or "", re.IGNORECASE)
+        ]
+        if valid_academic_chunks:
+            retrieved_chunks = valid_academic_chunks
+
     if not retrieved_chunks:
         job.status = "failed"
         job.error_message = f"Tài liệu '{textbook_name}' chưa có dữ liệu văn bản để sinh câu hỏi."
@@ -212,7 +222,8 @@ async def generate_questions(
             chapter_name=primary_chapter,
             textbook_name=textbook_name,
             images=req.get_images(),
-            pedagogical_prompt=req.get_pedagogical_prompt()
+            pedagogical_prompt=req.get_pedagogical_prompt(),
+            domain=req.get_domain()
         )
 
         # Cập nhật kết quả Job vào DB

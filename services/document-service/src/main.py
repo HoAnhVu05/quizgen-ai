@@ -113,15 +113,22 @@ def get_user_plan_tier(user_id: str) -> str:
             conn = sqlite3.connect(AUTH_DB_PATH, timeout=3.0)
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            cursor.execute("SELECT role, plan_tier, plan_expires_at FROM users WHERE id = ?", (user_id,))
+            cursor.execute("SELECT email, role, plan_tier, plan_expires_at FROM users WHERE id = ?", (user_id,))
             row = cursor.fetchone()
             conn.close()
             if row:
-                if row["role"] == "admin":
-                    return "PRO_YEAR"
+                u_email = (row["email"] or "").strip().lower()
                 raw_tier = (row["plan_tier"] or "").strip().upper()
                 if raw_tier in ["PRO", "STANDARD"]:
                     raw_tier = "PRO_MONTH"
+                
+                # Nếu đã bị set FREE thì dứt khoát là FREE
+                if raw_tier == "FREE":
+                    return "FREE"
+
+                # Chỉ root admin tối cao mới được cấp mặc định PRO_YEAR nếu chưa có gói
+                if u_email == "quizgen.ai.team@gmail.com" and not raw_tier:
+                    return "PRO_YEAR"
                 
                 exp = row["plan_expires_at"]
                 if exp:
@@ -1017,6 +1024,26 @@ _CACHED_QGROUPS = None
 _CACHED_INVITATIONS = None
 _CACHED_FRIEND_REQUESTS = None
 
+def get_system_avatar_map() -> dict:
+    """Đọc bảng ánh xạ { email: avatar_url } từ cơ sở dữ liệu xác thực auth.db để tự động điền avatar vào mọi tin nhắn & nhóm."""
+    try:
+        base_dir = Path(__file__).resolve().parent.parent.parent
+        auth_db_path = base_dir / "services" / "auth-service" / "data" / "auth.db"
+        if not auth_db_path.exists():
+            auth_db_path = base_dir / "auth-service" / "data" / "auth.db"
+        if auth_db_path.exists():
+            import sqlite3
+            conn = sqlite3.connect(str(auth_db_path))
+            cur = conn.cursor()
+            cur.execute("SELECT LOWER(email), avatar_url FROM users WHERE avatar_url IS NOT NULL AND avatar_url != ''")
+            rows = cur.fetchall()
+            conn.close()
+            return {r[0].strip().lower(): r[1].strip() for r in rows if r[0] and r[1]}
+    except Exception:
+        pass
+    return {}
+
+
 def deduplicate_qgroups(groups: list) -> list:
     unique = []
     seen_channel_keys = set()
@@ -1202,15 +1229,32 @@ def get_qgroups(email: Optional[str] = Query(None), request: Request = None):
     user_email = email
     if not user_email and request:
         user_email = request.headers.get("x-user-email")
+    filtered = groups
     if user_email:
         clean = user_email.strip().lower()
-        return [
+        filtered = [
             g for g in groups
             if clean == (g.get("ownerEmail") or "").strip().lower()
             or clean == (g.get("directPartnerEmail") or "").strip().lower()
             or clean in [str(m).strip().lower() for m in g.get("members", [])]
         ]
-    return groups
+
+    # Bổ sung avatar hệ thống cho nhóm và tin nhắn nếu còn thiếu
+    avatar_map = get_system_avatar_map()
+    if avatar_map:
+        for g in filtered:
+            if g.get("isDirect"):
+                p_email = (g.get("directPartnerEmail") or "").strip().lower()
+                o_email = (g.get("ownerEmail") or "").strip().lower()
+                if not g.get("directPartnerAvatarUrl") and p_email in avatar_map:
+                    g["directPartnerAvatarUrl"] = avatar_map[p_email]
+                if not g.get("ownerAvatarUrl") and o_email in avatar_map:
+                    g["ownerAvatarUrl"] = avatar_map[o_email]
+            for m in g.get("messages", []):
+                s_email = (m.get("senderEmail") or "").strip().lower()
+                if not m.get("senderAvatarUrl") and s_email in avatar_map:
+                    m["senderAvatarUrl"] = avatar_map[s_email]
+    return filtered
 
 @app.post("/qgroups")
 @app.post("/documents/qgroups")
@@ -1257,6 +1301,14 @@ async def save_qgroups_endpoint(request: Request):
 async def add_qgroup_message(group_id: str, request: Request):
     msg = await request.json()
     msg_id = str(msg.get("id") or "").strip()
+    
+    # Bổ sung senderAvatarUrl tự động từ hệ thống nếu chưa có
+    if not msg.get("senderAvatarUrl") and msg.get("senderEmail"):
+        avatar_map = get_system_avatar_map()
+        s_email = str(msg.get("senderEmail")).strip().lower()
+        if s_email in avatar_map:
+            msg["senderAvatarUrl"] = avatar_map[s_email]
+
     groups = load_server_qgroups()
     now_ms = int(time.time() * 1000)
     for g in groups:
@@ -2208,6 +2260,7 @@ async def respond_friend_request(req_id: str, request: Request):
                 "description": f"Cuộc trò chuyện giữa {user_name} và {sender_name}",
                 "ownerEmail": sender_email,
                 "ownerName": sender_name,
+                "ownerAvatarUrl": target_req.get("senderAvatarUrl") or "",
                 "joinPolicy": "open",
                 "memberCount": 2,
                 "members": [sender_email, user_email],
@@ -2215,6 +2268,7 @@ async def respond_friend_request(req_id: str, request: Request):
                 "isDirect": True,
                 "directPartnerEmail": user_email,
                 "directPartnerName": user_name,
+                "directPartnerAvatarUrl": payload.get("userAvatarUrl") or "",
                 "updatedAt": int(time.time() * 1000),
                 "messages": [{
                     "id": f"msg-{int(time.time()*1000)}",
@@ -2292,6 +2346,19 @@ def get_forum_posts(
             or kw in str(p.get("tag", "")).lower()
             or kw in str(p.get("attachmentFileName", "")).lower()
         ]
+
+    # Bổ sung avatar tác giả bài viết và bình luận nếu còn thiếu
+    avatar_map = get_system_avatar_map()
+    if avatar_map:
+        for p in result:
+            a_email = (p.get("authorEmail") or "").strip().lower()
+            if not p.get("authorAvatarUrl") and a_email in avatar_map:
+                p["authorAvatarUrl"] = avatar_map[a_email]
+            for c in p.get("comments", []):
+                c_email = (c.get("authorEmail") or "").strip().lower()
+                if not c.get("authorAvatarUrl") and c_email in avatar_map:
+                    c["authorAvatarUrl"] = avatar_map[c_email]
+
     return result
 
 @app.post("/forum/posts")
@@ -2531,27 +2598,64 @@ def get_extracted_image(file_name: str):
     import urllib.parse
     raw_name = file_name
     unquoted = urllib.parse.unquote(file_name)
-    target_path = EXTRACTED_IMAGES_DIR / unquoted
-    if not target_path.exists() or not target_path.is_file():
-        target_path = EXTRACTED_IMAGES_DIR / raw_name
-    if not target_path.exists() or not target_path.is_file():
-        target_path = QUESTION_ATTACHMENTS_DIR / unquoted
-    if not target_path.exists() or not target_path.is_file():
-        target_path = QUESTION_ATTACHMENTS_DIR / raw_name
-    if not target_path.exists() or not target_path.is_file():
-        target_path = FORUM_ATTACHMENTS_DIR / unquoted
-    if not target_path.exists() or not target_path.is_file():
-        target_path = FORUM_ATTACHMENTS_DIR / raw_name
-    if not target_path.exists() or not target_path.is_file():
-        raise HTTPException(status_code=404, detail="Hình ảnh không tồn tại")
+    # 1. Tìm trực tiếp theo tên tệp trong các thư mục học liệu
+    candidate_dirs = [
+        EXTRACTED_IMAGES_DIR,
+        QUESTION_ATTACHMENTS_DIR,
+        FORUM_ATTACHMENTS_DIR,
+        DATA_DIR / "uploads",
+        DATA_DIR
+    ]
     
-    import mimetypes
-    content_type, _ = mimetypes.guess_type(target_path.name)
-    return FileResponse(
-        path=str(target_path),
-        media_type=content_type or "image/png",
-        content_disposition_type="inline",
-        headers={"Access-Control-Allow-Origin": "*"}
+    target_path = None
+    names_to_try = [unquoted, raw_name]
+    stem_name = Path(unquoted).stem
+    for ext in ["", ".png", ".jpg", ".jpeg", ".webp", ".svg"]:
+        for n in [unquoted, raw_name, f"{stem_name}{ext}" if ext else ""]:
+            if not n:
+                continue
+            for c_dir in candidate_dirs:
+                cand = c_dir / n
+                if cand.exists() and cand.is_file():
+                    target_path = cand
+                    break
+            if target_path:
+                break
+        if target_path:
+            break
+
+    # Nếu tìm thấy tệp ảnh vật lý, trả về tệp nguyên bản
+    if target_path and target_path.exists() and target_path.is_file():
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(target_path.name)
+        return FileResponse(
+            path=str(target_path),
+            media_type=content_type or "image/png",
+            content_disposition_type="inline",
+            headers={"Access-Control-Allow-Origin": "*"}
+        )
+    
+    # 2. Nếu tệp chưa trích xuất hoặc đang chờ biên tập, trả về SVG Placeholder học thuật chuyên nghiệp
+    clean_stem = Path(unquoted).stem.replace('_', ' ').replace('-', ' ')
+    if len(clean_stem) > 50:
+        clean_stem = clean_stem[:47] + "..."
+    
+    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" width="560" height="170" viewBox="0 0 560 170" fill="none">
+  <rect width="560" height="170" rx="10" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="250" y="24" width="60" height="46" rx="8" fill="#F1F5F9" stroke="#94A3B8" stroke-width="1.5"/>
+  <circle cx="266" cy="40" r="5" fill="#64748B"/>
+  <path d="M256 60l14-14 12 12 10-10 12 12" stroke="#64748B" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="280" y="104" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1E293B">Sơ đồ minh họa đính kèm: {clean_stem}</text>
+  <text x="280" y="128" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#64748B">(Hình ảnh giáo trình — Bấm vào câu hỏi để vẽ trong Studio hoặc tải ảnh mới lên)</text>
+</svg>"""
+    return Response(
+        content=svg_content,
+        media_type="image/svg+xml",
+        headers={
+            "Content-Type": "image/svg+xml; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "no-cache"
+        }
     )
 
 

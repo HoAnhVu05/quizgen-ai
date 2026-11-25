@@ -438,6 +438,94 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     [myDocuments, sharedDocuments, documents, selectedBook]
   );
 
+  // Đồng bộ thời gian thực giáo trình đang chọn ra toàn hệ thống & Quanta Copilot
+  useEffect(() => {
+    if (selectedDocument) {
+      try {
+        localStorage.setItem('quizgen_selected_book_id', selectedDocument.id);
+        localStorage.setItem('quizgen_selected_book_name', selectedDocument.name);
+        localStorage.setItem('quizgen_selected_book_pages', String(selectedDocument.totalPages || 120));
+        window.dispatchEvent(
+          new CustomEvent('quizgen_book_selected', {
+            detail: {
+              id: selectedDocument.id,
+              name: selectedDocument.name,
+              totalPages: selectedDocument.totalPages,
+            },
+          })
+        );
+      } catch {}
+    }
+  }, [selectedDocument]);
+
+  // Lắng nghe sự kiện người dùng bấm 'Tự chỉnh' từ Quanta Blueprint Card (kể cả khi đang ở Bước 2)
+  useEffect(() => {
+    const handleApplyBlueprint = (e: any) => {
+      const bp = e.detail;
+      if (!bp) return;
+
+      // Đảm bảo đang mở tab cấu hình sinh mới
+      setActiveMainTab('generate');
+
+      // 1. Tự động chọn đúng sách
+      if (bp.documentId || bp.documentName) {
+        const allAvailable = [...documents, ...myDocuments, ...sharedDocuments];
+        const targetDoc = allAvailable.find(
+          (d) =>
+            (bp.documentId && d.id === bp.documentId) ||
+            (bp.documentName && (
+              d.name.toLowerCase().includes(bp.documentName.toLowerCase()) ||
+              bp.documentName.toLowerCase().includes(d.name.toLowerCase()) ||
+              d.id === bp.documentName
+            ))
+        );
+        if (targetDoc) {
+          setSelectedBook(targetDoc.id);
+          try {
+            localStorage.setItem('quizgen_selected_book_id', targetDoc.id);
+            localStorage.setItem('quizgen_selected_book_name', targetDoc.name);
+            localStorage.setItem('quizgen_selected_book_pages', String(targetDoc.totalPages || 120));
+          } catch {}
+        } else if (bp.documentId) {
+          setSelectedBook(bp.documentId);
+          try {
+            localStorage.setItem('quizgen_selected_book_id', bp.documentId);
+            if (bp.documentName) localStorage.setItem('quizgen_selected_book_name', bp.documentName);
+          } catch {}
+        }
+      }
+
+      // 2. Tự động tính toán và điền ma trận Bloom
+      const count = Number(bp.questionCount || 20);
+      const ratio = bp.bloomRatio || { know: 30, understand: 40, apply: 20, analyze: 10 };
+      const nb = Math.round((count * (ratio.know || 25)) / 100);
+      const th = Math.round((count * (ratio.understand || 25)) / 100);
+      const vd = Math.round((count * (ratio.apply || 25)) / 100);
+      const vdc = Math.max(0, count - nb - th - vd);
+
+      setBloomDistribution({
+        nhanBiet: nb,
+        thongHieu: th,
+        vanDung: vd,
+        phanTich: vdc,
+      });
+
+      // 3. Tự động chọn chương
+      if (bp.chapter && bp.chapter !== 'Toàn bộ giáo trình') {
+        setSelectedChapters([bp.chapter]);
+      }
+
+      onShowToast(
+        'success',
+        'Quanta đã nạp cấu hình đề thi!',
+        `Đã tự động điền cấu hình ma trận ${count} câu hỏi theo đề xuất của Quanta. Thầy/Cô có thể tự do điều chỉnh thêm!`
+      );
+    };
+
+    window.addEventListener('quizgen_apply_blueprint', handleApplyBlueprint);
+    return () => window.removeEventListener('quizgen_apply_blueprint', handleApplyBlueprint);
+  }, [documents, myDocuments, sharedDocuments, onShowToast]);
+
   const chaptersList = useMemo(() => {
     if (!selectedBook) return [];
     return (

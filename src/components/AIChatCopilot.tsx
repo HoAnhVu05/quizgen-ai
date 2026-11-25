@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sparkles,
   X,
@@ -17,11 +17,13 @@ import {
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
 import { useTheme } from '../context/ThemeContext';
-import apiClient from '../services/apiClient';
+import apiClient, { API_BASE } from '../services/apiClient';
 import {
   QuantaMarkdownRenderer,
   SupportTicketActionData,
   ExamBlueprintActionData,
+  PatchQuestionActionData,
+  ImportExamActionData,
 } from './QuantaMarkdownRenderer';
 
 interface ChatMessage {
@@ -37,7 +39,8 @@ interface AIChatCopilotProps {
   currentUser: UserProfile | null;
   activeQuestion?: Question | null;
   onNavigate?: (screen: ScreenId) => void;
-  onGenerateSuccess?: (newQuestions: Question[]) => void;
+  onGenerateSuccess?: (newQuestions: Question[], targetScreen?: ScreenId) => void;
+  onUpdateQuestion?: (updated: Question) => void;
   onShowToast?: (type: 'success' | 'error' | 'warning' | 'info', title: string, message: string) => void;
 }
 
@@ -89,6 +92,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   activeQuestion,
   onNavigate,
   onGenerateSuccess,
+  onUpdateQuestion,
   onShowToast,
 }) => {
   const { activeThemeId } = useTheme();
@@ -263,21 +267,87 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     ? `${currentUser.academicTitle} ${currentUser.fullName}`
     : currentUser?.fullName || 'Thầy/Cô';
 
-  // Tự động đồng bộ tài liệu mới nhất từ CSDL thực tế mỗi khi mở chat hoặc chuyển màn hình
+  // Lắng nghe sự kiện người dùng chọn sách ở Bước 1, Bước 2 để cập nhật ngay lập tức
+  useEffect(() => {
+    const handleBookSelected = (e: any) => {
+      const doc = e.detail;
+      if (doc && doc.id) {
+        setSelectedBookId(doc.id);
+        setUploadedBooks((prev) => {
+          if (prev.some((b: any) => b.id === doc.id)) {
+            return prev.map((b: any) =>
+              b.id === doc.id
+                ? { ...b, name: doc.name || b.name, totalPages: doc.totalPages || b.totalPages }
+                : b
+            );
+          }
+          return [
+            {
+              id: doc.id,
+              name: doc.name || 'Tài liệu giáo trình',
+              totalPages: doc.totalPages || 120,
+              chaptersCount: 4,
+              isShared: false,
+            },
+            ...prev,
+          ];
+        });
+      }
+    };
+    window.addEventListener('quizgen_book_selected', handleBookSelected);
+    return () => window.removeEventListener('quizgen_book_selected', handleBookSelected);
+  }, []);
+
+  // Tự động đồng bộ toàn bộ tài liệu (cả tài liệu cá nhân và thư viện giáo trình dùng chung)
   useEffect(() => {
     const syncRealDocuments = async () => {
       try {
-        const res = await apiClient.get<any[]>('/documents?scope=my');
-        if (Array.isArray(res)) {
-          setUploadedBooks(res);
+        const [myRes, sharedRes] = await Promise.all([
+          apiClient.get<any[]>('/documents/documents?scope=my').catch(() =>
+            apiClient.get<any[]>('/documents?scope=my').catch(() => [])
+          ),
+          apiClient.get<any[]>('/documents/documents?scope=shared').catch(() =>
+            apiClient.get<any[]>('/documents?scope=shared').catch(() => [])
+          ),
+        ]);
+
+        const rawList = [
+          ...(Array.isArray(myRes) ? myRes : []),
+          ...(Array.isArray(sharedRes) ? sharedRes : []),
+        ];
+
+        if (rawList.length > 0) {
+          const normalized = rawList
+            .filter(Boolean)
+            .map((b: any) => ({
+              id: String(b.id),
+              name: String(b.name || b.title || 'Tài liệu giáo trình'),
+              totalPages: Number(b.totalPages || b.total_pages || 120),
+              chaptersCount: Number(b.chaptersCount || b.chapters_count || 4),
+              isShared: Boolean(b.isShared || b.is_shared),
+            }));
+
+          const unique = normalized.filter(
+            (doc, index, self) => index === self.findIndex((d) => d.id === doc.id)
+          );
+
+          setUploadedBooks(unique);
           try {
-            localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(res));
+            localStorage.setItem('quizgen_uploaded_documents', JSON.stringify(unique));
           } catch {}
+
           const selId = localStorage.getItem('quizgen_selected_book_id');
-          if (selId && res.some((b: any) => b.id === selId)) {
+          const selName = localStorage.getItem('quizgen_selected_book_name');
+
+          if (selId && unique.some((b) => b.id === selId)) {
             setSelectedBookId(selId);
-          } else if (res.length > 0) {
-            setSelectedBookId(res[0].id);
+          } else if (selName && unique.some((b) => b.name === selName)) {
+            const found = unique.find((b) => b.name === selName);
+            if (found) setSelectedBookId(found.id);
+          } else if (selId) {
+            setSelectedBookId(selId);
+          } else if (unique.length > 0) {
+            setSelectedBookId(unique[0].id);
           }
           return;
         }
@@ -286,12 +356,20 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       // Fallback từ localStorage nếu offline
       try {
         const books = JSON.parse(localStorage.getItem('quizgen_uploaded_documents') || '[]');
-        setUploadedBooks(books);
-        const selId = localStorage.getItem('quizgen_selected_book_id');
-        if (selId && books.some((b: any) => b.id === selId)) {
-          setSelectedBookId(selId);
-        } else if (books.length > 0) {
-          setSelectedBookId(books[0].id);
+        if (Array.isArray(books) && books.length > 0) {
+          setUploadedBooks(books);
+          const selId = localStorage.getItem('quizgen_selected_book_id');
+          const selName = localStorage.getItem('quizgen_selected_book_name');
+          if (selId && books.some((b: any) => b.id === selId)) {
+            setSelectedBookId(selId);
+          } else if (selName && books.some((b: any) => b.name === selName)) {
+            const found = books.find((b: any) => b.name === selName);
+            if (found) setSelectedBookId(found.id);
+          } else if (selId) {
+            setSelectedBookId(selId);
+          } else if (books.length > 0) {
+            setSelectedBookId(books[0].id);
+          }
         }
       } catch {}
     };
@@ -299,13 +377,46 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     syncRealDocuments();
   }, [isOpen, currentScreen]);
 
-  const activeBook = uploadedBooks.find((b: any) => b.id === selectedBookId) || (uploadedBooks.length > 0 ? uploadedBooks[0] : null);
+  const activeBook = useMemo(() => {
+    // 1. Tìm theo selectedBookId trong danh sách uploadedBooks
+    if (selectedBookId) {
+      const match = uploadedBooks.find((b: any) => b.id === selectedBookId || b.name === selectedBookId);
+      if (match) return match;
+    }
+
+    // 2. Tìm theo thông tin sách đã lưu trong localStorage (từ AIGenerationScreen / TextbookUploadScreen)
+    const savedId = localStorage.getItem('quizgen_selected_book_id');
+    const savedName = localStorage.getItem('quizgen_selected_book_name');
+    const savedPages = localStorage.getItem('quizgen_selected_book_pages');
+
+    if (savedName || savedId) {
+      const matchSaved = uploadedBooks.find(
+        (b: any) => (savedId && b.id === savedId) || (savedName && b.name === savedName)
+      );
+      if (matchSaved) return matchSaved;
+      return {
+        id: savedId || 'doc-active',
+        name: savedName || 'Giáo trình đã chọn',
+        totalPages: Number(savedPages) || 120,
+      };
+    }
+
+    return uploadedBooks.length > 0 ? uploadedBooks[0] : null;
+  }, [uploadedBooks, selectedBookId]);
 
   const userHonorific = getUserHonorific(currentUser);
+  const userChatKey = currentUser?.email
+    ? `quizgen_copilot_chat_${currentUser.email.toLowerCase().trim()}`
+    : 'quizgen_copilot_chat';
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     try {
-      const saved = localStorage.getItem('quizgen_copilot_chat');
+      const email = currentUser?.email?.toLowerCase().trim();
+      const specificKey = email ? `quizgen_copilot_chat_${email}` : null;
+      const saved = (specificKey ? localStorage.getItem(specificKey) : null) ||
+        localStorage.getItem('quizgen_copilot_chat') ||
+        (specificKey ? sessionStorage.getItem(specificKey) : null) ||
+        sessionStorage.getItem('quizgen_copilot_chat');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -313,6 +424,21 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     } catch {}
     return [DEFAULT_WELCOME_MESSAGE(userHonorific, screenLabel, activeBook?.name)];
   });
+
+  // Tự động khôi phục tin nhắn khi thông tin người dùng được nạp thành công
+  useEffect(() => {
+    if (!currentUser?.email) return;
+    try {
+      const specificKey = `quizgen_copilot_chat_${currentUser.email.toLowerCase().trim()}`;
+      const saved = localStorage.getItem(specificKey) || localStorage.getItem('quizgen_copilot_chat');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 1) {
+          setMessages(parsed);
+        }
+      }
+    } catch {}
+  }, [currentUser?.email]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -396,6 +522,214 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       return true;
     } catch (e) {
       console.error('Lỗi gửi ticket:', e);
+      return false;
+    }
+  };
+
+  // Handler xử lý khi Quanta đề xuất tinh chỉnh / sửa câu hỏi 1-chạm (Trọng tâm 2)
+  const handlePatchQuestion = async (patchData: PatchQuestionActionData) => {
+    try {
+      if (!patchData || !patchData.questionId) return false;
+
+      // 1. Tìm câu hỏi trong localStorage hoặc activeQuestion
+      const savedQuestions: Question[] = JSON.parse(
+        localStorage.getItem('quizgen_questions') ||
+        localStorage.getItem('quizgen_pending_review_questions') ||
+        '[]'
+      );
+
+      const targetQ = savedQuestions.find((q) => q.id === patchData.questionId) ||
+        (activeQuestion?.id === patchData.questionId ? activeQuestion : null);
+
+      if (!targetQ) {
+        if (onShowToast) {
+          onShowToast('warning', 'Không tìm thấy câu hỏi', `Không tìm thấy câu hỏi ID ${patchData.questionId} để cập nhật.`);
+        }
+        return false;
+      }
+
+      // 2. Hợp nhất các trường đã tinh chỉnh
+      const patch = patchData.patch || {};
+      const updatedQ: Question = {
+        ...targetQ,
+        question: patch.question || targetQ.question,
+        options: patch.options && patch.options.length > 0 ? patch.options.map((o) => ({
+          id: o.id,
+          label: o.label || o.id,
+          text: o.text,
+        })) : targetQ.options,
+        correctAnswerId: patch.correctAnswerId || targetQ.correctAnswerId,
+        explanation: patch.explanation || targetQ.explanation,
+        bloomLevel: (patch.bloomLevel as any) || targetQ.bloomLevel,
+      };
+
+      // 3. Cập nhật state ở tầng App
+      if (onUpdateQuestion) {
+        onUpdateQuestion(updatedQ);
+      }
+
+      // 4. Lưu đồng bộ vào localStorage
+      const updatedList = savedQuestions.map((q) => (q.id === updatedQ.id ? updatedQ : q));
+      if (!savedQuestions.some((q) => q.id === updatedQ.id)) {
+        updatedList.unshift(updatedQ);
+      }
+      localStorage.setItem('quizgen_questions', JSON.stringify(updatedList));
+      localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(updatedList));
+
+      // 5. Cập nhật CSDL backend qua API PUT
+      try {
+        await apiClient.fetch(`${API_BASE}/questions/${updatedQ.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedQ),
+        });
+      } catch (dbErr) {
+        console.warn('Lỗi đồng bộ CSDL questions PUT:', dbErr);
+      }
+
+      if (onShowToast) {
+        onShowToast('success', 'Quanta đã cập nhật câu hỏi!', patchData.diffSummary || `Đã cập nhật câu hỏi ${updatedQ.id} thành công.`);
+      }
+
+      // Thêm phản hồi xác nhận của Quanta vào chat
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-${Date.now()}`,
+          role: 'assistant',
+          content: `✅ Quanta đã cập nhật trực tiếp câu hỏi **${updatedQ.id}** vào bộ đề tại Bước 3 theo yêu cầu của Thầy/Cô!\n\n• **Đáp án đúng:** Phương án ${updatedQ.correctAnswerId}\n• **Mức độ Bloom:** ${updatedQ.bloomLevel}\n\nThầy/Cô có thể kiểm tra ngay trong Không gian Thẩm định.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      ]);
+
+      return true;
+    } catch (e) {
+      console.error('Lỗi khi Quanta patch câu hỏi:', e);
+      return false;
+    }
+  };
+
+  // Handler xử lý khi Quanta nạp đề thi / câu hỏi mới vào Bước 4 (In đề) hoặc Bước 3 (Thẩm định)
+  const handleImportExam = async (importData: ImportExamActionData, targetScreen: ScreenId = 'bank') => {
+    try {
+      if (!importData || !importData.questions || importData.questions.length === 0) return false;
+
+      const labels = ['A', 'B', 'C', 'D'];
+      const targetDocName = activeBook?.name || 'Giáo trình Quanta AI';
+      const mappedQuestions: Question[] = importData.questions.map((rawQ: any, idx: number) => {
+        let opts = rawQ.options || [];
+        if (Array.isArray(opts)) {
+          opts = opts.map((opt: any, optIdx: number) => {
+            if (typeof opt === 'string') {
+              const char = labels[optIdx] || String.fromCharCode(65 + optIdx);
+              return { id: char, label: char, text: opt };
+            }
+            const char = opt.label || labels[optIdx] || String.fromCharCode(65 + optIdx);
+            return {
+              id: opt.id || char,
+              label: char,
+              text: opt.text || opt.content || '',
+            };
+          });
+        }
+
+        const bloomRaw = String(rawQ.bloomLevel || rawQ.bloom_level || 'Thông hiểu').toLowerCase();
+        let bloomLevel: Question['bloomLevel'] = 'Thông hiểu';
+        if (bloomRaw.includes('nhận biết') || bloomRaw.includes('remember')) bloomLevel = 'Nhận biết';
+        else if (bloomRaw.includes('vận dụng cao') || bloomRaw.includes('phân tích') || bloomRaw.includes('analyze')) bloomLevel = 'Phân tích';
+        else if (bloomRaw.includes('vận dụng') || bloomRaw.includes('apply')) bloomLevel = 'Vận dụng';
+
+        return {
+          id: String(rawQ.id || `q-quanta-${Date.now()}-${idx + 1}`),
+          sourceChunkId: `chunk-quanta-${idx + 1}`,
+          textbookName: rawQ.textbookName || targetDocName,
+          chapter: rawQ.chapter || 'Chương tổng hợp',
+          bloomLevel,
+          question: String(rawQ.question || rawQ.questionText || ''),
+          options: opts,
+          correctAnswerId: String(rawQ.correctAnswerId || rawQ.correctAnswer || opts[0]?.id || 'A'),
+          explanation: String(rawQ.explanation || 'Lời giải thích được Quanta AI biên soạn bám sát chuẩn khảo thí.'),
+          confidenceScore: 98,
+          status: (targetScreen === 'bank' ? 'approved' : 'pending') as any,
+          createdAt: 'Hôm nay',
+          hasFormula: Boolean(rawQ.hasFormula || String(rawQ.question || '').includes('$')),
+        };
+      });
+
+      // 1. Cập nhật localStorage
+      const existing: Question[] = JSON.parse(
+        localStorage.getItem('quizgen_questions') ||
+        localStorage.getItem('quizgen_pending_review_questions') ||
+        '[]'
+      );
+      const combined = [...mappedQuestions, ...existing.filter((eq) => !mappedQuestions.some((mq) => mq.id === eq.id))];
+      try {
+        localStorage.setItem('quizgen_questions', JSON.stringify(combined));
+        localStorage.setItem('quizgen_pending_review_questions', JSON.stringify(combined));
+      } catch {}
+
+      // 2. Nếu nạp vào Bước 4 (In đề), tạo sẵn gói đề thi hoàn chỉnh trong quizgen_saved_exams
+      if (targetScreen === 'bank') {
+        try {
+          const savedExamsRaw = localStorage.getItem('quizgen_saved_exams');
+          const savedExamsList = savedExamsRaw ? JSON.parse(savedExamsRaw) : [];
+          const examRecord = {
+            id: `exam-${Date.now()}`,
+            title: importData.title || `Bộ Đề Khảo Thí Quanta (${mappedQuestions.length} câu)`,
+            subject: targetDocName.replace(/\.[^/.]+$/, ''),
+            faculty: currentUser?.faculty || 'KHOA CÔNG NGHỆ THÔNG TIN',
+            university: currentUser?.university || 'TRƯỜNG ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH)',
+            durationMinutes: Math.max(15, mappedQuestions.length * 2),
+            examCodeCount: 4,
+            examCodes: ['101', '102', '103', '104'],
+            questionCount: mappedQuestions.length,
+            questions: mappedQuestions,
+            createdAt: new Date().toLocaleString('vi-VN'),
+            format: 'docx',
+          };
+          const updatedSavedExams = [examRecord, ...savedExamsList].slice(0, 50);
+          localStorage.setItem('quizgen_saved_exams', JSON.stringify(updatedSavedExams));
+        } catch {}
+      }
+
+      // 3. Cập nhật State toàn cục qua onGenerateSuccess
+      if (onGenerateSuccess) {
+        onGenerateSuccess(combined, targetScreen);
+      }
+
+      // 4. Điều hướng
+      if (onNavigate) {
+        onNavigate(targetScreen);
+      }
+
+      if (onShowToast) {
+        onShowToast(
+          'success',
+          'Quanta đã nạp đề thi thành công!',
+          `Đã nạp ${mappedQuestions.length} câu hỏi vào ${targetScreen === 'bank' ? 'Bước 4 (In ấn & Ngân hàng đề)' : 'Bước 3 (Thẩm định)'}.`
+        );
+      }
+
+      // 5. Thêm phản hồi xác nhận vào chat
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `msg-import-${Date.now()}`,
+          role: 'assistant',
+          content: `✅ Quanta đã nạp thành công **${mappedQuestions.length} câu hỏi** vào **${targetScreen === 'bank' ? 'Bước 4: Ngân hàng đề & In đề' : 'Bước 3: Không gian Thẩm định'}** theo yêu cầu của Thầy/Cô!\n\n` +
+            `• **Đề thi:** ${importData.title || 'Bộ đề thi Quanta AI'}\n` +
+            `• **Số lượng câu hỏi:** ${mappedQuestions.length} câu đã sẵn sàng tạo mã đề (101, 102...) và xuất bản in A4 / file Word (.docx) / phiếu OMR.\n\n` +
+            `*Hệ thống đã tự động chuyển màn hình sang Bước ${targetScreen === 'bank' ? '4' : '3'} để Thầy/Cô thao tác ngay ạ!*`,
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          suggestedActions: targetScreen === 'bank'
+            ? ['🖨️ Xuất file Word (.docx)', '📋 Tạo mã đề hoán vị', '📝 Quay lại duyệt Bước 3']
+            : ['🚀 Chuyển sang Bước 4 in đề', '💡 Đổi câu hỏi khó hơn', '📊 Xem thống kê Bloom'],
+        },
+      ]);
+
+      return true;
+    } catch (e) {
+      console.error('Lỗi khi Quanta import đề thi:', e);
       return false;
     }
   };
@@ -576,12 +910,21 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     }
   };
 
-  // Lưu lịch sử chat
+  // Lưu lịch sử chat an toàn và bền vững (tối đa 100 tin nhắn, lưu đa tầng localStorage & sessionStorage)
   useEffect(() => {
+    if (!messages || messages.length === 0) return;
     try {
-      localStorage.setItem('quizgen_copilot_chat', JSON.stringify(messages.slice(-20)));
-    } catch {}
-  }, [messages]);
+      const payload = JSON.stringify(messages.slice(-100));
+      if (userChatKey) {
+        localStorage.setItem(userChatKey, payload);
+        sessionStorage.setItem(userChatKey, payload);
+      }
+      localStorage.setItem('quizgen_copilot_chat', payload);
+      sessionStorage.setItem('quizgen_copilot_chat', payload);
+    } catch (e) {
+      console.warn('Lỗi lưu lịch sử chat Quanta:', e);
+    }
+  }, [messages, userChatKey]);
 
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim();
@@ -648,6 +991,92 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
         const data = await res.json();
         replyContent = data.reply || 'Đã ghi nhận yêu cầu của Thầy/Cô.';
         suggestions = data.suggestedActions || [];
+
+        // Tự động gửi Ticket lên support-service & Admin Portal ngay lập tức khi Quanta tạo action:support_ticket
+        const ticketMatch = /```action:support_ticket\s*([\s\S]*?)```/.exec(replyContent);
+        if (ticketMatch) {
+          try {
+            const ticketPayload: SupportTicketActionData = JSON.parse(ticketMatch[1].trim());
+            setTimeout(() => {
+              handleSubmitSupportTicket(ticketPayload);
+            }, 300);
+          } catch (tErr) {
+            console.warn('Lỗi auto-submit support ticket:', tErr);
+          }
+        }
+
+        // Kiểm tra xem Quanta có trả về khối action:import_exam không
+        const importMatch = /```action:import_exam\s*([\s\S]*?)```/.exec(replyContent);
+        const isAutoRequested = /nạp|đưa vào|chuyển qua|vào bước 4|vào bước 3|in đề|xuất đề/i.test(text);
+
+        if (importMatch) {
+          try {
+            const importPayload: ImportExamActionData = JSON.parse(importMatch[1].trim());
+            if (isAutoRequested || importPayload.autoExecute) {
+              const targetScreen = /bước 3|duyệt|thẩm định/i.test(text) ? 'review' : (importPayload.targetScreen || 'bank');
+              setTimeout(() => {
+                handleImportExam(importPayload, targetScreen);
+              }, 500);
+            }
+          } catch (parseErr) {
+            console.warn('Lỗi auto-import:', parseErr);
+          }
+        } else if (isAutoRequested) {
+          // Fallback an toàn: Nếu người dùng yêu cầu nạp vào bước 4 mà Gemini chưa chèn khối action
+          // Tự động quét tìm câu hỏi trong nội dung phản hồi hiện tại hoặc tin nhắn trước
+          const parseQuestions = (rawText: string) => {
+            const parsed: any[] = [];
+            const qBlocks = rawText.split(/(?:(?:\*\*)?(?:Câu\s+\d+|Question\s+\d+|\d+\.)(?:\*\*)?[:\.\-])/i);
+            if (qBlocks.length > 1) {
+              for (let bIdx = 1; bIdx < qBlocks.length; bIdx++) {
+                const block = qBlocks[bIdx];
+                const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+                if (lines.length === 0) continue;
+                const qText = lines[0].replace(/^[:\-\s]+/, '');
+                const optLines = lines.filter((l) => /^[A-D][\.\:\)]\s*/i.test(l));
+                if (optLines.length >= 2) {
+                  const opts = optLines.map((ol, idx) => {
+                    const char = String.fromCharCode(65 + idx);
+                    return {
+                      id: char,
+                      label: char,
+                      text: ol.replace(/^[A-D][\.\:\)]\s*/i, ''),
+                    };
+                  });
+                  const ansMatch = /đáp án(?:\s+đúng)?[:\s]+(?:phương án\s+)?([A-D])/i.exec(block);
+                  parsed.push({
+                    question: qText,
+                    options: opts,
+                    correctAnswerId: ansMatch ? ansMatch[1].toUpperCase() : 'A',
+                    bloomLevel: 'Thông hiểu',
+                  });
+                }
+              }
+            }
+            return parsed;
+          };
+
+          let foundQs = parseQuestions(replyContent);
+          if (foundQs.length === 0 && messages.length > 0) {
+            for (let i = messages.length - 1; i >= 0 && messages.length - i <= 3; i--) {
+              if (messages[i].role === 'assistant') {
+                foundQs = parseQuestions(messages[i].content);
+                if (foundQs.length > 0) break;
+              }
+            }
+          }
+
+          if (foundQs.length > 0) {
+            const fallbackPayload: ImportExamActionData = {
+              title: 'Bộ Đề Khảo Thí Quanta Trích Xuất',
+              targetScreen: /bước 3|duyệt|thẩm định/i.test(text) ? 'review' : 'bank',
+              questions: foundQs,
+            };
+            setTimeout(() => {
+              handleImportExam(fallbackPayload, fallbackPayload.targetScreen || 'bank');
+            }, 500);
+          }
+        }
       } else {
         replyContent =
           'Hệ thống AI đang xử lý lưu lượng cao. Thầy/Cô vui lòng gửi lại câu hỏi hoặc thử lại sau giây lát.';
@@ -699,10 +1128,18 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   };
 
   const handleClearHistory = () => {
+    if (!window.confirm('Thầy/Cô có chắc chắn muốn làm mới và xóa toàn bộ lịch sử trò chuyện hiện tại với Quanta không?')) {
+      return;
+    }
     const welcome = DEFAULT_WELCOME_MESSAGE(userHonorific, screenLabel, activeBook?.name);
     setMessages([welcome]);
     try {
+      if (userChatKey) {
+        localStorage.removeItem(userChatKey);
+        sessionStorage.removeItem(userChatKey);
+      }
       localStorage.removeItem('quizgen_copilot_chat');
+      sessionStorage.removeItem('quizgen_copilot_chat');
     } catch {}
   };
 
@@ -826,7 +1263,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
             <div className="flex items-center gap-1">
               <button
                 onClick={handleClearHistory}
-                title="Làm mới cuộc trò chuyện"
+                title="Xóa lịch sử chat (Bắt đầu phiên mới)"
                 className="p-1.5 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
@@ -908,6 +1345,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                               onNavigate={onNavigate}
                               onSubmitTicket={handleSubmitSupportTicket}
                               onAutoGenerateExam={handleAutoGenerateExam}
+                              onPatchQuestion={handlePatchQuestion}
+                              onImportExam={handleImportExam}
                             />
                           )}
 

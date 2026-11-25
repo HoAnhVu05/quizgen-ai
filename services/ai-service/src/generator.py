@@ -49,52 +49,103 @@ except Exception:
     pass
 
 try:
-    from .prompts import BLOOM_SYSTEM_PROMPT
+    from .prompts import BLOOM_SYSTEM_PROMPT, get_domain_system_prompt
 except ImportError:
-    from src.prompts import BLOOM_SYSTEM_PROMPT
+    from src.prompts import BLOOM_SYSTEM_PROMPT, get_domain_system_prompt
 
 
 class QuestionGenerator:
     def __init__(self):
-        # Lấy API Key từ biến môi trường
-        self.api_key = os.getenv("GEMINI_API_KEY", "")
+        # Hỗ trợ Multi-Key Pool (GEMINI_API_KEYS=key1,key2... hoặc GEMINI_API_KEY)
+        raw_keys = os.getenv("GEMINI_API_KEYS", "") or os.getenv("GEMINI_API_KEY", "")
+        self.api_keys = [k.strip() for k in raw_keys.split(",") if k.strip()]
+        self.current_key_idx = 0
+        self.api_key = self.api_keys[0] if self.api_keys else ""
         self.model = None
-        self.model_name = "gemini-2.5-flash-lite"
+        self.model_name = "gemini-1.5-flash"
         self._init_model()
 
+    def _get_active_key(self) -> str:
+        if not self.api_keys:
+            return ""
+        return self.api_keys[self.current_key_idx % len(self.api_keys)]
+
+    def _rotate_key(self) -> str:
+        if len(self.api_keys) > 1:
+            self.current_key_idx = (self.current_key_idx + 1) % len(self.api_keys)
+            self.api_key = self.api_keys[self.current_key_idx]
+            try:
+                genai.configure(api_key=self.api_key)
+                print(f"[AI-SERVICE] Đã xoay sang API Key dự phòng #{self.current_key_idx + 1}/{len(self.api_keys)}")
+            except Exception as e:
+                print(f"[AI-SERVICE] Lỗi cấu hình API Key dự phòng: {e}")
+        return self.api_key
+
     def _init_model(self):
-        if self.api_key:
-            for candidate in ["gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
+        active_key = self._get_active_key()
+        if active_key:
+            # Ưu tiên các model Production Stable (1.500 req/day) và Full Flash
+            preferred_candidates = [
+                "gemini-1.5-flash",
+                "gemini-2.0-flash",
+                "gemini-2.5-flash",
+                "gemini-1.5-pro",
+                "gemini-2.5-flash-lite",
+                "gemini-flash-lite-latest"
+            ]
+            for candidate in preferred_candidates:
                 try:
-                    genai.configure(api_key=self.api_key)
+                    genai.configure(api_key=active_key)
                     self.model = genai.GenerativeModel(candidate)
                     self.model_name = candidate
-                    print(f"[AI-SERVICE] Model {candidate} connected successfully with API Key.")
+                    print(f"[AI-SERVICE] Model {candidate} kết nối thành công với API Key (Pool size: {len(self.api_keys)}).")
                     break
                 except Exception as e:
                     print(f"[AI-SERVICE] Model {candidate} test failed: {e}")
                     self.model = None
 
     def _generate_with_fallback(self, system_instruction: Optional[str] = None, **kwargs):
-        """Tự động chuyển tiếp mô hình dự phòng nếu một mô hình chạm hạn mức Quota (429)"""
-        candidates = [self.model_name, "gemini-2.5-flash-lite", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-pro"]
+        """Tự động luân chuyển Key Pool và chuyển tiếp Model dự phòng khi gặp 429 hoặc lỗi hạn mức"""
+        candidates = [
+            self.model_name,
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+            "gemini-1.5-pro",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest"
+        ]
         seen = set()
         unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
         last_err = None
+
+        # Thử qua từng model và từng key trong pool
+        max_key_attempts = max(1, len(self.api_keys))
         for cand in unique_candidates:
-            try:
-                m = genai.GenerativeModel(cand, system_instruction=system_instruction) if system_instruction else genai.GenerativeModel(cand)
-                res = m.generate_content(**kwargs)
-                self.model = m
-                self.model_name = cand
-                return res
-            except Exception as e:
-                last_err = e
-                err_str = str(e).lower()
-                if "429" in err_str or "quota" in err_str or "not found" in err_str or "404" in err_str:
-                    print(f"[AI-SERVICE] Chuyển đổi mô hình dự phòng sau lỗi {cand}: {e}")
-                    continue
-                raise e
+            for _ in range(max_key_attempts):
+                active_key = self._get_active_key()
+                if active_key:
+                    try:
+                        genai.configure(api_key=active_key)
+                    except Exception:
+                        pass
+                try:
+                    m = genai.GenerativeModel(cand, system_instruction=system_instruction) if system_instruction else genai.GenerativeModel(cand)
+                    res = m.generate_content(**kwargs)
+                    self.model = m
+                    self.model_name = cand
+                    return res
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e).lower()
+                    if "429" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
+                        print(f"[AI-SERVICE] Quota limit 429 trên model {cand} với key #{self.current_key_idx + 1}. Đang thử key/model tiếp theo...")
+                        self._rotate_key()
+                        continue
+                    elif "not found" in err_str or "404" in err_str:
+                        print(f"[AI-SERVICE] Model {cand} không khả dụng (404), chuyển sang model tiếp theo...")
+                        break
+                    raise e
         if last_err:
             raise last_err
 
@@ -202,7 +253,8 @@ class QuestionGenerator:
         chapter_name: str = "Nội dung trích xuất",
         textbook_name: str = "Tài liệu học liệu",
         images: Optional[List[Dict[str, Any]]] = None,
-        pedagogical_prompt: Optional[str] = ""
+        pedagogical_prompt: Optional[str] = "",
+        domain: Optional[str] = "auto"
     ) -> List[Dict[str, Any]]:
         """
         Sinh danh sách câu hỏi trắc nghiệm Đa phương thức:
@@ -292,6 +344,9 @@ Hãy vận dụng chỉ đạo trên để định hướng chủ đề câu h�
         if not self.model:
             raise RuntimeError("Chưa khởi tạo được mô hình Gemini AI. Vui lòng kiểm tra khóa API.")
 
+        # Thiết lập System Prompt chuyên biệt theo lĩnh vực (STEM, Kinh tế, Pháp luật, Ngoại ngữ, Hóa học)
+        effective_system_prompt = get_domain_system_prompt(domain, context_str, textbook_name)
+
         # Helper tạo prompt cho từng slice/batch
         def _build_batch_prompt(matrix_desc: str, target_count: int) -> str:
             return f"""
@@ -335,7 +390,7 @@ LƯU Ý QUAN TRỌNG:
 
             async def _run_sub_batch(matrix_desc: str, target_count: int) -> List[Dict[str, Any]]:
                 b_prompt = _build_batch_prompt(matrix_desc, target_count)
-                b_parts: List[Any] = [BLOOM_SYSTEM_PROMPT, b_prompt]
+                b_parts: List[Any] = [effective_system_prompt, b_prompt]
                 if loaded_pil_images:
                     b_parts.extend(loaded_pil_images)
                 resp = await asyncio.to_thread(
@@ -377,7 +432,7 @@ LƯU Ý QUAN TRỌNG:
         user_prompt = _build_batch_prompt(full_matrix_desc, total_questions)
 
         try:
-            parts: List[Any] = [BLOOM_SYSTEM_PROMPT, user_prompt]
+            parts: List[Any] = [effective_system_prompt, user_prompt]
             if loaded_pil_images:
                 parts.extend(loaded_pil_images)
 
@@ -411,7 +466,8 @@ LƯU Ý QUAN TRỌNG:
         chunk_context: Optional[Dict[str, Any]] = None,
         bloom_level: str = "Thông hiểu",
         textbook_name: str = "Tài liệu học liệu",
-        image_context: Optional[Dict[str, Any]] = None
+        image_context: Optional[Dict[str, Any]] = None,
+        domain: Optional[str] = "auto"
     ) -> Dict[str, Any]:
         """Tái tạo 01 câu hỏi cụ thể, hỗ trợ cả ngữ cảnh hình vẽ và định dạng LaTeX"""
         chunk_id = chunk_context.get("id") or chunk_context.get("chunk_id", "chunk-1") if chunk_context else "chunk-1"
@@ -456,7 +512,8 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
   "confidenceScore": 95
 }}
 """
-                parts: List[Any] = [BLOOM_SYSTEM_PROMPT, single_prompt]
+                effective_prompt = get_domain_system_prompt(domain, chunk_text, textbook_name)
+                parts: List[Any] = [effective_prompt, single_prompt]
                 if loaded_pil:
                     parts.append(loaded_pil)
 
@@ -559,16 +616,68 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
             conf = q.get("confidence_score") or q.get("confidenceScore") or 95
             q_text = q.get("question", "Nội dung câu hỏi trắc nghiệm")
 
-            # Xử lý trường thông tin Hình ảnh Đa phương thức
-            has_img = bool(q.get("has_image") or q.get("hasImage") or q.get("image_url") or q.get("imageUrl"))
-            img_url = q.get("image_url") or q.get("imageUrl") or None
+            # Xử lý trường thông tin Hình ảnh Đa phương thức và thẩm định chống ảnh ảo (Anti-hallucination)
+            raw_has_img = bool(q.get("has_image") or q.get("hasImage") or q.get("image_url") or q.get("imageUrl"))
+            raw_img_url = q.get("image_url") or q.get("imageUrl") or None
             img_caption = q.get("image_caption") or q.get("imageCaption") or None
 
-            # Nếu model quên điền URL nhưng đánh dấu có ảnh và có images_meta, tự gán ảnh phù hợp
-            if has_img and not img_url and images_meta:
-                first_img = images_meta[min(idx, len(images_meta)-1)]
-                img_url = first_img.get("url") or first_img.get("image_url") or first_img.get("path")
-                img_caption = img_caption or first_img.get("caption") or first_img.get("title")
+            has_img = False
+            img_url = None
+
+            # Helper kiểm tra URL ảnh có thực sự tồn tại và hợp lệ không
+            def _validate_image(url_cand: Optional[str]) -> bool:
+                if not url_cand or not isinstance(url_cand, str):
+                    return False
+                u = url_cand.strip()
+                if not u:
+                    return False
+                # 1. Base64 data URI
+                if u.startswith("data:image/") and ";base64," in u:
+                    return True
+                # 2. HTTP/HTTPS hợp lệ
+                if u.startswith("http://") or u.startswith("https://"):
+                    return True
+                # 3. Lọc bỏ chuỗi text thô không phải URL
+                if u.startswith("Hình ") or u.startswith("Figure ") or (":" in u and not u.startswith("http")):
+                    return False
+
+                # 4. Kiểm tra tệp vật lý trên đĩa
+                fname = os.path.basename(u.split("?")[0])
+                base_d = Path(__file__).resolve().parent.parent.parent / "document-service" / "data"
+                stem = Path(fname).stem
+                cands = [
+                    base_d / "extracted_images" / fname,
+                    base_d / "question_attachments" / fname,
+                    base_d / "forum_attachments" / fname,
+                    base_d / "uploads" / fname,
+                ]
+                for ext in [".png", ".jpg", ".jpeg", ".webp", ".svg"]:
+                    cands.append(base_d / "extracted_images" / f"{stem}{ext}")
+                    cands.append(base_d / "question_attachments" / f"{stem}{ext}")
+
+                if any(cf.exists() and cf.is_file() for cf in cands):
+                    return True
+                if os.path.exists(u) and os.path.isfile(u):
+                    return True
+                return False
+
+            if raw_has_img:
+                if _validate_image(raw_img_url):
+                    has_img = True
+                    img_url = raw_img_url
+                elif images_meta:
+                    first_img = images_meta[min(idx, len(images_meta) - 1)]
+                    c_url = first_img.get("url") or first_img.get("image_url") or first_img.get("path")
+                    has_img = True
+                    img_url = c_url
+                    img_caption = img_caption or first_img.get("caption") or first_img.get("title")
+                elif img_caption or "hình " in q_text.lower() or "sơ đồ" in q_text.lower():
+                    # Giữ lại ngữ cảnh hình ảnh để người dùng xem và vẽ lại trong Studio
+                    has_img = True
+                    clean_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (img_caption or f"fig_{idx+1}")[:40])
+                    img_url = raw_img_url if (raw_img_url and "/" in raw_img_url) else f"/api/v1/documents/images/{clean_slug}.svg"
+                    img_caption = img_caption or "Sơ đồ minh họa kiến thức"
+                img_caption = None
 
             # Tự động nhận diện công thức LaTeX nếu chứa ký hiệu $
             has_formula = bool(
@@ -667,6 +776,7 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         if not self.model:
             self._init_model()
 
+        clean_msg = (message or "").strip().lower()
         ctx = context or {}
         screen = ctx.get("currentScreen", "dashboard")
         screen_label = ctx.get("screenLabel", "Không gian làm việc")
@@ -739,12 +849,14 @@ Hãy chèn khối hành động lập phiếu hỗ trợ:
 Hãy chèn khối ma trận đề thi đề xuất:
 ```action:exam_blueprint
 {{
-  "documentName": "Tên cuốn sách phù hợp",
-  "chapter": "Tên chương hoặc toàn bộ giáo trình",
+  "documentId": "{doc_id or ''}",
+  "documentName": "{doc_name or 'Tên cuốn sách phù hợp'}",
+  "chapter": "Toàn bộ giáo trình",
   "questionCount": 20,
   "bloomRatio": {{ "know": 30, "understand": 40, "apply": 20, "analyze": 10 }}
 }}
 ```
+ĐẶC BIỆT LƯU Ý: Nếu người dùng đang mở hoặc chọn một cuốn giáo trình cụ thể (được ghi trong mục 'THÔNG TIN GIÁO TRÌNH ĐANG LÀM VIỆC TRỰC TIẾP' bên dưới, ví dụ: '{doc_name}'), bạn BẮT BUỘC PHẢI DÙNG CHÍNH XÁC tên cuốn giáo trình đó để tạo đề thi! TUYỆT ĐỐI NGHIÊM CẤM tự ý bịa sang giáo trình khác (như 'BAI GIANG Tu tuong HCM') khi người dùng đang xem một cuốn sách khác!
 
 3. KHI CẦN ĐIỀU HƯỚNG {user_name} ĐẾN MÀN HÌNH CỤ THỂ:
 ```action:navigate
@@ -754,6 +866,54 @@ Hãy chèn khối ma trận đề thi đề xuất:
 }}
 ```
 (targetScreen có thể là: 'upload', 'generate', 'review', 'bank', 'support', 'qgroup', 'dashboard')
+
+4. KHI NGƯỜI DÙNG YÊU CẦU SỬA, TINH CHỈNH, ĐỔI ĐÁP ÁN, HOẶC NÂNG CẤP CÂU HỎI ĐANG XEM:
+Khi có câu hỏi đang xem xét (active_question) và người dùng yêu cầu chỉnh sửa (ví dụ: 'đổi đáp án sang C', 'tăng độ khó lên Vận dụng cao', 'viết lại lời giải thích', 'sửa nội dung câu hỏi...'):
+Bạn hãy phân tích phương án sửa trong câu trả lời, đồng thời BẮT BUỘC chèn khối thẻ hành động chỉnh sửa câu hỏi:
+```action:patch_question
+{{
+  "questionId": "ID_câu_hỏi",
+  "diffSummary": "Tóm tắt ngắn gọn các điểm đã chỉnh sửa (ví dụ: Đổi đáp án đúng sang C và giải thích chi tiết theo thuật toán)",
+  "patch": {{
+    "question": "Nội dung câu hỏi mới (hoặc giữ nguyên nếu không đổi)",
+    "options": [
+      {{"id": "A", "label": "A", "text": "Nội dung phương án A"}},
+      {{"id": "B", "label": "B", "text": "Nội dung phương án B"}},
+      {{"id": "C", "label": "C", "text": "Nội dung phương án C"}},
+      {{"id": "D", "label": "D", "text": "Nội dung phương án D"}}
+    ],
+    "correctAnswerId": "C",
+    "explanation": "Lời giải thích học thuật mới chi tiết...",
+    "bloomLevel": "Vận dụng cao"
+  }}
+}}
+```
+
+5. KHI NGƯỜI DÙNG YÊU CẦU NẠP CÂU HỎI VÀO BƯỚC 4 (IN ĐỀ / NGÂN HÀNG ĐỀ) HOẶC BƯỚC 3 (THẨM ĐỊNH), HOẶC YÊU CẦU SINH CÂU HỎI VÀO ĐỀ THI:
+(Ví dụ: 'nạp vô bước 4 để in đề', 'nạp vào bước 4', 'đưa vào bước 4', 'sinh 3 câu rồi đưa vào đề thi', 'cho vào ngân hàng đề', 'lấy mấy câu vừa tạo nạp vào đề'):
+- TUYỆT ĐỐI NGHIÊM CẤM chỉ nói suông bằng lời là "Em đã nạp rồi"! Vì nếu chỉ nói suông mà không có khối thẻ action, hệ thống sẽ KHÔNG CÓ DỮ LIỆU và người dùng chuyển sang Bước 4 sẽ thấy trống trơn!
+- BẠN BẮT BUỘC PHẢI TRẢ VỀ KHỐI THẺ HÀNH ĐỘNG action:import_exam CHỨA TOÀN BỘ CÁC CÂU HỎI TRONG LỊCH SỬ HỘI THOẠI (HOẶC CÂU HỎI MỚI SINH):
+```action:import_exam
+{{
+  "title": "Bộ Đề Thi Quanta AI Khởi Tạo",
+  "targetScreen": "bank",
+  "questions": [
+    {{
+      "question": "Nội dung câu hỏi trắc nghiệm...",
+      "options": [
+        {{"id": "A", "label": "A", "text": "Phương án A"}},
+        {{"id": "B", "label": "B", "text": "Phương án B"}},
+        {{"id": "C", "label": "C", "text": "Phương án C"}},
+        {{"id": "D", "label": "D", "text": "Phương án D"}}
+      ],
+      "correctAnswerId": "A",
+      "explanation": "Lời giải thích học thuật...",
+      "bloomLevel": "Thông hiểu"
+    }}
+  ]
+}}
+```
+(Nếu người dùng nhắc đến Bước 4 / in đề / xuất Word / PDF thì targetScreen là "bank"; nếu nhắc đến Bước 3 / thẩm định / duyệt thì targetScreen là "review").
 
 NGỮ CẢNH LÀM VIỆC HIỆN TẠI:
 - Màn hình hiện tại: {screen_label} (Mã màn hình: {screen})
@@ -802,6 +962,48 @@ Khi người dùng hỏi về cuốn sách này (tóm tắt, phân tích khái n
 3. Nếu nội dung có công thức Toán, Lý, Hóa, bắt buộc viết chuẩn cú pháp LaTeX ($...$).
 """
 
+        # RAG Grounding: Tự động truy vấn rag-service (Port 8003) khi có câu hỏi học thuật hoặc tra cứu sách
+        rag_chunks = []
+        is_academic_query = any(kw in clean_msg for kw in ["trang", "định nghĩa", "khái niệm", "nói gì", "ở đâu", "giải thích", "thuật toán", "công thức", "chương", "sách", "phân tích", "nội dung"])
+        if is_academic_query or doc_id:
+            try:
+                import urllib.request
+                target_doc = doc_id or (system_docs[0].get("id") if system_docs else None)
+                rag_payload = json.dumps({
+                    "query": message,
+                    "document_id": target_doc,
+                    "top_k": 3
+                }).encode("utf-8")
+                rag_req = urllib.request.Request(
+                    "http://localhost:8003/query-context",
+                    data=rag_payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(rag_req, timeout=2.0) as resp:
+                    rag_data = json.loads(resp.read().decode("utf-8"))
+                    rag_chunks = rag_data.get("citationCards") or rag_data.get("chunks") or []
+            except Exception:
+                pass
+
+        if rag_chunks:
+            system_instruction += "\nTRÍCH ĐOẠN ĐỐI SOÁT TRỰC TIẾP TỪ 53 GIÁO TRÌNH (RAG ZERO-HALLUCINATION):\n"
+            for rc in rag_chunks[:3]:
+                p_num = rc.get("pageNumber") or rc.get("page_number", 1)
+                d_name = rc.get("documentName", "Giáo trình")
+                excerpt = rc.get("highlightExcerpt") or rc.get("textSnippet") or rc.get("text", "")
+                system_instruction += f"• [{d_name} - Trang {p_num} ({rc.get('chapter', '')})]:\n\"{excerpt}\"\n\n"
+            system_instruction += "Khi trả lời, bạn HÃY TRÍCH DẪN RÕ RÀNG số trang và tên giáo trình (ví dụ: '[Giáo trình X - Trang Y]') để người dùng đối soát mắt thấy tai nghe!\n"
+
+        # HỒ SƠ HỌC THUẬT GHI NHỚ VỀ GIẢNG VIÊN (LONG-TERM ACADEMIC MEMORY):
+        user_title = ctx.get("academicTitle") or "ThS."
+        system_instruction += f"""
+HỒ SƠ HỌC THUẬT GHI NHỚ (LONG-TERM ACADEMIC MEMORY):
+- Giảng viên phụ trách: {user_title} {user_name} (Chủ nhiệm dự án QuizGen AI)
+- Lĩnh vực chuyên môn: Khoa học máy tính, Công nghệ thông tin & Khảo thí học thuật
+- Gu ra đề thi ghi nhớ: Ưu tiên câu hỏi bám sát chuẩn đầu ra, câu hỏi thực tiễn, phân bổ ma trận Bloom cân đối, lời giải thích có căn cứ khoa học rõ ràng.
+- Phong cách ứng xử: Bạn thấu hiểu gu giảng dạy, xưng hô tôn kính và hỗ trợ như một Quản gia tri kỷ.
+"""
+
         if active_question and isinstance(active_question, dict):
             q_txt = active_question.get('question', '')
             bloom = active_question.get('bloomLevel') or active_question.get('bloom_level', '')
@@ -848,8 +1050,8 @@ Khi người dùng gặp sự cố kỹ thuật, lỗi hệ thống, thắc mắ
 1. Bạn phải lập tức đồng cảm, hướng dẫn tận tình và cung cấp ĐẦY ĐỦ các kênh hỗ trợ chính thức của QuizGen AI:
    - 📧 Email đối soát & hỗ trợ: quizgen.ai.team@gmail.com
    - 📞 Hotline / Zalo hỗ trợ kỹ thuật: 0364591363
-2. CHỦ ĐỘNG TẠO PHIẾU HỖ TRỢ (Support Ticket Card): Tự động đính kèm thẻ ```action:support_ticket ...``` để người dùng chỉ cần bấm nút là ticket được lưu vào hệ thống và gửi đến ban quản trị xử lý ngay.
-3. Nếu người dùng gặp lỗi thanh toán ngân hàng hoặc lỗi tính năng: Hướng dẫn người dùng có thể đính kèm ảnh chụp biên lai VietQR hoặc ảnh chụp màn hình sự cố trực tiếp ngay trên Phiếu hỗ trợ bên dưới (hỗ trợ chọn file ảnh hoặc dán nhanh bằng Ctrl+V) để Admin đối soát và kích hoạt gói tức thì. Ngoài ra có thể gửi qua Zalo 0364591363 hoặc Email quizgen.ai.team@gmail.com.
+2. CHỦ ĐỘNG TẠO PHIẾU HỖ TRỢ TỰ ĐỘNG (Support Ticket Card): Tự động đính kèm thẻ ```action:support_ticket ...``` để hệ thống tự động lưu phiếu vào CSDL backend Helpdesk (Port 8008) và gửi thẳng đến Ban Quản Trị xử lý ngay lập tức.
+3. NÊU RÕ RÀNG TRONG LỜI NÓI: Thông báo cho người dùng biết Quanta đã tự động chuyển tiếp phiếu hỗ trợ đến Ban Quản Trị (đã tiếp nhận trên hệ thống), người dùng có thể theo dõi trạng thái phiếu bên dưới hoặc bổ sung thêm ảnh chụp màn hình sự cố / liên hệ Zalo Hotline 0364591363 để kỹ thuật viên hỗ trợ ngay lập tức. Tuyệt đối không nói 'em sẽ chuyển' mập mờ mà hãy khẳng định 'Quanta đã tự động chuyển tiếp phiếu ghi nhận sự cố tới Ban Quản Trị'.
 """
 
         clean_msg = message.strip().lower()

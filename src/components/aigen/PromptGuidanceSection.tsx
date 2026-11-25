@@ -4,12 +4,33 @@ import { MessageSquareText, Sparkles, X, Lightbulb } from 'lucide-react';
 export interface PromptGuidanceSectionProps {
   value: string;
   onChange: (value: string) => void;
+  domain?: string;
+  onDomainChange?: (domain: string) => void;
 }
 
 export const PromptGuidanceSection: React.FC<PromptGuidanceSectionProps> = ({
   value,
   onChange,
+  domain = 'auto',
+  onDomainChange,
 }) => {
+  const [selectedDomain, setSelectedDomain] = React.useState<string>(domain);
+
+  const DOMAIN_OPTIONS = [
+    { id: 'auto', label: '🤖 Tự động nhận diện', hint: 'AI tự động phân tích giáo trình để chọn chuyên gia phù hợp' },
+    { id: 'stem', label: '📐 STEM & Kỹ thuật', hint: 'Toán, Lý, Tin học, Mạch điện, Cơ khí, Thuật toán, chuẩn LaTeX' },
+    { id: 'economics', label: '📊 Kinh tế & QTKD', hint: 'Kinh tế học, Quản trị, Tài chính, Kế toán, Chuỗi cung ứng, Case study' },
+    { id: 'law_humanities', label: '⚖️ Pháp luật & KHXH', hint: 'Luật, Triết học, Lịch sử, Tình huống pháp lý thực tiễn' },
+    { id: 'languages', label: '🌐 Ngoại ngữ', hint: 'Reading Comprehension, Grammar, Cloze Test theo chuẩn CEFR' },
+    { id: 'chem_env', label: '🧪 Hóa học & Môi trường', hint: 'Phương trình hóa học, nồng độ dung dịch, cân bằng, hóa nghiệm' },
+  ];
+
+  const handleSelectDomain = (domId: string) => {
+    setSelectedDomain(domId);
+    if (onDomainChange) {
+      onDomainChange(domId);
+    }
+  };
   const presetSuggestions = [
     {
       label: '🎯 Bám sát tình huống thực tế',
@@ -70,6 +91,36 @@ export const PromptGuidanceSection: React.FC<PromptGuidanceSectionProps> = ({
       <p className="text-xs text-slate-500 leading-relaxed">
         Thầy/Cô có thể gõ chỉ đạo riêng (ví dụ: trọng tâm vào chương 2, thêm bài tập tính chi phí, tránh câu hỏi khái niệm cơ bản...). AI sẽ tích hợp chỉ đạo này trực tiếp vào đề bài.
       </p>
+
+      {/* Domain Expert Selector */}
+      <div className="space-y-1.5 pt-1">
+        <label className="block text-[11px] font-bold text-slate-700">
+          Chuyên gia Khảo thí AI Chuyên ngành:
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          {DOMAIN_OPTIONS.map((opt) => {
+            const isSelected = selectedDomain === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => handleSelectDomain(opt.id)}
+                title={opt.hint}
+                className={`p-2 rounded-xl text-left border text-xs transition-all cursor-pointer ${
+                  isSelected
+                    ? 'border-[#008689] bg-teal-50/70 text-[#006d70] font-bold shadow-2xs ring-1 ring-[#008689]/30'
+                    : 'border-slate-200 hover:border-slate-300 bg-slate-50/60 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="truncate">{opt.label}</span>
+                  {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-[#008689]" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Textarea */}
       <div className="relative">

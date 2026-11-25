@@ -20,24 +20,84 @@ class TextChunker:
     """
 
     FORMAL_CHAPTER_REGEX = re.compile(
-        r"^(Chương\s+[0-9IVXLCDM]+[:\.\-\s]+[^\n\r]+|"
-        r"Chapter\s+[0-9IVXLCDM]+[:\.\-\s]+[^\n\r]+|"
-        r"Bài\s+[0-9IVXLCDM]+[:\.\-\s]+[^\n\r]+|"
-        r"Phần\s+[0-9IVXLCDM]+[:\.\-\s]+[^\n\r]+|"
-        r"Part\s+[0-9IVXLCDM]+[:\.\-\s]+[^\n\r]+|"
-        r"Module\s+[0-9IVXLCDM]+[:\.\-\s]+[^\n\r]+)",
+        r"^\s*(Chương\s+[0-9IVXLCDM]+(?:[:\.\-\s]+[^\n\r]+|$)|"
+        r"Chapter\s+[0-9IVXLCDM]+(?:[:\.\-\s]+[^\n\r]+|$)|"
+        r"Bài\s+[0-9IVXLCDM]+(?:[:\.\-\s]+[^\n\r]+|$)|"
+        r"Phần\s+[0-9IVXLCDM]+(?:[:\.\-\s]+[^\n\r]+|$)|"
+        r"Part\s+[0-9IVXLCDM]+(?:[:\.\-\s]+[^\n\r]+|$)|"
+        r"Module\s+[0-9IVXLCDM]+(?:[:\.\-\s]+[^\n\r]+|$))",
         re.IGNORECASE | re.MULTILINE
     )
 
     SECTION_REGEX = re.compile(
-        r"^(Mục\s+[0-9\.]+[:\.\-\s]+[^\n\r]+|"
-        r"Section\s+[0-9\.]+[:\.\-\s]+[^\n\r]+|"
+        r"^\s*(?:Mục\s+[0-9]+[:\.\-\s]+[^\n\r]+|"
+        r"Section\s+[0-9]+[:\.\-\s]+[^\n\r]+|"
         r"(?:I|II|III|IV|V|VI|VII|VIII|IX|X)[\.\:\-\s]+[A-ZÀ-Ỹ0-9][^\n\r]{2,80}|"
-        r"[0-9]+(?:\.[0-9]+)*[\.\:\-\s]+[A-ZÀ-Ỹ0-9][^\n\r]{2,80}|"
-        r"#{1,3}\s+[^\n\r]{3,80}|"
-        r"[A-Z][\.\:\-\s]+[A-ZÀ-Ỹ0-9][^\n\r]{2,80})",
+        r"[0-9]+[\.\:\-\s]+[A-ZÀ-Ỹ0-9][^\n\r]{2,80}|"
+        r"#\s+[^\n\r]{3,80})",
         re.MULTILINE
     )
+
+    @classmethod
+    def _is_junk_chapter_title(cls, title: str) -> bool:
+        """Loại bỏ các tiêu đề rác: số trang, mục lục, lời nói đầu, bìa sách, ký tự lỗi, tiểu mục sâu"""
+        if not title or len(title.strip()) < 3:
+            return True
+        s = title.strip()
+        # Số trang hoặc chuỗi rác kiểu "06 XIJÂN LÔI" hoặc bắt đầu bằng số trang
+        if re.match(r"^\d+\s*[\w\W]{0,10}$", s):
+            return True
+        if re.match(r"^\d+\s+[A-Z0-9_\-\.]{1,10}$", s):
+            return True
+        # Tiểu mục sâu: 1.1, 1.2, 1.2.1, 2.3.4 (chỉ giữ chương/mục lớn)
+        if re.match(r"^\d+\.\d+[\.\d]*\b", s):
+            return True
+        # Từ khóa rác / bìa sách / mục lục
+        junk_kws = [
+            "mục lục", "table of contents", "contents",
+            "lời nói đầu", "lời mở đầu", "lời cảm ơn", "preface", "foreword",
+            "nhà xuất bản", "ban biên soạn", "chịu trách nhiệm", "trình bày bìa",
+            "tài liệu tham khảo", "phụ lục", "references", "appendix"
+        ]
+        s_lower = s.lower()
+        if any(kw in s_lower for kw in junk_kws):
+            return True
+        return False
+
+    @classmethod
+    def _is_table_of_contents_page(cls, text: str, page_num: int) -> bool:
+        """
+        Nhận diện trang Mục lục (Table of Contents) bằng các tiêu chí:
+        1. Số lượng dòng chứa chuỗi dấu chấm nối (dot leaders) >= 3 dòng
+        2. Chứa tiêu đề MỤC LỤC hoặc TABLE OF CONTENTS trong 15 trang đầu
+        """
+        if not text:
+            return False
+        # Tiêu chí 1: Phát hiện chuỗi dấu chấm kéo dài nối sang số trang
+        dot_leader_matches = re.findall(r"(?:\.{4,}|_{4,}|\-{4,})\s*\d+", text)
+        if len(dot_leader_matches) >= 3:
+            return True
+        # Tiêu chí 2: Tiêu đề Mục lục rõ ràng trong các trang đầu sách
+        if page_num <= 15 and re.search(r"^\s*(?:MỤC\s*LỤC|Mục\s*lục|TABLE\s*OF\s*CONTENTS|CONTENTS)\b", text, re.MULTILINE | re.IGNORECASE):
+            return True
+        return False
+
+    @classmethod
+    def _is_front_matter_page(cls, text: str, page_num: int) -> bool:
+        """
+        Nhận diện các trang bìa, nhà xuất bản, lời mở đầu/lời cảm ơn phi học thuật
+        """
+        if page_num > 10 or not text:
+            return False
+        publishing_keywords = [
+            r"NHÀ XUẤT BẢN", r"BAN BIÊN SOẠN", r"CHỊU TRÁCH NHIỆM XUẤT BẢN",
+            r"BIÊN TẬP VIÊN", r"TRÌNH BÀY BÌA", r"MÃ SỐ SÁCH", r"BẢN QUYỀN THUỘC VỀ",
+            r"LỜI NÓI ĐẦU", r"LỜI MỞ ĐẦU", r"LỜI CẢM ƠN", r"PREFACE", r"FOREWORD"
+        ]
+        pattern = re.compile(r"|".join(publishing_keywords), re.IGNORECASE)
+        if pattern.search(text) and len(text) < 1500:
+            return True
+        return False
 
     @classmethod
     def _is_table_row(cls, line: str) -> bool:
@@ -217,6 +277,28 @@ class TextChunker:
             if not raw_text:
                 continue
 
+            # 1. Phát hiện và loại bỏ trang Mục Lục (Table of Contents) khỏi dữ liệu sinh câu hỏi
+            if cls._is_table_of_contents_page(raw_text, page_num):
+                for line in raw_text.split("\n"):
+                    m = re.search(r"^(Chương\s+[0-9IVXLCDM]+[:\.\-\s]+[^\.\_\-]+).*?[\.\_\-]{3,}\s*(\d+)", line, re.IGNORECASE)
+                    if m:
+                        ch_title = re.sub(r"\s+", " ", m.group(1).strip())
+                        try:
+                            ch_page = int(m.group(2))
+                            if ch_title not in detected_chapters:
+                                detected_chapters[ch_title] = {
+                                    "title": ch_title,
+                                    "page_start": ch_page,
+                                    "page_end": ch_page
+                                }
+                        except Exception:
+                            pass
+                continue
+
+            # 2. Bỏ qua trang Bìa, Lời nói đầu, Thông tin xuất bản phi học thuật
+            if cls._is_front_matter_page(raw_text, page_num):
+                continue
+
             non_empty_pages_count += 1
             page_len = len(raw_text)
 
@@ -226,7 +308,13 @@ class TextChunker:
                 for m in active_regex.finditer(raw_text):
                     title = re.sub(r"^#+\s*", "", m.group().strip())
                     title = re.sub(r"\s+", " ", title).strip()
-                    if title:
+                    # Nếu title chỉ là "Chương 1" hoặc "CHƯƠNG II" đơn thuần (không có nội dung sau), lấy dòng kế tiếp làm tên chương
+                    if re.match(r"^(?:Chương|Chapter|Bài|Phần)\s+[0-9IVXLCDM]+$", title, re.IGNORECASE):
+                        after_text = raw_text[m.end():]
+                        next_lines = [l.strip() for l in after_text.split("\n") if l.strip()]
+                        if next_lines and len(next_lines[0]) < 100 and not next_lines[0].isdigit():
+                            title = f"{title}: {next_lines[0]}"
+                    if title and not cls._is_junk_chapter_title(title):
                         spans.append((m.start(), title))
 
             if spans:
@@ -382,12 +470,27 @@ class TextChunker:
         # Bước 4: Chuẩn hóa siêu dữ liệu danh mục chương/mục
         chapters_metadata = []
         for idx, (ch_name, ch_info) in enumerate(detected_chapters.items()):
+            t = ch_info["title"].strip()
+            if cls._is_junk_chapter_title(t):
+                continue
             chapters_metadata.append({
-                "chapter_index": idx + 1,
-                "title": ch_info["title"],
+                "chapter_index": len(chapters_metadata) + 1,
+                "title": t,
                 "page_start": ch_info["page_start"],
                 "page_end": ch_info["page_end"]
             })
+
+        # Nếu tài liệu có các chương chính quy (Chương, Chapter, Phần, Bài), loại bỏ các mục fallback rác trước chương 1
+        formal_chapters = [c for c in chapters_metadata if cls.FORMAL_CHAPTER_REGEX.search(c["title"])]
+        if formal_chapters:
+            chapters_metadata = [
+                {**c, "chapter_index": i + 1} for i, c in enumerate(formal_chapters)
+            ]
+        elif len(chapters_metadata) > 20:
+            # Nếu tài liệu không có chữ "Chương" và có quá nhiều mục, cắt gọn tối đa 15 mục tiêu biểu
+            chapters_metadata = [
+                {**c, "chapter_index": i + 1} for i, c in enumerate(chapters_metadata[:15])
+            ]
 
         if not chapters_metadata:
             first_line = cls._extract_first_substantive_line(full_doc_text)

@@ -82,6 +82,7 @@ export interface QGroupMessage {
   senderEmail: string;
   senderName: string;
   senderTitle?: string;
+  senderAvatarUrl?: string;
   avatarColor?: string;
   text?: string;
   timestamp: string;

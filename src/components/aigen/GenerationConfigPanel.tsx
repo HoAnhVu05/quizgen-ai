@@ -343,6 +343,34 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
             </div>
           )}
 
+          {/* Quanta Proactive Butler: Cảnh báo khảo thí thông minh khi ma trận Bloom lệch chuẩn */}
+          {totalQuestions > 0 && ((bloomDistribution.vanDung + bloomDistribution.phanTich) / totalQuestions) > 0.6 && (
+            <div className="p-2.5 bg-amber-50/90 border border-amber-200/80 rounded-xl flex items-start justify-between gap-2 text-[11px] text-amber-900 shadow-2xs">
+              <div className="flex items-start gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold">Quanta gợi ý khảo thí: </span>
+                  <span>
+                    Tỷ lệ Vận dụng & Phân tích đang chiếm {Math.round(((bloomDistribution.vanDung + bloomDistribution.phanTich) / totalQuestions) * 100)}%, đề thi có thể gây quá tải cho người học.
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const nb = Math.round(totalQuestions * 0.3);
+                  const th = Math.round(totalQuestions * 0.4);
+                  const vd = Math.round(totalQuestions * 0.2);
+                  const vdc = Math.max(0, totalQuestions - nb - th - vd);
+                  onBloomDistributionChange({ nhanBiet: nb, thongHieu: th, vanDung: vd, phanTich: vdc });
+                }}
+                className="px-2 py-1 bg-white hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold rounded-lg text-[10px] whitespace-nowrap shrink-0 transition-colors cursor-pointer"
+              >
+                Cân bằng chuẩn 3-4-2-1
+              </button>
+            </div>
+          )}
+
           {/* 3. Khung Định hướng & Yêu cầu Sư phạm Bổ sung */}
           <PromptGuidanceSection
             value={pedagogicalPrompt}

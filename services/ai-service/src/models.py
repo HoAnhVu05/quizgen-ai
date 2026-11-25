@@ -72,6 +72,8 @@ class GenerateRequest(BaseModel):
     images: Optional[List[Dict[str, Any]]] = None
     pedagogical_prompt: Optional[str] = None
     pedagogicalPrompt: Optional[str] = None
+    domain: Optional[str] = None
+    domain_mode: Optional[str] = None
 
     def get_document_id(self) -> str:
         return self.documentId or self.document_id or "tb-001"
@@ -84,3 +86,6 @@ class GenerateRequest(BaseModel):
 
     def get_pedagogical_prompt(self) -> str:
         return (self.pedagogicalPrompt or self.pedagogical_prompt or "").strip()
+
+    def get_domain(self) -> str:
+        return (self.domain or self.domain_mode or "auto").strip()

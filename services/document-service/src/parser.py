@@ -1,5 +1,6 @@
 import io
 import re
+import unicodedata
 from typing import List, Dict, Any
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError, FileNotDecryptedError
@@ -22,16 +23,20 @@ class DocumentParser:
 
     @staticmethod
     def _clean_text(text: str) -> str:
-        """Làm sạch ký tự điều khiển, chuẩn hóa khoảng trắng và dấu ngắt dòng"""
+        """Làm sạch ký tự điều khiển, chuẩn hóa Unicode NFC và xử lý lỗi font tiếng Việt"""
         if not text:
             return ""
-        # Thay thế ký tự điều khiển ngoại trừ tab và xuống dòng
+        # 1. Chuẩn hóa bảng mã Unicode sang chuẩn dựng sẵn (NFC)
+        text = unicodedata.normalize("NFC", text)
+        # 2. Thay thế ký tự điều khiển ngoại trừ tab và xuống dòng
         text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-        # Nối từ bị ngắt dòng bằng dấu gạch ngang (ví dụ: "kinh- \ntế" -> "kinh tế")
+        # 3. Nối từ bị ngắt dòng bằng dấu gạch ngang (ví dụ: "kinh- \ntế" -> "kinh tế")
         text = re.sub(r"(\w+)-\s*\n\s*(\w+)", r"\1\2", text)
-        # Chuẩn hóa khoảng trắng liên tiếp
+        # 4. Sửa các lỗi dấu thanh phân rã / dấu nháy đơn dính vào nguyên âm (ví dụ: "cả'u" -> "cấu", "vẩn dê" -> "vấn đề")
+        text = re.sub(r"([a-zA-Zà-ỹÀ-Ỹ])['`]\s*", r"\1", text)
+        # 5. Chuẩn hóa khoảng trắng liên tiếp
         text = re.sub(r"[ \t]+", " ", text)
-        # Chuẩn hóa xuống dòng liên tiếp
+        # 6. Chuẩn hóa xuống dòng liên tiếp
         text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
 

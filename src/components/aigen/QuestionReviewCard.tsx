@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Edit3,
   Trash2,
@@ -9,9 +9,15 @@ import {
   HelpCircle,
   CheckCircle2,
   Image as ImageIcon,
+  PenTool,
+  Upload,
+  Link2,
+  Plus,
 } from 'lucide-react';
 import { Question, BloomLevel, QuestionOption } from '../../types';
 import MathRenderer from '../MathRenderer';
+import { DiagramStudioModal } from '../DiagramStudioModal';
+import { resolveImageUrl } from '../../services/apiClient';
 
 interface QuestionReviewCardProps {
   question: Question;
@@ -46,6 +52,23 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
   const [editHasImage, setEditHasImage] = useState(Boolean(question.hasImage || question.imageUrl));
   const [editImageUrl, setEditImageUrl] = useState(question.imageUrl || '');
   const [editImageCaption, setEditImageCaption] = useState(question.imageCaption || '');
+  const [imgError, setImgError] = useState(false);
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [isAttachPopoverOpen, setIsAttachPopoverOpen] = useState(false);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const attachPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (attachPopoverRef.current && !attachPopoverRef.current.contains(event.target as Node)) {
+        setIsAttachPopoverOpen(false);
+      }
+    }
+    if (isAttachPopoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isAttachPopoverOpen]);
 
   const bloomStyle = BLOOM_COLORS[question.bloomLevel] || BLOOM_COLORS['Nhận biết'];
 
@@ -156,6 +179,17 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
               rows={3}
               className="w-full p-2.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:border-[#008689]"
             />
+            {/* Live KaTeX Preview for Question */}
+            {(editText.includes('$') || editText.includes('\\')) && (
+              <div className="mt-1 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-xs text-slate-800 flex items-start gap-1.5">
+                <span className="text-[10px] font-mono uppercase text-slate-400 font-semibold shrink-0 mt-0.5">
+                  KaTeX:
+                </span>
+                <div className="flex-1 overflow-x-auto text-xs">
+                  <MathRenderer content={editText} inline />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -173,102 +207,208 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
               </select>
             </div>
 
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded-md transition-colors">
-              <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
-              <input
-                type="checkbox"
-                checked={editHasImage}
-                onChange={(e) => setEditHasImage(e.target.checked)}
-                className="rounded text-[#008689]"
-              />
-              <span>Đính kèm hình vẽ / sơ đồ</span>
-            </label>
-          </div>
+                    {/* Compact Media Attachment Trigger */}
+                    {!editImageUrl && (
+                      <div className="relative inline-block" ref={attachPopoverRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsAttachPopoverOpen(!isAttachPopoverOpen)}
+                          className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-200 shadow-2xs transition-colors"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5 text-teal-600" />
+                          <span>+ Đính kèm sơ đồ / ảnh</span>
+                        </button>
 
-          {/* Multimodal Image Input Section */}
-          {editHasImage && (
-            <div className="p-2.5 bg-white border border-slate-200 rounded-lg space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-700 block">Hình ảnh minh họa câu hỏi:</span>
-                {editImageUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditImageUrl('');
-                      setEditImageCaption('');
-                      setEditHasImage(false);
-                    }}
-                    className="text-[10px] text-rose-600 hover:text-rose-700 font-semibold hover:underline"
-                  >
-                    ✕ Gỡ ảnh này
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  placeholder="URL hình ảnh (https://...)"
-                  value={editImageUrl}
-                  onChange={(e) => setEditImageUrl(e.target.value)}
-                  className="flex-1 px-2.5 py-1 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689]"
-                />
-                <label className="px-2.5 py-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold cursor-pointer shrink-0 text-center transition-colors flex items-center justify-center gap-1">
-                  📁 Tải ảnh từ máy
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        try {
-                          const formData = new FormData();
-                          formData.append('file', file);
-                          const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
-                            method: 'POST',
-                            body: formData,
-                          });
-                          if (uploadRes.ok) {
-                            const uploadData = await uploadRes.json();
-                            if (uploadData.imageUrl) {
-                              setEditImageUrl(uploadData.imageUrl);
-                              setEditHasImage(true);
-                              return;
-                            }
+                        {isAttachPopoverOpen && (
+                          <div className="absolute right-0 mt-1.5 w-56 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-30 text-xs animate-in fade-in slide-in-from-top-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsStudioOpen(true);
+                                setIsAttachPopoverOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#008689] text-left transition-colors font-medium"
+                            >
+                              <PenTool className="w-3.5 h-3.5 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Mở Studio kỹ thuật</div>
+                                <div className="text-[10px] text-slate-400">Draw.io, GeoGebra, Desmos</div>
+                              </div>
+                            </button>
+                            <label className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 text-left cursor-pointer transition-colors font-medium">
+                              <Upload className="w-3.5 h-3.5 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Tải ảnh từ máy</div>
+                                <div className="text-[10px] text-slate-400">PNG, JPG, SVG, WebP</div>
+                              </div>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setIsAttachPopoverOpen(false);
+                                    try {
+                                      const formData = new FormData();
+                                      formData.append('file', file);
+                                      const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
+                                        method: 'POST',
+                                        body: formData,
+                                      });
+                                      if (uploadRes.ok) {
+                                        const uploadData = await uploadRes.json();
+                                        if (uploadData.imageUrl) {
+                                          setEditImageUrl(uploadData.imageUrl);
+                                          setEditHasImage(true);
+                                          return;
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.warn('Lỗi tải ảnh server, dùng Data URL', err);
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                      setEditImageUrl(reader.result as string);
+                                      setEditHasImage(true);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowUrlInput(true);
+                                setIsAttachPopoverOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 text-left transition-colors font-medium"
+                            >
+                              <Link2 className="w-3.5 h-3.5 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Dán URL ảnh</div>
+                                <div className="text-[10px] text-slate-400">Liên kết ảnh từ web</div>
+                              </div>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Inline URL Input */}
+                  {showUrlInput && !editImageUrl && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+                      <input
+                        type="text"
+                        placeholder="Dán link ảnh (https://...) rồi nhấn Enter"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.target as HTMLInputElement).value) {
+                            setEditImageUrl((e.target as HTMLInputElement).value);
+                            setEditHasImage(true);
+                            setShowUrlInput(false);
+                          } else if (e.key === 'Escape') {
+                            setShowUrlInput(false);
                           }
-                        } catch (err) {
-                          console.warn('Lỗi tải ảnh lên server, dùng Base64', err);
-                        }
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                          setEditImageUrl(reader.result as string);
-                          setEditHasImage(true);
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-              <input
-                type="text"
-                placeholder="Chú thích hình ảnh (ví dụ: Hình 1: Mạch dao động LC)"
-                value={editImageCaption}
-                onChange={(e) => setEditImageCaption(e.target.value)}
-                className="w-full px-2.5 py-1 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689]"
-              />
-              {editImageUrl && (
-                <div className="pt-1 flex items-center gap-2">
-                  <img
-                    src={editImageUrl}
-                    alt="Xem trước"
-                    className="max-h-20 rounded border border-slate-200 object-contain bg-white p-1"
-                  />
-                  <span className="text-[10px] text-slate-500 italic">Xem trước hiển thị sơ đồ</span>
-                </div>
-              )}
-            </div>
-          )}
+                        }}
+                        className="flex-1 px-2.5 py-1 rounded border border-slate-300 text-xs focus:outline-none focus:border-[#008689] bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowUrlInput(false)}
+                        className="text-slate-400 hover:text-slate-600 px-1 text-xs"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Compact Media Card when image is attached */}
+                  {editImageUrl && (
+                    <div className="flex items-center gap-3 p-2 bg-white border border-slate-200 rounded-xl text-xs">
+                      <div className="relative group shrink-0 w-20 h-16 rounded overflow-hidden border border-slate-200 bg-slate-50 flex items-center justify-center">
+                        <img
+                          src={resolveImageUrl(editImageUrl)}
+                          alt="Minh họa"
+                          className="w-full h-full object-contain p-0.5"
+                        />
+                      </div>
+
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] font-semibold text-slate-700">Sơ đồ đính kèm:</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setIsStudioOpen(true)}
+                              className="px-2 py-0.5 rounded text-[11px] font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 transition-colors flex items-center gap-1"
+                            >
+                              <PenTool className="w-3 h-3 text-slate-500" />
+                              <span>Sửa Studio</span>
+                            </button>
+                            <label className="px-2 py-0.5 rounded text-[11px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer transition-colors flex items-center gap-1">
+                              <Upload className="w-3 h-3 text-slate-500" />
+                              <span>Đổi ảnh</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    try {
+                                      const formData = new FormData();
+                                      formData.append('file', file);
+                                      const uploadRes = await fetch('/api/v1/documents/questions/upload-image', {
+                                        method: 'POST',
+                                        body: formData,
+                                      });
+                                      if (uploadRes.ok) {
+                                        const uploadData = await uploadRes.json();
+                                        if (uploadData.imageUrl) {
+                                          setEditImageUrl(uploadData.imageUrl);
+                                          return;
+                                        }
+                                      }
+                                    } catch (err) {
+                                      console.warn('Lỗi tải ảnh server, dùng Data URL', err);
+                                    }
+                                    const reader = new FileReader();
+                                    reader.onload = () => {
+                                      setEditImageUrl(reader.result as string);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditImageUrl('');
+                                setEditImageCaption('');
+                                setEditHasImage(false);
+                              }}
+                              className="px-1.5 py-0.5 rounded text-[11px] font-medium text-rose-600 hover:bg-rose-50 border border-rose-200 transition-colors flex items-center gap-1"
+                              title="Gỡ bỏ hình ảnh"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Gỡ</span>
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="Chú thích sơ đồ (tùy chọn)..."
+                          value={editImageCaption}
+                          onChange={(e) => setEditImageCaption(e.target.value)}
+                          className="w-full px-2.5 py-1 text-xs rounded border border-slate-200 bg-white focus:outline-none focus:border-[#008689] text-slate-700 placeholder-slate-400"
+                        />
+                      </div>
+                    </div>
+                  )}
         </div>
       ) : (
         <div className="text-xs font-semibold text-slate-900 leading-relaxed">
@@ -279,13 +419,61 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
       {/* Optional Image */}
       {question.hasImage && question.imageUrl && (
         <div className="p-2 bg-white rounded-lg border border-slate-200 text-center max-w-sm mx-auto">
-          <img
-            src={question.imageUrl}
-            alt={question.imageCaption || 'Hình sơ đồ'}
-            className="max-h-40 mx-auto rounded object-contain"
-          />
-          {question.imageCaption && (
-            <p className="text-[10px] text-slate-500 italic mt-1">{question.imageCaption}</p>
+          {imgError ? (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-center space-y-1.5">
+              <p className="text-[11px] text-amber-800 font-semibold">Không thể hiển thị hình ảnh của câu hỏi</p>
+              <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(true);
+                    setEditHasImage(true);
+                  }}
+                  className="px-2 py-1 text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-300 rounded hover:bg-slate-200 flex items-center gap-1"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>Tải ảnh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsStudioOpen(true)}
+                  className="px-2 py-1 text-[10px] font-semibold bg-teal-50 text-[#008689] border border-teal-200 rounded hover:bg-teal-100 flex items-center gap-1"
+                >
+                  <PenTool className="w-3 h-3" />
+                  <span>Vẽ hình</span>
+                </button>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onEdit({
+                        ...question,
+                        hasImage: false,
+                        imageUrl: undefined,
+                        imageCaption: undefined,
+                      });
+                      setImgError(false);
+                    }}
+                    className="px-2 py-1 text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 rounded hover:bg-rose-100 flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Gỡ ảnh</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <img
+                src={resolveImageUrl(question.imageUrl)}
+                alt={question.imageCaption || 'Hình sơ đồ'}
+                className="max-h-40 mx-auto rounded object-contain"
+                onError={() => setImgError(true)}
+              />
+              {question.imageCaption && (
+                <p className="text-[10px] text-slate-500 italic mt-1">{question.imageCaption}</p>
+              )}
+            </>
           )}
         </div>
       )}
@@ -329,6 +517,14 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
                     onChange={(e) => handleOptionTextChange(opt.id, e.target.value)}
                     className="w-full p-1 text-xs border border-slate-200 rounded bg-white"
                   />
+                  {(opt.text.includes('$') || opt.text.includes('\\')) && (
+                    <div className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[11px] text-slate-800 flex items-start gap-1">
+                      <span className="text-[9px] font-mono uppercase text-slate-400 font-semibold shrink-0">KaTeX:</span>
+                      <div className="overflow-x-auto">
+                        <MathRenderer content={opt.text} inline />
+                      </div>
+                    </div>
+                  )}
                   {isCorrect && (
                     <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" /> Đáp án đúng
@@ -382,6 +578,28 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
           </button>
         </div>
       )}
+
+      {/* Multimodal Diagram Studio Modal */}
+      <DiagramStudioModal
+        isOpen={isStudioOpen}
+        onClose={() => setIsStudioOpen(false)}
+        initialCaption={editImageCaption || question.imageCaption}
+        initialImageUrl={editImageUrl || question.imageUrl}
+        onApplyImage={(imgUrl, cap) => {
+          setEditImageUrl(imgUrl);
+          setEditHasImage(true);
+          if (cap) setEditImageCaption(cap);
+          setImgError(false);
+          if (!isEditing && onEdit) {
+            onEdit({
+              ...question,
+              hasImage: true,
+              imageUrl: imgUrl,
+              imageCaption: cap || question.imageCaption,
+            });
+          }
+        }}
+      />
     </div>
   );
 };
