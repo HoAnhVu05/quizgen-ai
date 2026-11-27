@@ -268,11 +268,6 @@ export function useTextbookDocuments({
   };
 
   const handleToggleShare = async (book: TextbookFile) => {
-    if (!isEnterprise && !isPro) {
-      onShowToast('warning', 'Đặc Quyền Gói Khoa & Bộ Môn', 'Tính năng chia sẻ yêu cầu Gói PRO hoặc Enterprise.');
-      onOpenPricingModal?.();
-      return;
-    }
     try {
       const targetState = !book.isShared;
       const token = apiClient.getAccessToken() || localStorage.getItem('quizgen_auth_token') || localStorage.getItem('quizgen_token');
