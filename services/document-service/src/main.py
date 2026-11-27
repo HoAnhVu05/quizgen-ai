@@ -59,7 +59,7 @@ QUESTION_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # [SCRUM-99] Bộ điều phối hàng đợi tác vụ bóc tách (Max 3 tác vụ chạy đồng thời)
 # Ngăn chặn quá tải CPU/RAM khi người dùng tải lên đồng loạt 20-50 tài liệu
-MAX_CONCURRENT_PIPELINES = int(os.getenv("MAX_CONCURRENT_PIPELINES", "3"))
+MAX_CONCURRENT_PIPELINES = int(os.getenv("MAX_CONCURRENT_PIPELINES", "2"))
 pipeline_semaphore = threading.Semaphore(MAX_CONCURRENT_PIPELINES)
 
 
@@ -292,104 +292,104 @@ def process_document_pipeline(
         if not chunks:
             _mark_doc_error(document_id, "Tài liệu không tạo ra đoạn trích (chunk) hợp lệ nào sau khi phân đoạn.", stage="empty_chunks")
             return
+
+        # Pha 3: Lưu cấu trúc chương mục và các chunks vào CSDL
+        cache.set_upload_progress(document_id, progress=70, status="embedding", stage="saving_metadata", total_pages=len(pages))
+        _update_doc_progress(document_id, progress=70, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
+
+        for db_attempt in range(5):
+            db = SessionLocal()
+            try:
+                # Xóa các mục cũ nếu có
+                db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
+                db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
+
+                chapters_db = [
+                    DocumentChapterDB(
+                        id=f"ch-{document_id}-{ch['chapter_index']}",
+                        document_id=document_id,
+                        chapter_index=ch["chapter_index"],
+                        title=ch["title"],
+                        page_start=ch["page_start"],
+                        page_end=ch["page_end"]
+                    )
+                    for ch in chapters_metadata
+                ]
+                db.add_all(chapters_db)
+
+                chunks_db = [
+                    DocumentChunkDB(
+                        id=c["chunk_id"],
+                        document_id=document_id,
+                        page_number=c["page_number"],
+                        chapter=c["chapter"],
+                        char_count=c["char_count"],
+                        text_snippet=c["text"],
+                        images_json=json.dumps(c.get("images", [])) if c.get("images") else None
+                    )
+                    for c in chunks
+                ]
+                db.add_all(chunks_db)
+                db.commit()
+
+                # Đã lưu metadata vào CSDL, tiếp tục chuyển sang Pha 4 để lập chỉ mục vector RAG
+                cache.set_upload_progress(document_id, progress=75, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
+                _update_doc_progress(document_id, progress=75, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
+                break
+            except Exception as e:
+                db.rollback()
+                if db_attempt < 4:
+                    time.sleep(0.5 * (db_attempt + 1))
+                else:
+                    _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
+                    return
+            finally:
+                db.close()
+
+        # Pha 4: Chuyển tiếp các chunks sang RAG Service để lập chỉ mục vector (ChromaDB)
+        cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
+        _update_doc_progress(document_id, progress=85, status="embedding")
+
+        headers = {}
+        if user_id:
+            headers["X-User-Id"] = user_id
+
+        max_retries = 3
+        rag_success = False
+        last_rag_error = ""
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                with httpx.Client(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
+                    res = client.post(
+                        f"{RAG_SERVICE_URL}/index-chunks",
+                        headers=headers,
+                        json={
+                            "document_id": document_id,
+                            "chunks": chunks,
+                            "replace_existing": True
+                        }
+                    )
+                    if res.status_code == 200:
+                        rag_success = True
+                        logger.info(f"[DocumentService] True Readiness achieved: Vector indexing completed for document {document_id}")
+                        break
+                    else:
+                        last_rag_error = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
+            except Exception as e:
+                last_rag_error = f"Lỗi kết nối RAG Service ({RAG_SERVICE_URL}): {str(e)}"
+
+            if attempt < max_retries:
+                time.sleep(2 ** (attempt - 1))  # 1s, 2s
+
+        # Pha 5: Hoàn tất Sẵn Sàng Thật Sự (Chỉ kích hoạt khi Vector RAG đã xong 100%)
+        if rag_success:
+            _update_doc_progress(document_id, progress=100, status="ready", error_message=None)
+            cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages), chapters_count=len(chapters_metadata))
+        else:
+            _mark_doc_error(document_id, last_rag_error, stage="rag_error")
     finally:
         pipeline_semaphore.release()
-
-    # Pha 3: Lưu cấu trúc chương mục và các chunks vào CSDL
-    cache.set_upload_progress(document_id, progress=70, status="embedding", stage="saving_metadata", total_pages=len(pages))
-    _update_doc_progress(document_id, progress=70, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
-
-    for db_attempt in range(5):
-        db = SessionLocal()
-        try:
-            # Xóa các mục cũ nếu có
-            db.query(DocumentChapterDB).filter_by(document_id=document_id).delete()
-            db.query(DocumentChunkDB).filter_by(document_id=document_id).delete()
-
-            chapters_db = [
-                DocumentChapterDB(
-                    id=f"ch-{document_id}-{ch['chapter_index']}",
-                    document_id=document_id,
-                    chapter_index=ch["chapter_index"],
-                    title=ch["title"],
-                    page_start=ch["page_start"],
-                    page_end=ch["page_end"]
-                )
-                for ch in chapters_metadata
-            ]
-            db.add_all(chapters_db)
-
-            chunks_db = [
-                DocumentChunkDB(
-                    id=c["chunk_id"],
-                    document_id=document_id,
-                    page_number=c["page_number"],
-                    chapter=c["chapter"],
-                    char_count=c["char_count"],
-                    text_snippet=c["text"],
-                    images_json=json.dumps(c.get("images", [])) if c.get("images") else None
-                )
-                for c in chunks
-            ]
-            db.add_all(chunks_db)
-            db.commit()
-
-            # Đã lưu metadata vào CSDL, tiếp tục chuyển sang Pha 4 để lập chỉ mục vector RAG
-            cache.set_upload_progress(document_id, progress=75, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
-            _update_doc_progress(document_id, progress=75, status="embedding", total_pages=len(pages), chapters_count=len(chapters_metadata))
-            break
-        except Exception as e:
-            db.rollback()
-            if db_attempt < 4:
-                time.sleep(0.5 * (db_attempt + 1))
-            else:
-                _mark_doc_error(document_id, f"Lỗi lưu trữ metadata vào CSDL: {str(e)}", stage="db_save_error")
-                return
-        finally:
-            db.close()
-
-    # Pha 4: Chuyển tiếp các chunks sang RAG Service để lập chỉ mục vector (ChromaDB)
-    cache.set_upload_progress(document_id, progress=85, status="embedding", stage="indexing_vectors", total_pages=len(pages), chapters_count=len(chapters_metadata))
-    _update_doc_progress(document_id, progress=85, status="embedding")
-
-    headers = {}
-    if user_id:
-        headers["X-User-Id"] = user_id
-
-    max_retries = 3
-    rag_success = False
-    last_rag_error = ""
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            with httpx.Client(timeout=RAG_HTTP_TIMEOUT_SECONDS) as client:
-                res = client.post(
-                    f"{RAG_SERVICE_URL}/index-chunks",
-                    headers=headers,
-                    json={
-                        "document_id": document_id,
-                        "chunks": chunks,
-                        "replace_existing": True
-                    }
-                )
-                if res.status_code == 200:
-                    rag_success = True
-                    logger.info(f"[DocumentService] True Readiness achieved: Vector indexing completed for document {document_id}")
-                    break
-                else:
-                    last_rag_error = f"RAG Service phản hồi lỗi ({res.status_code}): {res.text}"
-        except Exception as e:
-            last_rag_error = f"Lỗi kết nối RAG Service ({RAG_SERVICE_URL}): {str(e)}"
-
-        if attempt < max_retries:
-            time.sleep(2 ** (attempt - 1))  # 1s, 2s
-
-    # Pha 5: Hoàn tất Sẵn Sàng Thật Sự (Chỉ kích hoạt khi Vector RAG đã xong 100%)
-    if rag_success:
-        _update_doc_progress(document_id, progress=100, status="ready", error_message=None)
-        cache.set_upload_progress(document_id, progress=100, status="ready", stage="completed", total_pages=len(pages), chapters_count=len(chapters_metadata))
-    else:
-        _mark_doc_error(document_id, last_rag_error, stage="rag_error")
 
 
 @app.get("/health")
