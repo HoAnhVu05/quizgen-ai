@@ -7,6 +7,7 @@ export interface ChatAttachment {
   mimeType: string;
   size: number;
   data?: string;
+  url?: string;
   textContent?: string;
 }
 

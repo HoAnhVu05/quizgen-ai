@@ -147,7 +147,18 @@ export function useCopilotChat({
   useEffect(() => {
     if (!messages || messages.length === 0) return;
     try {
-      const payload = JSON.stringify(messages.slice(-100));
+      const compactMsgs = messages.slice(-100).map((m) => {
+        if (!m.attachments || m.attachments.length === 0) return m;
+        return {
+          ...m,
+          attachments: m.attachments.map((att) =>
+            att.data && att.data.length > 65536
+              ? { ...att, data: att.url ? undefined : att.data.slice(0, 65536) }
+              : att
+          ),
+        };
+      });
+      const payload = JSON.stringify(compactMsgs);
       if (userChatKey) {
         localStorage.setItem(userChatKey, payload);
         sessionStorage.setItem(userChatKey, payload);

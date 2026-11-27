@@ -863,7 +863,7 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
             return "", []
 
         action_pattern = re.compile(
-            r"```action:(support_ticket|exam_blueprint|navigate|patch_question|import_exam)\s*([\s\S]*?)(?:```|$)"
+            r"```action:(support_ticket|exam_blueprint|navigate|patch_question|import_exam|export_docx)\s*([\s\S]*?)(?:```|$)"
         )
         actions: List[Dict[str, Any]] = []
         clean_text = reply_text
@@ -1296,59 +1296,19 @@ CHỈ THỊ HỖ TRỢ KỸ THUẬT:
         attachments: Optional[List[Dict[str, Any]]] = None,
         academic_memory: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Trò chuyện thông minh với QuizGen Copilot (Async non-blocking, Multimodal, Dynamic Memory, Structured Actions)."""
-        if not self.model:
-            self._init_model()
-
-        ctx = context or {}
-        screen = ctx.get("currentScreen", "dashboard")
-        screen_label = ctx.get("screenLabel", "Không gian làm việc")
-        user_name = ctx.get("userName", "anh")
-        doc_id = ctx.get("documentId") or ctx.get("document_id")
-        all_docs = ctx.get("allDocuments") or []
-        system_docs = ctx.get("system_documents") or []
-
-        rag_chunks, rag_sources = await self._fetch_rag_context(message, doc_id, all_docs, system_docs)
-        system_instruction, is_support_intent = self._build_chat_system_instruction(
-            message, ctx, rag_chunks, academic_memory
-        )
-        suggestions = self._build_suggestions(screen, is_support_intent)
-
-        if not self.model:
-            return {
-                "reply": (
-                    f"Chào {user_name}! Tôi là QuizGen Copilot. Hiện tại tôi đang chạy ở chế độ Hỗ trợ Ngoại tuyến.\n\n"
-                    f"Bạn đang làm việc tại **{screen_label}**. Bạn có thể yêu cầu tôi giải thích đáp án, tăng độ khó câu hỏi theo ma trận Bloom, hoặc hướng dẫn xuất đề thi chuẩn Word/PDF bất kỳ lúc nào!"
-                ),
-                "actions": [],
-                "suggestedActions": suggestions,
-                "ragSources": rag_sources,
-            }
-
+        """Trò chuyện thông minh với QuizGen Copilot qua Agentic ReAct Native Function Calling."""
         try:
-            contents = self._build_gemini_contents(message, history, attachments)
-            response = await asyncio.to_thread(
-                self._generate_with_fallback,
-                system_instruction=system_instruction,
-                contents=contents,
-            )
-            raw_reply = response.text.strip() if response and response.text else "Tôi đã ghi nhận yêu cầu của bạn."
-            clean_reply, actions = self._extract_and_validate_actions(raw_reply)
-
-            return {
-                "reply": clean_reply or raw_reply,
-                "actions": actions,
-                "suggestedActions": suggestions,
-                "ragSources": rag_sources,
-            }
-        except Exception as e:
-            print(f"[AI-COPILOT] Lỗi phản hồi Copilot: {e}")
-            return {
-                "reply": f"Tôi đã tiếp nhận câu hỏi của bạn về: *\"{message}\"*. Hiện tại đường truyền AI đang bận hoặc có giới hạn tần suất, vui lòng thử lại sau giây lát hoặc chọn gợi ý bên dưới.",
-                "actions": [],
-                "suggestedActions": suggestions,
-                "ragSources": rag_sources,
-            }
+            from .copilot_agent import run_copilot_agent
+        except ImportError:
+            from src.copilot_agent import run_copilot_agent
+        return await run_copilot_agent(
+            generator=self,
+            message=message,
+            history=history,
+            context=context,
+            attachments=attachments,
+            academic_memory=academic_memory,
+        )
 
     async def chat_with_copilot_stream(
         self,
@@ -1358,85 +1318,17 @@ CHỈ THỊ HỖ TRỢ KỸ THUẬT:
         attachments: Optional[List[Dict[str, Any]]] = None,
         academic_memory: Optional[Dict[str, Any]] = None,
     ):
-        """Async generator phát sự kiện SSE streaming (status -> chunk -> done) cho Quanta Copilot."""
-        if not self.model:
-            self._init_model()
-
-        ctx = context or {}
-        screen = ctx.get("currentScreen", "dashboard")
-        screen_label = ctx.get("screenLabel", "Không gian làm việc")
-        user_name = ctx.get("userName", "anh")
-        doc_id = ctx.get("documentId") or ctx.get("document_id")
-        all_docs = ctx.get("allDocuments") or []
-        system_docs = ctx.get("system_documents") or []
-
-        yield {"type": "status", "status": "retrieving_rag", "message": "Đang tra cứu giáo trình & ngữ cảnh..."}
-        rag_chunks, rag_sources = await self._fetch_rag_context(message, doc_id, all_docs, system_docs)
-        system_instruction, is_support_intent = self._build_chat_system_instruction(
-            message, ctx, rag_chunks, academic_memory
-        )
-        suggestions = self._build_suggestions(screen, is_support_intent)
-
-        if not self.model:
-            offline_msg = (
-                f"Chào {user_name}! Tôi là QuizGen Copilot (Chế độ Ngoại tuyến) tại **{screen_label}**."
-            )
-            yield {"type": "chunk", "text": offline_msg}
-            yield {
-                "type": "done",
-                "reply": offline_msg,
-                "actions": [],
-                "suggestedActions": suggestions,
-                "ragSources": rag_sources,
-            }
-            return
-
-        yield {"type": "status", "status": "generating", "message": "Quanta đang soạn câu trả lời..."}
-        contents = self._build_gemini_contents(message, history, attachments)
-        queue: asyncio.Queue = asyncio.Queue()
-        loop = asyncio.get_running_loop()
-
-        def _worker():
-            try:
-                for chunk in self._generate_stream_with_fallback(
-                    system_instruction=system_instruction,
-                    contents=contents,
-                ):
-                    text_piece = getattr(chunk, "text", None) or ""
-                    if text_piece:
-                        loop.call_soon_threadsafe(queue.put_nowait, ("chunk", text_piece))
-                loop.call_soon_threadsafe(queue.put_nowait, ("eof", None))
-            except Exception as ex:
-                loop.call_soon_threadsafe(queue.put_nowait, ("error", str(ex)))
-
-        import threading
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
-
-        full_text_parts: List[str] = []
-        stream_err: Optional[str] = None
-        while True:
-            kind, val = await queue.get()
-            if kind == "chunk":
-                full_text_parts.append(val)
-                yield {"type": "chunk", "text": val}
-            elif kind == "error":
-                stream_err = val
-                break
-            elif kind == "eof":
-                break
-
-        raw_reply = "".join(full_text_parts).strip()
-        if stream_err and not raw_reply:
-            print(f"[AI-COPILOT-STREAM] Lỗi stream: {stream_err}")
-            raw_reply = f"Tôi đã tiếp nhận câu hỏi của bạn về: *\"{message}\"*. Hiện tại đường truyền AI đang bận, vui lòng thử lại sau giây lát."
-            yield {"type": "chunk", "text": raw_reply}
-
-        clean_reply, actions = self._extract_and_validate_actions(raw_reply)
-        yield {
-            "type": "done",
-            "reply": clean_reply or raw_reply,
-            "actions": actions,
-            "suggestedActions": suggestions,
-            "ragSources": rag_sources,
-        }
+        """Async generator phát sự kiện SSE streaming (status -> chunk -> done) từ Agentic ReAct Loop."""
+        try:
+            from .copilot_agent import run_copilot_agent_stream
+        except ImportError:
+            from src.copilot_agent import run_copilot_agent_stream
+        async for ev in run_copilot_agent_stream(
+            generator=self,
+            message=message,
+            history=history,
+            context=context,
+            attachments=attachments,
+            academic_memory=academic_memory,
+        ):
+            yield ev

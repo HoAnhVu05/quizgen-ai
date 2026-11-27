@@ -1,0 +1,334 @@
+# -*- coding: utf-8 -*-
+"""
+Quanta Copilot Agentic ReAct Loop (Native Function Calling):
+- Thay thế prompt khổng lồ + regex parsing bằng vòng lặp ReAct Tool-Use thực thụ.
+- Tự động gọi Read Tools (tìm sách, đọc trang, RAG, ngân hàng câu hỏi, gói cước, ticket).
+- Self-correction khi tool trả về lỗi.
+- Write/Action Tools mặc định trả về Thẻ Tương Tác có Safe Action Gating.
+"""
+
+import asyncio
+import json
+import re
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+import google.generativeai as genai
+
+try:
+    from .copilot_tools import TOOL_STATUS_LABELS, get_copilot_tool_declarations
+    from .copilot_tool_executor import apply_safe_action_gating, execute_copilot_tool
+except ImportError:
+    from src.copilot_tools import TOOL_STATUS_LABELS, get_copilot_tool_declarations
+    from src.copilot_tool_executor import apply_safe_action_gating, execute_copilot_tool
+
+MAX_AGENT_STEPS = 5
+
+
+def _build_agent_system_instruction(
+    ctx: Dict[str, Any],
+    academic_memory: Optional[Dict[str, Any]] = None,
+) -> str:
+    screen = ctx.get("currentScreen", "dashboard")
+    screen_label = ctx.get("screenLabel", "Không gian làm việc")
+    user_name = ctx.get("userName", "anh/chị")
+    user_title = ctx.get("academicTitle") or ""
+    doc_id = ctx.get("documentId") or ctx.get("document_id") or ""
+    doc_name = ctx.get("documentName") or ctx.get("document_name") or ""
+    active_question = ctx.get("activeQuestion")
+
+    is_remote = ctx.get("isRemoteCommander") or ctx.get("isAntigravityRemote") or screen == "admin_secret_command_center"
+    if is_remote:
+        return (
+            f"Bạn là Antigravity — Trợ lý AI Full-stack đang trực tiếp làm việc trong workspace D:\\HKDN\\Quizgen AI của anh {user_name}. "
+            "Xưng 'em', gọi người dùng là 'anh'. Trả lời ngắn gọn, sắc sảo, chính xác kỹ thuật."
+        )
+
+    mem = academic_memory or {}
+    subjects = mem.get("subject_areas") or []
+    bloom_pref = mem.get("preferred_bloom_ratio")
+    custom_notes = mem.get("custom_notes") or []
+
+    lines = [
+        "Bạn là Quanta — Quản gia Khảo thí Học thuật & Trợ lý Điều hành AI (Agentic Copilot) của nền tảng QuizGen AI.",
+        f"Người dùng hiện tại: {(user_title + ' ' + user_name).strip()} | Màn hình: {screen_label} ({screen}).",
+        "",
+        "NGUYÊN TẮC CỐT LÕI:",
+        "1. Xưng 'Quanta' hoặc 'em', gọi người dùng lịch sự ('Thầy/Cô' hoặc 'anh/chị' tự nhiên, không ghép máy móc).",
+        "2. Giao tiếp thông thường (chào hỏi, cảm ơn, hỏi thăm): Trả lời trực tiếp, nhanh gọn, KHÔNG gọi tool không cần thiết.",
+        "3. Khi cần dữ liệu thực tế (sách, chương, nội dung trang, câu hỏi, đề thi, gói cước, ticket): BẮT BUỘC gọi Read Tools tương ứng (`list_documents`, `search_textbook_rag`, `read_document_pages`, `get_document_chapters`, `search_question_bank`, `get_user_plan_and_quota`, `get_my_support_tickets`...). KHÔNG tự bịa số liệu hoặc tên sách.",
+        "4. Nếu một tool trả về lỗi hoặc thiếu ID, hãy đọc `hint` và tự sửa bằng cách gọi tool khác (ví dụ gọi `list_documents` trước để lấy `document_id`).",
+        "5. Thao tác thay đổi dữ liệu / gửi yêu cầu (`prepare_support_ticket`, `prepare_exam_import`, `patch_question`, `propose_exam_blueprint`, `export_questions_docx`): Gọi tool để tạo Thẻ Xác Nhận Tương Tác. Mặc định `autoSubmit=false` / `autoExecute=false` trừ khi người dùng ra lệnh rõ ràng thực thi ngay với đầy đủ thông tin.",
+        "6. Công thức Toán/Lý/Hóa luôn viết bằng LaTeX ($...$ hoặc $$...$$). Kênh hỗ trợ chính thức: Hotline/Zalo 0364591363, Email quizgen.ai.team@gmail.com.",
+    ]
+
+    if doc_id or doc_name:
+        lines.append(f"\nGIÁO TRÌNH ĐANG MỞ: '{doc_name}' (ID: {doc_id})")
+    if subjects:
+        lines.append(f"BỘ MÔN GẦN ĐÂY: {', '.join(subjects[:6])}")
+    if bloom_pref:
+        lines.append(f"TỈ LỆ BLOOM ƯA THÍCH: {json.dumps(bloom_pref, ensure_ascii=False)}")
+    if custom_notes:
+        lines.append(f"GHI CHÚ RIÊNG CỦA GIẢNG VIÊN: {'; '.join(custom_notes[-4:])}")
+
+    if active_question and isinstance(active_question, dict):
+        lines.append(
+            f"\nCÂU HỎI ĐANG XEM (ID: {active_question.get('id', 'N/A')}): "
+            f"{active_question.get('question', '')[:300]} | Đáp án: {active_question.get('correctAnswerId', '')} | Bloom: {active_question.get('bloomLevel', '')}"
+        )
+
+    return "\n".join(lines)
+
+
+def _extract_suggestions(message: str, screen: str) -> List[str]:
+    clean_msg = (message or "").lower()
+    if any(k in clean_msg for k in ("lỗi", "thanh toán", "nạp", "support", "hỗ trợ", "ticket")):
+        return ["📞 Hotline Zalo 0364591363", "💳 Kiểm tra gói cước & hạn mức", "🎫 Xem ticket hỗ trợ của tôi"]
+    if screen == "generate":
+        return ["📊 Đề xuất ma trận Bloom 20 câu", "📖 Tóm tắt các chương giáo trình", "⚡ Sinh 5 câu hỏi mẫu"]
+    if screen == "bank":
+        return ["📄 Xuất đề thi Word (.docx)", "🔍 Tìm câu hỏi Vận dụng cao", "📋 Xem các đề thi đã lưu"]
+    return ["📚 Liệt kê giáo trình hiện có", "⚡ Đề xuất ma trận đề thi", "💡 Giải thích câu hỏi này"]
+
+
+def _extract_function_calls(response: Any) -> List[Any]:
+    calls: List[Any] = []
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return calls
+        parts = getattr(candidates[0].content, "parts", None) or []
+        for p in parts:
+            fc = getattr(p, "function_call", None)
+            if fc and getattr(fc, "name", None):
+                calls.append(fc)
+    except Exception:
+        pass
+    return calls
+
+
+def _extract_text(response: Any) -> str:
+    try:
+        candidates = getattr(response, "candidates", None) or []
+        if not candidates:
+            return getattr(response, "text", "") or ""
+        parts = getattr(candidates[0].content, "parts", None) or []
+        texts = [getattr(p, "text", "") for p in parts if getattr(p, "text", None)]
+        return "\n".join(texts).strip()
+    except Exception:
+        try:
+            return (response.text or "").strip()
+        except Exception:
+            return ""
+
+
+def _generate_step_with_fallback(
+    generator: Any,
+    system_instruction: str,
+    contents: List[Any],
+    tools: Any,
+):
+    candidates = [
+        getattr(generator, "model_name", "gemini-2.5-flash"),
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+    ]
+    seen = set()
+    unique_cands = [c for c in candidates if not (c in seen or seen.add(c))]
+    max_keys = max(1, len(getattr(generator, "api_keys", []) or [1]))
+    last_err = None
+
+    for cand in unique_cands:
+        for _ in range(max_keys):
+            active_key = generator._get_active_key()
+            if active_key:
+                genai.configure(api_key=active_key)
+            try:
+                model_kwargs: Dict[str, Any] = {"system_instruction": system_instruction}
+                if tools is not None:
+                    model_kwargs["tools"] = [tools]
+                m = genai.GenerativeModel(cand, **model_kwargs)
+                res = m.generate_content(contents=contents)
+                generator.model = m
+                generator.model_name = cand
+                return res
+            except Exception as exc:
+                last_err = exc
+                err_l = str(exc).lower()
+                if "429" in err_l or "quota" in err_l or "resource_exhausted" in err_l:
+                    generator._rotate_key()
+                    continue
+                if "404" in err_l or "not found" in err_l:
+                    break
+                raise exc
+    if last_err:
+        raise last_err
+    raise RuntimeError("Không có Gemini model khả dụng.")
+
+
+async def run_copilot_agent(
+    generator: Any,
+    message: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    context: Optional[Dict[str, Any]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None,
+    academic_memory: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Chạy Agentic ReAct loop (non-streaming) và trả về reply + actions + ragSources."""
+    final_result: Dict[str, Any] = {}
+    async for ev in run_copilot_agent_stream(
+        generator=generator,
+        message=message,
+        history=history,
+        context=context,
+        attachments=attachments,
+        academic_memory=academic_memory,
+    ):
+        if ev.get("type") == "done":
+            final_result = {
+                "reply": ev.get("reply", ""),
+                "actions": ev.get("actions", []),
+                "suggestedActions": ev.get("suggestedActions", []),
+                "ragSources": ev.get("ragSources", []),
+            }
+    return final_result
+
+
+async def run_copilot_agent_stream(
+    generator: Any,
+    message: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    context: Optional[Dict[str, Any]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None,
+    academic_memory: Optional[Dict[str, Any]] = None,
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """Async generator chạy vòng lặp ReAct Native Function Calling và phát SSE events."""
+    if not generator.model:
+        generator._init_model()
+
+    ctx = context or {}
+    screen = ctx.get("currentScreen", "dashboard")
+    screen_label = ctx.get("screenLabel", "Không gian làm việc")
+    user_name = ctx.get("userName", "anh/chị")
+    suggestions = _extract_suggestions(message, screen)
+
+    if not generator.model:
+        offline_msg = (
+            f"Chào {user_name}! Quanta đang chạy ở chế độ Ngoại tuyến tại **{screen_label}**. "
+            "Vui lòng kiểm tra cấu hình `GEMINI_API_KEY` để kích hoạt đầy đủ công cụ Agentic."
+        )
+        yield {"type": "chunk", "text": offline_msg}
+        yield {"type": "done", "reply": offline_msg, "actions": [], "suggestedActions": suggestions, "ragSources": []}
+        return
+
+    yield {"type": "status", "status": "thinking", "message": "Quanta đang phân tích yêu cầu..."}
+
+    system_instruction = _build_agent_system_instruction(ctx, academic_memory)
+    contents: List[Any] = generator._build_gemini_contents(message, history, attachments)
+    tools = get_copilot_tool_declarations()
+
+    collected_actions: List[Dict[str, Any]] = []
+    collected_rag_sources: List[Dict[str, Any]] = []
+    seen_rag = set()
+    final_reply = ""
+
+    try:
+        for _step in range(MAX_AGENT_STEPS):
+            response = await asyncio.to_thread(
+                _generate_step_with_fallback,
+                generator,
+                system_instruction,
+                contents,
+                tools,
+            )
+            fn_calls = _extract_function_calls(response)
+            if not fn_calls:
+                final_reply = _extract_text(response)
+                break
+
+            # Đưa model turn (chứa function_call) vào hội thoại
+            contents.append(response.candidates[0].content)
+
+            fn_response_parts = []
+            for fc in fn_calls:
+                tool_name = fc.name
+                tool_args = dict(fc.args) if getattr(fc, "args", None) else {}
+                yield {
+                    "type": "status",
+                    "status": "tool_call",
+                    "tool": tool_name,
+                    "message": TOOL_STATUS_LABELS.get(tool_name, f"Đang thực thi {tool_name}..."),
+                }
+                exec_out = await execute_copilot_tool(
+                    name=tool_name,
+                    raw_args=tool_args,
+                    context=ctx,
+                    user_message=message,
+                    generator=generator,
+                )
+                if exec_out.get("action"):
+                    collected_actions.append(exec_out["action"])
+                for src in exec_out.get("rag_sources") or []:
+                    key = (src.get("documentName"), src.get("pageNumber"))
+                    if key not in seen_rag:
+                        seen_rag.add(key)
+                        collected_rag_sources.append(src)
+
+                fn_response_parts.append(
+                    genai.protos.Part(
+                        function_response=genai.protos.FunctionResponse(
+                            name=tool_name,
+                            response={"result": exec_out.get("result", {})},
+                        )
+                    )
+                )
+
+            contents.append(genai.protos.Content(role="user", parts=fn_response_parts))
+
+        if not final_reply:
+            # Nếu đã chạm MAX_AGENT_STEPS mà bước cuối vẫn là tool_call, tổng hợp câu trả lời cuối không cần tools
+            synth_resp = await asyncio.to_thread(
+                _generate_step_with_fallback,
+                generator,
+                system_instruction,
+                contents,
+                None,
+            )
+            final_reply = _extract_text(synth_resp)
+
+        if not final_reply:
+            final_reply = "Quanta đã hoàn tất xử lý và chuẩn bị các thẻ thao tác bên dưới."
+
+        # Fallback: nếu LLM lỡ viết ```action:...``` trong text, trích xuất + gate an toàn
+        clean_reply, legacy_actions = generator._extract_and_validate_actions(final_reply)
+        for la in legacy_actions:
+            la["data"] = apply_safe_action_gating(la.get("type", ""), la.get("data") or {}, message)
+            collected_actions.append(la)
+
+        reply_out = clean_reply or final_reply
+        # Phát từng đoạn ngắn để UI streaming mượt mà
+        chunk_size = 120
+        for i in range(0, len(reply_out), chunk_size):
+            yield {"type": "chunk", "text": reply_out[i : i + chunk_size]}
+
+        yield {
+            "type": "done",
+            "reply": reply_out,
+            "actions": collected_actions,
+            "suggestedActions": suggestions,
+            "ragSources": collected_rag_sources[:8],
+        }
+    except Exception as exc:
+        print(f"[COPILOT-AGENT] Error: {exc}")
+        err_msg = (
+            f"Quanta đã tiếp nhận yêu cầu về *\"{message}\"*, nhưng kết nối AI đang gặp gián đoạn tạm thời ({exc}). "
+            "Thầy/Cô vui lòng thử lại sau giây lát ạ."
+        )
+        yield {"type": "chunk", "text": err_msg}
+        yield {
+            "type": "done",
+            "reply": err_msg,
+            "actions": collected_actions,
+            "suggestedActions": suggestions,
+            "ragSources": collected_rag_sources[:8],
+        }

@@ -9,6 +9,16 @@ import {
   ImportExamActionData,
 } from '../QuantaMarkdownRenderer';
 import { ChatMessage } from './types';
+import { API_BASE } from '../../services/apiClient';
+
+const resolveAttachmentSrc = (url?: string, data?: string): string | undefined => {
+  if (url) {
+    if (url.startsWith('http') || url.startsWith('data:')) return url;
+    if (url.startsWith('/api/v1')) return `${API_BASE.replace(/\/api\/v1$/, '')}${url}`;
+    return `${API_BASE}${url}`;
+  }
+  return data;
+};
 
 interface CopilotMessageListProps {
   chatContainerRef: React.RefObject<HTMLDivElement>;
@@ -74,10 +84,10 @@ export const CopilotMessageList: React.FC<CopilotMessageListProps> = ({
                 {isUser && m.attachments && m.attachments.length > 0 && (
                   <div className="mb-2 flex flex-wrap gap-1.5">
                     {m.attachments.map((att, aIdx) =>
-                      att.mimeType?.startsWith('image/') && att.data ? (
+                      att.mimeType?.startsWith('image/') && (att.url || att.data) ? (
                         <img
                           key={att.id || aIdx}
-                          src={att.data}
+                          src={resolveAttachmentSrc(att.url, att.data)}
                           alt={att.name}
                           onLoad={onMediaLoad}
                           className="max-h-40 min-h-[48px] rounded-lg border border-white/25 object-cover bg-white/10"

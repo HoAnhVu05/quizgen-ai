@@ -14,7 +14,7 @@ from uuid import uuid4
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 import httpx
@@ -40,6 +40,12 @@ from .models import (
 from .generator import QuestionGenerator
 from .cache import cache
 from .auth import get_current_user_id, get_optional_user_id
+from .copilot_media import (
+    CHAT_EXPORTS_DIR,
+    CHAT_UPLOADS_DIR,
+    build_questions_docx_bytes,
+    persist_chat_attachments,
+)
 
 app = FastAPI(title="QuizGen AI - AI Generation Service", version="1.0.0")
 generator = QuestionGenerator()
@@ -471,21 +477,8 @@ def _learn_from_interaction(
 
 
 def _compact_attachments(attachments: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
-    if not attachments:
-        return None
-    compact = []
-    for att in attachments[:5]:
-        item = {
-            "name": att.get("name"),
-            "mimeType": att.get("mimeType") or att.get("type"),
-            "size": att.get("size"),
-        }
-        # Lưu preview ảnh nhỏ (<150KB) để đồng bộ giữa thiết bị, tránh phình DB
-        data_val = att.get("data") or ""
-        if isinstance(data_val, str) and data_val.startswith("data:image/") and len(data_val) < 200000:
-            item["data"] = data_val
-        compact.append(item)
-    return compact
+    """Fix #3: Lưu ảnh/tệp xuống ổ đĩa (data/chat_uploads/) và giữ URL bền vững thay vì strip base64."""
+    return persist_chat_attachments(attachments)
 
 
 def _save_chat_turn(
@@ -751,3 +744,45 @@ def reset_copilot_memory(
     db.query(UserAcademicMemoryDB).filter(UserAcademicMemoryDB.user_id == effective_user_id).delete()
     db.commit()
     return {"success": True}
+
+
+@app.get("/chat/uploads/{filename}")
+@app.get("/ai/chat/uploads/{filename}")
+def serve_copilot_chat_upload(filename: str):
+    """Fix #3: Phục vụ ảnh/tệp đính kèm chat bền vững qua URL."""
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(CHAT_UPLOADS_DIR, safe_name)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại.")
+    return FileResponse(file_path)
+
+
+@app.get("/chat/exports/{filename}")
+@app.get("/ai/chat/exports/{filename}")
+def serve_copilot_chat_export(filename: str):
+    """Fix #5: Tải xuống file Word (.docx) do Quanta tạo."""
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(CHAT_EXPORTS_DIR, safe_name)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="File xuất Word không tồn tại.")
+    return FileResponse(
+        file_path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=safe_name,
+    )
+
+
+@app.post("/chat/export-docx")
+@app.post("/ai/chat/export-docx")
+def export_copilot_questions_docx(req: Dict[str, Any]):
+    """Fix #5: Xuất trực tiếp danh sách câu hỏi từ Quanta Copilot ra file .docx."""
+    questions = req.get("questions") or []
+    if not isinstance(questions, list) or len(questions) == 0:
+        raise HTTPException(status_code=400, detail="Danh sách câu hỏi trống.")
+    title = str(req.get("title") or "Đề Thi Quanta Copilot")
+    raw_bytes, filename = build_questions_docx_bytes(title, questions)
+    return Response(
+        content=raw_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

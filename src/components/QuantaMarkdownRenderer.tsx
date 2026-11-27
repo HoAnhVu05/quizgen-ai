@@ -24,8 +24,10 @@ import {
   Printer,
   ChevronDown,
   ChevronUp,
+  Download,
 } from 'lucide-react';
 import { ScreenId } from '../types';
+import { downloadQuestionsAsDocx, quickPrintQuestions } from './copilot/copilotExportHelpers';
 
 export interface RawQuestionPayload {
   id?: string;
@@ -85,8 +87,16 @@ export interface NavigateActionData {
   label?: string;
 }
 
+export interface ExportDocxActionData {
+  title?: string;
+  fileName?: string;
+  downloadUrl?: string;
+  questionCount?: number;
+  questions: RawQuestionPayload[];
+}
+
 export interface QuantaAction {
-  type: 'support_ticket' | 'exam_blueprint' | 'navigate' | 'patch_question' | 'import_exam';
+  type: 'support_ticket' | 'exam_blueprint' | 'navigate' | 'patch_question' | 'import_exam' | 'export_docx';
   data: any;
 }
 
@@ -861,25 +871,45 @@ const ExamImportCard: React.FC<{
 
       {/* Actions */}
       {!isImported ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-          <button
-            type="button"
-            onClick={() => handleImport('bank')}
-            disabled={Boolean(isImporting)}
-            className="w-full py-2 px-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.99] text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            <span>{isImporting === 'bank' ? 'Đang nạp...' : '🚀 Nạp Vào Bước 4 (In Đề)'}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleImport('review')}
-            disabled={Boolean(isImporting)}
-            className="w-full py-2 px-3 bg-white hover:bg-slate-50 active:scale-[0.99] border border-indigo-200 text-indigo-700 font-semibold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-          >
-            <FileQuestion className="w-3.5 h-3.5" />
-            <span>{isImporting === 'review' ? 'Đang nạp...' : '📝 Nạp Vào Bước 3 (Duyệt)'}</span>
-          </button>
+        <div className="space-y-2 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => handleImport('bank')}
+              disabled={Boolean(isImporting)}
+              className="w-full py-2 px-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 active:scale-[0.99] text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{isImporting === 'bank' ? 'Đang nạp...' : '🚀 Nạp Vào Bước 4 (In Đề)'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleImport('review')}
+              disabled={Boolean(isImporting)}
+              className="w-full py-2 px-3 bg-white hover:bg-slate-50 active:scale-[0.99] border border-indigo-200 text-indigo-700 font-semibold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <FileQuestion className="w-3.5 h-3.5" />
+              <span>{isImporting === 'review' ? 'Đang nạp...' : '📝 Nạp Vào Bước 3 (Duyệt)'}</span>
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void downloadQuestionsAsDocx(title, questions)}
+              className="w-full py-1.5 px-2.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>📄 Xuất Word (.docx)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => quickPrintQuestions(title, questions)}
+              className="w-full py-1.5 px-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>🖨️ In nhanh</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="py-2.5 px-3 bg-emerald-500 text-white font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm">
@@ -887,6 +917,60 @@ const ExamImportCard: React.FC<{
           <span>✅ Đã nạp thành công bộ đề vào hệ thống! Đang chuyển hướng...</span>
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Direct Word (.docx) Export Action Card Component ────────────────────────
+const DocxExportCard: React.FC<{ data: ExportDocxActionData }> = ({ data }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
+  const title = data.title || 'Đề Thi Quanta Copilot';
+  const questions = data.questions || [];
+  const count = data.questionCount || questions.length;
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      await downloadQuestionsAsDocx(title, questions, data.downloadUrl);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  return (
+    <div className="my-3 p-3.5 bg-gradient-to-br from-emerald-50 to-teal-50/70 border border-emerald-200 rounded-2xl shadow-sm text-slate-800 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
+            <Download className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-slate-900">{title}</h4>
+            <p className="text-[10px] text-emerald-700 font-medium">
+              File Word (.docx) chuẩn A4 kèm Đáp án &amp; Giải thích ({count} câu)
+            </p>
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => void handleDownload()}
+          disabled={isDownloading}
+          className="py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>{isDownloading ? 'Đang tải...' : 'Tải file Word (.docx)'}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => quickPrintQuestions(title, questions)}
+          className="py-2 px-3 bg-white hover:bg-slate-50 border border-emerald-200 text-emerald-800 font-semibold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          <Printer className="w-3.5 h-3.5" />
+          <span>In nhanh</span>
+        </button>
+      </div>
     </div>
   );
 };
@@ -1039,6 +1123,9 @@ export const QuantaMarkdownRenderer: React.FC<QuantaMarkdownRendererProps> = ({
           onNavigate={onNavigate}
         />
       );
+    }
+    if (actionType === 'export_docx') {
+      return <DocxExportCard key={key} data={parsedData} />;
     }
     return null;
   };

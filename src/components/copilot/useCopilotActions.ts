@@ -332,10 +332,21 @@ export function useCopilotActions({
   const processStructuredOrFallbackActions = useCallback(
     (userText: string, replyContent: string, structuredActions?: QuantaAction[]) => {
       const actionsList = Array.isArray(structuredActions) ? structuredActions : [];
+      const isExplicitCommand = /(gửi ngay|tạo ticket ngay|gửi luôn|nạp ngay|import ngay|áp dụng ngay|sửa ngay|đưa vào ngay)/i.test(
+        userText
+      );
+      const isExploratory =
+        /(\?|làm sao|như thế nào|cách nào|hướng dẫn|có thể|được không|giải thích|tư vấn|là gì)/i.test(userText) &&
+        !isExplicitCommand;
+
+      if (isExploratory) {
+        return;
+      }
+
       const ticketAct = actionsList.find((a) => a.type === 'support_ticket');
       if (ticketAct?.data) {
         const ticketPayload = ticketAct.data as SupportTicketActionData;
-        if (ticketPayload.autoSubmit) {
+        if (ticketPayload.autoSubmit === true) {
           setTimeout(() => void handleSubmitSupportTicket(ticketPayload), 250);
         }
       } else {
@@ -343,18 +354,17 @@ export function useCopilotActions({
         if (ticketMatch) {
           try {
             const ticketPayload: SupportTicketActionData = JSON.parse(ticketMatch[1].trim());
-            if (ticketPayload.autoSubmit) {
+            if (ticketPayload.autoSubmit === true) {
               setTimeout(() => void handleSubmitSupportTicket(ticketPayload), 250);
             }
           } catch {}
         }
       }
 
-      const isAutoRequested = /nạp|đưa vào|chuyển qua|vào bước 4|vào bước 3|in đề|xuất đề/i.test(userText);
       const importAct = actionsList.find((a) => a.type === 'import_exam');
       if (importAct?.data) {
         const importPayload = importAct.data as ImportExamActionData;
-        if (isAutoRequested || importPayload.autoExecute) {
+        if (importPayload.autoExecute === true) {
           const targetScreen = /bước 3|duyệt|thẩm định/i.test(userText) ? 'review' : importPayload.targetScreen || 'bank';
           setTimeout(() => void handleImportExam(importPayload, targetScreen), 400);
         }
@@ -365,14 +375,14 @@ export function useCopilotActions({
       if (importMatch) {
         try {
           const importPayload: ImportExamActionData = JSON.parse(importMatch[1].trim());
-          if (isAutoRequested || importPayload.autoExecute) {
+          if (importPayload.autoExecute === true) {
             const targetScreen = /bước 3|duyệt|thẩm định/i.test(userText)
               ? 'review'
               : importPayload.targetScreen || 'bank';
             setTimeout(() => void handleImportExam(importPayload, targetScreen), 400);
           }
         } catch {}
-      } else if (isAutoRequested) {
+      } else if (isExplicitCommand && /(nạp|đưa vào|import)/i.test(userText)) {
         const foundQs = extractFallbackImportQuestions(replyContent, messages);
         if (foundQs.length > 0) {
           const fallbackPayload: ImportExamActionData = {
