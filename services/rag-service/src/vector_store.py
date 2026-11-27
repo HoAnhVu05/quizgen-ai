@@ -354,7 +354,7 @@ class RAGVectorStore:
 
                 page_num = metadata.get("page_number", 1)
                 chap_name = metadata.get("chapter", "Không rõ chương")
-                doc_uuid = metadata.get("document_id") or document_id or ""
+                doc_uuid = metadata.get("document_id") or ""
                 doc_title = metadata.get("document_name") or "Giáo trình"
                 excerpt = chunk_text[:280] + ("..." if len(chunk_text) > 280 else "")
 
@@ -470,10 +470,17 @@ class RAGVectorStore:
                     )
                     n_ids = nearby.get("ids", [])
                     n_docs = nearby.get("documents", [])
+                    n_metas = nearby.get("metadatas", [])
                     if n_ids and cid in n_ids:
-                        cur_pos = n_ids.index(cid)
-                        prev_text = n_docs[cur_pos - 1] if cur_pos > 0 else ""
-                        next_text = n_docs[cur_pos + 1] if cur_pos + 1 < len(n_docs) else ""
+                        paired = sorted(
+                            zip(n_ids, n_docs, n_metas),
+                            key=lambda x: (x[2].get("chunk_index", 0) if isinstance(x[2], dict) else 0, x[0])
+                        )
+                        s_ids = [p[0] for p in paired]
+                        s_docs = [p[1] for p in paired]
+                        cur_pos = s_ids.index(cid)
+                        prev_text = s_docs[cur_pos - 1] if cur_pos > 0 else ""
+                        next_text = s_docs[cur_pos + 1] if cur_pos + 1 < len(s_docs) else ""
 
                         if prev_text and prev_text != current_text:
                             expanded_parts.append(f"[Đoạn trước]: {prev_text[:200]}...")

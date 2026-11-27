@@ -1266,6 +1266,35 @@ def list_exams(
     return [format_exam_response(e) for e in exams]
 
 
+@app.get("/exams/analytics")
+def get_analytics(db: Session = Depends(get_db)):
+    total_q = db.query(QuestionDB).count()
+    approved_q = db.query(QuestionDB).filter(QuestionDB.status == "approved").count()
+    pending_q = db.query(QuestionDB).filter(QuestionDB.status == "pending").count()
+    rejected_q = db.query(QuestionDB).filter(QuestionDB.status == "rejected").count()
+
+    bloom_rows = db.query(
+        QuestionDB.bloom_level, func.count(QuestionDB.id)
+    ).group_by(QuestionDB.bloom_level).all()
+
+    bloom_dist = {level: count for level, count in bloom_rows}
+    total_exams = db.query(ExamDB).count()
+
+    return {
+        "totalQuestions": total_q,
+        "approvedQuestions": approved_q,
+        "pendingQuestions": pending_q,
+        "rejectedQuestions": rejected_q,
+        "bloomDistribution": {
+            "nhanBiet": bloom_dist.get("Nhận biết", 0),
+            "thongHieu": bloom_dist.get("Thông hiểu", 0),
+            "vanDung": bloom_dist.get("Vận dụng", 0),
+            "phanTich": bloom_dist.get("Phân tích", 0)
+        },
+        "totalExamsPackaged": total_exams
+    }
+
+
 @app.get("/exams/{exam_id}")
 def get_exam(exam_id: str, db: Session = Depends(get_db)):
     exam = db.query(ExamDB).filter(ExamDB.id == exam_id).first()
@@ -1405,36 +1434,6 @@ def delete_saved_exam(
     db.delete(exam)
     db.commit()
     return {"status": "success", "message": f"Đã xóa thành công bài thi {exam_id}."}
-
-
-
-@app.get("/exams/analytics")
-def get_analytics(db: Session = Depends(get_db)):
-    total_q = db.query(QuestionDB).count()
-    approved_q = db.query(QuestionDB).filter(QuestionDB.status == "approved").count()
-    pending_q = db.query(QuestionDB).filter(QuestionDB.status == "pending").count()
-    rejected_q = db.query(QuestionDB).filter(QuestionDB.status == "rejected").count()
-
-    bloom_rows = db.query(
-        QuestionDB.bloom_level, func.count(QuestionDB.id)
-    ).group_by(QuestionDB.bloom_level).all()
-
-    bloom_dist = {level: count for level, count in bloom_rows}
-    total_exams = db.query(ExamDB).count()
-
-    return {
-        "totalQuestions": total_q,
-        "approvedQuestions": approved_q,
-        "pendingQuestions": pending_q,
-        "rejectedQuestions": rejected_q,
-        "bloomDistribution": {
-            "nhanBiet": bloom_dist.get("Nhận biết", 0),
-            "thongHieu": bloom_dist.get("Thông hiểu", 0),
-            "vanDung": bloom_dist.get("Vận dụng", 0),
-            "phanTich": bloom_dist.get("Phân tích", 0)
-        },
-        "totalExamsPackaged": total_exams
-    }
 
 
 # [SCRUM-58] ANALYTICS & BLOOM TAXONOMY ENDPOINTS

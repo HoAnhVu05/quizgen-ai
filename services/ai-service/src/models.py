@@ -60,6 +60,38 @@ class BloomPresetDB(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class CopilotChatMessageDB(Base):
+    __tablename__ = "copilot_messages"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    id = Column(String(80), primary_key=True, index=True)
+    user_id = Column(String(120), nullable=False, index=True)
+    role = Column(String(20), nullable=False)  # 'user' | 'assistant'
+    content = Column(Text, nullable=False)
+    attachments = Column(JSON, nullable=True)
+    actions = Column(JSON, nullable=True)
+    suggested_actions = Column(JSON, nullable=True)
+    rag_sources = Column(JSON, nullable=True)
+    screen = Column(String(50), nullable=True)
+    document_id = Column(String(80), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class UserAcademicMemoryDB(Base):
+    __tablename__ = "user_academic_memories"
+    __table_args__ = {"schema": SCHEMA_NAME} if SCHEMA_NAME else ()
+
+    user_id = Column(String(120), primary_key=True, index=True)
+    subject_areas = Column(JSON, nullable=False, default=list)
+    preferred_bloom_ratio = Column(JSON, nullable=True)
+    preferred_difficulty = Column(String(50), nullable=True)
+    pedagogical_style = Column(Text, nullable=True)
+    recent_edits = Column(JSON, nullable=False, default=list)
+    custom_notes = Column(JSON, nullable=False, default=list)
+    interaction_count = Column(Integer, default=0)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ====================================================================
 # PYDANTIC SCHEMAS
 # ====================================================================

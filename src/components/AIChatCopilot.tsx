@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Sparkles,
   X,
@@ -14,17 +14,33 @@ import {
   Maximize2,
   Minimize2,
   FileText,
+  Paperclip,
+  Image as ImageIcon,
+  Square,
+  Brain,
+  Columns2,
+  Trash2,
 } from 'lucide-react';
 import { ScreenId, UserProfile, Question } from '../types';
 import { useTheme } from '../context/ThemeContext';
 import apiClient, { API_BASE } from '../services/apiClient';
 import {
   QuantaMarkdownRenderer,
+  QuantaAction,
   SupportTicketActionData,
   ExamBlueprintActionData,
   PatchQuestionActionData,
   ImportExamActionData,
 } from './QuantaMarkdownRenderer';
+
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  data?: string;
+  textContent?: string;
+}
 
 interface ChatMessage {
   id: string;
@@ -32,6 +48,9 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   suggestedActions?: string[];
+  actions?: QuantaAction[];
+  attachments?: ChatAttachment[];
+  ragSources?: { documentName: string; pageNumber: number; chapter?: string }[];
 }
 
 interface AIChatCopilotProps {
@@ -98,10 +117,19 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   const { activeThemeId } = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isWide, setIsWide] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string>('');
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [academicMemory, setAcademicMemory] = useState<any>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [dismissedQuestionId, setDismissedQuestionId] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const chatFileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const effectiveActiveQuestion = activeQuestion && activeQuestion.id !== dismissedQuestionId ? activeQuestion : null;
 
@@ -242,6 +270,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       } else {
         // Nhấp chuột thông thường -> Mở khung chat
         setIsOpen(true);
+        setIsMinimized(false);
       }
     };
 
@@ -425,32 +454,163 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     return [DEFAULT_WELCOME_MESSAGE(userHonorific, screenLabel, activeBook?.name)];
   });
 
-  // Tự động khôi phục tin nhắn khi thông tin người dùng được nạp thành công
-  useEffect(() => {
-    if (!currentUser?.email) return;
+  const fetchServerHistory = useCallback(async (isCancelled?: () => boolean) => {
+    if (isLoading) return;
     try {
-      const specificKey = `quizgen_copilot_chat_${currentUser.email.toLowerCase().trim()}`;
-      const saved = localStorage.getItem(specificKey) || localStorage.getItem('quizgen_copilot_chat');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 1) {
-          setMessages(parsed);
+      const res = await apiClient.fetch(`${API_BASE}/ai/chat/history?limit=100`, {
+        method: 'GET',
+      });
+      if (res.ok && !(isCancelled && isCancelled())) {
+        const data = await res.json();
+        const serverMsgs: ChatMessage[] = Array.isArray(data?.messages) ? data.messages : [];
+        if (serverMsgs.length > 0) {
+          setMessages((prev) => {
+            const prevNonWelcome = prev.filter((m) => !m.id.startsWith('welcome'));
+            const lastPrev = prevNonWelcome[prevNonWelcome.length - 1];
+            const lastSrv = serverMsgs[serverMsgs.length - 1];
+            if (
+              prevNonWelcome.length === serverMsgs.length &&
+              lastPrev?.id === lastSrv?.id &&
+              lastPrev?.content === lastSrv?.content
+            ) {
+              return prev;
+            }
+            const welcome = DEFAULT_WELCOME_MESSAGE(userHonorific, screenLabel, activeBook?.name);
+            return [welcome, ...serverMsgs];
+          });
         }
       }
+    } catch {
+      // Giữ nguyên dữ liệu cache localStorage nếu backend chưa sẵn sàng
+    }
+  }, [isLoading, userHonorific, screenLabel, activeBook?.name]);
+
+  // Tự động đồng bộ lịch sử chat từ Backend DB (đa thiết bị) & fallback localStorage
+  useEffect(() => {
+    let cancelled = false;
+    const syncHistoryFromBackend = async () => {
+      // 1. Nạp nhanh từ localStorage trước khi chờ API
+      if (currentUser?.email) {
+        try {
+          const specificKey = `quizgen_copilot_chat_${currentUser.email.toLowerCase().trim()}`;
+          const saved = localStorage.getItem(specificKey) || localStorage.getItem('quizgen_copilot_chat');
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 1 && !cancelled) {
+              setMessages(parsed);
+            }
+          }
+        } catch {}
+      }
+
+      // 2. Đồng bộ từ CSDL backend (ai-service)
+      await fetchServerHistory(() => cancelled);
+    };
+
+    syncHistoryFromBackend();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.email, fetchServerHistory]);
+
+  // Đồng bộ ngay mỗi khi mở bong bóng chat & định kỳ mỗi 8 giây khi đang mở (để nhận tin nhắn từ điện thoại không cần F5)
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    fetchServerHistory(() => cancelled);
+
+    const handleFocus = () => {
+      if (!cancelled) fetchServerHistory(() => cancelled);
+    };
+    window.addEventListener('focus', handleFocus);
+
+    const intervalId = !isMinimized
+      ? setInterval(() => {
+          if (!cancelled && document.visibilityState === 'visible') {
+            fetchServerHistory(() => cancelled);
+          }
+        }, 8000)
+      : null;
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', handleFocus);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isOpen, isMinimized, fetchServerHistory]);
+
+  const loadAcademicMemory = useCallback(async () => {
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/ai/chat/memory`, { method: 'GET' });
+      if (res.ok) {
+        const data = await res.json();
+        setAcademicMemory(data?.memory || null);
+      }
     } catch {}
-  }, [currentUser?.email]);
+  }, []);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const handleResetAcademicMemory = async () => {
+    if (!window.confirm('Đặt lại toàn bộ trí nhớ học thuật đã học của Quanta về mặc định?')) return;
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/ai/chat/memory`, { method: 'DELETE' });
+      if (res.ok) {
+        setAcademicMemory(null);
+        onShowToast?.('info', 'Đã đặt lại trí nhớ Quanta', 'Hồ sơ học thuật động đã được làm mới.');
+      }
+    } catch {}
   };
 
-  useEffect(() => {
-    if (isOpen) {
-      scrollToBottom();
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior,
+      });
     }
-  }, [messages, isOpen]);
+    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+  }, []);
+
+  // Tự động cuộn xuống tin nhắn mới nhất ngay khi người dùng mở bong bóng chat
+  useEffect(() => {
+    if (isOpen && !isMinimized) {
+      const instantScroll = () => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+        messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+      };
+
+      // 1. Cuộn ngay lập tức
+      instantScroll();
+
+      // 2. Chạy tiếp theo các mốc thời gian của hiệu ứng scale-in (transition duration-300)
+      const raf = requestAnimationFrame(instantScroll);
+      const t1 = setTimeout(instantScroll, 40);
+      const t2 = setTimeout(instantScroll, 120);
+      const t3 = setTimeout(instantScroll, 320);
+
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [isOpen, isMinimized]);
+
+  // Cuộn mượt khi có tin nhắn mới hoặc trạng thái loading thay đổi
+  useEffect(() => {
+    if (isOpen && !isMinimized) {
+      const timer = setTimeout(() => {
+        scrollToBottom('smooth');
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, isLoading, isOpen, isMinimized, scrollToBottom]);
 
   // Handler xử lý khi người dùng gửi ticket hỗ trợ từ Quanta Action Card
   const handleSubmitSupportTicket = async (ticketData: SupportTicketActionData) => {
@@ -926,33 +1086,220 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
     }
   }, [messages, userChatKey]);
 
+  const handleAddChatFiles = async (fileList: FileList | File[]) => {
+    const filesArr = Array.from(fileList);
+    const nextAttachments: ChatAttachment[] = [];
+
+    for (const file of filesArr) {
+      if (pendingAttachments.length + nextAttachments.length >= 5) {
+        onShowToast?.('warning', 'Giới hạn tệp đính kèm', 'Chỉ có thể đính kèm tối đa 5 tệp mỗi lượt gửi.');
+        break;
+      }
+
+      const mime = file.type || '';
+      const isImage = mime.startsWith('image/');
+      const isPdf = mime === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isText =
+        mime.startsWith('text/') ||
+        /\.(txt|md|csv|json|py|ts|tsx|js|jsx|html|css|xml|yaml|yml)$/i.test(file.name);
+
+      if (!isImage && !isPdf && !isText) {
+        onShowToast?.('warning', 'Định dạng chưa hỗ trợ', `Tệp "${file.name}" không thuộc nhóm Ảnh, PDF hoặc Văn bản.`);
+        continue;
+      }
+
+      const maxBytes = isPdf ? 10 * 1024 * 1024 : 8 * 1024 * 1024;
+      if (file.size > maxBytes) {
+        onShowToast?.('warning', 'Tệp quá lớn', `Tệp "${file.name}" vượt quá giới hạn ${isPdf ? '10MB' : '8MB'}.`);
+        continue;
+      }
+
+      if (isText) {
+        const textContent = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => resolve('');
+          reader.readAsText(file);
+        });
+        nextAttachments.push({
+          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: file.name,
+          mimeType: mime || 'text/plain',
+          size: file.size,
+          textContent,
+        });
+      } else {
+        const dataUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ''));
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(file);
+        });
+        nextAttachments.push({
+          id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: file.name,
+          mimeType: isPdf ? 'application/pdf' : mime,
+          size: file.size,
+          data: dataUrl,
+        });
+      }
+    }
+
+    if (nextAttachments.length > 0) {
+      setPendingAttachments((prev) => [...prev, ...nextAttachments]);
+    }
+  };
+
+  const handleStopStreaming = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setStreamStatus('');
+  };
+
+  const processStructuredOrFallbackActions = (
+    userText: string,
+    replyContent: string,
+    structuredActions?: QuantaAction[]
+  ) => {
+    // 1. Ưu tiên xử lý structuredActions từ backend
+    const actionsList = Array.isArray(structuredActions) ? structuredActions : [];
+    const ticketAct = actionsList.find((a) => a.type === 'support_ticket');
+    if (ticketAct?.data) {
+      setTimeout(() => {
+        handleSubmitSupportTicket(ticketAct.data as SupportTicketActionData);
+      }, 250);
+    } else {
+      const ticketMatch = /```action:support_ticket\s*([\s\S]*?)```/.exec(replyContent);
+      if (ticketMatch) {
+        try {
+          const ticketPayload: SupportTicketActionData = JSON.parse(ticketMatch[1].trim());
+          setTimeout(() => {
+            handleSubmitSupportTicket(ticketPayload);
+          }, 250);
+        } catch {}
+      }
+    }
+
+    const isAutoRequested = /nạp|đưa vào|chuyển qua|vào bước 4|vào bước 3|in đề|xuất đề/i.test(userText);
+    const importAct = actionsList.find((a) => a.type === 'import_exam');
+    if (importAct?.data) {
+      const importPayload = importAct.data as ImportExamActionData;
+      if (isAutoRequested || importPayload.autoExecute) {
+        const targetScreen = /bước 3|duyệt|thẩm định/i.test(userText) ? 'review' : (importPayload.targetScreen || 'bank');
+        setTimeout(() => {
+          handleImportExam(importPayload, targetScreen);
+        }, 400);
+      }
+      return;
+    }
+
+    const importMatch = /```action:import_exam\s*([\s\S]*?)```/.exec(replyContent);
+    if (importMatch) {
+      try {
+        const importPayload: ImportExamActionData = JSON.parse(importMatch[1].trim());
+        if (isAutoRequested || importPayload.autoExecute) {
+          const targetScreen = /bước 3|duyệt|thẩm định/i.test(userText) ? 'review' : (importPayload.targetScreen || 'bank');
+          setTimeout(() => {
+            handleImportExam(importPayload, targetScreen);
+          }, 400);
+        }
+      } catch {}
+    } else if (isAutoRequested) {
+      const parseQuestions = (rawText: string) => {
+        const parsed: any[] = [];
+        const qBlocks = rawText.split(/(?:(?:\*\*)?(?:Câu\s+\d+|Question\s+\d+|\d+\.)(?:\*\*)?[:\.\-])/i);
+        if (qBlocks.length > 1) {
+          for (let bIdx = 1; bIdx < qBlocks.length; bIdx++) {
+            const block = qBlocks[bIdx];
+            const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+            if (lines.length === 0) continue;
+            const qText = lines[0].replace(/^[:\-\s]+/, '');
+            const optLines = lines.filter((l) => /^[A-D][\.\:\)]\s*/i.test(l));
+            if (optLines.length >= 2) {
+              const opts = optLines.map((ol, idx) => {
+                const char = String.fromCharCode(65 + idx);
+                return { id: char, label: char, text: ol.replace(/^[A-D][\.\:\)]\s*/i, '') };
+              });
+              const ansMatch = /đáp án(?:\s+đúng)?[:\s]+(?:phương án\s+)?([A-D])/i.exec(block);
+              parsed.push({
+                question: qText,
+                options: opts,
+                correctAnswerId: ansMatch ? ansMatch[1].toUpperCase() : 'A',
+                bloomLevel: 'Thông hiểu',
+              });
+            }
+          }
+        }
+        return parsed;
+      };
+
+      let foundQs = parseQuestions(replyContent);
+      if (foundQs.length === 0 && messages.length > 0) {
+        for (let i = messages.length - 1; i >= 0 && messages.length - i <= 3; i--) {
+          if (messages[i].role === 'assistant') {
+            foundQs = parseQuestions(messages[i].content);
+            if (foundQs.length > 0) break;
+          }
+        }
+      }
+
+      if (foundQs.length > 0) {
+        const fallbackPayload: ImportExamActionData = {
+          title: 'Bộ Đề Khảo Thí Quanta Trích Xuất',
+          targetScreen: /bước 3|duyệt|thẩm định/i.test(userText) ? 'review' : 'bank',
+          questions: foundQs,
+        };
+        setTimeout(() => {
+          handleImportExam(fallbackPayload, fallbackPayload.targetScreen || 'bank');
+        }, 400);
+      }
+    }
+  };
+
   const handleSendMessage = async (textToSend?: string) => {
     const text = (textToSend || inputMessage).trim();
-    if (!text || isLoading) return;
+    const attachmentsToSend = textToSend ? [] : [...pendingAttachments];
+    if ((!text && attachmentsToSend.length === 0) || isLoading) return;
 
     const userMsg: ChatMessage = {
       id: `usr-${Date.now()}`,
       role: 'user',
-      content: text,
+      content: text || '(Đã gửi tệp đính kèm)',
+      attachments: attachmentsToSend.length > 0 ? attachmentsToSend : undefined,
       timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
     };
 
     setMessages((prev) => [...prev, userMsg]);
-    setInputMessage('');
+    if (!textToSend) {
+      setInputMessage('');
+      setPendingAttachments([]);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    }
     setIsLoading(true);
+    setStreamStatus('Đang kết nối Quanta...');
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const botMsgId = `bot-${Date.now()}`;
 
     try {
-      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
-      const historyPayload = messages.slice(-6).map((m) => ({
+      const historyPayload = messages.slice(-8).map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
-      // Nạp sâu toàn bộ dữ liệu giáo trình và câu hỏi vào context gửi sang Gemini
       const contextPayload = {
         currentScreen,
         screenLabel,
         userName,
+        userEmail: currentUser?.email || null,
+        academicTitle: currentUser?.academicTitle || null,
         documentId: activeBook?.id || null,
         documentName: activeBook?.name || null,
         documentPages: activeBook?.totalPages || null,
@@ -974,129 +1321,179 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           : null,
       };
 
-      const res = await fetch(`${API_BASE}/ai/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: historyPayload,
-          context: contextPayload,
-        }),
+      const requestBody = JSON.stringify({
+        message: text,
+        history: historyPayload,
+        context: contextPayload,
+        attachments: attachmentsToSend.map((a) => ({
+          name: a.name,
+          mimeType: a.mimeType,
+          size: a.size,
+          data: a.data,
+          textContent: a.textContent,
+        })),
       });
 
       let replyContent = '';
       let suggestions: string[] = [];
+      let structuredActions: QuantaAction[] = [];
+      let ragSources: any[] = [];
+      let streamedSuccessfully = false;
 
-      if (res.ok) {
-        const data = await res.json();
-        replyContent = data.reply || 'Đã ghi nhận yêu cầu của Thầy/Cô.';
-        suggestions = data.suggestedActions || [];
+      // 1. Thử gọi SSE Streaming Endpoint trước
+      try {
+        const streamRes = await apiClient.fetch(`${API_BASE}/ai/chat/stream`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: requestBody,
+          signal: controller.signal,
+        });
 
-        // Tự động gửi Ticket lên support-service & Admin Portal ngay lập tức khi Quanta tạo action:support_ticket
-        const ticketMatch = /```action:support_ticket\s*([\s\S]*?)```/.exec(replyContent);
-        if (ticketMatch) {
-          try {
-            const ticketPayload: SupportTicketActionData = JSON.parse(ticketMatch[1].trim());
-            setTimeout(() => {
-              handleSubmitSupportTicket(ticketPayload);
-            }, 300);
-          } catch (tErr) {
-            console.warn('Lỗi auto-submit support ticket:', tErr);
-          }
-        }
+        if (streamRes.ok && streamRes.body) {
+          const reader = streamRes.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+          let botBubbleCreated = false;
 
-        // Kiểm tra xem Quanta có trả về khối action:import_exam không
-        const importMatch = /```action:import_exam\s*([\s\S]*?)```/.exec(replyContent);
-        const isAutoRequested = /nạp|đưa vào|chuyển qua|vào bước 4|vào bước 3|in đề|xuất đề/i.test(text);
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
 
-        if (importMatch) {
-          try {
-            const importPayload: ImportExamActionData = JSON.parse(importMatch[1].trim());
-            if (isAutoRequested || importPayload.autoExecute) {
-              const targetScreen = /bước 3|duyệt|thẩm định/i.test(text) ? 'review' : (importPayload.targetScreen || 'bank');
-              setTimeout(() => {
-                handleImportExam(importPayload, targetScreen);
-              }, 500);
-            }
-          } catch (parseErr) {
-            console.warn('Lỗi auto-import:', parseErr);
-          }
-        } else if (isAutoRequested) {
-          // Fallback an toàn: Nếu người dùng yêu cầu nạp vào bước 4 mà Gemini chưa chèn khối action
-          // Tự động quét tìm câu hỏi trong nội dung phản hồi hiện tại hoặc tin nhắn trước
-          const parseQuestions = (rawText: string) => {
-            const parsed: any[] = [];
-            const qBlocks = rawText.split(/(?:(?:\*\*)?(?:Câu\s+\d+|Question\s+\d+|\d+\.)(?:\*\*)?[:\.\-])/i);
-            if (qBlocks.length > 1) {
-              for (let bIdx = 1; bIdx < qBlocks.length; bIdx++) {
-                const block = qBlocks[bIdx];
-                const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
-                if (lines.length === 0) continue;
-                const qText = lines[0].replace(/^[:\-\s]+/, '');
-                const optLines = lines.filter((l) => /^[A-D][\.\:\)]\s*/i.test(l));
-                if (optLines.length >= 2) {
-                  const opts = optLines.map((ol, idx) => {
-                    const char = String.fromCharCode(65 + idx);
-                    return {
-                      id: char,
-                      label: char,
-                      text: ol.replace(/^[A-D][\.\:\)]\s*/i, ''),
-                    };
-                  });
-                  const ansMatch = /đáp án(?:\s+đúng)?[:\s]+(?:phương án\s+)?([A-D])/i.exec(block);
-                  parsed.push({
-                    question: qText,
-                    options: opts,
-                    correctAnswerId: ansMatch ? ansMatch[1].toUpperCase() : 'A',
-                    bloomLevel: 'Thông hiểu',
-                  });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (!trimmedLine.startsWith('data:')) continue;
+              const jsonStr = trimmedLine.slice(5).trim();
+              if (!jsonStr) continue;
+
+              try {
+                const ev = JSON.parse(jsonStr);
+                if (ev.type === 'status') {
+                  setStreamStatus(ev.message || 'Quanta đang xử lý...');
+                } else if (ev.type === 'chunk') {
+                  replyContent += ev.text || '';
+                  if (!botBubbleCreated) {
+                    botBubbleCreated = true;
+                    setMessages((prev) => [
+                      ...prev,
+                      {
+                        id: botMsgId,
+                        role: 'assistant',
+                        content: replyContent,
+                        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                      },
+                    ]);
+                  } else {
+                    setMessages((prev) =>
+                      prev.map((m) => (m.id === botMsgId ? { ...m, content: replyContent } : m))
+                    );
+                  }
+                } else if (ev.type === 'done') {
+                  replyContent = ev.reply || replyContent;
+                  structuredActions = Array.isArray(ev.actions) ? ev.actions : [];
+                  suggestions = Array.isArray(ev.suggestedActions) ? ev.suggestedActions : [];
+                  ragSources = Array.isArray(ev.ragSources) ? ev.ragSources : [];
+                  streamedSuccessfully = true;
+
+                  if (!botBubbleCreated) {
+                    botBubbleCreated = true;
+                    setMessages((prev) => [
+                      ...prev,
+                      {
+                        id: botMsgId,
+                        role: 'assistant',
+                        content: replyContent,
+                        actions: structuredActions,
+                        suggestedActions: suggestions,
+                        ragSources,
+                        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                      },
+                    ]);
+                  } else {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === botMsgId
+                          ? {
+                              ...m,
+                              content: replyContent,
+                              actions: structuredActions,
+                              suggestedActions: suggestions,
+                              ragSources,
+                            }
+                          : m
+                      )
+                    );
+                  }
                 }
-              }
+              } catch {}
             }
-            return parsed;
-          };
-
-          let foundQs = parseQuestions(replyContent);
-          if (foundQs.length === 0 && messages.length > 0) {
-            for (let i = messages.length - 1; i >= 0 && messages.length - i <= 3; i--) {
-              if (messages[i].role === 'assistant') {
-                foundQs = parseQuestions(messages[i].content);
-                if (foundQs.length > 0) break;
-              }
-            }
-          }
-
-          if (foundQs.length > 0) {
-            const fallbackPayload: ImportExamActionData = {
-              title: 'Bộ Đề Khảo Thí Quanta Trích Xuất',
-              targetScreen: /bước 3|duyệt|thẩm định/i.test(text) ? 'review' : 'bank',
-              questions: foundQs,
-            };
-            setTimeout(() => {
-              handleImportExam(fallbackPayload, fallbackPayload.targetScreen || 'bank');
-            }, 500);
           }
         }
-      } else {
-        replyContent =
-          'Hệ thống AI đang xử lý lưu lượng cao. Thầy/Cô vui lòng gửi lại câu hỏi hoặc thử lại sau giây lát.';
+      } catch (streamErr: any) {
+        if (streamErr?.name === 'AbortError') {
+          throw streamErr;
+        }
       }
 
-      const isSupportQuery = /thanh toán|nạp tiền|lỗi|support|hỗ trợ|liên hệ|hotline|zalo|gói|tiền/i.test(text);
-      if (isSupportQuery && (!suggestions || suggestions.length === 0)) {
-        suggestions = ['📞 Zalo Hotline: 0364591363', '📧 quizgen.ai.team@gmail.com', '💳 Hướng dẫn đối soát'];
+      // 2. Fallback sang /ai/chat (non-streaming) nếu stream không khả dụng
+      if (!streamedSuccessfully) {
+        const res = await apiClient.fetch(`${API_BASE}/ai/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: requestBody,
+          signal: controller.signal,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          replyContent = data.reply || 'Đã ghi nhận yêu cầu của Thầy/Cô.';
+          suggestions = data.suggestedActions || [];
+          structuredActions = Array.isArray(data.actions) ? data.actions : [];
+          ragSources = Array.isArray(data.ragSources) ? data.ragSources : [];
+        } else {
+          replyContent =
+            'Hệ thống AI đang xử lý lưu lượng cao. Thầy/Cô vui lòng gửi lại câu hỏi hoặc thử lại sau giây lát.';
+        }
+
+        const isSupportQuery = /thanh toán|nạp tiền|lỗi|support|hỗ trợ|liên hệ|hotline|zalo|gói|tiền/i.test(text);
+        if (isSupportQuery && (!suggestions || suggestions.length === 0)) {
+          suggestions = ['📞 Zalo Hotline: 0364591363', '📧 quizgen.ai.team@gmail.com', '💳 Hướng dẫn đối soát'];
+        }
+
+        const botMsg: ChatMessage = {
+          id: botMsgId,
+          role: 'assistant',
+          content: replyContent,
+          actions: structuredActions,
+          ragSources,
+          timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+          suggestedActions: suggestions,
+        };
+        setMessages((prev) => [...prev.filter((m) => m.id !== botMsgId), botMsg]);
       }
 
-      const botMsg: ChatMessage = {
-        id: `bot-${Date.now()}`,
-        role: 'assistant',
-        content: replyContent,
-        timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
-        suggestedActions: suggestions,
-      };
+      processStructuredOrFallbackActions(text, replyContent, structuredActions);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        setMessages((prev) =>
+          prev.some((m) => m.id === botMsgId)
+            ? prev
+            : [
+                ...prev,
+                {
+                  id: botMsgId,
+                  role: 'assistant',
+                  content: '⏹️ *Đã dừng phản hồi theo yêu cầu của Thầy/Cô.*',
+                  timestamp: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+                },
+              ]
+        );
+        return;
+      }
 
-      setMessages((prev) => [...prev, botMsg]);
-    } catch (err) {
       const isSupportQuery = /thanh toán|nạp tiền|lỗi|support|hỗ trợ|liên hệ|hotline|zalo|gói|tiền/i.test(text);
       const errorContent = isSupportQuery
         ? `Dạ Thầy/Cô đang gặp sự cố thanh toán hoặc cần hỗ trợ kỹ thuật? Quanta đã kích hoạt kênh tiếp nhận khẩn cấp:\n\n` +
@@ -1123,11 +1520,13 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
+      setStreamStatus('');
     }
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     if (!window.confirm('Thầy/Cô có chắc chắn muốn làm mới và xóa toàn bộ lịch sử trò chuyện hiện tại với Quanta không?')) {
       return;
     }
@@ -1140,6 +1539,9 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
       }
       localStorage.removeItem('quizgen_copilot_chat');
       sessionStorage.removeItem('quizgen_copilot_chat');
+    } catch {}
+    try {
+      await apiClient.fetch(`${API_BASE}/ai/chat/history`, { method: 'DELETE' });
     } catch {}
   };
 
@@ -1229,12 +1631,37 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
       {/* ─── Modern AI Chat Drawer / Window (Dãn nở mượt mà từ bong bóng & Co rút khi đóng) ──── */}
       <div
-        className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:w-96 ${
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!isDraggingFile) setIsDraggingFile(true);
+        }}
+        onDragLeave={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setIsDraggingFile(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setIsDraggingFile(false);
+          if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            void handleAddChatFiles(e.dataTransfer.files);
+          }
+        }}
+        onTransitionEnd={() => {
+          if (isOpen && !isMinimized) {
+            if (chatContainerRef.current) {
+              chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+            }
+            messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+          }
+        }}
+        className={`fixed z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 ${
+          isWide ? 'sm:w-[540px]' : 'sm:w-96'
+        } ${
           snapSide === 'left'
             ? 'sm:left-6 sm:right-auto origin-bottom-left'
             : 'sm:right-6 sm:left-auto origin-bottom-right'
         } ${
-          isMinimized ? 'h-14 sm:h-16' : 'h-[520px] max-h-[82vh] sm:max-h-[85vh]'
+          isMinimized ? 'h-14 sm:h-16' : 'h-[540px] max-h-[82vh] sm:max-h-[85vh]'
         } ${
           isOpen
             ? 'scale-100 opacity-100 pointer-events-auto translate-y-0'
@@ -1262,6 +1689,28 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
             <div className="flex items-center gap-1">
               <button
+                onClick={() => {
+                  const next = !showMemoryPanel;
+                  setShowMemoryPanel(next);
+                  if (next) void loadAcademicMemory();
+                }}
+                title="Trí nhớ học thuật động của Quanta"
+                className={`p-1.5 rounded-lg transition-colors ${
+                  showMemoryPanel ? 'bg-white/25 text-white' : 'hover:bg-white/10 text-white/80 hover:text-white'
+                }`}
+              >
+                <Brain className="w-3.5 h-3.5" />
+              </button>
+              {!isMinimized && (
+                <button
+                  onClick={() => setIsWide((prev) => !prev)}
+                  title={isWide ? 'Thu gọn chiều ngang' : 'Mở rộng chiều ngang'}
+                  className="hidden sm:inline-flex p-1.5 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors"
+                >
+                  <Columns2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <button
                 onClick={handleClearHistory}
                 title="Xóa lịch sử chat (Bắt đầu phiên mới)"
                 className="p-1.5 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors"
@@ -1288,6 +1737,60 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
           {/* Body when not minimized */}
           {!isMinimized && (
             <>
+              {/* Dynamic Academic Memory Panel */}
+              {showMemoryPanel && (
+                <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-200 text-[11px] text-slate-700 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Brain className="w-3.5 h-3.5 text-[#008689]" />
+                      Trí nhớ Học thuật Động ({academicMemory?.interaction_count || 0} lượt)
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={handleResetAcademicMemory}
+                        className="text-[10px] text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-0.5"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Đặt lại
+                      </button>
+                      <button
+                        onClick={() => setShowMemoryPanel(false)}
+                        className="p-0.5 rounded hover:bg-slate-200 text-slate-500"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-600 space-y-1">
+                    <div>
+                      <span className="font-semibold">Môn/Giáo trình gần đây:</span>{' '}
+                      {academicMemory?.subject_areas?.length
+                        ? academicMemory.subject_areas.join(', ')
+                        : 'Chưa ghi nhận (sẽ tự học khi trò chuyện)'}
+                    </div>
+                    {academicMemory?.preferred_bloom_ratio && (
+                      <div>
+                        <span className="font-semibold">Tỉ lệ Bloom ưa thích:</span>{' '}
+                        {JSON.stringify(academicMemory.preferred_bloom_ratio)}
+                      </div>
+                    )}
+                    {academicMemory?.custom_notes?.length > 0 && (
+                      <div>
+                        <span className="font-semibold">Ghi chú đã học:</span>{' '}
+                        {academicMemory.custom_notes.slice(-3).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Drag-drop overlay */}
+              {isDraggingFile && (
+                <div className="px-3 py-2 bg-teal-50 border-b border-teal-200 text-[11px] font-semibold text-teal-800 text-center">
+                  Thả ảnh, PDF hoặc tệp văn bản vào đây để đính kèm cho Quanta...
+                </div>
+              )}
+
               {/* Linked Question Chip Indicator (Gọn gàng, mỏng nhẹ, có thể đóng) */}
               {effectiveActiveQuestion && (
                 <div className="px-3 py-1 bg-teal-50/90 border-b border-teal-100 flex items-center justify-between text-[11px] text-slate-700 animate-fade-in">
@@ -1311,7 +1814,10 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
               )}
 
               {/* Chat Message Stream */}
-              <div className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#f8fafc] text-xs">
+              <div
+                ref={chatContainerRef}
+                className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#f8fafc] text-xs"
+              >
                 {messages.map((m) => {
                   const isUser = m.role === 'user';
                   return (
@@ -1329,7 +1835,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                       </div>
 
                       {/* Bubble */}
-                      <div className={`max-w-[82%] space-y-1.5 ${isUser ? 'items-end' : 'items-start'}`}>
+                      <div className={`max-w-[85%] space-y-1.5 ${isUser ? 'items-end' : 'items-start'}`}>
                         <div
                           className={`p-3 rounded-2xl leading-relaxed shadow-sm relative group ${
                             isUser
@@ -1337,11 +1843,35 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                               : 'bg-white text-slate-800 border border-slate-200/80 rounded-tl-none'
                           }`}
                         >
+                          {isUser && m.attachments && m.attachments.length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-1.5">
+                              {m.attachments.map((att, aIdx) =>
+                                att.mimeType?.startsWith('image/') && att.data ? (
+                                  <img
+                                    key={att.id || aIdx}
+                                    src={att.data}
+                                    alt={att.name}
+                                    className="max-h-32 rounded-lg border border-white/25 object-cover"
+                                  />
+                                ) : (
+                                  <span
+                                    key={att.id || aIdx}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/15 text-[10px] font-medium"
+                                  >
+                                    <FileText className="w-3 h-3" />
+                                    {att.name}
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          )}
+
                           {isUser ? (
                             m.content
                           ) : (
                             <QuantaMarkdownRenderer
                               content={m.content}
+                              actions={m.actions}
                               onNavigate={onNavigate}
                               onSubmitTicket={handleSubmitSupportTicket}
                               onAutoGenerateExam={handleAutoGenerateExam}
@@ -1364,6 +1894,23 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                             </button>
                           )}
                         </div>
+
+                        {/* RAG Citation Source Pills */}
+                        {!isUser && m.ragSources && m.ragSources.length > 0 && (
+                          <div className="flex flex-wrap gap-1 px-0.5">
+                            {m.ragSources.slice(0, 4).map((src, sIdx) => (
+                              <span
+                                key={sIdx}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-200/70 text-[10px] font-medium"
+                                title={src.chapter || src.documentName}
+                              >
+                                <BookOpen className="w-2.5 h-2.5 shrink-0" />
+                                <span className="truncate max-w-[140px]">{src.documentName}</span>
+                                <span className="text-teal-600 font-bold">· Tr.{src.pageNumber}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Timestamp */}
                         <div className={`text-[10px] text-slate-400 px-1 ${isUser ? 'text-right' : 'text-left'}`}>
@@ -1396,8 +1943,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                     <div className="w-6 h-6 rounded-full bg-[#008689] flex items-center justify-center shrink-0 text-white">
                       <Bot className="w-3.5 h-3.5" />
                     </div>
-                    <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-none bg-white border border-slate-200 shadow-sm flex items-center gap-1.5 text-slate-400 text-xs">
-                      <span>Quanta đang tra cứu tài liệu & suy nghĩ</span>
+                    <div className="px-3.5 py-2.5 rounded-2xl rounded-tl-none bg-white border border-slate-200 shadow-sm flex items-center gap-1.5 text-slate-500 text-xs">
+                      <span>{streamStatus || 'Quanta đang tra cứu tài liệu & suy nghĩ'}</span>
                       <span className="flex gap-1 items-center">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce" />
                         <span className="w-1.5 h-1.5 rounded-full bg-[#008689] animate-bounce [animation-delay:0.2s]" />
@@ -1410,34 +1957,109 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* Input Bar */}
-              <div className="p-2.5 bg-white border-t border-slate-200">
+              {/* Input Bar (Multimodal + Auto-resize Textarea + Paste/Attach) */}
+              <div className="p-2.5 bg-white border-t border-slate-200 space-y-2">
+                {pendingAttachments.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 px-1">
+                    {pendingAttachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="relative group flex items-center gap-1.5 pl-1.5 pr-6 py-1 rounded-lg bg-slate-100 border border-slate-200 text-[10px] text-slate-700 max-w-[180px]"
+                      >
+                        {att.mimeType.startsWith('image/') && att.data ? (
+                          <img src={att.data} alt={att.name} className="w-5 h-5 rounded object-cover shrink-0" />
+                        ) : (
+                          <FileText className="w-3.5 h-3.5 text-[#008689] shrink-0" />
+                        )}
+                        <span className="truncate font-medium">{att.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingAttachments((prev) => prev.filter((p) => p.id !== att.id))}
+                          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-200 text-slate-500"
+                          title="Xóa tệp"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    handleSendMessage();
+                    void handleSendMessage();
                   }}
-                  className="flex items-center gap-2"
+                  className="flex items-end gap-1.5"
                 >
                   <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={(e) => setInputMessage(e.target.value)}
-                    placeholder="Hỏi về giáo trình, khái niệm trang mấy, công thức..."
-                    disabled={isLoading}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689]/20 transition-all disabled:opacity-50"
+                    ref={chatFileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf,.txt,.md,.csv,.json,.py,.ts,.tsx,.js"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files) void handleAddChatFiles(e.target.files);
+                      e.target.value = '';
+                    }}
                   />
                   <button
-                    type="submit"
-                    disabled={!inputMessage.trim() || isLoading}
-                    className="w-8 h-8 rounded-xl bg-[#008689] hover:bg-[#007072] disabled:bg-slate-200 text-white disabled:text-slate-400 flex items-center justify-center shrink-0 transition-colors shadow-sm"
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => chatFileInputRef.current?.click()}
+                    title="Đính kèm ảnh, PDF hoặc tệp văn bản (hoặc kéo thả / Ctrl+V dán ảnh)"
+                    className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center shrink-0 transition-colors disabled:opacity-50"
                   >
-                    <Send className="w-3.5 h-3.5" />
+                    <Paperclip className="w-3.5 h-3.5" />
                   </button>
+
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={inputMessage}
+                    onChange={(e) => {
+                      setInputMessage(e.target.value);
+                      e.target.style.height = 'auto';
+                      e.target.style.height = `${Math.min(e.target.scrollHeight, 110)}px`;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void handleSendMessage();
+                      }
+                    }}
+                    onPaste={(e) => {
+                      if (e.clipboardData?.files && e.clipboardData.files.length > 0) {
+                        e.preventDefault();
+                        void handleAddChatFiles(e.clipboardData.files);
+                      }
+                    }}
+                    placeholder="Hỏi giáo trình, dán ảnh bài tập hoặc yêu cầu tạo đề..."
+                    disabled={isLoading}
+                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-[#008689] focus:ring-1 focus:ring-[#008689]/20 transition-all disabled:opacity-50 resize-none max-h-[110px] leading-relaxed"
+                  />
+
+                  {isLoading ? (
+                    <button
+                      type="button"
+                      onClick={handleStopStreaming}
+                      title="Dừng phản hồi"
+                      className="w-8 h-8 rounded-xl bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shrink-0 transition-colors shadow-sm"
+                    >
+                      <Square className="w-3 h-3 fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!inputMessage.trim() && pendingAttachments.length === 0}
+                      className="w-8 h-8 rounded-xl bg-[#008689] hover:bg-[#007072] disabled:bg-slate-200 text-white disabled:text-slate-400 flex items-center justify-center shrink-0 transition-colors shadow-sm"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </form>
-                <div className="mt-1.5 flex items-center justify-between text-[10px] text-slate-400 px-1">
-                  <span>Trợ lý Khảo thí Học thuật AI</span>
-                  <span>Gemini 2.5 Flash</span>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
+                  <span>Enter gửi · Shift+Enter xuống dòng · Hỗ trợ ảnh & PDF</span>
                 </div>
               </div>
             </>

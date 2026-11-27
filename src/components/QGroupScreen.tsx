@@ -1597,6 +1597,11 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   }, [myEmail, myName, selectedGroupId, applyGroups, playBeep, playMentionChime, onShowToast]);
 
   // Đồng bộ trạng thái phòng đàm thoại Huddle và cuộc gọi đến
+  const qgroupsRef = useRef(qgroups);
+  qgroupsRef.current = qgroups;
+  const selectedGroupIdRef = useRef(selectedGroupId);
+  selectedGroupIdRef.current = selectedGroupId;
+
   const fetchActiveHuddles = useCallback(async () => {
     try {
       const res = await apiClient.fetch(`${API_BASE}/huddle/active`);
@@ -1614,7 +1619,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               if (r.isRinging === false) return false;
               if (r.callerEmail?.toLowerCase() === myEmail.toLowerCase()) return false;
 
-              const matchGroup = qgroups.find((g) => {
+              const matchGroup = qgroupsRef.current.find((g) => {
                 if (!g.isDirect) return false;
                 const directPartner = (g.directPartnerEmail || '').toLowerCase().trim();
                 const owner = (g.ownerEmail || '').toLowerCase().trim();
@@ -1633,7 +1638,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
             });
 
           if (incoming) {
-            const matchGroup = qgroups.find((g) => {
+            const matchGroup = qgroupsRef.current.find((g) => {
               if (!g.isDirect) return false;
               const directPartner = (g.directPartnerEmail || '').toLowerCase().trim();
               const owner = (g.ownerEmail || '').toLowerCase().trim();
@@ -1650,7 +1655,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
               callerEmail: incoming.callerEmail,
               groupName: matchGroup ? matchGroup.name : undefined,
               isDirect: true,
-              groupId: matchGroup ? matchGroup.id : selectedGroupId,
+              groupId: matchGroup ? matchGroup.id : selectedGroupIdRef.current,
             });
           } else {
             setIncomingHuddleCall(null);
@@ -1663,7 +1668,7 @@ export const QGroupScreen: React.FC<QGroupScreenProps> = ({
   } catch {
     // Ignored
   }
-}, [isHuddleOpen, myEmail, qgroups, selectedGroupId]);
+}, [isHuddleOpen, myEmail]);
 
   // Polling 2s
   useEffect(() => {

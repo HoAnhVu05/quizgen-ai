@@ -672,6 +672,13 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
       return p;
     });
     savePosts(updated);
+    try {
+      void fetch(`/api/v1/documents/forum/posts/${encodeURIComponent(postId)}/like`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userEmail: currentUser?.email || '' })
+      });
+    } catch {}
   };
 
   // Add Comment
@@ -696,6 +703,13 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
     savePosts(updated);
     setReplyDrafts({ ...replyDrafts, [postId]: '' });
     setExpandedComments({ ...expandedComments, [postId]: true });
+    try {
+      void fetch(`/api/v1/documents/forum/posts/${encodeURIComponent(postId)}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newC)
+      });
+    } catch {}
     onShowToast('success', 'Đã gửi phản hồi', 'Ý kiến của Thầy/Cô đã được đăng vào chủ đề.');
   };
 
@@ -732,6 +746,11 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
         return p;
       });
       savePosts(updated);
+      try {
+        void fetch(`/api/v1/documents/forum/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`, {
+          method: 'DELETE'
+        });
+      } catch {}
       onShowToast('success', 'Đã xóa phản hồi', 'Phản hồi đã được gỡ bỏ.');
     }
   };
@@ -1717,7 +1736,10 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                 )}
 
                 {/* 6. Attached Reference Link (Website, Video bài giảng, Tài liệu...) */}
-                {(post.linkUrl || post.videoUrl) && (
+                {(post.linkUrl || post.videoUrl) && (() => {
+                  const rawUrl = (post.linkUrl || post.videoUrl || '').trim();
+                  const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : '#';
+                  return (
                   <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
                       <LinkIcon className="w-4 h-4 text-slate-600 shrink-0" />
@@ -1726,26 +1748,27 @@ export const ForumScreen: React.FC<ForumScreenProps> = ({
                           {post.linkLabel || (post.videoUrl ? 'Video bài giảng' : 'Liên kết tham khảo')}:{' '}
                         </span>
                         <a
-                          href={post.linkUrl || post.videoUrl}
+                          href={safeUrl}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="text-slate-700 hover:text-slate-900 hover:underline font-mono text-[11px] truncate"
                         >
-                          {post.linkUrl || post.videoUrl}
+                          {rawUrl}
                         </a>
                       </div>
                     </div>
                     <a
-                      href={post.linkUrl || post.videoUrl}
+                      href={safeUrl}
                       target="_blank"
-                      rel="noreferrer"
+                      rel="noopener noreferrer"
                       className="px-2.5 py-1 bg-white hover:bg-slate-100 rounded border border-slate-200 font-semibold text-slate-700 shrink-0 flex items-center gap-1 transition-colors"
                     >
                       <ExternalLink className="w-3 h-3 text-slate-500" />
                       <span>Mở link</span>
                     </a>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* 8. Interaction Action Bar */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">

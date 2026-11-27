@@ -91,6 +91,7 @@ export interface QuantaAction {
 
 interface QuantaMarkdownRendererProps {
   content: string;
+  actions?: QuantaAction[];
   onNavigate?: (screen: ScreenId) => void;
   onSubmitTicket?: (ticketData: SupportTicketActionData) => Promise<boolean> | void;
   onAutoGenerateExam?: (blueprint: ExamBlueprintActionData) => void;
@@ -867,85 +868,128 @@ const CodeBlock: React.FC<{ code: string; language?: string }> = ({ code, langua
   );
 };
 
+// ── Resilient JSON Repair Helper ────────────────────────────────────────────
+const repairAndParseJson = (rawStr: string): any => {
+  if (!rawStr || !rawStr.trim()) return {};
+  const trimmed = rawStr.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Sửa trailing comma và backslash LaTeX chưa escape
+    const noTrailing = trimmed.replace(/,\s*([}\]])/g, '$1');
+    try {
+      return JSON.parse(noTrailing);
+    } catch {
+      try {
+        const escaped = noTrailing.replace(/([^\\])\\(?!["\\/bfnrtu])/g, '$1\\\\');
+        return JSON.parse(escaped);
+      } catch (e) {
+        console.warn('Lỗi parse Quanta action JSON:', e);
+        return {};
+      }
+    }
+  }
+};
+
 // ── Main Quanta Markdown Renderer ───────────────────────────────────────────
 export const QuantaMarkdownRenderer: React.FC<QuantaMarkdownRendererProps> = ({
   content,
+  actions: structuredActions,
   onNavigate,
   onSubmitTicket,
   onAutoGenerateExam,
   onPatchQuestion,
   onImportExam,
 }) => {
-  // Tách Action Blocks (```action:support_ticket ... ```) và nội dung Markdown thông thường
+  const renderActionCard = (actionType: string, parsedData: any, key: string) => {
+    if (actionType === 'support_ticket') {
+      return (
+        <SupportTicketCard
+          key={key}
+          data={parsedData}
+          onSubmitTicket={onSubmitTicket}
+        />
+      );
+    }
+    if (actionType === 'exam_blueprint') {
+      return (
+        <ExamBlueprintCard
+          key={key}
+          data={parsedData}
+          onNavigate={onNavigate}
+          onAutoGenerateExam={onAutoGenerateExam}
+        />
+      );
+    }
+    if (actionType === 'navigate') {
+      return (
+        <QuickNavCard
+          key={key}
+          data={parsedData}
+          onNavigate={onNavigate}
+        />
+      );
+    }
+    if (actionType === 'patch_question') {
+      return (
+        <QuestionPatchCard
+          key={key}
+          data={parsedData}
+          onPatchQuestion={onPatchQuestion}
+        />
+      );
+    }
+    if (actionType === 'import_exam') {
+      return (
+        <ExamImportCard
+          key={key}
+          data={parsedData}
+          onImportExam={onImportExam}
+          onNavigate={onNavigate}
+        />
+      );
+    }
+    return null;
+  };
+
+  // Tách Action Blocks (ưu tiên structuredActions từ API, fallback parse markdown ```action:...```)
   const { actionElements, markdownText } = useMemo(() => {
-    if (!content) return { actionElements: [], markdownText: '' };
+    const actions: React.ReactNode[] = [];
+    if (Array.isArray(structuredActions) && structuredActions.length > 0) {
+      structuredActions.forEach((act, idx) => {
+        const el = renderActionCard(act.type, act.data || {}, `structured-action-${idx}`);
+        if (el) actions.push(el);
+      });
+    }
+
+    if (!content) return { actionElements: actions, markdownText: '' };
+
+    // Chuẩn hóa \[...\] -> $$...$$ và \(...\) -> $...$
+    let normalizedContent = content
+      .replace(/\\\[([\s\S]*?)\\\]/g, (_, m) => `$$${m}$$`)
+      .replace(/\\\(([\s\S]*?)\\\)/g, (_, m) => `$${m}$`);
 
     const actionRegex = /```action:(support_ticket|exam_blueprint|navigate|patch_question|import_exam)\s*([\s\S]*?)```/g;
-    const actions: React.ReactNode[] = [];
-    let cleanText = content;
+    let cleanText = normalizedContent;
     let match: RegExpExecArray | null;
 
     let index = 0;
-    while ((match = actionRegex.exec(content)) !== null) {
-      const actionType = match[1];
-      const rawJson = match[2].trim();
-      let parsedData: any = {};
-      try {
-        parsedData = JSON.parse(rawJson);
-      } catch (e) {
-        console.warn('Lỗi parse Quanta action JSON:', e);
+    while ((match = actionRegex.exec(normalizedContent)) !== null) {
+      if (!structuredActions || structuredActions.length === 0) {
+        const actionType = match[1];
+        const parsedData = repairAndParseJson(match[2]);
+        const el = renderActionCard(actionType, parsedData, `action-${index}`);
+        if (el) actions.push(el);
       }
-
-      if (actionType === 'support_ticket') {
-        actions.push(
-          <SupportTicketCard
-            key={`action-${index}`}
-            data={parsedData}
-            onSubmitTicket={onSubmitTicket}
-          />
-        );
-      } else if (actionType === 'exam_blueprint') {
-        actions.push(
-          <ExamBlueprintCard
-            key={`action-${index}`}
-            data={parsedData}
-            onNavigate={onNavigate}
-            onAutoGenerateExam={onAutoGenerateExam}
-          />
-        );
-      } else if (actionType === 'navigate') {
-        actions.push(
-          <QuickNavCard
-            key={`action-${index}`}
-            data={parsedData}
-            onNavigate={onNavigate}
-          />
-        );
-      } else if (actionType === 'patch_question') {
-        actions.push(
-          <QuestionPatchCard
-            key={`action-${index}`}
-            data={parsedData}
-            onPatchQuestion={onPatchQuestion}
-          />
-        );
-      } else if (actionType === 'import_exam') {
-        actions.push(
-          <ExamImportCard
-            key={`action-${index}`}
-            data={parsedData}
-            onImportExam={onImportExam}
-            onNavigate={onNavigate}
-          />
-        );
-      }
-
       cleanText = cleanText.replace(match[0], '');
       index++;
     }
 
+    // Ẩn khối ```action:... đang stream dở (chưa có dấu đóng ```) để giao diện mượt
+    cleanText = cleanText.replace(/```action:(support_ticket|exam_blueprint|navigate|patch_question|import_exam)[\s\S]*$/g, '');
+
     return { actionElements: actions, markdownText: cleanText.trim() };
-  }, [content, onNavigate, onSubmitTicket, onAutoGenerateExam, onPatchQuestion, onImportExam]);
+  }, [content, structuredActions, onNavigate, onSubmitTicket, onAutoGenerateExam, onPatchQuestion, onImportExam]);
 
   // Render các khối dòng của Markdown
   const renderedBlocks = useMemo(() => {
@@ -956,6 +1000,45 @@ export const QuantaMarkdownRenderer: React.FC<QuantaMarkdownRendererProps> = ({
     let currentList: { type: 'ul' | 'ol'; items: string[] } | null = null;
     let currentCodeBlock: { lang: string; lines: string[] } | null = null;
     let currentBlockquote: string[] = [];
+    let currentTable: string[][] = [];
+
+    const flushTable = (key: string) => {
+      if (currentTable.length === 0) return;
+      const rows = currentTable.filter(
+        (r) => !r.every((cell) => /^:?-+:?$/.test(cell.trim()))
+      );
+      if (rows.length > 0) {
+        const header = rows[0];
+        const bodyRows = rows.slice(1);
+        blocks.push(
+          <div key={key} className="my-2.5 overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
+            <table className="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-teal-50/80 border-b border-slate-200">
+                  {header.map((cell, cIdx) => (
+                    <th key={`th-${cIdx}`} className="px-2.5 py-1.5 font-bold text-slate-800 whitespace-nowrap">
+                      {renderInlineContent(cell.trim())}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {bodyRows.map((row, rIdx) => (
+                  <tr key={`tr-${rIdx}`} className="hover:bg-slate-50/70">
+                    {header.map((_, cIdx) => (
+                      <td key={`td-${rIdx}-${cIdx}`} className="px-2.5 py-1.5 text-slate-700 leading-snug">
+                        {renderInlineContent((row[cIdx] || '').trim())}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      currentTable = [];
+    };
 
     const flushList = (key: string) => {
       if (!currentList) return;
@@ -1057,6 +1140,17 @@ export const QuantaMarkdownRenderer: React.FC<QuantaMarkdownRendererProps> = ({
         flushBlockquote(`flush-quote-${i}`);
       }
 
+      // Xử lý Markdown Table (| col1 | col2 |)
+      if (trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2) {
+        flushList(`flush-list-${i}`);
+        flushBlockquote(`flush-quote-${i}`);
+        const cells = trimmed.slice(1, -1).split('|');
+        currentTable.push(cells);
+        continue;
+      } else {
+        flushTable(`flush-table-${i}`);
+      }
+
       // Xử lý Lists (- ..., * ..., 1. ...)
       const unorderedMatch = line.match(/^(\s*)[-*]\s+(.+)/);
       const orderedMatch = line.match(/^(\s*)\d+\.\s+(.+)/);
@@ -1123,6 +1217,7 @@ export const QuantaMarkdownRenderer: React.FC<QuantaMarkdownRendererProps> = ({
 
     flushList('flush-list-end');
     flushBlockquote('flush-quote-end');
+    flushTable('flush-table-end');
     if (currentCodeBlock) {
       blocks.push(
         <CodeBlock

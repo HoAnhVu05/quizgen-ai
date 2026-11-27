@@ -149,6 +149,52 @@ class QuestionGenerator:
         if last_err:
             raise last_err
 
+    def _generate_stream_with_fallback(self, system_instruction: Optional[str] = None, **kwargs):
+        """Phiên bản streaming của _generate_with_fallback: tự động luân chuyển Key Pool & Model dự phòng."""
+        candidates = [
+            self.model_name,
+            "gemini-1.5-flash",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+            "gemini-1.5-pro",
+            "gemini-2.5-flash-lite",
+            "gemini-flash-lite-latest"
+        ]
+        seen = set()
+        unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
+        last_err = None
+
+        max_key_attempts = max(1, len(self.api_keys))
+        for cand in unique_candidates:
+            for _ in range(max_key_attempts):
+                active_key = self._get_active_key()
+                if active_key:
+                    try:
+                        genai.configure(api_key=active_key)
+                    except Exception:
+                        pass
+                try:
+                    m = genai.GenerativeModel(cand, system_instruction=system_instruction) if system_instruction else genai.GenerativeModel(cand)
+                    res_stream = m.generate_content(stream=True, **kwargs)
+                    self.model = m
+                    self.model_name = cand
+                    for chunk in res_stream:
+                        yield chunk
+                    return
+                except Exception as e:
+                    last_err = e
+                    err_str = str(e).lower()
+                    if "429" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
+                        print(f"[AI-SERVICE] Stream Quota limit 429 trên model {cand} với key #{self.current_key_idx + 1}. Đang xoay key...")
+                        self._rotate_key()
+                        continue
+                    elif "not found" in err_str or "404" in err_str:
+                        print(f"[AI-SERVICE] Model {cand} không khả dụng (404), chuyển sang model tiếp theo...")
+                        break
+                    raise e
+        if last_err:
+            raise last_err
+
     def _prepare_image_part(self, img_data: Any) -> Optional[Image.Image]:
         """Chuyển đổi dữ liệu ảnh (file path, bytes, base64 hoặc PIL.Image) thành đối tượng PIL.Image"""
         if isinstance(img_data, Image.Image):
@@ -766,18 +812,196 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
 
         return normalized
 
-    async def chat_with_copilot(
+    def _repair_and_parse_json(self, raw_str: str) -> Optional[Dict[str, Any]]:
+        """Parse JSON với cơ chế tự động sửa lỗi phổ biến từ LLM (trailing comma, LaTeX backslash chưa escape)."""
+        if not raw_str or not raw_str.strip():
+            return None
+        s = raw_str.strip()
+        # Loại bỏ markdown fence thừa nếu có
+        if s.startswith("```"):
+            s = re.sub(r"^```[a-zA-Z0-9_:-]*\s*", "", s)
+            s = re.sub(r"```\s*$", "", s).strip()
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+
+        # Sửa trailing comma trước } hoặc ]
+        repaired = re.sub(r",\s*([}\]])", r"\1", s)
+        try:
+            return json.loads(repaired)
+        except Exception:
+            pass
+
+        # Escape các dấu backslash đơn lẻ của LaTeX (ví dụ \frac, \alpha, \text)
+        # nhưng giữ nguyên \\, \", \/, \b, \f, \n, \r, \t, \uXXXX
+        repaired2 = re.sub(r'(?<!\\)\\(?!["\\/bfnrtu])', r'\\\\', repaired)
+        try:
+            return json.loads(repaired2)
+        except Exception:
+            return None
+
+    def _extract_and_validate_actions(self, reply_text: str) -> tuple[str, List[Dict[str, Any]]]:
+        """Trích xuất, sửa lỗi JSON, chuẩn hóa schema các Action Cards và làm sạch Markdown trả về."""
+        if not reply_text:
+            return "", []
+
+        action_pattern = re.compile(
+            r"```action:(support_ticket|exam_blueprint|navigate|patch_question|import_exam)\s*([\s\S]*?)(?:```|$)"
+        )
+        actions: List[Dict[str, Any]] = []
+        clean_text = reply_text
+
+        for match in action_pattern.finditer(reply_text):
+            action_type = match.group(1)
+            raw_json = match.group(2).strip()
+            parsed = self._repair_and_parse_json(raw_json)
+            if isinstance(parsed, dict):
+                # Chuẩn hóa tối thiểu theo từng loại action
+                if action_type == "support_ticket":
+                    parsed.setdefault("title", "Yêu cầu hỗ trợ kỹ thuật & đối soát")
+                    parsed.setdefault("category", "system_bug")
+                    parsed.setdefault("description", "Người dùng cần hỗ trợ từ Quanta Copilot.")
+                elif action_type == "exam_blueprint":
+                    parsed["questionCount"] = int(parsed.get("questionCount") or 20)
+                elif action_type == "navigate":
+                    parsed.setdefault("targetScreen", "dashboard")
+                    parsed.setdefault("label", "Chuyển màn hình")
+                actions.append({"type": action_type, "data": parsed})
+                clean_text = clean_text.replace(match.group(0), "")
+
+        return clean_text.strip(), actions
+
+    async def _fetch_rag_context(
         self,
         message: str,
-        history: Optional[List[Dict[str, str]]] = None,
-        context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Trò chuyện thông minh với QuizGen Copilot có nhận thức ngữ cảnh học thuật và màn hình hiện tại"""
-        if not self.model:
-            self._init_model()
-
+        doc_id: Optional[str],
+        all_docs: List[Dict[str, Any]],
+        system_docs: List[Dict[str, Any]],
+    ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Truy vấn bất đồng bộ rag-service (port 8003) với top_k mở rộng, MMR và tìm kiếm thông minh."""
         clean_msg = (message or "").strip().lower()
-        ctx = context or {}
+        academic_keywords = [
+            "trang", "định nghĩa", "khái niệm", "nói gì", "ở đâu", "giải thích",
+            "thuật toán", "công thức", "chương", "sách", "phân tích", "nội dung",
+            "tóm tắt", "bài", "phần", "mục", "ví dụ", "đề", "câu hỏi", "hình",
+            "đồ thị", "sơ đồ", "so sánh", "ưu điểm", "nhược điểm", "nguyên lý",
+            "quy trình", "tính", "chứng minh", "giáo trình", "tài liệu", "ôn tập"
+        ]
+        support_only = any(kw in clean_msg for kw in ["thanh toán", "nạp tiền", "zalo", "hotline", "support"]) and not any(
+            kw in clean_msg for kw in ["giáo trình", "chương", "công thức", "thuật toán", "định nghĩa"]
+        )
+        is_academic_query = (
+            bool(doc_id)
+            or any(kw in clean_msg for kw in academic_keywords)
+            or (len(clean_msg) > 18 and not support_only)
+        )
+        if not is_academic_query:
+            return [], []
+
+        is_broad_query = any(kw in clean_msg for kw in ["tóm tắt", "chương", "tổng hợp", "toàn bộ", "ôn tập", "mục lục", "khái quát"])
+        top_k = 12 if is_broad_query else 8
+
+        # Khớp thông minh tên sách được nhắc tới trong câu hỏi nếu chưa chọn doc_id
+        target_doc = doc_id
+        if not target_doc:
+            combined_docs = (all_docs or []) + (system_docs or [])
+            for d in combined_docs:
+                d_name = str(d.get("name") or "").strip().lower()
+                if d_name and len(d_name) > 4:
+                    short_name = re.sub(r"\.(pdf|docx?|txt)$", "", d_name).strip()
+                    if short_name in clean_msg or d_name in clean_msg:
+                        target_doc = d.get("id")
+                        break
+
+        rag_url = os.getenv("RAG_SERVICE_URL", "http://127.0.0.1:8003").rstrip("/") + "/query-context"
+        rag_payload: Dict[str, Any] = {
+            "query": message,
+            "top_k": top_k,
+            "use_mmr": True,
+            "expand_context": True,
+        }
+        if target_doc:
+            rag_payload["document_id"] = target_doc
+
+        rag_chunks: List[Dict[str, Any]] = []
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(rag_url, json=rag_payload)
+                if resp.status_code == 200:
+                    rag_data = resp.json()
+                    rag_chunks = rag_data.get("citationCards") or rag_data.get("chunks") or []
+        except Exception as e:
+            print(f"[AI-COPILOT] RAG async lookup warning: {e}")
+
+        rag_sources: List[Dict[str, Any]] = []
+        seen_src = set()
+        for rc in rag_chunks[:8]:
+            d_name = rc.get("documentName") or rc.get("document_name") or "Giáo trình"
+            p_num = rc.get("pageNumber") or rc.get("page_number") or 1
+            chap = rc.get("chapter") or ""
+            key = (d_name, p_num)
+            if key not in seen_src:
+                seen_src.add(key)
+                rag_sources.append({"documentName": d_name, "pageNumber": p_num, "chapter": chap})
+
+        return rag_chunks, rag_sources
+
+    def _build_gemini_contents(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Xây dựng payload multi-turn cho Gemini hỗ trợ ảnh, PDF và tệp văn bản đính kèm."""
+        contents: List[Dict[str, Any]] = []
+        if history:
+            for h in history[-10:]:
+                role_tag = "user" if h.get("role") == "user" else "model"
+                h_content = str(h.get("content") or "").strip()
+                if h_content:
+                    contents.append({"role": role_tag, "parts": [h_content]})
+
+        user_parts: List[Any] = []
+        text_prompt = message or ""
+
+        if attachments:
+            for att in attachments[:5]:
+                name = str(att.get("name") or "file")
+                mime = str(att.get("mimeType") or att.get("type") or "").lower()
+                text_content = att.get("textContent")
+                raw_data = att.get("data") or ""
+
+                if text_content:
+                    text_prompt += f"\n\n[Nội dung tệp đính kèm '{name}']:\n{str(text_content)[:15000]}"
+                elif raw_data:
+                    b64_part = raw_data.split(",", 1)[1] if "," in raw_data else raw_data
+                    try:
+                        decoded_bytes = base64.b64decode(b64_part)
+                        if mime.startswith("image/"):
+                            img = Image.open(io.BytesIO(decoded_bytes))
+                            if max(img.size) > 2048:
+                                img.thumbnail((2048, 2048))
+                            user_parts.append(img)
+                        elif mime == "application/pdf":
+                            user_parts.append({"mime_type": "application/pdf", "data": decoded_bytes})
+                    except Exception as att_err:
+                        print(f"[AI-COPILOT] Lỗi giải mã tệp đính kèm {name}: {att_err}")
+                        text_prompt += f"\n[Người dùng đã đính kèm tệp: {name} ({mime})]"
+
+        user_parts.insert(0, text_prompt.strip() or "Hãy phân tích tệp đính kèm giúp tôi.")
+        contents.append({"role": "user", "parts": user_parts})
+        return contents
+
+    def _build_chat_system_instruction(
+        self,
+        message: str,
+        ctx: Dict[str, Any],
+        rag_chunks: List[Dict[str, Any]],
+        academic_memory: Optional[Dict[str, Any]] = None,
+    ) -> tuple[str, bool]:
+        """Xây dựng System Instruction toàn diện với Dynamic Memory & RAG Zero-Hallucination."""
         screen = ctx.get("currentScreen", "dashboard")
         screen_label = ctx.get("screenLabel", "Không gian làm việc")
         active_question = ctx.get("activeQuestion")
@@ -787,12 +1011,13 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         doc_pages = ctx.get("documentPages")
         all_docs = ctx.get("allDocuments") or []
         doc_chunks = ctx.get("docChunks") or ctx.get("chunks") or []
+        system_docs = ctx.get("system_documents") or []
 
         is_remote_agent = ctx.get("isRemoteCommander") or ctx.get("isAntigravityRemote") or screen == "admin_secret_command_center"
 
         if is_remote_agent:
             system_instruction = f"""
-Bạn là Antigravity — Trợ lý AI Full-stack (Google DeepMind Engine) đang trực tiếp túc trực và làm việc trong workspace D:\\HKDN\\Quizgen AI trên laptop của anh {user_name}.
+Bạn là Antigravity — Trợ lý AI Full-stack (Google DeepMind Engine) đang trực tiếp túc trực và làm việc trong workspace D:\HKDN\Quizgen AI trên laptop của anh {user_name}.
 Bạn là kỹ sư phần mềm cao cấp kiêm trợ lý điều khiển workspace từ xa qua ứng dụng Antigravity Remote.
 
 QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ:
@@ -806,7 +1031,6 @@ QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ:
 3. AM HIỂU TOÀN DIỆN HỆ THỐNG QUIZGEN AI:
    - Frontend: React 19 + TypeScript + Vite + Tailwind CSS.
    - 8 Microservices Python FastAPI: API Gateway (8000), Auth (8001), Document (8002), RAG (8003), AI (8004), Exam (8005), Admin (8006), Payment (8007).
-   - Hạ tầng: Cloudflare Tunnel WSS, SQLite phân tán, WebRTC SFU Mesh Huddle.
 4. PHONG CÁCH: Thân thiện, nhanh nhẹn, sắc sảo, ngắn gọn chuẩn phong cách kỹ sư DeepMind.
 """
         else:
@@ -826,16 +1050,15 @@ QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ (QUẢN GIA TẬN TÂM):
      * Bước 2 (generate): Sinh Câu hỏi AI — cấu hình ma trận Bloom 4 mức độ (Nhận biết, Thông hiểu, Vận dụng, Vận dụng cao), số lượng câu, định hướng chủ đề.
      * Bước 3 (review): Không gian Đối soát & Biên tập — thẩm định câu hỏi với trích đoạn tài liệu gốc, biên tập đáp án, thêm giải thích chi tiết, gắn nhãn Bloom.
      * Bước 4 (bank): Ngân hàng Đề thi — đóng gói đề, đảo mã đề ngẫu nhiên bằng thuật toán Fisher-Yates, xuất file Word (.docx) và PDF chuẩn mẫu Bộ GD&ĐT, xuất phiếu chấm thi trắc nghiệm OMR 50/100 câu.
-     * Hội nhóm Q-Group: Mạng xã hội chuyên môn, chia sẻ ngân hàng câu hỏi, phòng đàm thoại nhóm Audio Huddle qua luồng âm thanh WebSocket thời gian thực (Microphone duplex, triệt tiêu tạp âm).
+     * Hội nhóm Q-Group: Mạng xã hội chuyên môn, chia sẻ ngân hàng câu hỏi, phòng đàm thoại nhóm Audio Huddle qua luồng âm thanh WebSocket thời gian thực.
      * Trung tâm Hỗ trợ (support): Giải đáp sự cố và đối soát thanh toán gói dịch vụ (Free, Pro Tháng, Pro Năm).
-3. TUYỆT ĐỐI NGHIÊM CẤM từ chối hoặc nói các câu như: "Tôi không có khả năng trực tiếp đọc file", "Tôi không xem được tài liệu".
+3. TUYỆT ĐỐI NGHIÊM CẤM từ chối hoặc nói các câu như: "Tôi không có khả năng trực tiếp đọc file", "Tôi không xem được tài liệu". Nếu người dùng đính kèm ảnh, PDF hoặc tệp văn bản trong chat, hãy đọc và phân tích trực tiếp nội dung đó.
 4. Khi viết công thức Toán, Lý, Hóa, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).
 
 HỆ THỐNG CÔNG CỤ CAN THIỆP (GENERATIVE ACTION CARDS):
-Khi phù hợp với ngữ cảnh yêu cầu của {user_name}, bạn HÃY CHỦ ĐỘNG ĐÍNH KÈM các khối Action sau ở cuối phản hồi để giao diện hiển thị thành Thẻ Tương Tác cho người dùng bấm 1-chạm:
+Khi phù hợp với ngữ cảnh yêu cầu của {user_name}, bạn HÃY CHỦ ĐỘNG ĐÍNH KÈM các khối Action sau ở cuối phản hồi để giao diện hiển thị thành Thẻ Tương Tác cho người dùng bấm 1-chạm (LƯU Ý: Trong JSON, mọi dấu backslash LaTeX phải được escape thành \\):
 
 1. KHI NGƯỜI DÙNG GẶP KHÓ KHĂN / LỖI HỆ THỐNG / THẮC MẮC THANH TOÁN GÓI CƯỚC:
-Hãy chèn khối hành động lập phiếu hỗ trợ:
 ```action:support_ticket
 {{
   "title": "Tóm tắt ngắn gọn vấn đề",
@@ -846,7 +1069,6 @@ Hãy chèn khối hành động lập phiếu hỗ trợ:
 (category gồm: 'payment' cho thanh toán/nạp tiền, 'system_bug' cho lỗi tính năng, 'academic' cho chuyên môn)
 
 2. KHI NGƯỜI DÙNG YÊU CẦU TẠO ĐỀ THI HOẶC LÊN KẾ HOẠCH RA ĐỀ 4 BƯỚC:
-Hãy chèn khối ma trận đề thi đề xuất:
 ```action:exam_blueprint
 {{
   "documentId": "{doc_id or ''}",
@@ -856,7 +1078,7 @@ Hãy chèn khối ma trận đề thi đề xuất:
   "bloomRatio": {{ "know": 30, "understand": 40, "apply": 20, "analyze": 10 }}
 }}
 ```
-ĐẶC BIỆT LƯU Ý: Nếu người dùng đang mở hoặc chọn một cuốn giáo trình cụ thể (được ghi trong mục 'THÔNG TIN GIÁO TRÌNH ĐANG LÀM VIỆC TRỰC TIẾP' bên dưới, ví dụ: '{doc_name}'), bạn BẮT BUỘC PHẢI DÙNG CHÍNH XÁC tên cuốn giáo trình đó để tạo đề thi! TUYỆT ĐỐI NGHIÊM CẤM tự ý bịa sang giáo trình khác (như 'BAI GIANG Tu tuong HCM') khi người dùng đang xem một cuốn sách khác!
+ĐẶC BIỆT LƯU Ý: Nếu người dùng đang mở một cuốn giáo trình cụ thể ('{doc_name}'), bạn BẮT BUỘC PHẢI DÙNG CHÍNH XÁC tên cuốn giáo trình đó!
 
 3. KHI CẦN ĐIỀU HƯỚNG {user_name} ĐẾN MÀN HÌNH CỤ THỂ:
 ```action:navigate
@@ -868,19 +1090,17 @@ Hãy chèn khối ma trận đề thi đề xuất:
 (targetScreen có thể là: 'upload', 'generate', 'review', 'bank', 'support', 'qgroup', 'dashboard')
 
 4. KHI NGƯỜI DÙNG YÊU CẦU SỬA, TINH CHỈNH, ĐỔI ĐÁP ÁN, HOẶC NÂNG CẤP CÂU HỎI ĐANG XEM:
-Khi có câu hỏi đang xem xét (active_question) và người dùng yêu cầu chỉnh sửa (ví dụ: 'đổi đáp án sang C', 'tăng độ khó lên Vận dụng cao', 'viết lại lời giải thích', 'sửa nội dung câu hỏi...'):
-Bạn hãy phân tích phương án sửa trong câu trả lời, đồng thời BẮT BUỘC chèn khối thẻ hành động chỉnh sửa câu hỏi:
 ```action:patch_question
 {{
   "questionId": "ID_câu_hỏi",
-  "diffSummary": "Tóm tắt ngắn gọn các điểm đã chỉnh sửa (ví dụ: Đổi đáp án đúng sang C và giải thích chi tiết theo thuật toán)",
+  "diffSummary": "Tóm tắt ngắn gọn các điểm đã chỉnh sửa",
   "patch": {{
-    "question": "Nội dung câu hỏi mới (hoặc giữ nguyên nếu không đổi)",
+    "question": "Nội dung câu hỏi mới",
     "options": [
-      {{"id": "A", "label": "A", "text": "Nội dung phương án A"}},
-      {{"id": "B", "label": "B", "text": "Nội dung phương án B"}},
-      {{"id": "C", "label": "C", "text": "Nội dung phương án C"}},
-      {{"id": "D", "label": "D", "text": "Nội dung phương án D"}}
+      {{"id": "A", "label": "A", "text": "Phương án A"}},
+      {{"id": "B", "label": "B", "text": "Phương án B"}},
+      {{"id": "C", "label": "C", "text": "Phương án C"}},
+      {{"id": "D", "label": "D", "text": "Phương án D"}}
     ],
     "correctAnswerId": "C",
     "explanation": "Lời giải thích học thuật mới chi tiết...",
@@ -889,10 +1109,7 @@ Bạn hãy phân tích phương án sửa trong câu trả lời, đồng thời
 }}
 ```
 
-5. KHI NGƯỜI DÙNG YÊU CẦU NẠP CÂU HỎI VÀO BƯỚC 4 (IN ĐỀ / NGÂN HÀNG ĐỀ) HOẶC BƯỚC 3 (THẨM ĐỊNH), HOẶC YÊU CẦU SINH CÂU HỎI VÀO ĐỀ THI:
-(Ví dụ: 'nạp vô bước 4 để in đề', 'nạp vào bước 4', 'đưa vào bước 4', 'sinh 3 câu rồi đưa vào đề thi', 'cho vào ngân hàng đề', 'lấy mấy câu vừa tạo nạp vào đề'):
-- TUYỆT ĐỐI NGHIÊM CẤM chỉ nói suông bằng lời là "Em đã nạp rồi"! Vì nếu chỉ nói suông mà không có khối thẻ action, hệ thống sẽ KHÔNG CÓ DỮ LIỆU và người dùng chuyển sang Bước 4 sẽ thấy trống trơn!
-- BẠN BẮT BUỘC PHẢI TRẢ VỀ KHỐI THẺ HÀNH ĐỘNG action:import_exam CHỨA TOÀN BỘ CÁC CÂU HỎI TRONG LỊCH SỬ HỘI THOẠI (HOẶC CÂU HỎI MỚI SINH):
+5. KHI NGƯỜI DÙNG YÊU CẦU NẠP CÂU HỎI VÀO BƯỚC 4 (IN ĐỀ / NGÂN HÀNG ĐỀ) HOẶC BƯỚC 3 (THẨM ĐỊNH):
 ```action:import_exam
 {{
   "title": "Bộ Đề Thi Quanta AI Khởi Tạo",
@@ -913,105 +1130,79 @@ Bạn hãy phân tích phương án sửa trong câu trả lời, đồng thời
   ]
 }}
 ```
-(Nếu người dùng nhắc đến Bước 4 / in đề / xuất Word / PDF thì targetScreen là "bank"; nếu nhắc đến Bước 3 / thẩm định / duyệt thì targetScreen là "review").
 
 NGỮ CẢNH LÀM VIỆC HIỆN TẠI:
 - Màn hình hiện tại: {screen_label} (Mã màn hình: {screen})
 """
-        system_docs = ctx.get("system_documents") or []
 
-        system_instruction += f"\nTHỰC TẾ KHO TÀI LIỆU & GIÁO TRÌNH:\n"
+        system_instruction += "\nTHỰC TẾ KHO TÀI LIỆU & GIÁO TRÌNH:\n"
         if all_docs:
             system_instruction += f"- Thư viện cá nhân của {user_name}: Đang lưu trữ {len(all_docs)} tài liệu:\n"
-            for idx, d in enumerate(all_docs):
+            for idx, d in enumerate(all_docs[:15]):
                 system_instruction += f"  {idx+1}. '{d.get('name', 'Tài liệu')}' ({d.get('totalPages', '?')} trang, ID: {d.get('id', 'N/A')})\n"
         else:
             system_instruction += f"- Thư viện cá nhân của {user_name}: Hiện tại chưa tải lên tài liệu nào.\n"
 
         if system_docs:
-            system_instruction += f"\n- Kho Thư viện Giáo trình Toàn Hệ thống (QuizGen Library): Có tổng cộng {len(system_docs)} giáo trình chuyên khảo đầy đủ các bộ môn.\n"
-            system_instruction += "  Một số giáo trình tiêu biểu trong kho hệ thống:\n"
+            system_instruction += f"\n- Kho Thư viện Giáo trình Toàn Hệ thống (QuizGen Library): Có tổng cộng {len(system_docs)} giáo trình chuyên khảo.\n"
             for d in system_docs[:25]:
                 system_instruction += f"  • '{d.get('name')}' ({d.get('totalPages', '?')} trang, ID: {d.get('id')})\n"
 
-        system_instruction += """
-QUY TẮC ĐẶC BIỆT KHI NGƯỜI DÙNG HỎI VỀ TÀI LIỆU / CHỦ ĐỀ HỌC THUẬT:
-1. TRẢ LỜI ĐÚNG TRỌNG TÂM CÂU HỎI (TUYỆT ĐỐI KHÔNG LIỆT KÊ MÁY MÓC):
-   - Khi người dùng hỏi: 'giáo trình nào có hình học như hình tam giác, hình thoi...', hoặc hỏi tìm sách về bất kỳ chủ đề nào (toán, đồ họa, vi xử lý, kinh tế, hệ điều hành...):
-     BẠN PHẢI SUY LUẬN VÀ TRẢ LỜI TRỰC DIỆN:
-     * Chỉ rõ ngay tên cuốn sách phù hợp nhất (ví dụ: 'Giáo trình Kỹ thuật đồ họa - 2018' (222 trang) chuyên sâu về đồ họa máy tính 2D/3D, các thuật toán vẽ đường, tô màu tam giác, hình thoi, đa giác; hoặc 'Toán kỹ thuật - 2013' có hình học giải tích và ma trận không gian; hoặc 'Boyd - Convex Optimization' về đa diện và tập lồi).
-     * Phân tích ngắn gọn vì sao cuốn sách đó có nội dung người dùng đang tìm.
-   - TUYỆT ĐỐI KHÔNG ĐƯỢC chỉ đếm số lượng tài liệu cá nhân rồi liệt kê ra một cách ngô nghê và lờ đi câu hỏi của người dùng!
-2. CHỈ KHI NÀO người dùng hỏi rõ: 'Tôi có bao nhiêu tài liệu cá nhân?' thì mới báo số lượng tài liệu trong thư viện riêng của họ.
-"""
-
         if doc_name or doc_id or doc_chunks:
-            system_instruction += f"\nTHÔNG TIN GIÁO TRÌNH ĐANG LÀM VIỆC TRỰC TIẾP:\n"
+            system_instruction += "\nTHÔNG TIN GIÁO TRÌNH ĐANG LÀM VIỆC TRỰC TIẾP:\n"
             if doc_name:
                 system_instruction += f"- Giáo trình đang mở: '{doc_name}' (ID: {doc_id}, Tổng số trang: {doc_pages or 'chưa xác định'})\n"
             if doc_chunks:
-                system_instruction += f"\nTRÍCH ĐOẠN NGỮ CẢNH TỪ GIÁO TRÌNH:\n"
+                system_instruction += "\nTRÍCH ĐOẠN NGỮ CẢNH TỪ GIÁO TRÌNH:\n"
                 for c in doc_chunks[:8]:
                     system_instruction += f"[Trang {c.get('pageNumber') or c.get('page_number', '?')} - {c.get('chapter', 'Chương')}]\n{c.get('text') or c.get('textSnippet', '')}\n\n"
 
-            system_instruction += """
-HƯỚNG DẪN TRUY VẤN VÀ CAN THIỆP SÂU VÀO GIÁO TRÌNH:
-Khi người dùng hỏi về cuốn sách này (tóm tắt, phân tích khái niệm, tìm vị trí công thức, câu hỏi ôn tập):
-1. Bạn có thẩm quyền trích dẫn và phân tích trực tiếp từ giáo trình.
-2. Luôn nêu rõ số trang và chương sách (ví dụ: '[Trang 15, Chương 1]') để giảng viên dễ dàng đối soát.
-3. Nếu nội dung có công thức Toán, Lý, Hóa, bắt buộc viết chuẩn cú pháp LaTeX ($...$).
-"""
-
-        # RAG Grounding: Tự động truy vấn rag-service (Port 8003) khi có câu hỏi học thuật hoặc tra cứu sách
-        rag_chunks = []
-        is_academic_query = any(kw in clean_msg for kw in ["trang", "định nghĩa", "khái niệm", "nói gì", "ở đâu", "giải thích", "thuật toán", "công thức", "chương", "sách", "phân tích", "nội dung"])
-        if is_academic_query or doc_id:
-            try:
-                import urllib.request
-                target_doc = doc_id or (system_docs[0].get("id") if system_docs else None)
-                rag_payload = json.dumps({
-                    "query": message,
-                    "document_id": target_doc,
-                    "top_k": 3
-                }).encode("utf-8")
-                rag_req = urllib.request.Request(
-                    "http://localhost:8003/query-context",
-                    data=rag_payload,
-                    headers={"Content-Type": "application/json"}
-                )
-                with urllib.request.urlopen(rag_req, timeout=2.0) as resp:
-                    rag_data = json.loads(resp.read().decode("utf-8"))
-                    rag_chunks = rag_data.get("citationCards") or rag_data.get("chunks") or []
-            except Exception:
-                pass
-
         if rag_chunks:
-            system_instruction += "\nTRÍCH ĐOẠN ĐỐI SOÁT TRỰC TIẾP TỪ 53 GIÁO TRÌNH (RAG ZERO-HALLUCINATION):\n"
-            for rc in rag_chunks[:3]:
+            system_instruction += f"\nTRÍCH ĐOẠN ĐỐI SOÁT TRỰC TIẾP TỪ HỆ THỐNG RAG ({len(rag_chunks)} ĐOẠN CHỌN LỌC - ZERO-HALLUCINATION):\n"
+            for rc in rag_chunks[:10]:
                 p_num = rc.get("pageNumber") or rc.get("page_number", 1)
-                d_name = rc.get("documentName", "Giáo trình")
+                d_name = rc.get("documentName") or rc.get("document_name") or "Giáo trình"
+                chap = rc.get("chapter") or ""
                 excerpt = rc.get("highlightExcerpt") or rc.get("textSnippet") or rc.get("text", "")
-                system_instruction += f"• [{d_name} - Trang {p_num} ({rc.get('chapter', '')})]:\n\"{excerpt}\"\n\n"
-            system_instruction += "Khi trả lời, bạn HÃY TRÍCH DẪN RÕ RÀNG số trang và tên giáo trình (ví dụ: '[Giáo trình X - Trang Y]') để người dùng đối soát mắt thấy tai nghe!\n"
+                system_instruction += f'• [{d_name} - Trang {p_num} ({chap})]:\n"{excerpt}"\n\n'
+            system_instruction += "Khi trả lời, bạn HÃY TRÍCH DẪN RÕ RÀNG số trang và tên giáo trình (ví dụ: '[Giáo trình X - Trang Y]') để người dùng đối soát!\n"
 
-        # HỒ SƠ HỌC THUẬT GHI NHỚ VỀ GIẢNG VIÊN (LONG-TERM ACADEMIC MEMORY):
-        user_title = ctx.get("academicTitle") or "ThS."
+        # HỒ SƠ HỌC THUẬT ĐỘNG (DYNAMIC LONG-TERM ACADEMIC MEMORY)
+        user_title = ctx.get("academicTitle") or ""
+        mem = academic_memory or {}
+        subjects = mem.get("subject_areas") or []
+        bloom_pref = mem.get("preferred_bloom_ratio")
+        style_pref = mem.get("pedagogical_style")
+        custom_notes = mem.get("custom_notes") or []
+        recent_edits = mem.get("recent_edits") or []
+        interactions = mem.get("interaction_count") or 0
+
         system_instruction += f"""
-HỒ SƠ HỌC THUẬT GHI NHỚ (LONG-TERM ACADEMIC MEMORY):
-- Giảng viên phụ trách: {user_title} {user_name} (Chủ nhiệm dự án QuizGen AI)
-- Lĩnh vực chuyên môn: Khoa học máy tính, Công nghệ thông tin & Khảo thí học thuật
-- Gu ra đề thi ghi nhớ: Ưu tiên câu hỏi bám sát chuẩn đầu ra, câu hỏi thực tiễn, phân bổ ma trận Bloom cân đối, lời giải thích có căn cứ khoa học rõ ràng.
-- Phong cách ứng xử: Bạn thấu hiểu gu giảng dạy, xưng hô tôn kính và hỗ trợ như một Quản gia tri kỷ.
+HỒ SƠ HỌC THUẬT GHI NHỚ ĐỘNG (DYNAMIC ACADEMIC MEMORY - {interactions} lượt tương tác):
+- Giảng viên phụ trách: {(user_title + ' ' + user_name).strip()}
+- Các bộ môn / giáo trình đã làm việc gần đây: {', '.join(subjects) if subjects else 'Đang tự động cập nhật theo phiên làm việc'}
 """
+        if bloom_pref:
+            system_instruction += f"- Tỉ lệ Bloom ưa thích đã ghi nhận: {json.dumps(bloom_pref, ensure_ascii=False)}\n"
+        if style_pref:
+            system_instruction += f"- Phong cách ra đề & giải thích ưa thích: {style_pref}\n"
+        if custom_notes:
+            system_instruction += "- Ghi chú thói quen & yêu cầu riêng đã học từ giảng viên:\n"
+            for note in custom_notes[-6:]:
+                system_instruction += f"  * {note}\n"
+        if recent_edits:
+            system_instruction += "- Lịch sử tinh chỉnh câu hỏi gần đây (hãy học theo gu sửa bài này):\n"
+            for ed in recent_edits[-5:]:
+                system_instruction += f"  * {ed}\n"
 
         if active_question and isinstance(active_question, dict):
-            q_txt = active_question.get('question', '')
-            bloom = active_question.get('bloomLevel') or active_question.get('bloom_level', '')
-            opts = active_question.get('options', [])
-            ans = active_question.get('correctAnswerId') or active_question.get('correct_answer_id', '')
-            exp = active_question.get('explanation', '')
+            q_txt = active_question.get("question", "")
+            bloom = active_question.get("bloomLevel") or active_question.get("bloom_level", "")
+            opts = active_question.get("options", [])
+            ans = active_question.get("correctAnswerId") or active_question.get("correct_answer_id", "")
+            exp = active_question.get("explanation", "")
             system_instruction += f"""
-- Câu hỏi đang xem xét tại màn hình:
+- Câu hỏi đang xem xét tại màn hình (ID: {active_question.get('id', 'N/A')}):
   + Cấp độ Bloom: {bloom}
   + Nội dung: {q_txt}
   + Các phương án: {json.dumps(opts, ensure_ascii=False)}
@@ -1026,35 +1217,10 @@ THỐNG KÊ HỆ THỐNG THỰC TẾ (CƠ SỞ DỮ LIỆU auth.db - KHÔNG DỮ
 - Tổng số tài khoản người dùng thực tế trong hệ thống: {system_stats.get('total_users', 3)} người dùng.
 - Giảng viên: {system_stats.get('lecturers', 2)} người.
 - Quản trị viên (Admin): {system_stats.get('admins', 1)} người.
-
-QUY TẮC BẢO ĐẢM TÍNH XÁC THỰC VÀ CHỐNG BỊA ĐẶT SỐ LIỆU (ANTI-HALLUCINATION):
-- Khi người dùng hỏi về các chỉ số hệ thống (số lượng người dùng, tài khoản đăng ký, số giảng viên...):
-  BẮT BUỘC CHỈ ĐƯỢC PHÉP trả lời dựa trên số liệu thực tế ở trên ({system_stats.get('total_users', 3)} người dùng đăng ký).
-- TUYỆT ĐỐI NGHIÊM CẤM tự ý bịa đặt hoặc tưởng tượng ra các con số ảo (như 15,873 hay bất kỳ con số không có thật nào khác).
-"""
-        else:
-            system_instruction += """
-QUY TẮC CHỐNG BỊA ĐẶT SỐ LIỆU (ANTI-HALLUCINATION):
-- Nếu người dùng hỏi về số lượng người dùng hay số liệu thống kê mà hệ thống chưa cung cấp, bạn phải trả lời rõ ràng rằng bạn chỉ có thể báo cáo số liệu thực tế được quản trị viên đồng bộ, tuyệt đối không tự ý bịa đặt con số ảo.
+QUY TẮC ANTI-HALLUCINATION: Chỉ trả lời đúng số liệu thực tế trên, tuyệt đối không bịa đặt con số ảo.
 """
 
-        system_instruction += """
-NGUYÊN TẮC PHẢN HỒI:
-1. Luôn giữ văn phong sư phạm chuẩn mực, chuyên nghiệp, súc tích và giải quyết trực diện vấn đề.
-2. Hỗ trợ toàn diện: giải thích đáp án, viết lại câu hỏi khó hơn/dễ hơn, đề xuất phương án bẫy học thuật, tra cứu quy định ma trận Bloom.
-3. Khi viết công thức Toán, Vật lý, Kỹ thuật, BẮT BUỘC dùng định dạng LaTeX ($...$ hoặc $$...$$).
-4. Phản hồi bằng tiếng Việt chuẩn.
-
-QUY TẮC HỖ TRỢ KỸ THUẬT & THANH TOÁN (CUSTOMER SUPPORT & BILLING):
-Khi người dùng gặp sự cố kỹ thuật, lỗi hệ thống, thắc mắc về nạp tiền, giao dịch thanh toán chuyển khoản / quét mã QR, nâng cấp gói dịch vụ, tài khoản bị gián đoạn, cần đối soát giao dịch hoặc cần liên hệ bộ phận hỗ trợ:
-1. Bạn phải lập tức đồng cảm, hướng dẫn tận tình và cung cấp ĐẦY ĐỦ các kênh hỗ trợ chính thức của QuizGen AI:
-   - 📧 Email đối soát & hỗ trợ: quizgen.ai.team@gmail.com
-   - 📞 Hotline / Zalo hỗ trợ kỹ thuật: 0364591363
-2. CHỦ ĐỘNG TẠO PHIẾU HỖ TRỢ TỰ ĐỘNG (Support Ticket Card): Tự động đính kèm thẻ ```action:support_ticket ...``` để hệ thống tự động lưu phiếu vào CSDL backend Helpdesk (Port 8008) và gửi thẳng đến Ban Quản Trị xử lý ngay lập tức.
-3. NÊU RÕ RÀNG TRONG LỜI NÓI: Thông báo cho người dùng biết Quanta đã tự động chuyển tiếp phiếu hỗ trợ đến Ban Quản Trị (đã tiếp nhận trên hệ thống), người dùng có thể theo dõi trạng thái phiếu bên dưới hoặc bổ sung thêm ảnh chụp màn hình sự cố / liên hệ Zalo Hotline 0364591363 để kỹ thuật viên hỗ trợ ngay lập tức. Tuyệt đối không nói 'em sẽ chuyển' mập mờ mà hãy khẳng định 'Quanta đã tự động chuyển tiếp phiếu ghi nhận sự cố tới Ban Quản Trị'.
-"""
-
-        clean_msg = message.strip().lower()
+        clean_msg = (message or "").strip().lower()
         support_keywords = [
             "cần hỗ trợ", "hỗ trợ", "gặp vấn đề", "bị lỗi", "gặp lỗi", "sự cố",
             "support", "liên hệ", "hotline", "zalo", "thanh toán", "nạp tiền",
@@ -1063,101 +1229,189 @@ Khi người dùng gặp sự cố kỹ thuật, lỗi hệ thống, thắc mắ
         is_support_intent = any(kw in clean_msg for kw in support_keywords)
 
         system_instruction += """
-QUY TẮC PHẢN HỒI BẮT BUỘC (ANTI-ROBOTIC & TRỰC DIỆN):
-1. TUYỆT ĐỐI KHÔNG lặp lại các bài giới thiệu bản thân máy móc hay xưng hô ngô nghê.
-2. Vào thẳng trọng tâm câu hỏi của người dùng, văn phong tự nhiên, súc tích, chuyên nghiệp và ân cần.
-3. Khi người dùng cần hỗ trợ, báo lỗi, hoặc nhắn 'tôi cần hỗ trợ', 'giúp anh với':
-   - Phản hồi ngắn gọn, lịch thiệp và BẮT BUỘC chèn khối thẻ hành động ```action:support_ticket ...``` để người dùng có form bấm gửi 1-chạm hoặc liên hệ Zalo 0364591363 ngay trên giao diện!
+NGUYÊN TẮC PHẢN HỒI:
+1. Văn phong sư phạm chuẩn mực, súc tích, tự nhiên, vào thẳng trọng tâm (không lặp lại lời chào máy móc).
+2. Khi viết công thức Toán, Lý, Hóa, Kỹ thuật, BẮT BUỘC dùng LaTeX ($...$ hoặc $$...$$).
+3. Nếu cần trình bày ma trận Bloom hoặc so sánh, hãy dùng bảng Markdown chuẩn (| ... | ... |).
+4. Kênh hỗ trợ chính thức duy nhất: Hotline/Zalo 0364591363 và Email quizgen.ai.team@gmail.com.
 """
-
         if is_support_intent:
             system_instruction += """
-CHỈ THỊ ĐẶC BIỆT KHI CẦN HỖ TRỢ KỸ THUẬT:
-- Luôn gửi kèm khối action:
-```action:support_ticket
-{
-  "title": "Hỗ trợ sự cố & giải đáp kỹ thuật",
-  "category": "system_bug",
-  "description": "Người dùng cần hỗ trợ kỹ thuật từ hệ thống"
-}
-```
-- Nêu rõ số Hotline / Zalo chính thức duy nhất: 0364591363 và Email: quizgen.ai.team@gmail.com.
-- TUYỆT ĐỐI KHÔNG NHẮC ĐẾN BẤT KỲ SỐ ĐIỆN THOẠI NÀO KHÁC (như 0909...).
+CHỈ THỊ HỖ TRỢ KỸ THUẬT:
+- Gửi kèm khối ```action:support_ticket ...``` để hệ thống tự động tạo ticket lên Helpdesk.
+- Nêu rõ Zalo 0364591363 và Email quizgen.ai.team@gmail.com.
 """
+        return system_instruction, is_support_intent
 
-        # Chế độ Kênh Điều Khiển Tối Mật (Remote Command HUD)
-        if ctx.get("isRemoteCommander"):
-            system_instruction += f"""
-ĐẶC VỊ TRUNG TÂM CHỈ HUY TỐI MẬT (REMOTE COMMAND CENTER):
-Bạn đang kết nối trực tiếp với {user_name} qua Kênh Điều Khiển Từ Xa (Remote Agent Bridge) từ điện thoại di động về Laptop Workspace (D:\\HKDN\\Quizgen AI).
-Nhiệm vụ của bạn là:
-1. Đóng vai trò là Trợ lý Kỹ sư Vận hành & Lập trình viên Antigravity AI đang chạy trực tiếp trên laptop của Thầy.
-2. Trả lời chính xác, thực thi và phân tích sâu các chỉ thị lập trình, tra cứu dữ liệu hệ thống, giải quyết lỗi, đề xuất giải thuật và báo cáo kỹ thuật.
-3. Phong cách phản hồi: Dứt khoát, chuyên nghiệp, thông minh, mang phong cách kỹ sư công nghệ cao (HUD Command Center), giải quyết trực diện vấn đề Thầy giao.
-"""
+    def _build_suggestions(self, screen: str, is_support_intent: bool) -> List[str]:
+        if is_support_intent:
+            return [
+                "📞 Hotline Zalo 0364591363",
+                "💳 Hỗ trợ lỗi thanh toán / nạp gói",
+                "🎧 Hỗ trợ phòng đàm thoại Huddle",
+                "📚 Hỗ trợ nạp giáo trình PDF / Word"
+            ]
+        if screen == "generate":
+            return ["📊 Tỉ lệ Bloom chuẩn giữa kỳ?", "⚡ Tối ưu ma trận đề thi", "📖 Hỏi đáp về tài liệu"]
+        if screen == "upload":
+            return ["📄 Định dạng tài liệu hỗ trợ?", "📑 Lưu ý file PDF có hình vẽ", "🔍 Kiểm tra nội dung trích xuất"]
+        if screen == "bank":
+            return ["🖨️ Xuất đề thi Word chuẩn A4", "📝 Tạo phiếu chấm trắc nghiệm OMR", "🔀 Đảo mã đề Fisher-Yates"]
+        return [
+            "💡 Giải thích chi tiết câu hỏi này",
+            "📈 Viết lại câu hỏi ở mức Vận dụng cao",
+            "🎯 Thêm phương án bẫy học thuật"
+        ]
+
+    async def chat_with_copilot(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        academic_memory: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Trò chuyện thông minh với QuizGen Copilot (Async non-blocking, Multimodal, Dynamic Memory, Structured Actions)."""
+        if not self.model:
+            self._init_model()
+
+        ctx = context or {}
+        screen = ctx.get("currentScreen", "dashboard")
+        screen_label = ctx.get("screenLabel", "Không gian làm việc")
+        user_name = ctx.get("userName", "anh")
+        doc_id = ctx.get("documentId") or ctx.get("document_id")
+        all_docs = ctx.get("allDocuments") or []
+        system_docs = ctx.get("system_documents") or []
+
+        rag_chunks, rag_sources = await self._fetch_rag_context(message, doc_id, all_docs, system_docs)
+        system_instruction, is_support_intent = self._build_chat_system_instruction(
+            message, ctx, rag_chunks, academic_memory
+        )
+        suggestions = self._build_suggestions(screen, is_support_intent)
+
         if not self.model:
             return {
                 "reply": (
                     f"Chào {user_name}! Tôi là QuizGen Copilot. Hiện tại tôi đang chạy ở chế độ Hỗ trợ Ngoại tuyến.\n\n"
                     f"Bạn đang làm việc tại **{screen_label}**. Bạn có thể yêu cầu tôi giải thích đáp án, tăng độ khó câu hỏi theo ma trận Bloom, hoặc hướng dẫn xuất đề thi chuẩn Word/PDF bất kỳ lúc nào!"
                 ),
-                "suggestedActions": [
-                    "💡 Giải thích đáp án câu hỏi",
-                    "📈 Tăng độ khó Bloom",
-                    "🖨️ Hướng dẫn xuất bản đề thi"
-                ]
+                "actions": [],
+                "suggestedActions": suggestions,
+                "ragSources": rag_sources,
             }
 
         try:
-            # Xây dựng danh sách contents chuẩn định dạng Gemini Multi-turn
-            contents: List[Dict[str, Any]] = []
-            if history:
-                for h in history[-6:]:  # Giữ tối đa 6 lượt chat gần nhất
-                    role_tag = "user" if h.get("role") == "user" else "model"
-                    h_content = str(h.get("content") or "").strip()
-                    if h_content:
-                        contents.append({"role": role_tag, "parts": [h_content]})
-
-            contents.append({"role": "user", "parts": [message]})
-
-            response = self._generate_with_fallback(
+            contents = self._build_gemini_contents(message, history, attachments)
+            response = await asyncio.to_thread(
+                self._generate_with_fallback,
                 system_instruction=system_instruction,
-                contents=contents
+                contents=contents,
             )
-            reply_text = response.text.strip() if response and response.text else "Tôi đã ghi nhận yêu cầu của bạn."
-
-            # Gợi ý hành động tiếp theo dựa trên màn hình và ý định
-            if is_support_intent:
-                suggestions = [
-                    "📞 Hotline Zalo 0364591363",
-                    "💳 Hỗ trợ lỗi thanh toán / nạp gói",
-                    "🎧 Hỗ trợ phòng đàm thoại Huddle",
-                    "📚 Hỗ trợ nạp giáo trình PDF / Word"
-                ]
-            elif screen == "generate":
-                suggestions = ["📊 Tỉ lệ Bloom chuẩn giữa kỳ?", "⚡ Tối ưu ma trận đề thi", "📖 Hỏi đáp về tài liệu"]
-            elif screen == "upload":
-                suggestions = ["📄 Định dạng tài liệu hỗ trợ?", "📑 Lưu ý file PDF có hình vẽ", "🔍 Kiểm tra nội dung trích xuất"]
-            elif screen == "bank":
-                suggestions = ["🖨️ Xuất đề thi Word chuẩn A4", "📝 Tạo phiếu chấm trắc nghiệm OMR", "🔀 Đảo mã đề Fisher-Yates"]
-            else:
-                suggestions = [
-                    "💡 Giải thích chi tiết câu hỏi này",
-                    "📈 Viết lại câu hỏi ở mức Vận dụng cao",
-                    "🎯 Thêm phương án bẫy học thuật"
-                ]
+            raw_reply = response.text.strip() if response and response.text else "Tôi đã ghi nhận yêu cầu của bạn."
+            clean_reply, actions = self._extract_and_validate_actions(raw_reply)
 
             return {
-                "reply": reply_text,
-                "suggestedActions": suggestions
+                "reply": clean_reply or raw_reply,
+                "actions": actions,
+                "suggestedActions": suggestions,
+                "ragSources": rag_sources,
             }
         except Exception as e:
             print(f"[AI-COPILOT] Lỗi phản hồi Copilot: {e}")
             return {
                 "reply": f"Tôi đã tiếp nhận câu hỏi của bạn về: *\"{message}\"*. Hiện tại đường truyền AI đang bận hoặc có giới hạn tần suất, vui lòng thử lại sau giây lát hoặc chọn gợi ý bên dưới.",
-                "suggestedActions": [
-                    "💡 Giải thích câu hỏi",
-                    "📈 Tăng độ khó Bloom",
-                    "🖨️ Hướng dẫn xuất đề thi"
-                ]
+                "actions": [],
+                "suggestedActions": suggestions,
+                "ragSources": rag_sources,
             }
+
+    async def chat_with_copilot_stream(
+        self,
+        message: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        context: Optional[Dict[str, Any]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
+        academic_memory: Optional[Dict[str, Any]] = None,
+    ):
+        """Async generator phát sự kiện SSE streaming (status -> chunk -> done) cho Quanta Copilot."""
+        if not self.model:
+            self._init_model()
+
+        ctx = context or {}
+        screen = ctx.get("currentScreen", "dashboard")
+        screen_label = ctx.get("screenLabel", "Không gian làm việc")
+        user_name = ctx.get("userName", "anh")
+        doc_id = ctx.get("documentId") or ctx.get("document_id")
+        all_docs = ctx.get("allDocuments") or []
+        system_docs = ctx.get("system_documents") or []
+
+        yield {"type": "status", "status": "retrieving_rag", "message": "Đang tra cứu giáo trình & ngữ cảnh..."}
+        rag_chunks, rag_sources = await self._fetch_rag_context(message, doc_id, all_docs, system_docs)
+        system_instruction, is_support_intent = self._build_chat_system_instruction(
+            message, ctx, rag_chunks, academic_memory
+        )
+        suggestions = self._build_suggestions(screen, is_support_intent)
+
+        if not self.model:
+            offline_msg = (
+                f"Chào {user_name}! Tôi là QuizGen Copilot (Chế độ Ngoại tuyến) tại **{screen_label}**."
+            )
+            yield {"type": "chunk", "text": offline_msg}
+            yield {
+                "type": "done",
+                "reply": offline_msg,
+                "actions": [],
+                "suggestedActions": suggestions,
+                "ragSources": rag_sources,
+            }
+            return
+
+        yield {"type": "status", "status": "generating", "message": "Quanta đang soạn câu trả lời..."}
+        contents = self._build_gemini_contents(message, history, attachments)
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def _worker():
+            try:
+                for chunk in self._generate_stream_with_fallback(
+                    system_instruction=system_instruction,
+                    contents=contents,
+                ):
+                    text_piece = getattr(chunk, "text", None) or ""
+                    if text_piece:
+                        loop.call_soon_threadsafe(queue.put_nowait, ("chunk", text_piece))
+                loop.call_soon_threadsafe(queue.put_nowait, ("eof", None))
+            except Exception as ex:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", str(ex)))
+
+        import threading
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        full_text_parts: List[str] = []
+        stream_err: Optional[str] = None
+        while True:
+            kind, val = await queue.get()
+            if kind == "chunk":
+                full_text_parts.append(val)
+                yield {"type": "chunk", "text": val}
+            elif kind == "error":
+                stream_err = val
+                break
+            elif kind == "eof":
+                break
+
+        raw_reply = "".join(full_text_parts).strip()
+        if stream_err and not raw_reply:
+            print(f"[AI-COPILOT-STREAM] Lỗi stream: {stream_err}")
+            raw_reply = f"Tôi đã tiếp nhận câu hỏi của bạn về: *\"{message}\"*. Hiện tại đường truyền AI đang bận, vui lòng thử lại sau giây lát."
+            yield {"type": "chunk", "text": raw_reply}
+
+        clean_reply, actions = self._extract_and_validate_actions(raw_reply)
+        yield {
+            "type": "done",
+            "reply": clean_reply or raw_reply,
+            "actions": actions,
+            "suggestedActions": suggestions,
+            "ragSources": rag_sources,
+        }

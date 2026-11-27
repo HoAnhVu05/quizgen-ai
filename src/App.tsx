@@ -1749,7 +1749,7 @@ const AppContent: React.FC = () => {
                 requestedAt: new Date().toISOString(),
                 status: 'pending',
               };
-              await apiClient.fetch(`${API_BASE}/documents/qgroups/friend-requests`, {
+              await apiClient.fetch(`${API_BASE}/documents/friend-requests`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newReq),
@@ -1805,7 +1805,13 @@ const AppContent: React.FC = () => {
               const raw = localStorage.getItem('quizgen_friend_requests');
               if (raw) {
                 const list = JSON.parse(raw);
-                const filtered = list.filter((r: any) => !(r.senderEmail?.toLowerCase() === myEmail && r.targetEmail?.toLowerCase() === email));
+                const toCancel = list.filter((r: any) => r.senderEmail?.toLowerCase() === myEmail && (r.targetEmail?.toLowerCase() === email || r.recipientEmail?.toLowerCase() === email));
+                for (const req of toCancel) {
+                  if (req.id) {
+                    void apiClient.fetch(`${API_BASE}/documents/friend-requests/${encodeURIComponent(req.id)}`, { method: 'DELETE' });
+                  }
+                }
+                const filtered = list.filter((r: any) => !(r.senderEmail?.toLowerCase() === myEmail && (r.targetEmail?.toLowerCase() === email || r.recipientEmail?.toLowerCase() === email)));
                 localStorage.setItem('quizgen_friend_requests', JSON.stringify(filtered));
               }
               setInspectedHasSentRequest(false);

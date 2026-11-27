@@ -32,9 +32,7 @@ class DocumentParser:
         text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
         # 3. Nối từ bị ngắt dòng bằng dấu gạch ngang (ví dụ: "kinh- \ntế" -> "kinh tế")
         text = re.sub(r"(\w+)-\s*\n\s*(\w+)", r"\1\2", text)
-        # 4. Sửa các lỗi dấu thanh phân rã / dấu nháy đơn dính vào nguyên âm (ví dụ: "cả'u" -> "cấu", "vẩn dê" -> "vấn đề")
-        text = re.sub(r"([a-zA-Zà-ỹÀ-Ỹ])['`]\s*", r"\1", text)
-        # 5. Chuẩn hóa khoảng trắng liên tiếp
+        # 4. Chuẩn hóa khoảng trắng liên tiếp
         text = re.sub(r"[ \t]+", " ", text)
         # 6. Chuẩn hóa xuống dòng liên tiếp
         text = re.sub(r"\n{3,}", "\n\n", text)
