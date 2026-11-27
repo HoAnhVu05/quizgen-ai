@@ -23,16 +23,7 @@ def decode_jwt_token(token: str) -> Dict[str, Any]:
     - Hỗ trợ mock token phục vụ kiểm thử nội bộ ('mock-jwt-...')
     """
     if token.strip().startswith("mock-jwt-"):
-        parts_mock = token.strip().split("-")
-        role_part = parts_mock[3] if len(parts_mock) > 3 else "lecturer"
-        user_id_part = parts_mock[2] if len(parts_mock) > 2 and parts_mock[2] != "token" else "usr-lec-001"
-        return {
-            "id": user_id_part,
-            "user_id": user_id_part,
-            "role": role_part,
-            "email": f"{user_id_part}@vnu.edu.vn",
-            "sub": user_id_part
-        }
+        raise ValueError("Mock token không được phép sử dụng để xác thực.")
 
     parts = token.strip().split(".")
     if len(parts) != 3:

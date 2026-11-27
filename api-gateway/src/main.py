@@ -3,6 +3,7 @@ import asyncio
 import re
 from typing import Optional
 from fastapi import FastAPI, Request, Response, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import StreamingResponse
 from starlette.websockets import WebSocketState
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
@@ -23,10 +24,10 @@ def verify_and_inject_jwt(request: Request, headers: dict) -> None:
     và tự động đính kèm thông tin định danh (x-user-id, x-user-role, x-user-email)
     chuyển tiếp tới các microservices nội bộ.
     """
-    for k in ["x-user-id", "x-user-email", "x-user-role", "x-user-tier"]:
-        val = request.headers.get(k) or request.headers.get(k.title())
-        if val and k not in headers:
-            headers[k] = val.strip()
+    # Xóa bỏ các header định danh do client tự gửi để chống giả mạo danh tính (Header Spoofing)
+    for k in list(headers.keys()):
+        if k.lower() in ("x-user-id", "x-user-email", "x-user-role", "x-user-tier"):
+            headers.pop(k, None)
 
     auth_header = request.headers.get("authorization")
     if not auth_header:
@@ -86,7 +87,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://quizgenai.hoanhvu.id.vn",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -166,10 +171,37 @@ async def rag_proxy(request: Request, path: str = ""):
     target = f"/{path}".rstrip("/") if not path else f"/{path}"
     return await proxy_request(settings.RAG_SERVICE_URL, target or "/", request)
 
+async def proxy_sse_request(service_url: str, path: str, request: Request, timeout: float = 300.0) -> StreamingResponse:
+    url = httpx.URL(path=path, query=request.url.query.encode("utf-8"))
+    body = await request.body()
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    verify_and_inject_jwt(request, headers)
+
+    async def stream_gen():
+        async with httpx.AsyncClient(base_url=service_url, timeout=timeout, follow_redirects=True) as client:
+            async with client.stream(request.method, url, headers=headers, content=body) as res:
+                async for chunk in res.aiter_bytes():
+                    if chunk:
+                        yield chunk
+
+    return StreamingResponse(
+        stream_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.api_route("/api/v1/ai", methods=METHODS)
 @app.api_route("/api/v1/ai/{path:path}", methods=METHODS)
 async def ai_proxy(request: Request, path: str = ""):
     target = f"/{path}".rstrip("/") if not path else f"/{path}"
+    if target.endswith("/chat/stream"):
+        return await proxy_sse_request(settings.AI_SERVICE_URL, target, request)
     return await proxy_request(settings.AI_SERVICE_URL, target or "/", request)
 
 @app.api_route("/api/v1/exams", methods=METHODS)

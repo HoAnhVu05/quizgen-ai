@@ -79,7 +79,7 @@ def get_current_user_context(
     uid = x_user_id or "usr-guest-001"
     email = (x_user_email or "guest@quizgen.ai").strip()
     role = (x_user_role or "LECTURER").strip().upper()
-    if email.lower() == "quizgen.ai.team@gmail.com" or "admin" in email.lower() or "admin" in role.lower():
+    if email.lower() == "quizgen.ai.team@gmail.com" or role.upper() in ("ADMIN", "SUPER_ADMIN"):
         role = "ADMIN"
     tier = (x_user_tier or "FREE").strip().upper()
     return {
@@ -405,10 +405,13 @@ def get_attachment_file(file_name: str):
     if not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại.")
     mime_type, _ = mimetypes.guess_type(target_path)
+    ext = os.path.splitext(safe_name)[1].lower()
+    disp = "attachment" if ext in {".html", ".htm", ".svg", ".xhtml", ".xml", ".js", ".mjs"} else "inline"
     return FileResponse(
         target_path,
         media_type=mime_type or "application/octet-stream",
-        content_disposition_type="inline"
+        content_disposition_type=disp,
+        headers={"X-Content-Type-Options": "nosniff"}
     )
 
 @app.get("/unread-count")

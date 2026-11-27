@@ -47,8 +47,7 @@ function authOtpDevPlugin() {
                 status: 'success',
                 message: `Mã OTP đã được gửi thành công tới hòm thư ${email}.`,
                 expires_in: 300,
-                email_sent: mailResult.success,
-                dev_otp: otp
+                email_sent: mailResult.success
               }));
             } catch (err: any) {
               console.error('[QuizGen Auth] Lỗi xử lý forgot-password:', err);
@@ -96,13 +95,24 @@ function authOtpDevPlugin() {
               // Xóa OTP đã sử dụng
               otpStore.delete(email);
 
-              // Cập nhật trực tiếp mật khẩu mới vào CSDL SQLite auth.db
+              // Cập nhật trực tiếp mật khẩu mới vào CSDL SQLite auth.db (an toàn chống Command Injection)
               try {
-                const { execSync } = require('child_process');
-                const safePass = newPassword.replace(/'/g, "\\'");
-                const pyScript = `import sqlite3, bcrypt; pwd_bytes = '${safePass}'.encode('utf-8')[:72]; salt = bcrypt.gensalt(); hashed = bcrypt.hashpw(pwd_bytes, salt).decode('utf-8'); conn = sqlite3.connect('services/auth-service/data/auth.db'); conn.execute('UPDATE users SET password_hash = ? WHERE email = ?', (hashed, '${email}')); conn.commit(); conn.close()`;
-                execSync(`python -c "${pyScript}"`);
-                console.log(`[QuizGen Auth] Đã cập nhật mật khẩu mới vào auth.db cho ${email}.`);
+                const { spawnSync } = require('child_process');
+                const pyCode = [
+                  'import sys, sqlite3, bcrypt',
+                  'email, pwd = sys.argv[1], sys.argv[2]',
+                  'hashed = bcrypt.hashpw(pwd.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")',
+                  'conn = sqlite3.connect("services/auth-service/data/auth.db")',
+                  'conn.execute("UPDATE users SET password_hash = ? WHERE email = ?", (hashed, email))',
+                  'conn.commit()',
+                  'conn.close()'
+                ].join('; ');
+                const sp = spawnSync('python', ['-c', pyCode, email, newPassword], { encoding: 'utf8' });
+                if (sp.status !== 0) {
+                  console.error('[QuizGen Auth] Lỗi cập nhật auth.db:', sp.stderr);
+                } else {
+                  console.log(`[QuizGen Auth] Đã cập nhật mật khẩu mới vào auth.db cho ${email}.`);
+                }
               } catch (dbErr: any) {
                 console.error('[QuizGen Auth] Lỗi cập nhật auth.db:', dbErr?.message || dbErr);
               }

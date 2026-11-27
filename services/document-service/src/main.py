@@ -1175,23 +1175,31 @@ async def upload_qgroup_attachment(file: UploadFile = File(...)):
         logger.error(f"Error uploading qgroup attachment: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def _resolve_safe_attachment(base_dirs, filename: str) -> Path:
+    import urllib.parse
+    raw_name = filename
+    unquoted_name = urllib.parse.unquote(filename)
+    for candidate in (unquoted_name, raw_name):
+        if not candidate or "/" in candidate or "\\" in candidate or ".." in candidate:
+            continue
+        safe_name = Path(candidate).name
+        if not safe_name or safe_name != candidate:
+            continue
+        for base_dir in base_dirs:
+            base_resolved = base_dir.resolve()
+            target = (base_resolved / safe_name).resolve()
+            if os.path.commonpath([str(target), str(base_resolved)]) == str(base_resolved) and target.exists() and target.is_file():
+                return target
+    raise HTTPException(status_code=404, detail="Attachment not found")
+
+
 @app.get("/documents/qgroups/attachments/{filename}")
 @app.get("/qgroups/attachments/{filename}")
 async def get_qgroup_attachment(filename: str, download: bool = False):
     import urllib.parse
-    raw_name = filename
     unquoted_name = urllib.parse.unquote(filename)
-    
-    file_path = QGROUP_ATTACHMENTS_DIR / unquoted_name
-    if not file_path.exists():
-        file_path = QGROUP_ATTACHMENTS_DIR / raw_name
-    if not file_path.exists():
-        file_path = FORUM_ATTACHMENTS_DIR / unquoted_name
-    if not file_path.exists():
-        file_path = FORUM_ATTACHMENTS_DIR / raw_name
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Attachment not found")
-    
+    file_path = _resolve_safe_attachment([QGROUP_ATTACHMENTS_DIR, FORUM_ATTACHMENTS_DIR], filename)
+
     orig_name = unquoted_name.split("_", 1)[1] if "_" in unquoted_name else unquoted_name
     import mimetypes
     content_type, _ = mimetypes.guess_type(orig_name)
@@ -1203,7 +1211,7 @@ async def get_qgroup_attachment(filename: str, download: bool = False):
         ".ogg": "audio/ogg",
         ".wav": "audio/wav",
         ".mp3": "audio/mpeg",
-        ".m4a": "audio/mp4",
+        ".m4a": "audio/aac",
         ".aac": "audio/aac",
     }
     ext = file_path.suffix.lower()
@@ -1212,12 +1220,14 @@ async def get_qgroup_attachment(filename: str, download: bool = False):
     elif not content_type:
         content_type = "application/octet-stream"
 
-    disp_type = "attachment" if download else "inline"
-    import urllib.parse
+    # Prevent Stored XSS via inline active content (HTML/SVG/JS)
+    UNSAFE_INLINE_EXTS = {".html", ".htm", ".svg", ".xhtml", ".xml", ".js", ".mjs"}
+    disp_type = "attachment" if (download or ext in UNSAFE_INLINE_EXTS) else "inline"
     encoded_filename = urllib.parse.quote(orig_name)
     ascii_filename = orig_name.encode("ascii", "ignore").decode("ascii").strip() or "attachment"
     headers = {
         "Content-Disposition": f"{disp_type}; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}",
+        "X-Content-Type-Options": "nosniff",
         "Access-Control-Allow-Origin": "*",
     }
     return FileResponse(file_path, media_type=content_type, headers=headers)
@@ -2564,18 +2574,9 @@ async def upload_forum_attachment(file: UploadFile = File(...)):
 @app.get("/documents/forum/attachments/{file_name}")
 def download_forum_attachment(file_name: str):
     import urllib.parse
-    raw_name = file_name
     unquoted = urllib.parse.unquote(file_name)
-    target_path = FORUM_ATTACHMENTS_DIR / unquoted
-    if not target_path.exists() or not target_path.is_file():
-        target_path = FORUM_ATTACHMENTS_DIR / raw_name
-    if not target_path.exists() or not target_path.is_file():
-        target_path = QGROUP_ATTACHMENTS_DIR / unquoted
-    if not target_path.exists() or not target_path.is_file():
-        target_path = QGROUP_ATTACHMENTS_DIR / raw_name
-    if not target_path.exists() or not target_path.is_file():
-        raise HTTPException(status_code=404, detail="Tệp đính kèm không tồn tại trên máy chủ")
-    
+    target_path = _resolve_safe_attachment([FORUM_ATTACHMENTS_DIR, QGROUP_ATTACHMENTS_DIR], file_name)
+
     orig_name = unquoted.split("_", 1)[1] if "_" in unquoted else unquoted
     import mimetypes
     content_type, _ = mimetypes.guess_type(orig_name)
@@ -2584,6 +2585,7 @@ def download_forum_attachment(file_name: str):
     ascii_filename = orig_name.encode("ascii", "ignore").decode("ascii").strip() or "attachment"
     headers = {
         "Content-Disposition": f"attachment; filename=\"{ascii_filename}\"; filename*=UTF-8''{encoded_filename}",
+        "X-Content-Type-Options": "nosniff",
         "Access-Control-Allow-Origin": "*",
     }
     return FileResponse(target_path, media_type=content_type, headers=headers)
@@ -2612,11 +2614,12 @@ def get_extracted_image(file_name: str):
     stem_name = Path(unquoted).stem
     for ext in ["", ".png", ".jpg", ".jpeg", ".webp", ".svg"]:
         for n in [unquoted, raw_name, f"{stem_name}{ext}" if ext else ""]:
-            if not n:
+            if not n or "/" in n or "\\" in n or ".." in n or Path(n).name != n:
                 continue
             for c_dir in candidate_dirs:
-                cand = c_dir / n
-                if cand.exists() and cand.is_file():
+                base_res = c_dir.resolve()
+                cand = (base_res / n).resolve()
+                if os.path.commonpath([str(cand), str(base_res)]) == str(base_res) and cand.exists() and cand.is_file():
                     target_path = cand
                     break
             if target_path:

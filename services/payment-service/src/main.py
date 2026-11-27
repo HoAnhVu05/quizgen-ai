@@ -950,8 +950,17 @@ async def payment_webhook(request: Request):
                 return resp
         except Exception as err:
             print(f"[PAYOS WEBHOOK WARNING] Xác thực webhook PayOS lỗi: {err}")
+            conn.close()
+            raise HTTPException(status_code=401, detail="Chữ ký PayOS Webhook không hợp lệ.")
 
     # B. Xử lý webhook SePay / Casso
+    webhook_secret = os.getenv("PAYMENT_WEBHOOK_SECRET", "")
+    if webhook_secret:
+        provided_secret = request.headers.get("X-Webhook-Secret") or request.headers.get("Authorization", "").replace("Apikey ", "").strip()
+        if provided_secret != webhook_secret:
+            conn.close()
+            raise HTTPException(status_code=401, detail="Webhook secret không hợp lệ.")
+
     content = str(data.get("content") or data.get("description") or data.get("transfer_content") or "")
     amount = int(data.get("transferAmount") or data.get("amount") or 0)
     
@@ -973,6 +982,14 @@ async def payment_webhook(request: Request):
     if o["status"] == "COMPLETED":
         conn.close()
         return {"status": "already_completed", "message": "Đơn hàng đã được duyệt trước đó."}
+
+    expected_amount = int(o.get("amount_vnd") or 0)
+    if amount <= 0 or amount < expected_amount:
+        conn.close()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Số tiền chuyển khoản ({amount}đ) không đủ để kích hoạt đơn hàng ({expected_amount}đ)."
+        )
         
     _activate_subscription(o, bank_ref=str(data.get("referenceCode") or data.get("id") or "WEBHOOK_MATCH"))
     resp = {"status": "success", "message": f"Đã duyệt tự động đơn hàng {order_code}."}

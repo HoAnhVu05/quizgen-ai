@@ -203,10 +203,18 @@ def main():
     print_success(f"Đã đóng gói Trọn bộ Khảo thí ({len(b_files)} tài liệu, {len(bundle_zip_bytes):,} bytes) -> {os.path.basename(bundle_file_path)}")
 
     # --------------------------------------------------------------------------
-    # TEST 6: Xác thực JWT động & Phân quyền bảo mật (Loại bỏ hardcode)
+    # TEST 6: Xác thực JWT động & Phân quyền bảo mật (HMAC-SHA256 JWT thật)
     # --------------------------------------------------------------------------
     print_header("TEST 6: Kiểm thử Xác thực JWT Động & Phân quyền RBAC")
-    test_token = "mock-jwt-usr999-lecturer-2026"
+    import hmac as _hmac, hashlib as _hashlib, base64 as _b64, json as _json, time as _time
+    from src.auth import SECRET_KEY as _SEC_KEY
+    def _make_jwt(uid, role="lecturer"):
+        h = _b64.urlsafe_b64encode(_json.dumps({"alg": "HS256", "typ": "JWT"}).encode()).decode().rstrip("=")
+        p = _b64.urlsafe_b64encode(_json.dumps({"id": uid, "user_id": uid, "role": role, "sub": uid, "exp": int(_time.time()) + 3600}).encode()).decode().rstrip("=")
+        s = _b64.urlsafe_b64encode(_hmac.new(_SEC_KEY.encode(), f"{h}.{p}".encode(), _hashlib.sha256).digest()).decode().rstrip("=")
+        return f"{h}.{p}.{s}"
+
+    test_token = _make_jwt("usr999", "lecturer")
     decoded_user = decode_jwt_token(test_token)
     assert decoded_user["user_id"] == "usr999", "Phải giải mã đúng user_id từ token"
     assert decoded_user["role"] == "lecturer", "Phải giải mã đúng role từ token"
@@ -259,7 +267,7 @@ def main():
     print_success(f"Đã tải lại đề thi từ CSDL dưới dạng ZIP ({len(dl_res.content):,} bytes)")
 
     # 8.2 Giảng viên khác cố tình xóa bài thi (Phải bị chặn 403 Forbidden)
-    unauthorized_headers = {"Authorization": "Bearer mock-jwt-otheruser-lecturer-2026"}
+    unauthorized_headers = {"Authorization": f"Bearer {_make_jwt('otheruser', 'lecturer')}"}
     del_unauth_res = client.delete(f"/exams/{saved_exam_id}", headers=unauthorized_headers)
     assert del_unauth_res.status_code == 403, "Hệ thống phải chặn 403 khi giảng viên khác cố gắng xóa đề thi"
     print_success("Bảo mật RBAC hoạt động chuẩn: Đã chặn 403 Forbidden với người dùng không sở hữu bài thi.")

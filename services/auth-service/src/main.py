@@ -386,35 +386,8 @@ def update_profile(
         except Exception:
             pass
 
-    # Nếu token chưa decode được hoặc phiên OAuth client-side, dùng email trong profile_in
-    if not user and profile_in.email:
-        clean_email = profile_in.email.strip().lower()
-        user = db.query(UserDB).filter(func.lower(UserDB.email) == clean_email).first()
-        if not user:
-            # Tự động tạo user mới nếu hoàn thiện hồ sơ từ phiên đăng nhập Google
-            new_uid = f"usr-gg-{uuid.uuid4().hex[:8]}"
-            user = UserDB(
-                id=new_uid,
-                email=clean_email,
-                full_name=profile_in.full_name or clean_email.split("@")[0],
-                academic_title=profile_in.academic_title or "ThS.",
-                university=profile_in.university or "Trường Đại học Giao thông Vận tải TP.HCM (UTH)",
-                department=profile_in.department or "Khoa Công nghệ Thông tin",
-                password_hash=hash_password(uuid.uuid4().hex),
-                role=profile_in.role or "lecturer",
-                avatar_url=profile_in.avatar_url or "",
-                is_active=True,
-                auth_provider="google",
-                status="active",
-                plan_tier="FREE",
-                created_at=datetime.utcnow()
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-
     if not user:
-        raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization hợp lệ hoặc email tài khoản đã đăng ký trên hệ thống.")
+        raise HTTPException(status_code=401, detail="Yêu cầu tiêu đề Authorization (Bearer JWT) hợp lệ để cập nhật hồ sơ.")
 
     try:
         if profile_in.full_name:
@@ -425,7 +398,8 @@ def update_profile(
             user.university = profile_in.university.strip()
         if profile_in.department:
             user.department = profile_in.department.strip()
-        if profile_in.role:
+        # Không cho phép tự leo thang role thành admin qua PUT /profile
+        if profile_in.role and profile_in.role.strip().lower() in ("lecturer", "head_of_department") and user.role not in ("admin", "super_admin"):
             user.role = profile_in.role.strip()
         if profile_in.avatar_url is not None:
             user.avatar_url = profile_in.avatar_url.strip()
@@ -468,26 +442,11 @@ def refresh_token_endpoint(
             detail="Thiếu refresh_token trong yêu cầu (vui lòng gửi qua body JSON hoặc Authorization header)."
         )
 
-    # Hỗ trợ mock token môi trường phát triển & demo
     if token.strip().startswith("mock-jwt-"):
-        parts_m = token.strip().split("-")
-        r_part = "lecturer"
-        for p in parts_m:
-            if p in ["admin", "head_of_department", "lecturer"]:
-                r_part = p
-                break
-        email = "quizgen.ai.team@gmail.com" if r_part == "admin" else ("hod.cntt@uth.edu.vn" if r_part == "head_of_department" else "nguyentann0804@gmail.com")
-        user = db.execute(select(UserDB).filter_by(email=email)).scalar_one_or_none()
-        if user:
-            new_acc = create_access_token(user)
-            new_ref, new_exp = create_refresh_token(user)
-            return {
-                "access_token": new_acc,
-                "refresh_token": new_ref,
-                "token_type": "bearer",
-                "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-                "user": serialize_user(user)
-            }
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Mock token không hợp lệ cho thao tác làm mới phiên đăng nhập."
+        )
         return {
             "access_token": f"mock-jwt-access-{r_part}-{int(time.time())}",
             "refresh_token": f"mock-jwt-refresh-{r_part}-{int(time.time())}",
