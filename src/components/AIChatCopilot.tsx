@@ -103,6 +103,14 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isUserScrolledUpRef = useRef(false);
+
+  const handleChatScroll = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isUserScrolledUpRef.current = distanceFromBottom > 120;
+  }, []);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     if (chatContainerRef.current) {
@@ -116,6 +124,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
   useEffect(() => {
     if (isOpen && !isMinimized) {
+      isUserScrolledUpRef.current = false;
       const instantScroll = () => {
         if (chatContainerRef.current) {
           chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -139,7 +148,7 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
   }, [isOpen, isMinimized]);
 
   useEffect(() => {
-    if (isOpen && !isMinimized) {
+    if (isOpen && !isMinimized && !isUserScrolledUpRef.current) {
       const timer = setTimeout(() => scrollToBottom('smooth'), 50);
       return () => clearTimeout(timer);
     }
@@ -179,7 +188,8 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
             void handleAddChatFiles(e.dataTransfer.files);
           }
         }}
-        onTransitionEnd={() => {
+        onTransitionEnd={(e) => {
+          if (e.target !== e.currentTarget) return;
           if (isOpen && !isMinimized) {
             if (chatContainerRef.current) {
               chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -229,8 +239,12 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
               isLoading={isLoading}
               streamStatus={streamStatus}
               copiedId={copiedId}
+              onScroll={handleChatScroll}
               onCopy={handleCopy}
-              onSelectSuggestion={(action) => void handleSendMessage(processStructuredOrFallbackActions, action)}
+              onSelectSuggestion={(action) => {
+                isUserScrolledUpRef.current = false;
+                void handleSendMessage(processStructuredOrFallbackActions, action);
+              }}
               onNavigate={onNavigate}
               onSubmitTicket={handleSubmitSupportTicket}
               onAutoGenerateExam={handleAutoGenerateExam}
@@ -246,7 +260,10 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
               onAddFiles={(files) => void handleAddChatFiles(files)}
               isLoading={isLoading}
               textareaRef={textareaRef}
-              onSend={() => void handleSendMessage(processStructuredOrFallbackActions)}
+              onSend={() => {
+                isUserScrolledUpRef.current = false;
+                void handleSendMessage(processStructuredOrFallbackActions);
+              }}
               onStopStreaming={handleStopStreaming}
             />
           </>

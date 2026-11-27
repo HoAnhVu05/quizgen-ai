@@ -17,6 +17,7 @@ interface CopilotMessageListProps {
   isLoading: boolean;
   streamStatus: string;
   copiedId: string | null;
+  onScroll?: () => void;
   onCopy: (id: string, text: string) => void;
   onSelectSuggestion: (action: string) => void;
   onNavigate?: (screen: ScreenId) => void;
@@ -33,6 +34,7 @@ export const CopilotMessageList: React.FC<CopilotMessageListProps> = ({
   isLoading,
   streamStatus,
   copiedId,
+  onScroll,
   onCopy,
   onSelectSuggestion,
   onNavigate,
@@ -42,7 +44,11 @@ export const CopilotMessageList: React.FC<CopilotMessageListProps> = ({
   onImportExam,
 }) => {
   return (
-    <div ref={chatContainerRef} className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#f8fafc] text-xs">
+    <div
+      ref={chatContainerRef}
+      onScroll={onScroll}
+      className="flex-1 p-3.5 overflow-y-auto space-y-3 bg-[#f8fafc] text-xs"
+    >
       {messages.map((m) => {
         const isUser = m.role === 'user';
         return (
