@@ -21,18 +21,71 @@ class DocumentParser:
         re.IGNORECASE
     )
 
-    @staticmethod
-    def _clean_text(text: str) -> str:
-        """Làm sạch ký tự điều khiển, chuẩn hóa Unicode NFC và xử lý lỗi font tiếng Việt"""
+    VNI_WINDOWS_MAP = [
+        # Chữ hoa 2 ký tự ghép VNI
+        ('AÁ', 'Ấ'), ('AÀ', 'Ầ'), ('AẢ', 'Ẩ'), ('AÃ', 'Ẫ'), ('AẠ', 'Ậ'),
+        ('AÉ', 'Ắ'), ('AÈ', 'Ằ'), ('AẺ', 'Ẳ'), ('AẼ', 'Ẵ'), ('AẸ', 'Ặ'),
+        ('AÅ', 'Ẩ'), ('AÄ', 'Ậ'), ('AÊ', 'Ă'), ('AÂ', 'Â'),
+        ('EÁ', 'Ế'), ('EÀ', 'Ề'), ('EẢ', 'Ể'), ('EÃ', 'Ễ'), ('EẠ', 'Ệ'),
+        ('EÅ', 'Ể'), ('EÄ', 'Ệ'), ('EÂ', 'Ê'),
+        ('OÁ', 'Ố'), ('OÀ', 'Ồ'), ('OẢ', 'Ổ'), ('OÃ', 'Ỗ'), ('OẠ', 'Ộ'),
+        ('OÅ', 'Ổ'), ('OÄ', 'Ộ'), ('OÂ', 'Ô'),
+        ('ÔÁ', 'Ớ'), ('ÔÀ', 'Ờ'), ('ÔẢ', 'Ở'), ('ÔÃ', 'Ỡ'), ('ÔẠ', 'Ợ'),
+        ('ÔÙ', 'Ớ'), ('ÔØ', 'Ờ'), ('ÔÛ', 'Ở'), ('ÔÕ', 'Ỡ'), ('ÔÏ', 'Ợ'),
+        ('ÖÁ', 'Ứ'), ('ÖÀ', 'Ừ'), ('ÖẢ', 'Ử'), ('ÖÃ', 'Ữ'), ('ÖẠ', 'Ự'),
+        ('ÖÙ', 'Ứ'), ('ÖØ', 'Ừ'), ('ÖÛ', 'Ử'), ('ÖÕ', 'Ữ'), ('ÖÏ', 'Ự'),
+        ('UÁ', 'Ú'), ('UÀ', 'Ù'), ('UẢ', 'Ủ'), ('UÃ', 'Ũ'), ('UẠ', 'Ụ'),
+        ('UÙ', 'Ú'), ('UØ', 'Ù'), ('UÛ', 'Ủ'), ('UÕ', 'Ũ'), ('UÏ', 'Ụ'),
+        ('AÙ', 'Á'), ('AØ', 'À'), ('AÛ', 'Ả'), ('AÕ', 'Ã'), ('AÏ', 'Ạ'),
+        ('EÙ', 'É'), ('EØ', 'È'), ('EÛ', 'Ẻ'), ('EÕ', 'Ẽ'), ('EÏ', 'Ẹ'),
+        ('OÙ', 'Ó'), ('OØ', 'Ò'), ('OÛ', 'Ỏ'), ('OÕ', 'Õ'), ('OÏ', 'Ọ'),
+        ('YÙ', 'Ý'), ('YØ', 'Ỳ'), ('YÛ', 'Ỷ'), ('YÕ', 'Ỹ'),
+
+        # Chữ thường 2 ký tự ghép VNI
+        ('aù', 'á'), ('aø', 'à'), ('aû', 'ả'), ('aõ', 'ã'), ('aï', 'ạ'),
+        ('aê', 'ă'), ('aé', 'ắ'), ('aè', 'ằ'), ('aú', 'ẳ'), ('aü', 'ẵ'), ('aë', 'ặ'),
+        ('aâ', 'â'), ('aá', 'ấ'), ('aà', 'ầ'), ('aå', 'ẩ'), ('aã', 'ẫ'), ('aä', 'ậ'),
+        ('eù', 'é'), ('eø', 'è'), ('eû', 'ẻ'), ('eõ', 'ẽ'), ('eï', 'ẹ'),
+        ('eâ', 'ê'), ('eá', 'ế'), ('eà', 'ề'), ('eå', 'ể'), ('eã', 'ễ'), ('eä', 'ệ'),
+        ('où', 'ó'), ('oø', 'ò'), ('oû', 'ỏ'), ('oõ', 'õ'), ('oï', 'ọ'),
+        ('oâ', 'ô'), ('oá', 'ố'), ('oà', 'ồ'), ('oå', 'ổ'), ('oã', 'ỗ'), ('oä', 'ộ'),
+        ('ôù', 'ớ'), ('ôø', 'ờ'), ('ôû', 'ở'), ('ôõ', 'ỡ'), ('ôï', 'ợ'),
+        ('uù', 'ú'), ('uø', 'ù'), ('uû', 'ủ'), ('uõ', 'ũ'), ('uï', 'ụ'),
+        ('öù', 'ứ'), ('öø', 'ừ'), ('öû', 'ử'), ('öõ', 'ữ'), ('öï', 'ự'),
+        ('yù', 'ý'), ('yø', 'ỳ'), ('yû', 'ỷ'), ('yõ', 'ỹ'),
+
+        # Ký tự đơn trong VNI-Windows
+        ('Ò', 'Ị'), ('Ó', 'Í'), ('Õ', 'Ĩ'), ('Ñ', 'Đ'), ('ñ', 'đ'),
+        ('ô', 'ơ'), ('ö', 'ư'), ('Ô', 'Ơ'), ('Ö', 'Ư'),
+        ('í', 'í'), ('ì', 'ì'), ('æ', 'ỉ'), ('ó', 'ĩ'), ('ò', 'ị'), ('î', 'ỵ'),
+        ('Í', 'Í'), ('Ì', 'Ì'), ('Î', 'Ỵ')
+    ]
+
+    @classmethod
+    def convert_legacy_vietnamese_fonts(cls, text: str) -> str:
+        """Tự động phát hiện và chuyển đổi bảng mã cũ VNI-Windows / TCVN3 sang Unicode UTF-8 chuẩn"""
         if not text:
             return ""
-        # 1. Chuẩn hóa bảng mã Unicode sang chuẩn dựng sẵn (NFC)
+        if any(marker in text for marker in ('CHUYE', 'VÒ', 'CHÒU', 'DAÀM', 'UOÁN', 'aù', 'aø', 'aû', 'aõ', 'aï', 'eù', 'eø', 'eû', 'eõ', 'eï', 'où', 'oø', 'oû', 'oõ', 'oï', 'uù', 'uø', 'uû', 'uõ', 'uï', 'AÙ', 'AØ', 'AÛ', 'AÕ', 'AÏ', 'EÙ', 'EØ', 'EÛ', 'EÕ', 'EÏ', 'OÙ', 'OØ', 'OÛ', 'OÕ', 'OÏ', 'UÙ', 'UØ', 'UÛ', 'UÕ', 'UÏ', 'EÅ', 'OÁ', 'AÀ', 'AÁ', 'Ö', 'Ô')):
+            for old, new in cls.VNI_WINDOWS_MAP:
+                if old in text:
+                    text = text.replace(old, new)
+        return unicodedata.normalize("NFC", text)
+
+    @classmethod
+    def _clean_text(cls, text: str) -> str:
+        """Làm sạch ký tự điều khiển, chuẩn hóa Unicode NFC và xử lý lỗi font tiếng Việt VNI/TCVN3"""
+        if not text:
+            return ""
+        # 1. Tự động chuyển đổi bảng mã font cũ (VNI-Windows) nếu có
+        text = cls.convert_legacy_vietnamese_fonts(text)
+        # 2. Chuẩn hóa bảng mã Unicode sang chuẩn dựng sẵn (NFC)
         text = unicodedata.normalize("NFC", text)
-        # 2. Thay thế ký tự điều khiển ngoại trừ tab và xuống dòng
+        # 3. Thay thế ký tự điều khiển ngoại trừ tab và xuống dòng
         text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-        # 3. Nối từ bị ngắt dòng bằng dấu gạch ngang (ví dụ: "kinh- \ntế" -> "kinh tế")
+        # 4. Nối từ bị ngắt dòng bằng dấu gạch ngang (ví dụ: "kinh- \ntế" -> "kinh tế")
         text = re.sub(r"(\w+)-\s*\n\s*(\w+)", r"\1\2", text)
-        # 4. Chuẩn hóa khoảng trắng liên tiếp
+        # 5. Chuẩn hóa khoảng trắng liên tiếp
         text = re.sub(r"[ \t]+", " ", text)
         # 6. Chuẩn hóa xuống dòng liên tiếp
         text = re.sub(r"\n{3,}", "\n\n", text)

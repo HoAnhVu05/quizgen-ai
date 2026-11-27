@@ -314,6 +314,8 @@ class TextChunker:
                         next_lines = [l.strip() for l in after_text.split("\n") if l.strip()]
                         if next_lines and len(next_lines[0]) < 100 and not next_lines[0].isdigit():
                             title = f"{title}: {next_lines[0]}"
+                    from .parser import DocumentParser
+                    title = DocumentParser.convert_legacy_vietnamese_fonts(title)
                     if title and not cls._is_junk_chapter_title(title):
                         spans.append((m.start(), title))
 

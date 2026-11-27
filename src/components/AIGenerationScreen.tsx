@@ -5,6 +5,7 @@ import { findKnowledgeForChapter } from '../constants/curriculumData';
 import apiClient from '../services/apiClient';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { downloadFileSafely } from '../utils/fileDownloadHelper';
+import { normalizeVietnameseLegacyFont } from '../utils/vietnameseFontUtils';
 import {
   BloomDistribution,
   DocumentItem,
@@ -589,7 +590,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           throw new Error(await parseErrorMessage(res));
         }
         const detail = await res.json();
-        const chapters = Array.isArray(detail?.chapters) ? detail.chapters.filter(Boolean) : [];
+        const rawChapters = Array.isArray(detail?.chapters) ? detail.chapters.filter(Boolean) : [];
+        const chapters = rawChapters.map((c: string) => normalizeVietnameseLegacyFont(c));
         if (chapters.length > 0) {
           setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
           setSelectedChapters([chapters[0]]);
