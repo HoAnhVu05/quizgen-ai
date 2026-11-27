@@ -44,6 +44,24 @@ export function useCopilotChat({
   const [academicMemory, setAcademicMemory] = useState<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const isLoadingRef = useRef(false);
+  const welcomeContextRef = useRef({
+    userHonorific,
+    screenLabel,
+    activeBookName: activeBook?.name,
+  });
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading;
+  }, [isLoading]);
+
+  useEffect(() => {
+    welcomeContextRef.current = {
+      userHonorific,
+      screenLabel,
+      activeBookName: activeBook?.name,
+    };
+  }, [userHonorific, screenLabel, activeBook?.name]);
 
   const userChatKey = currentUser?.email
     ? `quizgen_copilot_chat_${currentUser.email.toLowerCase().trim()}`
@@ -66,35 +84,36 @@ export function useCopilotChat({
     return [DEFAULT_WELCOME_MESSAGE(userHonorific, screenLabel, activeBook?.name)];
   });
 
-  const fetchServerHistory = useCallback(
-    async (isCancelled?: () => boolean) => {
-      if (isLoading) return;
-      try {
-        const res = await apiClient.fetch(`${API_BASE}/ai/chat/history?limit=100`, { method: 'GET' });
-        if (res.ok && !(isCancelled && isCancelled())) {
-          const data = await res.json();
-          const serverMsgs: ChatMessage[] = Array.isArray(data?.messages) ? data.messages : [];
-          if (serverMsgs.length > 0) {
-            setMessages((prev) => {
-              const prevNonWelcome = prev.filter((m) => !m.id.startsWith('welcome'));
-              const lastPrev = prevNonWelcome[prevNonWelcome.length - 1];
-              const lastSrv = serverMsgs[serverMsgs.length - 1];
-              if (
-                prevNonWelcome.length === serverMsgs.length &&
-                lastPrev?.id === lastSrv?.id &&
-                lastPrev?.content === lastSrv?.content
-              ) {
-                return prev;
-              }
-              const welcome = DEFAULT_WELCOME_MESSAGE(userHonorific, screenLabel, activeBook?.name);
-              return [welcome, ...serverMsgs];
-            });
-          }
+  const fetchServerHistory = useCallback(async (isCancelled?: () => boolean) => {
+    if (isLoadingRef.current) return;
+    try {
+      const res = await apiClient.fetch(`${API_BASE}/ai/chat/history?limit=100`, { method: 'GET' });
+      if (isLoadingRef.current || (isCancelled && isCancelled())) return;
+      if (res.ok) {
+        const data = await res.json();
+        if (isLoadingRef.current || (isCancelled && isCancelled())) return;
+        const serverMsgs: ChatMessage[] = Array.isArray(data?.messages) ? data.messages : [];
+        if (serverMsgs.length > 0) {
+          setMessages((prev) => {
+            if (isLoadingRef.current) return prev;
+            const prevNonWelcome = prev.filter((m) => !m.id.startsWith('welcome'));
+            const lastPrev = prevNonWelcome[prevNonWelcome.length - 1];
+            const lastSrv = serverMsgs[serverMsgs.length - 1];
+            if (
+              prevNonWelcome.length === serverMsgs.length &&
+              lastPrev?.id === lastSrv?.id &&
+              lastPrev?.content === lastSrv?.content
+            ) {
+              return prev;
+            }
+            const { userHonorific: h, screenLabel: s, activeBookName: b } = welcomeContextRef.current;
+            const welcome = DEFAULT_WELCOME_MESSAGE(h, s, b);
+            return [welcome, ...serverMsgs];
+          });
         }
-      } catch {}
-    },
-    [isLoading, userHonorific, screenLabel, activeBook?.name]
-  );
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +223,7 @@ export function useCopilotChat({
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    isLoadingRef.current = false;
     setIsLoading(false);
     setStreamStatus('');
   }, []);
@@ -215,8 +235,9 @@ export function useCopilotChat({
     ) => {
       const text = (textToSend || inputMessage).trim();
       const attachmentsToSend = textToSend ? [] : [...pendingAttachments];
-      if ((!text && attachmentsToSend.length === 0) || isLoading) return;
+      if ((!text && attachmentsToSend.length === 0) || isLoadingRef.current || isLoading) return;
 
+      isLoadingRef.current = true;
       const userMsg: ChatMessage = {
         id: `usr-${Date.now()}`,
         role: 'user',
@@ -333,6 +354,7 @@ export function useCopilotChat({
         setMessages((prev) => [...prev, buildCopilotErrorMessage(text)]);
       } finally {
         abortControllerRef.current = null;
+        isLoadingRef.current = false;
         setIsLoading(false);
         setStreamStatus('');
       }
