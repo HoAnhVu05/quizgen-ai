@@ -338,8 +338,9 @@ async def execute_copilot_tool(
             return {"result": {"status": "card_prepared", "cardType": "exam_blueprint"}, "action": {"type": "exam_blueprint", "data": data}, "rag_sources": []}
 
         if name == "prepare_exam_import":
-            qs = args.get("questions") or []
-            if not isinstance(qs, list) or len(qs) == 0:
+            raw_qs = args.get("questions")
+            qs = list(raw_qs) if raw_qs is not None and not isinstance(raw_qs, (str, bytes, dict)) and hasattr(raw_qs, "__iter__") else []
+            if len(qs) == 0:
                 return {"result": {"error": "Danh sách questions rỗng.", "hint": "Hãy truyền ít nhất 1 câu hỏi đầy đủ question, options, correctAnswerId."}, "action": None, "rag_sources": []}
             data = {
                 "title": str(args.get("title") or "Bộ Đề Thi Quanta AI Khởi Tạo"),
@@ -365,8 +366,9 @@ async def execute_copilot_tool(
             return {"result": {"status": "card_prepared", "cardType": "patch_question", "autoExecute": data["autoExecute"]}, "action": {"type": "patch_question", "data": data}, "rag_sources": []}
 
         if name == "export_questions_docx":
-            qs = args.get("questions") or []
-            if not isinstance(qs, list) or len(qs) == 0:
+            raw_qs = args.get("questions")
+            qs = list(raw_qs) if raw_qs is not None and not isinstance(raw_qs, (str, bytes, dict)) and hasattr(raw_qs, "__iter__") else []
+            if len(qs) == 0:
                 return {"result": {"error": "Không có câu hỏi nào để xuất Word.", "hint": "Hãy truyền danh sách questions đầy đủ."}, "action": None, "rag_sources": []}
             title = str(args.get("title") or "Đề Thi Quanta Copilot")
             export_meta = save_questions_docx_file(title, qs)

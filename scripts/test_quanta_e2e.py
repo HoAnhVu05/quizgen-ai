@@ -302,6 +302,62 @@ class TestQuantaCopilotE2E(unittest.TestCase):
         finally:
             self.client.delete("/ai/chat/history", headers={"X-User-Email": test_uid})
 
+    def test_08_protobuf_composite_export_docx(self):
+        """Giả lập MapComposite/RepeatedComposite từ Gemini SDK khi gọi export_questions_docx."""
+        class FakeRepeated:
+            def __init__(self, items):
+                self._items = items
+            def __iter__(self):
+                return iter(self._items)
+
+        class FakeMap:
+            def __init__(self, data):
+                self._data = data
+            def items(self):
+                return self._data.items()
+
+        proto_args = FakeMap({
+            "title": "Đề Đạo Hàm Proto Test",
+            "questions": FakeRepeated([
+                FakeMap({
+                    "question": "Đạo hàm của $f(x) = x^2$ là?",
+                    "options": FakeRepeated([
+                        FakeMap({"id": "A", "text": "$2x$"}),
+                        FakeMap({"id": "B", "text": "$x$"}),
+                    ]),
+                    "correctAnswerId": "A",
+                    "explanation": "Áp dụng công thức $(x^n)' = n x^{n-1}$.",
+                    "bloomLevel": "Nhận biết",
+                })
+            ]),
+        })
+        fake_gen = SimpleNamespace(
+            model=True,
+            model_name="gemini-2.5-flash",
+            api_keys=["fake-key"],
+            _init_model=lambda: None,
+            _get_active_key=lambda: "fake-key",
+            _rotate_key=lambda: "fake-key",
+            _build_gemini_contents=lambda msg, hist=None, atts=None: [{"role": "user", "parts": [msg]}],
+            _extract_and_validate_actions=lambda txt: (txt, []),
+        )
+        fc_part = SimpleNamespace(function_call=SimpleNamespace(name="export_questions_docx", args=proto_args), text=None)
+        step1 = SimpleNamespace(candidates=[SimpleNamespace(content=SimpleNamespace(parts=[fc_part]))])
+        step2 = SimpleNamespace(candidates=[SimpleNamespace(content=SimpleNamespace(parts=[SimpleNamespace(text="Đã xuất file Word sẵn sàng tải về.", function_call=None)]))])
+
+        with patch("src.copilot_agent._generate_step_with_fallback", side_effect=[step1, step2]):
+            import json
+            res = asyncio.run(run_copilot_agent(fake_gen, "Xuất file Word giúp anh", context={"currentScreen": "dashboard"}))
+            self.assertEqual(len(res["actions"]), 1)
+            self.assertEqual(res["actions"][0]["type"], "export_docx")
+            # Đảm bảo JSON serializable hoàn toàn (không còn FakeMap/FakeRepeated)
+            serialized = json.dumps(res, ensure_ascii=False)
+            self.assertIn("export_docx", serialized)
+            dl_url = res["actions"][0]["data"]["downloadUrl"]
+            dl_name = dl_url.split("/")[-1]
+            dl_resp = self.client.get(f"/ai/chat/exports/{dl_name}")
+            self.assertEqual(dl_resp.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

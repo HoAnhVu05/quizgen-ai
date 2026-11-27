@@ -59,6 +59,10 @@ def _build_agent_system_instruction(
         "4. Nếu một tool trả về lỗi hoặc thiếu ID, hãy đọc `hint` và tự sửa bằng cách gọi tool khác (ví dụ gọi `list_documents` trước để lấy `document_id`).",
         "5. Thao tác thay đổi dữ liệu / gửi yêu cầu (`prepare_support_ticket`, `prepare_exam_import`, `patch_question`, `propose_exam_blueprint`, `export_questions_docx`): Gọi tool để tạo Thẻ Xác Nhận Tương Tác. Mặc định `autoSubmit=false` / `autoExecute=false` trừ khi người dùng ra lệnh rõ ràng thực thi ngay với đầy đủ thông tin.",
         "6. Công thức Toán/Lý/Hóa luôn viết bằng LaTeX ($...$ hoặc $$...$$). Kênh hỗ trợ chính thức: Hotline/Zalo 0364591363, Email quizgen.ai.team@gmail.com.",
+        "7. TRUNG THỰC TUYỆT ĐỐI VỀ CÔNG CỤ (CHỐNG ẢO GIÁC):",
+        "   - CHỈ được nói đã xuất file Word / đã lập phiếu / đã nhập đề khi trong CHÍNH LƯỢT NÀY đã gọi tool tương ứng và nhận `status` thành công (`docx_ready`, `card_prepared`).",
+        "   - Quanta KHÔNG có công cụ gửi Email cho người dùng và KHÔNG chạy tác vụ nền sau khi trả lời xong. Tuyệt đối KHÔNG hứa 'gửi qua email' hay 'chờ hệ thống chạy ngầm'.",
+        "   - Khi người dùng yêu cầu xuất Word hoặc hỏi 'tải ở đâu / chưa thấy file', hãy gọi trực tiếp `export_questions_docx` với đầy đủ `title` và danh sách `questions` để hiện nút tải ngay trong khung chat; nếu tool báo lỗi, hãy nói thật nguyên nhân lỗi.",
     ]
 
     if doc_id or doc_name:
@@ -88,6 +92,17 @@ def _extract_suggestions(message: str, screen: str) -> List[str]:
     if screen == "bank":
         return ["📄 Xuất đề thi Word (.docx)", "🔍 Tìm câu hỏi Vận dụng cao", "📋 Xem các đề thi đã lưu"]
     return ["📚 Liệt kê giáo trình hiện có", "⚡ Đề xuất ma trận đề thi", "💡 Giải thích câu hỏi này"]
+
+
+def _proto_to_python(val: Any) -> Any:
+    """Chuyển đệ quy protobuf MapComposite/RepeatedComposite thành dict/list Python thuần."""
+    if val is None or isinstance(val, (str, int, float, bool)):
+        return val
+    if hasattr(val, "items") and callable(val.items):
+        return {str(k): _proto_to_python(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple)) or hasattr(val, "__iter__"):
+        return [_proto_to_python(item) for item in val]
+    return val
 
 
 def _extract_function_calls(response: Any) -> List[Any]:
@@ -252,7 +267,10 @@ async def run_copilot_agent_stream(
             fn_response_parts = []
             for fc in fn_calls:
                 tool_name = fc.name
-                tool_args = dict(fc.args) if getattr(fc, "args", None) else {}
+                raw_fc_args = getattr(fc, "args", None)
+                tool_args = _proto_to_python(raw_fc_args) if raw_fc_args else {}
+                if not isinstance(tool_args, dict):
+                    tool_args = {}
                 yield {
                     "type": "status",
                     "status": "tool_call",
