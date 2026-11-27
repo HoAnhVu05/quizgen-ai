@@ -15,7 +15,7 @@ from uuid import uuid4
 logger = logging.getLogger("document-service")
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Depends, Query, status, Body, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, text
@@ -52,8 +52,10 @@ MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "100"))
 RAG_HTTP_TIMEOUT_SECONDS = float(os.getenv("RAG_HTTP_TIMEOUT_SECONDS", "300"))
 from .storage_helpers import (
     STORAGE_DIR, EXTRACTED_IMAGES_DIR, QUESTION_ATTACHMENTS_DIR,
-    FORUM_ATTACHMENTS_DIR, QGROUP_ATTACHMENTS_DIR, _format_file_size
+    FORUM_ATTACHMENTS_DIR, QGROUP_ATTACHMENTS_DIR, _format_file_size,
+    PAYMENT_DB_PATH, AUTH_DB_PATH
 )
+DATA_DIR = STORAGE_DIR.parent
 from .routers import qgroups as qgroups_router, friends as friends_router, forum as forum_router
 
 
