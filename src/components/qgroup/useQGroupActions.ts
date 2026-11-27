@@ -267,11 +267,8 @@ export function useQGroupActions({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: reqId,
-          senderEmail: myEmail,
-          senderName: myName,
-          senderTitle: currentUser?.academicTitle || 'GV',
-          targetEmail: email,
+          ...newReq,
+          recipientEmail: email,
         }),
       });
       if (res.ok) {

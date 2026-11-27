@@ -93,14 +93,17 @@ async def unfriend_endpoint(request: Request):
 def get_friend_requests(email: Optional[str] = None, type: Optional[str] = None):
     """Lấy danh sách lời mời kết bạn theo email người nhận hoặc người gửi"""
     reqs = load_friend_requests()
+    for r in reqs:
+        if not r.get("status"):
+            r["status"] = "pending"
     if email:
         clean = email.strip().lower()
         if type == "sent":
             reqs = [r for r in reqs if r.get("senderEmail", "").strip().lower() == clean]
         elif type == "all":
-            reqs = [r for r in reqs if r.get("targetEmail", "").strip().lower() == clean or r.get("senderEmail", "").strip().lower() == clean]
+            reqs = [r for r in reqs if (r.get("targetEmail") or r.get("recipientEmail") or "").strip().lower() == clean or r.get("senderEmail", "").strip().lower() == clean]
         else:
-            reqs = [r for r in reqs if r.get("targetEmail", "").strip().lower() == clean]
+            reqs = [r for r in reqs if (r.get("targetEmail") or r.get("recipientEmail") or "").strip().lower() == clean]
     return reqs
 
 @router.delete("/friend-requests/{req_id}")
@@ -133,6 +136,13 @@ async def create_friend_request(request: Request):
     )
     if is_already_friend:
         return {"status": "already_friend", "message": "Hai Thầy/Cô đã là đồng nghiệp kết nối thành công trước đó."}
+
+    # Bảo đảm luôn có đủ status, recipientEmail, requestedAt
+    payload["senderEmail"] = sender
+    payload["targetEmail"] = target
+    payload.setdefault("recipientEmail", target)
+    payload.setdefault("status", "pending")
+    payload.setdefault("requestedAt", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
 
     # Tránh duplicate: xóa req cũ cùng cặp sender-target nếu có
     reqs = [r for r in reqs if not (

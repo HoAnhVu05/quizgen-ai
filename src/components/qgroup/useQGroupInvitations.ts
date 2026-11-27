@@ -69,7 +69,7 @@ export function useQGroupInvitations({
       if (resIn.ok) {
         const data = await resIn.json();
         if (Array.isArray(data))
-          setFriendRequests(data.filter((r: FriendRequest) => r?.status === 'pending'));
+          setFriendRequests(data.filter((r: FriendRequest) => !r?.status || r?.status === 'pending'));
       }
 
       const resOut = await apiClient.fetch(
@@ -78,7 +78,7 @@ export function useQGroupInvitations({
       if (resOut.ok) {
         const dataOut = await resOut.json();
         if (Array.isArray(dataOut))
-          setSentFriendRequests(dataOut.filter((r: FriendRequest) => r?.status === 'pending'));
+          setSentFriendRequests(dataOut.filter((r: FriendRequest) => !r?.status || r?.status === 'pending'));
       }
     } catch {}
   }, [myEmail]);
