@@ -240,6 +240,9 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
               streamStatus={streamStatus}
               copiedId={copiedId}
               onScroll={handleChatScroll}
+              onMediaLoad={() => {
+                if (!isUserScrolledUpRef.current) scrollToBottom('auto');
+              }}
               onCopy={handleCopy}
               onSelectSuggestion={(action) => {
                 isUserScrolledUpRef.current = false;

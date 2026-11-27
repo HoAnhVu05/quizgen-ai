@@ -30,22 +30,26 @@ export const CopilotInputBar: React.FC<CopilotInputBarProps> = ({
   return (
     <div className="p-2.5 bg-white border-t border-slate-200 space-y-2">
       {pendingAttachments.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-1">
+        <div className="flex flex-wrap gap-2 px-1">
           {pendingAttachments.map((att) => (
             <div
               key={att.id}
-              className="relative group flex items-center gap-1.5 pl-1.5 pr-6 py-1 rounded-lg bg-slate-100 border border-slate-200 text-[10px] text-slate-700 max-w-[180px]"
+              className="relative group flex items-center gap-2 pl-1.5 pr-6 py-1.5 rounded-xl bg-slate-100 border border-slate-200 text-[10px] text-slate-700 max-w-[200px]"
             >
               {att.mimeType.startsWith('image/') && att.data ? (
-                <img src={att.data} alt={att.name} className="w-5 h-5 rounded object-cover shrink-0" />
+                <img
+                  src={att.data}
+                  alt={att.name}
+                  className="w-11 h-11 rounded-lg object-cover border border-slate-200 shrink-0"
+                />
               ) : (
-                <FileText className="w-3.5 h-3.5 text-[#008689] shrink-0" />
+                <FileText className="w-4 h-4 text-[#008689] shrink-0" />
               )}
               <span className="truncate font-medium">{att.name}</span>
               <button
                 type="button"
                 onClick={() => onRemoveAttachment(att.id)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-slate-200 text-slate-500"
+                className="absolute right-1 top-1 p-0.5 rounded-full hover:bg-slate-200 text-slate-500"
                 title="Xóa tệp"
               >
                 <X className="w-3 h-3" />

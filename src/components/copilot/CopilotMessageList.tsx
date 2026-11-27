@@ -18,6 +18,7 @@ interface CopilotMessageListProps {
   streamStatus: string;
   copiedId: string | null;
   onScroll?: () => void;
+  onMediaLoad?: () => void;
   onCopy: (id: string, text: string) => void;
   onSelectSuggestion: (action: string) => void;
   onNavigate?: (screen: ScreenId) => void;
@@ -35,6 +36,7 @@ export const CopilotMessageList: React.FC<CopilotMessageListProps> = ({
   streamStatus,
   copiedId,
   onScroll,
+  onMediaLoad,
   onCopy,
   onSelectSuggestion,
   onNavigate,
@@ -77,7 +79,8 @@ export const CopilotMessageList: React.FC<CopilotMessageListProps> = ({
                           key={att.id || aIdx}
                           src={att.data}
                           alt={att.name}
-                          className="max-h-32 rounded-lg border border-white/25 object-cover"
+                          onLoad={onMediaLoad}
+                          className="max-h-40 min-h-[48px] rounded-lg border border-white/25 object-cover bg-white/10"
                         />
                       ) : (
                         <span

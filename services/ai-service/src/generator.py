@@ -62,7 +62,7 @@ class QuestionGenerator:
         self.current_key_idx = 0
         self.api_key = self.api_keys[0] if self.api_keys else ""
         self.model = None
-        self.model_name = "gemini-1.5-flash"
+        self.model_name = "gemini-2.5-flash"
         self._init_model()
 
     def _get_active_key(self) -> str:
@@ -84,13 +84,13 @@ class QuestionGenerator:
     def _init_model(self):
         active_key = self._get_active_key()
         if active_key:
-            # Ưu tiên các model Production Stable (1.500 req/day) và Full Flash
+            # Ưu tiên các model khả dụng nhanh nhất trước để tránh 404 retry gây trễ
             preferred_candidates = [
-                "gemini-1.5-flash",
-                "gemini-2.0-flash",
                 "gemini-2.5-flash",
-                "gemini-1.5-pro",
                 "gemini-2.5-flash-lite",
+                "gemini-2.0-flash",
+                "gemini-1.5-flash",
+                "gemini-1.5-pro",
                 "gemini-flash-lite-latest"
             ]
             for candidate in preferred_candidates:
@@ -108,11 +108,11 @@ class QuestionGenerator:
         """Tự động luân chuyển Key Pool và chuyển tiếp Model dự phòng khi gặp 429 hoặc lỗi hạn mức"""
         candidates = [
             self.model_name,
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
             "gemini-2.5-flash",
-            "gemini-1.5-pro",
             "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
             "gemini-flash-lite-latest"
         ]
         seen = set()
@@ -153,11 +153,11 @@ class QuestionGenerator:
         """Phiên bản streaming của _generate_with_fallback: tự động luân chuyển Key Pool & Model dự phòng."""
         candidates = [
             self.model_name,
-            "gemini-1.5-flash",
-            "gemini-2.0-flash",
             "gemini-2.5-flash",
-            "gemini-1.5-pro",
             "gemini-2.5-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
             "gemini-flash-lite-latest"
         ]
         seen = set()
@@ -907,10 +907,15 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         support_only = any(kw in clean_msg for kw in ["thanh toán", "nạp tiền", "zalo", "hotline", "support"]) and not any(
             kw in clean_msg for kw in ["giáo trình", "chương", "công thức", "thuật toán", "định nghĩa"]
         )
+        has_academic_kw = any(kw in clean_msg for kw in academic_keywords)
+        is_casual_chat = (
+            not has_academic_kw
+            and len(clean_msg) <= 45
+        )
         is_academic_query = (
-            bool(doc_id)
-            or any(kw in clean_msg for kw in academic_keywords)
-            or (len(clean_msg) > 18 and not support_only)
+            has_academic_kw
+            or (bool(doc_id) and not is_casual_chat and not support_only)
+            or (len(clean_msg) > 45 and not support_only)
         )
         if not is_academic_query:
             return [], []
