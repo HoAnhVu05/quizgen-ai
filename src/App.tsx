@@ -254,7 +254,7 @@ const AppContent: React.FC = () => {
       if (rawGroups) {
         const groups = JSON.parse(rawGroups);
         const isFr = Array.isArray(groups) && groups.some((g: any) => {
-          if (!g.isDirect && g.type !== 'direct') return false;
+          if ((!g.isDirect && g.type !== 'direct') || g.isUnfriended) return false;
           const members = (g.members || []).map((m: any) => String(m).toLowerCase().trim());
           const owner = (g.ownerEmail || '').toLowerCase().trim();
           const partner = (g.directPartnerEmail || '').toLowerCase().trim();
@@ -1781,15 +1781,15 @@ const AppContent: React.FC = () => {
               const raw = localStorage.getItem(`quizgen_qgroups_${myEmail}`) || localStorage.getItem('quizgen_qgroups');
               if (raw) {
                 const list = JSON.parse(raw);
-                const next = list.filter((g: any) => {
-                  if (!g.isDirect && g.type !== 'direct') return true;
+                const next = list.map((g: any) => {
+                  if (!g.isDirect && g.type !== 'direct') return g;
                   const members = (g.members || []).map((m: any) => String(m).toLowerCase().trim());
                   const owner = (g.ownerEmail || '').toLowerCase().trim();
                   const partner = (g.directPartnerEmail || '').toLowerCase().trim();
                   const isThisPair =
                     (owner === cleanTarget || partner === cleanTarget || members.includes(cleanTarget)) &&
                     (owner === myEmail || partner === myEmail || members.includes(myEmail));
-                  return !isThisPair;
+                  return isThisPair ? { ...g, isUnfriended: true } : g;
                 });
                 localStorage.setItem(`quizgen_qgroups_${myEmail}`, JSON.stringify(next));
                 localStorage.setItem('quizgen_qgroups', JSON.stringify(next));

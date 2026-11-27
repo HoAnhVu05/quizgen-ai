@@ -270,6 +270,7 @@ export interface QGroup {
   pinnedBy?: string[];
   type?: 'direct' | 'channel' | string;
   isDirect?: boolean;
+  isUnfriended?: boolean;
   directPartnerEmail?: string;
   directPartnerName?: string;
   directPartnerAvatarUrl?: string;

@@ -60,7 +60,7 @@ async def unfriend_endpoint(request: Request):
     except Exception as e:
         logger.warning(f"Lỗi khi dọn dẹp friend_requests: {e}")
 
-    # 2. Xóa phòng chat 1-1 trong qgroups.json
+    # 2. Giữ lại phòng chat 1-1 & lịch sử tin nhắn trong qgroups.json, chỉ đánh dấu đã hủy kết bạn
     try:
         groups = load_server_qgroups()
         def is_dm_match(g):
@@ -69,23 +69,35 @@ async def unfriend_endpoint(request: Request):
             owner = str(g.get("ownerEmail", "")).strip().lower()
             partner = str(g.get("directPartnerEmail", "")).strip().lower()
             mems = {str(m).strip().lower() for m in (g.get("members") or [])}
-            # Khớp qua owner và directPartner
             if {owner, partner} == {my_email, target_email}:
                 return True
-            # Khớp qua members
             if {my_email, target_email}.issubset(mems):
                 return True
-            # Khớp chéo giữa members và owner/partner
             has_my = my_email in mems or my_email in (owner, partner)
             has_target = target_email in mems or target_email in (owner, partner)
             return has_my and has_target
 
-        groups = [g for g in groups if not is_dm_match(g)]
+        now_ms = int(time.time() * 1000)
+        for g in groups:
+            if is_dm_match(g):
+                g["isUnfriended"] = True
+                g["unfriendedAt"] = now_ms
+                g["unfriendedBy"] = my_email
+                g["updatedAt"] = now_ms
+                msgs = g.setdefault("messages", [])
+                msgs.append({
+                    "id": f"msg-unfriend-{now_ms}",
+                    "senderEmail": "system",
+                    "senderName": "Hệ Thống QuizGen AI",
+                    "isSystem": True,
+                    "content": "Hai Thầy/Cô đã hủy kết nối bạn bè. Lịch sử trò chuyện cũ vẫn được lưu giữ.",
+                    "timestamp": time.strftime("%H:%M"),
+                })
         save_server_qgroups(groups)
     except Exception as e:
-        logger.warning(f"Lỗi khi xóa qgroups: {e}")
+        logger.warning(f"Lỗi khi cập nhật trạng thái hủy kết bạn trong qgroups: {e}")
 
-    return {"status": "success", "message": "Đã hủy kết bạn thành công."}
+    return {"status": "success", "message": "Đã hủy kết bạn (lịch sử trò chuyện vẫn được giữ lại)."}
 
 
 @router.get("/friend-requests")
@@ -128,10 +140,12 @@ async def create_friend_request(request: Request):
     if sender == target:
         return {"status": "error", "message": "Không thể kết bạn với chính mình"}
 
-    # Kiểm tra nếu đã là bạn bè (đã có phòng DM 1-1)
+    # Kiểm tra nếu đã là bạn bè (đã có phòng DM 1-1 còn hiệu lực)
     groups = load_server_qgroups()
     is_already_friend = any(
-        g.get("isDirect") and {sender, target}.issubset({str(m).strip().lower() for m in g.get("members", [])})
+        g.get("isDirect")
+        and not g.get("isUnfriended")
+        and {sender, target}.issubset({str(m).strip().lower() for m in g.get("members", [])})
         for g in groups
     )
     if is_already_friend:
@@ -188,7 +202,23 @@ async def respond_friend_request(req_id: str, request: Request):
         # Kiểm tra DM đã tồn tại chưa
         existing_dm = next((g for g in groups if g.get("isDirect") and
             set([str(m).strip().lower() for m in g.get("members", [])]) == {sender_email.strip().lower(), user_email.strip().lower()}), None)
-        if not existing_dm:
+        if existing_dm:
+            if existing_dm.get("isUnfriended"):
+                now_ms = int(time.time() * 1000)
+                existing_dm["isUnfriended"] = False
+                existing_dm.pop("unfriendedAt", None)
+                existing_dm.pop("unfriendedBy", None)
+                existing_dm["updatedAt"] = now_ms
+                existing_dm.setdefault("messages", []).append({
+                    "id": f"msg-refriend-{now_ms}",
+                    "senderEmail": "system",
+                    "senderName": "Hệ Thống QuizGen AI",
+                    "isSystem": True,
+                    "content": "Hai Thầy/Cô đã kết nối lại bạn bè.",
+                    "timestamp": time.strftime("%H:%M"),
+                })
+                save_server_qgroups(groups)
+        else:
             new_dm = {
                 "id": dm_id,
                 "code": dm_code,

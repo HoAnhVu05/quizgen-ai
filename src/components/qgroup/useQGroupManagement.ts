@@ -90,7 +90,7 @@ export function useQGroupManagement({
       setConfirmDialog({
         isOpen: true,
         title: 'Hủy kết bạn',
-        message: `Bạn có chắc chắn muốn hủy kết bạn với "${displayName}" (${targetEmail})? Hành động này sẽ xóa quan hệ bạn bè và đóng cuộc trò chuyện 1-1.`,
+        message: `Bạn có chắc chắn muốn hủy kết bạn với "${displayName}" (${targetEmail})? Quan hệ bạn bè sẽ bị ngắt nhưng lịch sử trò chuyện cũ vẫn được giữ lại.`,
         confirmText: 'Hủy kết bạn',
         variant: 'danger',
         onConfirm: async () => {
@@ -100,27 +100,22 @@ export function useQGroupManagement({
               body: JSON.stringify({ myEmail, targetEmail }),
             });
             const cleanTarget = targetEmail.trim().toLowerCase();
-            const next = qgroups.filter((g) => {
+            const next = qgroups.map((g) => {
               if (g.isDirect || g.type === 'direct') {
                 const members = (g.members || []).map((m) => m.toLowerCase().trim());
                 const cleanOwner = (g.ownerEmail || '').toLowerCase().trim();
                 const cleanPartner = (g.directPartnerEmail || '').toLowerCase().trim();
                 if (members.includes(cleanTarget) || cleanOwner === cleanTarget || cleanPartner === cleanTarget) {
-                  return false;
+                  return { ...g, isUnfriended: true };
                 }
               }
-              return true;
+              return g;
             });
             applyGroups(next);
-            void syncGroupsToBackend(next);
             await fetchQGroups();
             await fetchFriendRequests();
-            if (activeGroup && (activeGroup.isDirect || activeGroup.type === 'direct')) {
-              setSelectedGroupId(next[0]?.id || '');
-              setShowMobileChat(false);
-            }
             setIsChannelDetailsOpen(false);
-            onShowToast('success', 'Đã hủy kết bạn', `Đã hủy kết bạn với ${displayName}.`);
+            onShowToast('success', 'Đã hủy kết bạn', `Đã hủy kết nối bạn bè với ${displayName} (lịch sử chat vẫn được giữ lại).`);
           } catch (err: any) {
             onShowToast('error', 'Lỗi', err?.message || 'Không thể hủy kết bạn.');
           }
