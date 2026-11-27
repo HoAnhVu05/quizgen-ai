@@ -63,6 +63,13 @@ def _build_agent_system_instruction(
         "   - CHỈ được nói đã xuất file Word / đã lập phiếu / đã nhập đề khi trong CHÍNH LƯỢT NÀY đã gọi tool tương ứng và nhận `status` thành công (`docx_ready`, `card_prepared`).",
         "   - Quanta KHÔNG có công cụ gửi Email cho người dùng và KHÔNG chạy tác vụ nền sau khi trả lời xong. Tuyệt đối KHÔNG hứa 'gửi qua email' hay 'chờ hệ thống chạy ngầm'.",
         "   - Khi người dùng yêu cầu xuất Word hoặc hỏi 'tải ở đâu / chưa thấy file', hãy gọi trực tiếp `export_questions_docx` với đầy đủ `title` và danh sách `questions` để hiện nút tải ngay trong khung chat; nếu tool báo lỗi, hãy nói thật nguyên nhân lỗi.",
+        "",
+        "8. QUY TRÌNH TƯ DUY NỘI TÂM (CHAIN-OF-THOUGHT SCRATCHPAD):",
+        "   - Trước khi đưa ra câu trả lời cuối cùng, hãy tự đặt câu hỏi:",
+        "     * [Ý định thực tế của người dùng là gì?]",
+        "     * [Công cụ nào đã chạy và kết quả thật ra sao?]",
+        "     * [Mình có đang hứa hẹn điều gì mà hệ thống không có công cụ thực thi không?]",
+        "   - Luôn đặt tính chính xác, thực tế và tôn trọng người dùng lên hàng đầu.",
     ]
 
     if doc_id or doc_name:
@@ -134,6 +141,46 @@ def _extract_text(response: Any) -> str:
             return (response.text or "").strip()
         except Exception:
             return ""
+
+
+def verify_and_sanitize_reply(
+    reply: str,
+    actions: List[Dict[str, Any]],
+    user_message: str,
+) -> str:
+    """
+    Trụ cột 4 - Deterministic Verifier:
+    Bộ lọc code cứng chặn họng 100% ảo giác về file Word hoặc hứa hẹn gửi email trái phép.
+    """
+    clean_reply = reply.strip() if reply else ""
+    has_docx_action = any(a.get("type") == "export_docx" and a.get("data", {}).get("downloadUrl") for a in actions)
+
+    # 1. Phát hiện ảo giác bảo đã xuất file Word trong khi không có action export_docx thật
+    docx_hallucination_patterns = [
+        r"(đã|vừa)\s+(xuất|chuẩn bị|tạo)\s+(xong|thành công)?\s*(ra\s+)?(file|tệp)\s*(word|\.docx)",
+        r"bấm\s+vào\s+(đường\s+)?(link|nút)\s*(bên\s+dưới|để\s+tải)",
+        r"tải\s+file\s+[\"'].*?\.docx[\"']",
+    ]
+    claims_docx = any(re.search(pat, clean_reply, re.IGNORECASE) for pat in docx_hallucination_patterns)
+    if claims_docx and not has_docx_action:
+        clean_reply = (
+            "Dạ, Quanta đã chuẩn bị nội dung câu hỏi hiển thị trên màn hình cho Thầy/Cô rồi ạ. "
+            "Hiện tại em chưa tạo được file Word trực tiếp do chưa nhận đủ cấu trúc câu hỏi. "
+            "Thầy/Cô vui lòng duyệt các câu hỏi trên trước hoặc cho em biết cần chỉnh sửa gì thêm nhé ạ!"
+        )
+
+    # 2. Cắt bỏ hoặc thay thế hoàn toàn nếu có ảo giác hứa hẹn gửi qua email
+    if re.search(r"(gửi|chuyển).*?(hòm\s+thư|email|gmail|thư\s+điện\s+tử)", clean_reply, re.IGNORECASE):
+        # Tách từng câu an toàn (không tách nhầm dấu chấm trong địa chỉ email như gmail.com)
+        sentences = [s.strip() for s in re.split(r"(?<=[a-zA-Z0-9_À-ỹ\s])\.(?:\s+|$)|[\r\n]+", clean_reply) if s.strip()]
+        filtered = [s for s in sentences if not re.search(r"(gửi|chuyển).*?(hòm\s+thư|email|gmail|thư\s+điện\s+tử)", s, re.IGNORECASE)]
+        clean_reply = ". ".join(filtered)
+        if clean_reply and not clean_reply.endswith("."):
+            clean_reply += "."
+        if not clean_reply or len(clean_reply) < 15:
+            clean_reply = "Dạ, hệ thống QuizGen AI hiện tại hỗ trợ tải đề thi trực tiếp trên giao diện web và chưa hỗ trợ gửi tệp qua email cá nhân ạ."
+
+    return clean_reply
 
 
 def _generate_step_with_fallback(
@@ -324,6 +371,9 @@ async def run_copilot_agent_stream(
             collected_actions.append(la)
 
         reply_out = clean_reply or final_reply
+        # Áp dụng Verifier kiểm duyệt tính trung thực trước khi stream hoặc trả về
+        reply_out = verify_and_sanitize_reply(reply_out, collected_actions, message)
+
         # Phát từng đoạn ngắn để UI streaming mượt mà
         chunk_size = 120
         for i in range(0, len(reply_out), chunk_size):

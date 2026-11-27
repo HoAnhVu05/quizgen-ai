@@ -358,6 +358,28 @@ class TestQuantaCopilotE2E(unittest.TestCase):
             dl_resp = self.client.get(f"/ai/chat/exports/{dl_name}")
             self.assertEqual(dl_resp.status_code, 200)
 
+    def test_09_deterministic_verifier_blocks_hallucinations(self):
+        """Trụ cột 4: Verifier chặn họng ảo giác xuất file Word khi không có file thật và cắt bỏ hứa hẹn gửi email."""
+        from src.copilot_agent import verify_and_sanitize_reply
+
+        # Case 1: AI bảo 'Đã xuất xong ra file Word bấm vào link tải' nhưng actions rỗng
+        hallucinated_docx = "Dạ Quanta đã xuất xong ra file Word rồi ạ. Thầy/Cô bấm vào link bên dưới để tải nhé!"
+        sanitized = verify_and_sanitize_reply(hallucinated_docx, [], "Xuất Word giúp anh")
+        self.assertNotIn("bấm vào link", sanitized)
+        self.assertIn("chưa tạo được file Word", sanitized)
+
+        # Case 2: Khi CÓ action export_docx thật, Verifier giữ nguyên không can thiệp sai
+        real_docx_action = [{"type": "export_docx", "data": {"downloadUrl": "/api/v1/ai/chat/exports/test.docx"}}]
+        valid_msg = "Dạ Quanta đã xuất xong ra file Word rồi ạ. Thầy/Cô bấm vào thẻ bên dưới để tải về nhé!"
+        kept = verify_and_sanitize_reply(valid_msg, real_docx_action, "Xuất Word")
+        self.assertEqual(kept, valid_msg)
+
+        # Case 3: AI hứa gửi email
+        hallucinated_email = "Quanta xin phép gửi file này qua email avanimechannel@gmail.com cho Thầy/Cô trong ít phút nữa ạ."
+        sanitized_email = verify_and_sanitize_reply(hallucinated_email, [], "avanimechannel@gmail.com")
+        self.assertNotIn("avanimechannel@gmail.com", sanitized_email)
+        self.assertIn("chưa hỗ trợ gửi tệp qua email cá nhân", sanitized_email)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
