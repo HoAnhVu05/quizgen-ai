@@ -49,9 +49,9 @@ except Exception:
     pass
 
 try:
-    from .prompts import BLOOM_SYSTEM_PROMPT, get_domain_system_prompt
+    from .prompts import BLOOM_SYSTEM_PROMPT, get_domain_system_prompt, detect_textbook_language
 except ImportError:
-    from src.prompts import BLOOM_SYSTEM_PROMPT, get_domain_system_prompt
+    from src.prompts import BLOOM_SYSTEM_PROMPT, get_domain_system_prompt, detect_textbook_language
 
 
 class QuestionGenerator:
@@ -390,8 +390,16 @@ Hãy vận dụng chỉ đạo trên để định hướng chủ đề câu h�
         if not self.model:
             raise RuntimeError("Chưa khởi tạo được mô hình Gemini AI. Vui lòng kiểm tra khóa API.")
 
-        # Thiết lập System Prompt chuyên biệt theo lĩnh vực (STEM, Kinh tế, Pháp luật, Ngoại ngữ, Hóa học)
-        effective_system_prompt = get_domain_system_prompt(domain, context_str, textbook_name)
+        # Thiết lập System Prompt chuyên biệt theo lĩnh vực và tự động đồng bộ ngôn ngữ với giáo trình
+        target_lang = detect_textbook_language(context_str, textbook_name, pedagogical_prompt or "")
+        effective_system_prompt = get_domain_system_prompt(
+            domain, context_str, textbook_name, language=target_lang, pedagogical_prompt=pedagogical_prompt or ""
+        )
+        lang_reminder = (
+            "5. LANGUAGE REQUIREMENT (STRICT): The source textbook is in ENGLISH. Write ALL questions, all 4 options (A, B, C, D), explanations, and image captions strictly in academic ENGLISH. Do NOT translate them into Vietnamese."
+            if target_lang == "en"
+            else "5. YÊU CẦU NGÔN NGỮ: Giáo trình nguồn bằng Tiếng Việt. Viết câu hỏi, 4 phương án và giải thích bằng Tiếng Việt học thuật chuẩn xác."
+        )
 
         # Helper tạo prompt cho từng slice/batch
         def _build_batch_prompt(matrix_desc: str, target_count: int) -> str:
@@ -414,6 +422,7 @@ LƯU Ý QUAN TRỌNG:
 2. Với các câu hỏi Toán, Vật lý, Kỹ thuật có công thức, BẮT BUỘC dùng định dạng LaTeX ($...$). Trong JSON, hãy escape các dấu gạch chéo ngược (ví dụ: \\frac, \\sum, \\alpha) để đảm bảo chuỗi JSON hợp lệ.
 3. Nếu có hình ảnh đính kèm, hãy ưu tiên thiết kế câu hỏi khai thác thông tin từ hình (gán has_image: true, image_url và image_caption tương ứng).
 4. Trả về đúng định dạng JSON có khóa "questions".
+{lang_reminder}
 """
 
         # ─── TĂNG TỐC ĐỘ: Parallel Batching với asyncio.gather khi tổng câu hỏi > 4 ───
@@ -533,12 +542,19 @@ LƯU Ý QUAN TRỌNG:
 
         if self.model and (chunk_text or loaded_pil):
             try:
+                target_lang = detect_textbook_language(chunk_text, textbook_name)
+                lang_note = (
+                    "NGÔN NGỮ BẮT BUỘC: Tài liệu gốc bằng TIẾNG ANH. Hãy viết toàn bộ câu hỏi, 4 phương án A/B/C/D và phần giải thích bằng TIẾNG ANH học thuật chuẩn xác (KHÔNG dịch sang tiếng Việt)."
+                    if target_lang == "en"
+                    else "NGÔN NGỮ: Viết câu hỏi, 4 phương án và giải thích bằng Tiếng Việt học thuật chuẩn xác."
+                )
                 single_prompt = f"""
 Dựa trên ngữ cảnh trích đoạn sau từ tài liệu '{textbook_name}' (Trang {page_num}):
 {chunk_text}
 {img_desc}
 
 Hãy biên soạn lại 01 câu hỏi trắc nghiệm mới ở mức độ Bloom: {bloom_level}.
+{lang_note}
 LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
 Định dạng JSON trả về:
 {{

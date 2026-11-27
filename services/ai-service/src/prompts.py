@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import re
 """
 QUIZGEN AI - AI SERVICE PROMPTS
 Định nghĩa hệ thống Prompt chuẩn cho Mô hình Đa phương thức Gemini 2.5 Flash:
@@ -164,14 +165,70 @@ def detect_domain(text: str = "", title: str = "") -> str:
     # 5. Mặc định: STEM & Kỹ thuật
     return "stem"
 
-def get_domain_system_prompt(domain: str = None, text: str = "", title: str = "") -> str:
+_VI_DIACRITICS = set(
+    "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ"
+    "ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ"
+)
+
+LANGUAGE_RULE_EN = """
+[CRITICAL LANGUAGE SYNCHRONIZATION RULE — ENGLISH TEXTBOOK]:
+- The source textbook context is written in ENGLISH.
+- You MUST write 100% of the generated "question", all 4 "options" (A, B, C, D), "explanation", and "image_caption" in natural, accurate academic ENGLISH matching the textbook's exact terminology and style.
+- DO NOT translate the questions, options, or explanations into Vietnamese!
+- Keep JSON keys and the "bloom_level" enum values ("Nhận biết", "Thông hiểu", "Vận dụng", "Phân tích") exact for backend parsing.
+"""
+
+LANGUAGE_RULE_VI = """
+[QUY TẮC ĐỒNG BỘ NGÔN NGỮ — GIÁO TRÌNH TIẾNG VIỆT]:
+- Ngữ cảnh giáo trình nguồn đang sử dụng TIẾNG VIỆT.
+- Bắt buộc viết 100% nội dung câu hỏi ("question"), 4 phương án ("options"), lời giải thích ("explanation") và chú thích ảnh ("image_caption") bằng TIẾNG VIỆT học thuật chuẩn xác (giữ nguyên thuật ngữ chuyên ngành tiếng Anh trong ngoặc nếu giáo trình có dùng).
+"""
+
+
+def detect_textbook_language(text: str = "", title: str = "", pedagogical_prompt: str = "") -> str:
     """
-    Tạo System Prompt kết hợp Bloom System Prompt nền tảng + Chuyên gia lĩnh vực tương ứng
+    Tự động xác định ngôn ngữ sinh câu hỏi đồng bộ với giáo trình nguồn:
+    - Nếu giảng viên ghi rõ yêu cầu ngôn ngữ trong pedagogical_prompt, ưu tiên chỉ đạo đó.
+    - Ngược lại, tự động phân tích tỷ lệ ký tự có dấu tiếng Việt trong nội dung chunks giáo trình.
+    """
+    if pedagogical_prompt:
+        p_low = pedagogical_prompt.lower()
+        if any(k in p_low for k in ["tiếng anh", "bằng tiếng anh", "in english", "english only", "ngôn ngữ anh"]):
+            return "en"
+        if any(k in p_low for k in ["tiếng việt", "dịch sang tiếng việt", "bằng tiếng việt", "in vietnamese"]):
+            return "vi"
+
+    sample = (text or "")[:6000]
+    sample_clean = re.sub(r"\[CHUNK_ID:[^\]]+\]\s*\(Trang[^\)]*\)", " ", sample)
+    alpha_chars = [ch for ch in sample_clean if ch.isalpha()]
+    if len(alpha_chars) >= 40:
+        vi_count = sum(1 for ch in alpha_chars if ch in _VI_DIACRITICS)
+        return "vi" if (vi_count / len(alpha_chars)) >= 0.015 else "en"
+
+    title_alpha = [ch for ch in (title or "") if ch.isalpha()]
+    if title_alpha:
+        vi_title_count = sum(1 for ch in title_alpha if ch in _VI_DIACRITICS)
+        return "vi" if (vi_title_count / len(title_alpha)) >= 0.02 else "en"
+    return "vi"
+
+
+def get_domain_system_prompt(
+    domain: str = None,
+    text: str = "",
+    title: str = "",
+    language: str = None,
+    pedagogical_prompt: str = ""
+) -> str:
+    """
+    Tạo System Prompt kết hợp Bloom System Prompt nền tảng + Chuyên gia lĩnh vực + Quy tắc đồng bộ ngôn ngữ
     """
     chosen_domain = domain.lower() if domain and domain.lower() in DOMAIN_PROMPT_MAP else None
     if not chosen_domain or chosen_domain == "auto":
         chosen_domain = detect_domain(text, title)
 
+    target_lang = language or detect_textbook_language(text, title, pedagogical_prompt)
+    lang_rule = LANGUAGE_RULE_EN if target_lang == "en" else LANGUAGE_RULE_VI
+
     specialist_addon = DOMAIN_PROMPT_MAP.get(chosen_domain, DOMAIN_STEM_PROMPT)
-    return f"{BLOOM_SYSTEM_PROMPT}\n\n{specialist_addon}"
+    return f"{BLOOM_SYSTEM_PROMPT}\n\n{specialist_addon}\n\n{lang_rule}"
 
