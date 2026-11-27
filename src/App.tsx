@@ -66,7 +66,7 @@ const getInitialAuthSession = (): { user: UserProfile | null; isAuth: boolean; w
 
       if (localUserStr && localToken) {
         const lastActiveStr = localStorage.getItem('quizgen_last_active');
-        const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : now;
+        const lastActive = lastActiveStr ? parseInt(lastActiveStr, 10) : 0;
         if (now - lastActive > INACTIVITY_TIMEOUT_MS) {
           // Hết hạn do không thao tác > 15 phút
           localStorage.removeItem('quizgen_token');
@@ -417,18 +417,28 @@ const AppContent: React.FC = () => {
 
   const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '/api/v1';
 
-  // ─── Khởi động: Đọc token và gọi GET /api/v1/auth/me để giữ phiên qua F5 ─
+  // ─── Khởi động: Đọc token hợp lệ (đã qua kiểm tra initialSession) và gọi GET /api/v1/auth/me ─
   useEffect(() => {
+    if (!initialSession.isAuth) {
+      // Nếu không có phiên hợp lệ (chưa tích Ghi nhớ đăng nhập hoặc quá hạn 15 phút), dọn sạch token cũ
+      if (localStorage.getItem('quizgen_remember_me') !== 'true') {
+        localStorage.removeItem('quizgen_token');
+        localStorage.removeItem('quizgen_auth_token');
+        localStorage.removeItem('quizgen_user');
+      }
+      return;
+    }
+
+    const isRemembered = localStorage.getItem('quizgen_remember_me') === 'true';
     const token =
       sessionStorage.getItem('quizgen_token') ||
       sessionStorage.getItem('quizgen_auth_token') ||
-      localStorage.getItem('quizgen_token') ||
-      localStorage.getItem('quizgen_auth_token');
+      (isRemembered ? (localStorage.getItem('quizgen_token') || localStorage.getItem('quizgen_auth_token')) : null);
     if (!token) return;
     apiClient.setTokens(token);
 
     const verifySession = async () => {
-      const savedUserStr = sessionStorage.getItem('quizgen_user') || localStorage.getItem('quizgen_user');
+      const savedUserStr = sessionStorage.getItem('quizgen_user') || (isRemembered ? localStorage.getItem('quizgen_user') : null);
       let currentSavedEmail = '';
       let currentSavedId = '';
       if (savedUserStr) {
@@ -527,20 +537,12 @@ const AppContent: React.FC = () => {
             sessionStorage.setItem('quizgen_user', JSON.stringify(profile));
           }
         } else if (res.status === 401) {
-          // Chỉ dọn dẹp phiên nếu thực sự không có thông tin người dùng trong storage
-          if (savedUserStr) {
-            try {
-              const savedUser = JSON.parse(savedUserStr);
-              // Bảo lưu phiên cho người dùng, không đá văng ra login khi kéo tải lại trang trên di động
-              setCurrentUser(savedUser);
-              setIsAuthenticated(true);
-              console.warn('[AUTH] Token máy chủ chưa đồng bộ, bảo lưu phiên đăng nhập hiện tại trên thiết bị.');
-              return;
-            } catch (e) {}
-          }
+          // Token không hợp lệ hoặc đã hết hạn -> bắt buộc đăng nhập lại
+          apiClient.clearAuth();
           localStorage.removeItem('quizgen_token');
           localStorage.removeItem('quizgen_auth_token');
           localStorage.removeItem('quizgen_user');
+          localStorage.removeItem('quizgen_remember_me');
           sessionStorage.removeItem('quizgen_token');
           sessionStorage.removeItem('quizgen_auth_token');
           sessionStorage.removeItem('quizgen_user');
@@ -549,8 +551,8 @@ const AppContent: React.FC = () => {
         }
       } catch (err) {
         console.warn('[AUTH] Kiểm tra phiên qua /auth/me thất bại (mạng/tunnel):', err);
-        // Khi mạng chập chờn hoặc reload qua Cloudflare Tunnel, vẫn giữ phiên từ storage
-        if (savedUserStr) {
+        // Chỉ giữ phiên tạm nếu đã qua kiểm tra initialSession hợp lệ và mạng tạm thời chập chờn
+        if (initialSession.isAuth && savedUserStr) {
           try {
             const savedUser = JSON.parse(savedUserStr);
             setCurrentUser(savedUser);

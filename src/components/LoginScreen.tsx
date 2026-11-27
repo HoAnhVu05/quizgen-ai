@@ -436,18 +436,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onNavigateReg
       `mock-jwt-refresh-${user.role || 'lecturer'}-${user.id || 'usr'}-${Date.now()}`;
     apiClient.setTokens(token, existingRefresh);
 
-    // Luôn ghi nhận vào cả sessionStorage và localStorage để tránh ngắt phiên ngầm
+    // Luôn lưu vào sessionStorage cho tab hiện tại
     sessionStorage.setItem('quizgen_token', token);
     sessionStorage.setItem('quizgen_auth_token', token);
     sessionStorage.setItem('quizgen_user', JSON.stringify(user));
     sessionStorage.setItem('quizgen_remember_me', remember ? 'true' : 'false');
 
-    localStorage.setItem('quizgen_token', token);
-    localStorage.setItem('quizgen_auth_token', token);
-    localStorage.setItem('quizgen_user', JSON.stringify(user));
-    localStorage.setItem('quizgen_remember_me', remember ? 'true' : 'false');
+    // CHỈ lưu vào localStorage khi người dùng chủ động tích "Ghi nhớ đăng nhập"
     if (remember) {
+      localStorage.setItem('quizgen_token', token);
+      localStorage.setItem('quizgen_auth_token', token);
+      localStorage.setItem('quizgen_user', JSON.stringify(user));
+      localStorage.setItem('quizgen_remember_me', 'true');
       localStorage.setItem('quizgen_last_active', now);
+    } else {
+      localStorage.removeItem('quizgen_token');
+      localStorage.removeItem('quizgen_auth_token');
+      localStorage.removeItem('quizgen_user');
+      localStorage.removeItem('quizgen_remember_me');
+      localStorage.removeItem('quizgen_last_active');
     }
     if (user.avatarUrl && user.email) {
       saveUserAvatarSync(user.email, user.avatarUrl);
