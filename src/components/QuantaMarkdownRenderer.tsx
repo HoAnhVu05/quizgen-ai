@@ -62,6 +62,7 @@ export interface SupportTicketActionData {
   title: string;
   category?: 'payment' | 'system_bug' | 'academic' | 'other';
   description: string;
+  autoSubmit?: boolean;
   phone?: string;
   files?: File[];
 }
@@ -191,10 +192,12 @@ const SupportTicketCard: React.FC<{
   data: SupportTicketActionData;
   onSubmitTicket?: (data: SupportTicketActionData) => Promise<boolean> | void;
 }> = ({ data, onSubmitTicket }) => {
+  const [editableTitle, setEditableTitle] = useState(data.title || '');
+  const [editableDesc, setEditableDesc] = useState(data.description || '');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<{ id: string; url: string; name: string; size: string }[]>([]);
-  const [isSent, setIsSent] = useState(true);
+  const [isSent, setIsSent] = useState<boolean>(Boolean(data.autoSubmit));
   const [isExpandedNote, setIsExpandedNote] = useState(false);
   const [sentFileCount, setSentFileCount] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -246,7 +249,8 @@ const SupportTicketCard: React.FC<{
       if (onSubmitTicket) {
         await onSubmitTicket({
           ...data,
-          description: `${data.description}${note ? ` (Ghi chú: ${note})` : ''}`,
+          title: editableTitle.trim() || data.title,
+          description: `${editableDesc.trim() || data.description}${note.trim() ? ` (Ghi chú: ${note.trim()})` : ''}`,
           files,
         });
       }
@@ -278,52 +282,139 @@ const SupportTicketCard: React.FC<{
         </span>
       </div>
 
-      <div className="space-y-1.5 text-xs">
-        <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200/50 space-y-1">
-          <p className="font-semibold text-slate-900 text-[11px]">{data.title}</p>
-          <p className="text-[11px] text-slate-600 leading-relaxed">{data.description}</p>
-        </div>
-
-        {/* Trạng thái xác nhận đã gửi tự động tới Ban Quản Trị */}
-        <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 space-y-1.5 text-xs">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span className="font-bold text-[11px]">Đã tự động gửi phiếu tới Ban Quản Trị!</span>
+      <div className="space-y-2 text-xs">
+        {!isSent ? (
+          <div className="bg-white/95 p-2.5 rounded-xl border border-amber-200/80 space-y-2">
+            <input
+              type="text"
+              value={editableTitle}
+              onChange={(e) => setEditableTitle(e.target.value)}
+              placeholder="Tiêu đề sự cố / yêu cầu..."
+              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+            <textarea
+              rows={2}
+              value={editableDesc}
+              onChange={(e) => setEditableDesc(e.target.value)}
+              placeholder="Mô tả chi tiết lỗi hoặc nội dung cần hỗ trợ..."
+              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+            />
+            <input
+              type="text"
+              placeholder="Mã giao dịch / ghi chú thêm (không bắt buộc)..."
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-amber-500 text-slate-800"
+            />
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files) handleAddFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+              {previews.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-2">
+                  {previews.map((item, idx) => (
+                    <div key={item.id} className="relative group rounded-lg overflow-hidden border border-amber-300 bg-amber-50/50 aspect-video flex items-center justify-center">
+                      <img src={item.url} alt={item.name} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFile(idx)}
+                        className="absolute top-1 right-1 w-4 h-4 bg-red-600/90 text-white rounded-full flex items-center justify-center opacity-80 hover:opacity-100"
+                        title="Xóa ảnh này"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-dashed border-amber-300 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Paperclip className="w-3.5 h-3.5 text-amber-700" />
+                <span>{previews.length > 0 ? `Đã chọn ${previews.length} ảnh (Bấm để thêm)` : 'Đính kèm ảnh chụp lỗi / biên lai (hoặc Ctrl+V)'}</span>
+              </button>
             </div>
-            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded">
-              ĐÃ TIẾP NHẬN
-            </span>
-          </div>
-          <p className="text-[10px] text-emerald-700 leading-relaxed">
-            {sentFileCount > 0
-              ? `Kèm ${sentFileCount} ảnh chụp sự cố đã được đồng bộ vào hệ thống Helpdesk.`
-              : 'Hệ thống Helpdesk đã tạo ticket và phân công kỹ thuật viên ưu tiên xử lý phản hồi của Thầy/Cô (SLA 15 phút).'}
-          </p>
 
-          <div className="flex items-center justify-between pt-1 border-t border-emerald-200/60">
-            <button
-              type="button"
-              onClick={() => setIsExpandedNote(!isExpandedNote)}
-              className="text-emerald-800 hover:text-emerald-950 font-semibold text-[10px] flex items-center gap-1 cursor-pointer"
-            >
-              <Paperclip className="w-3 h-3 text-emerald-600" />
-              <span>{isExpandedNote ? 'Thu gọn bổ sung' : 'Đính kèm thêm ảnh chụp sự cố / Ghi chú'}</span>
-            </button>
-            <a
-              href="https://zalo.me/0364591363"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2 py-0.5 bg-white hover:bg-slate-50 border border-emerald-200 text-emerald-900 rounded-md text-[10px] font-bold flex items-center gap-1 shadow-2xs"
-            >
-              <PhoneCall className="w-3 h-3 text-emerald-600" />
-              <span>Zalo 0364591363</span>
-            </a>
+            <div className="flex items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={isSubmitting || (!editableTitle.trim() && !editableDesc.trim())}
+                className="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-700 active:scale-[0.99] text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSubmitting ? 'Đang gửi...' : 'Gửi Ticket Đến Ban Quản Trị'}</span>
+              </button>
+              <a
+                href="https://zalo.me/0364591363"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-2 bg-white hover:bg-slate-50 border border-amber-200 text-amber-900 rounded-xl text-[11px] font-bold flex items-center gap-1 shadow-2xs shrink-0"
+              >
+                <PhoneCall className="w-3.5 h-3.5 text-amber-600" />
+                <span>Zalo</span>
+              </a>
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200/50 space-y-1">
+              <p className="font-semibold text-slate-900 text-[11px]">{editableTitle || data.title}</p>
+              <p className="text-[11px] text-slate-600 leading-relaxed">{editableDesc || data.description}</p>
+            </div>
 
-        {/* Phần đính kèm mở rộng nếu người dùng muốn gửi thêm ảnh hoặc note */}
-        {isExpandedNote && (
+            {/* Trạng thái xác nhận đã gửi tới Ban Quản Trị */}
+            <div className="p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-bold text-[11px]">Đã gửi phiếu tới Ban Quản Trị!</span>
+                </div>
+                <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-bold rounded">
+                  ĐÃ TIẾP NHẬN
+                </span>
+              </div>
+              <p className="text-[10px] text-emerald-700 leading-relaxed">
+                {sentFileCount > 0
+                  ? `Kèm ${sentFileCount} ảnh chụp sự cố đã được đồng bộ vào hệ thống Helpdesk.`
+                  : 'Hệ thống Helpdesk đã tạo ticket và phân công kỹ thuật viên ưu tiên xử lý phản hồi của Thầy/Cô (SLA 15 phút).'}
+              </p>
+
+              <div className="flex items-center justify-between pt-1 border-t border-emerald-200/60">
+                <button
+                  type="button"
+                  onClick={() => setIsExpandedNote(!isExpandedNote)}
+                  className="text-emerald-800 hover:text-emerald-950 font-semibold text-[10px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Paperclip className="w-3 h-3 text-emerald-600" />
+                  <span>{isExpandedNote ? 'Thu gọn bổ sung' : 'Đính kèm thêm ảnh chụp sự cố / Ghi chú'}</span>
+                </button>
+                <a
+                  href="https://zalo.me/0364591363"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2 py-0.5 bg-white hover:bg-slate-50 border border-emerald-200 text-emerald-900 rounded-md text-[10px] font-bold flex items-center gap-1 shadow-2xs"
+                >
+                  <PhoneCall className="w-3 h-3 text-emerald-600" />
+                  <span>Zalo 0364591363</span>
+                </a>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Phần đính kèm mở rộng sau khi đã gửi nếu người dùng muốn bổ sung thêm ảnh hoặc note */}
+        {isSent && isExpandedNote && (
           <div className="p-2.5 bg-white rounded-xl border border-amber-200 space-y-2 mt-2">
             <input
               type="text"

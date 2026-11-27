@@ -334,13 +334,18 @@ export function useCopilotActions({
       const actionsList = Array.isArray(structuredActions) ? structuredActions : [];
       const ticketAct = actionsList.find((a) => a.type === 'support_ticket');
       if (ticketAct?.data) {
-        setTimeout(() => void handleSubmitSupportTicket(ticketAct.data as SupportTicketActionData), 250);
+        const ticketPayload = ticketAct.data as SupportTicketActionData;
+        if (ticketPayload.autoSubmit) {
+          setTimeout(() => void handleSubmitSupportTicket(ticketPayload), 250);
+        }
       } else {
         const ticketMatch = /```action:support_ticket\s*([\s\S]*?)```/.exec(replyContent);
         if (ticketMatch) {
           try {
             const ticketPayload: SupportTicketActionData = JSON.parse(ticketMatch[1].trim());
-            setTimeout(() => void handleSubmitSupportTicket(ticketPayload), 250);
+            if (ticketPayload.autoSubmit) {
+              setTimeout(() => void handleSubmitSupportTicket(ticketPayload), 250);
+            }
           } catch {}
         }
       }

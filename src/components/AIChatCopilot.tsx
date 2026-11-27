@@ -149,7 +149,12 @@ export const AIChatCopilot: React.FC<AIChatCopilotProps> = ({
 
   useEffect(() => {
     if (isOpen && !isMinimized && !isUserScrolledUpRef.current) {
-      const timer = setTimeout(() => scrollToBottom('smooth'), 50);
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.role === 'user') {
+        const raf = requestAnimationFrame(() => scrollToBottom('auto'));
+        return () => cancelAnimationFrame(raf);
+      }
+      const timer = setTimeout(() => scrollToBottom('smooth'), 40);
       return () => clearTimeout(timer);
     }
   }, [messages, isLoading, isOpen, isMinimized, scrollToBottom]);

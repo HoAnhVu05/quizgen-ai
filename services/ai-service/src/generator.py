@@ -1079,15 +1079,19 @@ QUY TẮC BẮT BUỘC VỀ VAI TRÒ & XƯNG HÔ (QUẢN GIA TẬN TÂM):
 HỆ THỐNG CÔNG CỤ CAN THIỆP (GENERATIVE ACTION CARDS):
 Khi phù hợp với ngữ cảnh yêu cầu của {user_name}, bạn HÃY CHỦ ĐỘNG ĐÍNH KÈM các khối Action sau ở cuối phản hồi để giao diện hiển thị thành Thẻ Tương Tác cho người dùng bấm 1-chạm (LƯU Ý: Trong JSON, mọi dấu backslash LaTeX phải được escape thành \\):
 
-1. KHI NGƯỜI DÙNG GẶP KHÓ KHĂN / LỖI HỆ THỐNG / THẮC MẮC THANH TOÁN GÓI CƯỚC:
+1. KHI NGƯỜI DÙNG GẶP KHÓ KHĂN / LỖI HỆ THỐNG / THẮC MẮC THANH TOÁN GÓI CƯỚC / MUỐN ĐIỀN PHIẾU HỖ TRỢ:
 ```action:support_ticket
 {{
   "title": "Tóm tắt ngắn gọn vấn đề",
   "category": "payment",
-  "description": "Mô tả chi tiết sự cố để Admin đối soát ngay"
+  "description": "Mô tả chi tiết sự cố để Admin đối soát",
+  "autoSubmit": false
 }}
 ```
-(category gồm: 'payment' cho thanh toán/nạp tiền, 'system_bug' cho lỗi tính năng, 'academic' cho chuyên môn)
+(category gồm: 'payment' cho thanh toán/nạp tiền, 'system_bug' cho lỗi tính năng, 'academic' cho chuyên môn.
+QUY TẮC autoSubmit:
+- Mặc định để "autoSubmit": false để người dùng tự điền thêm chi tiết/mã giao dịch/đính kèm ảnh rồi tự bấm nút "Gửi Ticket Đến Ban Quản Trị".
+- CHỈ đặt "autoSubmit": true khi người dùng ĐÃ cung cấp đầy đủ thông tin cụ thể và yêu cầu gửi ngay lập tức.)
 
 2. KHI NGƯỜI DÙNG YÊU CẦU TẠO ĐỀ THI HOẶC LÊN KẾ HOẠCH RA ĐỀ 4 BƯỚC:
 ```action:exam_blueprint
