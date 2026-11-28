@@ -11,13 +11,19 @@ from fpdf import FPDF
 
 def clean_latex_to_text(text: str) -> str:
     """
-    [SCRUM-102] Bộ chuyển đổi và chuẩn hóa công thức LaTeX sang chuỗi hiển thị trực quan trong PDF:
+    [SCRUM-102] / [SCRUM-145] Bộ chuyển đổi và chuẩn hóa công thức LaTeX sang chuỗi hiển thị trực quan trong PDF:
     Chuyển phân số, căn số, số mũ, chỉ số dưới và ký hiệu toán học sang ký tự Unicode tương ứng.
     """
     if not text or not isinstance(text, str):
         return ""
 
     s = text
+
+    # Khử lớp escape backslash kép từ JSON payload
+    s = s.replace('\\\\', '\\')
+
+    # Bỏ các chỉ thị kích thước ngoặc LaTeX
+    s = re.sub(r'\\(left|right)', '', s)
 
     # Thay thế căn bậc hai trước khi làm phân số để xử lý lồng nhau
     s = re.sub(r'\\sqrt\{([^{}]+)\}', r'√(\1)', s)
@@ -27,40 +33,18 @@ def clean_latex_to_text(text: str) -> str:
     for _ in range(3):
         s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1/\2)', s)
 
-    # Thay thế lũy thừa số đơn giản ^{2} -> ², ^2 -> ²
-    sup_map = {
-        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
-        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
-        '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
-        'n': 'ⁿ', 'i': 'ⁱ'
-    }
-    def replace_sup(match):
-        val = match.group(1)
-        return "".join(sup_map.get(c, c) for c in val)
-
-    s = re.sub(r'\^\{([0-9n\+\-]+)\}', replace_sup, s)
-    s = re.sub(r'\^([0-9n])', replace_sup, s)
-
-    # Thay thế chỉ số dưới _{1} -> ₁
-    sub_map = {
-        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
-        '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
-        '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
-        'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ', 'x': 'ₓ'
-    }
-    def replace_sub(match):
-        val = match.group(1)
-        return "".join(sub_map.get(c, c) for c in val)
-
-    s = re.sub(r'_\{([0-9a-z\+\-]+)\}', replace_sub, s)
-    s = re.sub(r'_([0-9a-z])', replace_sub, s)
-
-    # Ký hiệu toán học & Hy Lạp phổ biến (xếp \\int, \\infty trước \\in)
+    # Ký hiệu toán học & Hy Lạp đầy đủ
     symbols_map = [
+        (r'\\phi\b', 'φ'), (r'\\varphi\b', 'φ'), (r'\\Phi\b', 'Φ'),
+        (r'\\psi\b', 'ψ'), (r'\\Psi\b', 'Ψ'),
         (r'\\alpha\b', 'α'), (r'\\beta\b', 'β'), (r'\\gamma\b', 'γ'), (r'\\delta\b', 'δ'),
-        (r'\\epsilon\b', 'ε'), (r'\\theta\b', 'θ'), (r'\\lambda\b', 'λ'), (r'\\mu\b', 'μ'),
-        (r'\\pi\b', 'π'), (r'\\sigma\b', 'σ'), (r'\\tau\b', 'τ'), (r'\\omega\b', 'ω'),
-        (r'\\Delta\b', 'Δ'), (r'\\Sigma\b', 'Σ'), (r'\\Omega\b', 'Ω'),
+        (r'\\epsilon\b', 'ε'), (r'\\theta\b', 'θ'), (r'\\vartheta\b', 'θ'), (r'\\Theta\b', 'Θ'),
+        (r'\\lambda\b', 'λ'), (r'\\Lambda\b', 'Λ'), (r'\\mu\b', 'μ'),
+        (r'\\pi\b', 'π'), (r'\\sigma\b', 'σ'), (r'\\Sigma\b', 'Σ'), (r'\\tau\b', 'τ'),
+        (r'\\omega\b', 'ω'), (r'\\Omega\b', 'Ω'), (r'\\Delta\b', 'Δ'), (r'\\Gamma\b', 'Γ'),
+        (r'\\eta\b', 'η'), (r'\\rho\b', 'ρ'), (r'\\varrho\b', 'ρ'),
+        (r'\\xi\b', 'ξ'), (r'\\Xi\b', 'Ξ'), (r'\\zeta\b', 'ζ'), (r'\\chi\b', 'χ'),
+        (r'\\nu\b', 'ν'), (r'\\kappa\b', 'κ'), (r'\\upsilon\b', 'υ'), (r'\\Upsilon\b', 'Υ'),
         (r'\\times\b', '×'), (r'\\div\b', '÷'), (r'\\pm\b', '±'), (r'\\mp\b', '∓'),
         (r'\\le(q)?\b', '≤'), (r'\\ge(q)?\b', '≥'), (r'\\neq\b', '≠'), (r'\\approx\b', '≈'),
         (r'\\infty\b', '∞'), (r'\\partial\b', '∂'), (r'\\nabla\b', '∇'),
@@ -76,26 +60,65 @@ def clean_latex_to_text(text: str) -> str:
         (r'\\equiv\b', '≡'), (r'\\oplus\b', '⊕'), (r'\\bot\b', '⊥'), (r'\\top\b', '⊤'),
         (r'\\vdash\b', '⊢'), (r'\\models\b', '⊨'),
         (r'\\mathbb\{R\}', 'ℝ'), (r'\\mathbb\{N\}', 'ℕ'), (r'\\mathbb\{Z\}', 'ℤ'), (r'\\mathbb\{Q\}', 'ℚ'), (r'\\mathbb\{C\}', 'ℂ'),
-        (r'\\log\b', 'log'), (r'\\ln\b', 'ln'), (r'\\sin\b', 'sin'), (r'\\cos\b', 'cos'), (r'\\tan\b', 'tan'),
+        (r'\\log\b', 'log'), (r'\\ln\b', 'ln'), (r'\\lg\b', 'lg'), (r'\\exp\b', 'exp'),
+        (r'\\sin\b', 'sin'), (r'\\cos\b', 'cos'), (r'\\tan\b', 'tan'), (r'\\cot\b', 'cot'),
+        (r'\\arcsin\b', 'arcsin'), (r'\\arccos\b', 'arccos'), (r'\\arctan\b', 'arctan'),
+        (r'\\sinh\b', 'sinh'), (r'\\cosh\b', 'cosh'), (r'\\tanh\b', 'tanh'),
+        (r'\\lim\b', 'lim'), (r'\\max\b', 'max'), (r'\\min\b', 'min'), (r'\\det\b', 'det'),
         (r'\\cdot\b', '·'), (r'\\circ\b', '°')
     ]
     for pattern, repl in symbols_map:
         s = re.sub(pattern, repl, s)
 
-    # Thay thế phân số \frac{a}{b} -> (a/b) (chạy 3 lần để xử lý phân số lồng nhau)
-    for _ in range(3):
-        s = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1/\2)', s)
+    # Thay thế lũy thừa số và biến Unicode siêu ký tự
+    sup_map = {
+        '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+        '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+        '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+        'n': 'ⁿ', 'i': 'ⁱ', 'a': 'ᵃ', 'b': 'ᵇ', 'c': 'ᶜ', 'd': 'ᵈ',
+        'e': 'ᵉ', 'f': 'ᶠ', 'g': 'ᵍ', 'h': 'ʰ', 'j': 'ʲ', 'k': 'ᵏ',
+        'l': 'ˡ', 'm': 'ᵐ', 'o': 'ᵒ', 'p': 'ᵖ', 'r': 'ʳ', 's': 'ˢ',
+        't': 'ᵗ', 'u': 'ᵘ', 'v': 'ᵛ', 'w': 'ʷ', 'x': 'ˣ', 'y': 'ʸ', 'z': 'ᶻ',
+        'α': 'ᵅ', 'β': 'ᵝ', 'γ': 'ᵞ', 'δ': 'ᵟ', 'ε': 'ᵋ', 'θ': 'ᶿ', 'φ': 'ᵠ', 'χ': 'ᵡ'
+    }
+    def replace_sup(match):
+        val = match.group(1).replace(' ', '')
+        if all(c in sup_map for c in val):
+            return "".join(sup_map[c] for c in val)
+        return f"^({val})"
+
+    s = re.sub(r'\^\{([^{}]+)\}', replace_sup, s)
+    s = re.sub(r'\^([0-9a-zA-Zα-ω])', lambda m: sup_map.get(m.group(1), f'^{m.group(1)}'), s)
+
+    # Thay thế chỉ số dưới _{1} -> ₁, _1 -> ₁
+    sub_map = {
+        '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+        '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+        '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+        'a': 'ₐ', 'e': 'ₑ', 'h': 'ₕ', 'i': 'ᵢ', 'j': 'ⱼ', 'k': 'ₖ',
+        'l': 'ₗ', 'm': 'ₘ', 'n': 'ₙ', 'o': 'ₒ', 'p': 'ₚ', 'r': 'ᵣ',
+        's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ', 'v': 'ᵥ', 'x': 'ₓ'
+    }
+    def replace_sub(match):
+        val = match.group(1).replace(' ', '')
+        if all(c in sub_map for c in val):
+            return "".join(sub_map[c] for c in val)
+        return f"_({val})"
+
+    s = re.sub(r'_\{([^{}]+)\}', replace_sub, s)
+    s = re.sub(r'_([0-9a-zA-Z])', lambda m: sub_map.get(m.group(1), f'_{m.group(1)}'), s)
 
     # Xóa bỏ các ký tự dấu $ bao quanh công thức (loại bỏ tất cả dấu $)
     s = s.replace('$$', '').replace('$', '')
 
-    # Xóa các lệnh định dạng thừa trong LaTeX
+    # Xóa các lệnh định dạng thừa trong LaTeX (\text{...}, \mathbf{...}, \mathit{...})
     s = re.sub(r'\\(text|mathbf|mathit|mathrm|mathbb)\{([^{}]+)\}', r'\2', s)
 
-    # Làm sạch khoảng trắng thừa
+    # Làm sạch khoảng trắng thừa và dấu ngoặc thoát
     s = re.sub(r'\\,', ' ', s)
     s = re.sub(r'\\;', ' ', s)
     s = re.sub(r'\\quad', '   ', s)
+    s = re.sub(r'\\([{}])', r'\1', s)
 
     return s.strip()
 

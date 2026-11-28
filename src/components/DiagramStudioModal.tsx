@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Check,
@@ -7,14 +7,9 @@ import {
   Compass,
   Atom,
   Zap,
-  Layers,
   Upload,
   Camera,
-  Maximize2,
-  Minimize2,
   ExternalLink,
-  Info,
-  Sliders,
   RefreshCw,
 } from 'lucide-react';
 
@@ -26,7 +21,7 @@ export interface DiagramStudioModalProps {
   initialImageUrl?: string;
 }
 
-export type StudioTab = 'drawio' | 'geogebra' | 'desmos' | 'molview' | 'circuit' | 'curve_engine';
+export type StudioTab = 'drawio' | 'geogebra' | 'desmos' | 'molview' | 'circuit';
 
 export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
   isOpen,
@@ -38,15 +33,6 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
   const [activeTab, setActiveTab] = useState<StudioTab>('drawio');
   const [caption, setCaption] = useState(initialCaption || '');
   const [isProcessing, setIsProcessing] = useState(false);
-  // Default to true for full-screen desktop software experience
-  const [isFullscreen, setIsFullscreen] = useState(true);
-
-  // ── Plotter State ────────────────────────────────────────────────────────
-  const [plotType, setPlotType] = useState<'sine' | 'damped' | 'parabola' | 'supply_demand'>('sine');
-  const [paramA, setParamA] = useState<number>(3);
-  const [paramB, setParamB] = useState<number>(2);
-  const [paramC, setParamC] = useState<number>(0);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // ── Draw.io Iframe State ─────────────────────────────────────────────────
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -138,202 +124,6 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
     );
   };
 
-  // ── 2. ACADEMIC FUNCTION & CURVE PLOTTER ─────────────────────────────────
-  const renderPlot = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const w = canvas.width;
-    const h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-
-    // Clean white background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-
-    if (plotType === 'supply_demand') {
-      // Economics Supply & Demand Equilibrium
-      const originX = 70;
-      const originY = h - 60;
-
-      // Coordinate axes
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1.75;
-      ctx.beginPath();
-      // O P (Price axis)
-      ctx.moveTo(originX, originY);
-      ctx.lineTo(originX, 40);
-      // Arrow P
-      ctx.lineTo(originX - 5, 50);
-      ctx.moveTo(originX, 40);
-      ctx.lineTo(originX + 5, 50);
-
-      // O Q (Quantity axis)
-      ctx.moveTo(originX, originY);
-      ctx.lineTo(w - 50, originY);
-      // Arrow Q
-      ctx.lineTo(w - 60, originY - 5);
-      ctx.moveTo(w - 50, originY);
-      ctx.lineTo(w - 60, originY + 5);
-      ctx.stroke();
-
-      // Axis labels
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 13px system-ui, sans-serif';
-      ctx.fillText('P (Giá)', originX - 45, 50);
-      ctx.fillText('Q (Sản lượng)', w - 100, originY + 30);
-      ctx.fillText('O', originX - 18, originY + 18);
-
-      // Supply curve (S)
-      ctx.strokeStyle = '#0284c7';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      const sStart = { x: originX + 40, y: originY - 40 };
-      const sEnd = { x: w - 120, y: 70 };
-      ctx.moveTo(sStart.x, sStart.y);
-      ctx.lineTo(sEnd.x, sEnd.y);
-      ctx.stroke();
-      ctx.fillStyle = '#0284c7';
-      ctx.font = 'bold 13px system-ui';
-      ctx.fillText('S (Cung)', sEnd.x + 8, sEnd.y + 5);
-
-      // Demand curve (D)
-      ctx.strokeStyle = '#e11d48';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      const dStart = { x: originX + 40, y: 80 };
-      const dEnd = { x: w - 120, y: originY - 50 };
-      ctx.moveTo(dStart.x, dStart.y);
-      ctx.lineTo(dEnd.x, dEnd.y);
-      ctx.stroke();
-      ctx.fillStyle = '#e11d48';
-      ctx.fillText('D (Cầu)', dEnd.x + 8, dEnd.y + 5);
-
-      // Equilibrium point E (Intersection)
-      const eqX = (sStart.x + sEnd.x + dStart.x + dEnd.x) / 4 + 10;
-      const eqY = (sStart.y + sEnd.y + dStart.y + dEnd.y) / 4 - 5;
-
-      // Dashed lines to axes
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = '#94a3b8';
-      ctx.lineWidth = 1.25;
-      ctx.beginPath();
-      ctx.moveTo(eqX, eqY);
-      ctx.lineTo(originX, eqY);
-      ctx.moveTo(eqX, eqY);
-      ctx.lineTo(eqX, originY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Point E dot
-      ctx.fillStyle = '#0f172a';
-      ctx.beginPath();
-      ctx.arc(eqX, eqY, 4.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.font = 'bold 13px system-ui';
-      ctx.fillText('E (Điểm cân bằng)', eqX + 10, eqY - 8);
-      ctx.font = '12px system-ui';
-      ctx.fillText('P*', originX - 25, eqY + 4);
-      ctx.fillText('Q*', eqX - 8, originY + 20);
-    } else {
-      // Cartesian Coordinate System (Oxy)
-      const originX = w / 2;
-      const originY = h / 2;
-      const scaleX = 40;
-      const scaleY = 35;
-
-      // Grid
-      ctx.strokeStyle = '#f1f5f9';
-      ctx.lineWidth = 1;
-      for (let x = originX % scaleX; x < w; x += scaleX) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, h);
-        ctx.stroke();
-      }
-      for (let y = originY % scaleY; y < h; y += scaleY) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
-      }
-
-      // Ox and Oy Axes
-      ctx.strokeStyle = '#334155';
-      ctx.lineWidth = 1.75;
-      ctx.beginPath();
-      ctx.moveTo(30, originY);
-      ctx.lineTo(w - 30, originY);
-      ctx.lineTo(w - 40, originY - 5);
-      ctx.moveTo(w - 30, originY);
-      ctx.lineTo(w - 40, originY + 5);
-
-      ctx.moveTo(originX, h - 30);
-      ctx.lineTo(originX, 30);
-      ctx.lineTo(originX - 5, 40);
-      ctx.moveTo(originX, 30);
-      ctx.lineTo(originX + 5, 40);
-      ctx.stroke();
-
-      // Axis Marks
-      ctx.fillStyle = '#475569';
-      ctx.font = '11px system-ui';
-      ctx.fillText('x', w - 25, originY + 16);
-      ctx.fillText('y', originX + 12, 35);
-      ctx.fillText('O', originX - 14, originY + 16);
-
-      // Draw Main Curve
-      ctx.strokeStyle = '#008689';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-
-      let isFirst = true;
-      for (let px = 30; px < w - 30; px += 1.5) {
-        const xVal = (px - originX) / scaleX;
-        let yVal = 0;
-
-        if (plotType === 'sine') {
-          yVal = paramA * Math.sin(paramB * xVal + (paramC * Math.PI) / 180);
-        } else if (plotType === 'damped') {
-          yVal = paramA * Math.exp(-0.35 * Math.abs(xVal)) * Math.cos(paramB * xVal);
-        } else if (plotType === 'parabola') {
-          yVal = 0.4 * (xVal - paramC) * (xVal - paramC) - paramA;
-        }
-
-        const py = originY - yVal * scaleY;
-        if (py >= 20 && py <= h - 20) {
-          if (isFirst) {
-            ctx.moveTo(px, py);
-            isFirst = false;
-          } else {
-            ctx.lineTo(px, py);
-          }
-        } else {
-          isFirst = true;
-        }
-      }
-      ctx.stroke();
-
-      // Formula Label Box
-      ctx.fillStyle = '#0f172a';
-      ctx.font = 'bold 12px system-ui';
-      let title = '';
-      if (plotType === 'sine') title = `x(t) = ${paramA} · cos(${paramB}t + ${paramC}°)`;
-      else if (plotType === 'damped') title = `x(t) = ${paramA} · e^(-0.35t) · cos(${paramB}t)`;
-      else if (plotType === 'parabola') title = `y = 0.4(x - ${paramC})² - ${paramA}`;
-      ctx.fillText(title, 45, 45);
-    }
-  }, [plotType, paramA, paramB, paramC]);
-
-  useEffect(() => {
-    if (activeTab === 'curve_engine') {
-      renderPlot();
-    }
-  }, [activeTab, renderPlot]);
-
   const handleFinishImage = async (dataUrl: string, finalCaption: string) => {
     setIsProcessing(true);
     try {
@@ -375,21 +165,6 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
   const handleApplyCurrentTab = () => {
     if (activeTab === 'drawio') {
       requestDrawioExport();
-    } else if (activeTab === 'curve_engine') {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const dataUrl = canvas.toDataURL('image/png');
-        const cap =
-          caption.trim() ||
-          (plotType === 'supply_demand'
-            ? 'Đồ thị mô hình Cân bằng Cung - Cầu thị trường'
-            : plotType === 'sine'
-            ? 'Đồ thị dao động điều hòa theo thời gian'
-            : plotType === 'damped'
-            ? 'Đồ thị dao động tắt dần'
-            : 'Đồ thị hàm số bậc hai');
-        handleFinishImage(dataUrl, cap);
-      }
     }
   };
 
@@ -404,10 +179,40 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
     }
   };
 
+  const handlePasteFromClipboardButton = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.read) {
+        const clipboardItems = await navigator.clipboard.read();
+        for (const item of clipboardItems) {
+          const imageType = item.types.find((t) => t.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            const reader = new FileReader();
+            reader.onload = () => {
+              handleFinishImage(
+                reader.result as string,
+                caption || 'Sơ đồ trích xuất từ bảng vẽ'
+              );
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+        }
+      }
+      alert(
+        'Không tìm thấy ảnh trong bộ nhớ tạm (Clipboard). Thầy/Cô vui lòng nhấn phím tắt Win + Shift + S để quét chụp vùng vẽ rồi nhấn lại nút này hoặc bấm Ctrl + V!'
+      );
+    } catch {
+      alert(
+        'Trình duyệt cần quyền truy cập Clipboard hoặc Thầy/Cô có thể nhấn trực tiếp phím Ctrl + V trên bàn phím để dán ảnh ngay!'
+      );
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 w-screen h-screen overflow-hidden animate-in fade-in duration-100">
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 w-full h-full max-h-[100dvh] overflow-hidden select-none animate-in fade-in duration-100">
       {/* Top Header Bar with integrated tabs (Monochrome IDE style, ultra-thin 38px) */}
       <div className="h-10 px-3 bg-slate-900 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
         {/* Left: Studio Branding & Tab Bar */}
@@ -485,18 +290,6 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
               <Zap className="w-3.5 h-3.5" />
               CircuitJS
             </button>
-
-            <button
-              onClick={() => setActiveTab('curve_engine')}
-              className={`px-2.5 py-1 text-xs font-medium rounded flex items-center gap-1.5 transition-colors shrink-0 ${
-                activeTab === 'curve_engine'
-                  ? 'bg-slate-800 text-teal-300 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              Đồ thị Oxy &amp; Kinh tế
-            </button>
           </div>
         </div>
 
@@ -529,33 +322,45 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
         {/* TAB 2: GEOGEBRA GEOMETRY */}
         {activeTab === 'geogebra' && (
           <div className="w-full h-full flex flex-col relative">
+            <div className="px-3 py-1.5 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between text-xs text-slate-300 shrink-0">
+              <span className="flex items-center gap-2">
+                <Compass className="w-3.5 h-3.5 text-teal-400" />
+                <span>GeoGebra Hình học & Không gian: Dựng hình xong, nhấn <kbd className="px-1 py-0.5 rounded bg-slate-700 font-mono text-[10px]">Win + Shift + S</kbd> chụp vùng vẽ rồi nhấn [Dán ảnh từ Clipboard] bên dưới.</span>
+              </span>
+            </div>
             <iframe
               title="GeoGebra Classic Geometry"
               src="https://www.geogebra.org/classic"
-              className="w-full h-full border-none bg-white"
+              className="w-full flex-1 border-none bg-white"
             />
           </div>
         )}
 
-        {/* TAB 3: DESMOS GRAPHING */}
+        {/* TAB 3: DESMOS GRAPHING (FULL EXPRESSION PANEL) */}
         {activeTab === 'desmos' && (
           <div className="w-full h-full flex flex-col relative">
+            <div className="px-3 py-1.5 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between text-xs text-slate-300 shrink-0">
+              <span className="flex items-center gap-2">
+                <TrendingUp className="w-3.5 h-3.5 text-teal-400" />
+                <span>Desmos Khảo sát hàm số: Nhập biểu thức toán bất kỳ bên trái (vd: y = x³ - 3x). Nhấn <kbd className="px-1 py-0.5 rounded bg-slate-700 font-mono text-[10px]">Win + Shift + S</kbd> chụp rồi bấm [Dán ảnh từ Clipboard].</span>
+              </span>
+            </div>
             <iframe
               title="Desmos Graphing Calculator"
-              src="https://www.desmos.com/calculator?embed"
-              className="w-full h-full border-none bg-white"
+              src="https://www.desmos.com/calculator"
+              className="w-full flex-1 border-none bg-white"
             />
           </div>
         )}
 
-        {/* TAB 4: CHEMISTRY (EMBEDDABLE JSME + MOLVIEW DIRECT TAB) */}
+        {/* TAB 4: CHEMISTRY (JSME CDN + MOLVIEW 3D) */}
         {activeTab === 'molview' && (
           <div className="w-full h-full flex flex-col relative bg-slate-900">
             {/* Top Assistant Bar */}
             <div className="px-4 py-2 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between text-xs text-slate-300 shrink-0">
               <span className="flex items-center gap-2">
                 <Atom className="w-4 h-4 text-teal-400" />
-                <span>Trình vẽ cấu trúc phân tử JSME (Hỗ trợ nhúng không chặn CORS).</span>
+                <span>Trình vẽ công thức phân tử JSME (Vẽ xong nhấn Win + Shift + S hoặc xuất ảnh rồi dán vào câu hỏi).</span>
               </span>
               <a
                 href="https://molview.org"
@@ -571,7 +376,7 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
             <div className="flex-1 w-full bg-white relative">
               <iframe
                 title="JSME Chemical Structure Editor"
-                src="https://peter-ertl.com/jsme/JSME_2020-06-11/JSME.html"
+                src="https://jsme-editor.github.io/dist/JSME_test.html"
                 className="w-full h-full border-none bg-white"
               />
             </div>
@@ -581,122 +386,48 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
         {/* TAB 5: CIRCUITJS SIMULATOR */}
         {activeTab === 'circuit' && (
           <div className="w-full h-full flex flex-col relative">
+            <div className="px-3 py-1.5 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between text-xs text-slate-300 shrink-0">
+              <span className="flex items-center gap-2">
+                <Zap className="w-3.5 h-3.5 text-teal-400" />
+                <span>CircuitJS Mô phỏng mạch điện: Sau khi thiết lập mạch, nhấn <kbd className="px-1 py-0.5 rounded bg-slate-700 font-mono text-[10px]">Win + Shift + S</kbd> rồi bấm [Dán ảnh từ Clipboard] bên dưới.</span>
+              </span>
+            </div>
             <iframe
               title="Falstad Circuit Simulator"
               src="https://www.falstad.com/circuit/circuitjs.html"
-              className="w-full h-full border-none bg-white"
+              className="w-full flex-1 border-none bg-white"
             />
-          </div>
-        )}
-
-        {/* TAB 6: CURVE ENGINE */}
-        {activeTab === 'curve_engine' && (
-          <div className="w-full h-full flex flex-col md:flex-row bg-slate-900">
-            <div className="w-full md:w-80 p-4 border-r border-slate-800 bg-slate-900 text-slate-200 flex flex-col gap-4 shrink-0 overflow-y-auto">
-              <div>
-                <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
-                  Mô hình khảo thí
-                </label>
-                <select
-                  value={plotType}
-                  onChange={(e) => setPlotType(e.target.value as any)}
-                  className="w-full px-2.5 py-1.5 rounded bg-slate-800 border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-teal-500"
-                >
-                  <option value="sine">Dao động điều hòa (Vật lý / Giải tích)</option>
-                  <option value="damped">Dao động tắt dần (Cơ học / Kỹ thuật)</option>
-                  <option value="parabola">Đồ thị Parabol y = ax² + bx + c</option>
-                  <option value="supply_demand">Cân bằng Cung - Cầu (Kinh tế học)</option>
-                </select>
-              </div>
-
-              {plotType !== 'supply_demand' && (
-                <div className="space-y-3 pt-2 border-t border-slate-800">
-                  <div>
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
-                      <span>Biên độ / Hệ số A</span>
-                      <span className="font-mono text-teal-400">{paramA}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="6"
-                      step="0.5"
-                      value={paramA}
-                      onChange={(e) => setParamA(parseFloat(e.target.value))}
-                      className="w-full accent-teal-500"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
-                      <span>Tần số góc / Tốc độ biến thiên B</span>
-                      <span className="font-mono text-teal-400">{paramB}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0.5"
-                      max="5"
-                      step="0.5"
-                      value={paramB}
-                      onChange={(e) => setParamB(parseFloat(e.target.value))}
-                      className="w-full accent-teal-500"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs text-slate-400 mb-1">
-                      <span>Độ lệch pha / Dịch chuyển C</span>
-                      <span className="font-mono text-teal-400">{paramC}</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="-180"
-                      max="180"
-                      step="15"
-                      value={paramC}
-                      onChange={(e) => setParamC(parseFloat(e.target.value))}
-                      className="w-full accent-teal-500"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-auto pt-3 border-t border-slate-800 text-[11px] text-slate-400">
-                Đồ thị được tự động kết xuất ở độ phân giải 300 DPI theo tiêu chuẩn in ấn đề thi của Bộ GD&amp;ĐT.
-              </div>
-            </div>
-
-            <div className="flex-1 p-4 flex items-center justify-center bg-slate-950">
-              <div className="bg-white rounded-lg shadow-lg border border-slate-700 overflow-hidden p-2">
-                <canvas
-                  ref={canvasRef}
-                  width={750}
-                  height={500}
-                  className="max-w-full max-h-[75vh] object-contain block bg-white"
-                />
-              </div>
-            </div>
           </div>
         )}
       </div>
 
-      {/* Bottom Unified Action Dock (Ultra-compact 42px) */}
-      <div className="h-11 px-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
-        <div className="flex-1 max-w-lg flex items-center gap-2">
+      {/* Bottom Unified Action Dock (Comfortable height, never covered by taskbar) */}
+      <div className="min-h-[52px] py-2 px-3 pb-3 sm:pb-2.5 bg-slate-900 border-t border-slate-800 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 shrink-0 z-20">
+        <div className="flex-1 max-w-lg flex items-center gap-2 min-w-[200px]">
           <span className="text-xs text-slate-400 shrink-0">Chú thích sơ đồ:</span>
           <input
             type="text"
             placeholder="Ví dụ: Hình 1: Sơ đồ nguyên lý mạch dao động RLC..."
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            className="w-full px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+            className="w-full px-2.5 py-1.5 rounded bg-slate-800 border border-slate-700 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500"
           />
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] text-slate-400 hidden md:inline">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <span className="text-[11px] text-slate-400 hidden lg:inline">
             Dán ảnh bằng <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[10px]">Ctrl + V</kbd>
           </span>
+
+          <button
+            type="button"
+            onClick={handlePasteFromClipboardButton}
+            className="px-3 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Dán nhanh ảnh vừa chụp từ bộ nhớ tạm"
+          >
+            <Camera className="w-3.5 h-3.5" />
+            <span>Dán ảnh từ Clipboard (Ctrl + V)</span>
+          </button>
 
           <label className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium cursor-pointer transition-colors flex items-center gap-1.5">
             <Upload className="w-3.5 h-3.5 text-slate-400" />
@@ -704,12 +435,12 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
             <input type="file" accept="image/*" className="hidden" onChange={handleUploadLocalFile} />
           </label>
 
-          {(activeTab === 'drawio' || activeTab === 'curve_engine') && (
+          {activeTab === 'drawio' && (
             <button
               type="button"
               onClick={handleApplyCurrentTab}
               disabled={isProcessing}
-              className="px-4 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
             >
               {isProcessing ? (
                 <>
@@ -723,14 +454,6 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
                 </>
               )}
             </button>
-          )}
-
-          {activeTab !== 'drawio' && activeTab !== 'curve_engine' && (
-            <label className="px-4 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold shadow-xs flex items-center gap-1.5 cursor-pointer transition-colors">
-              <Camera className="w-3.5 h-3.5" />
-              <span>Chèn ảnh đã xuất / chụp</span>
-              <input type="file" accept="image/*" className="hidden" onChange={handleUploadLocalFile} />
-            </label>
           )}
         </div>
       </div>

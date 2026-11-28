@@ -30,6 +30,7 @@ import {
   Trash2,
   PenTool,
   Plus,
+  Scissors,
 } from 'lucide-react';
 import { Question, BloomLevel, ScreenId, UserProfile, QuestionStatus } from '../types';
 import MathRenderer from './MathRenderer';
@@ -37,6 +38,7 @@ import { resolveImageUrl } from '../services/apiClient';
 import { LatexFormulaToolbar } from './LatexFormulaToolbar';
 import { ImageLightboxModal } from './ImageLightboxModal';
 import { DiagramStudioModal } from './DiagramStudioModal';
+import { TextbookSnipperModal } from './TextbookSnipperModal';
 
 interface ReviewWorkspaceScreenProps {
   questions: Question[];
@@ -248,6 +250,7 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
   });
   const [imgErrorMap, setImgErrorMap] = useState<Record<string, boolean>>({});
   const [isDiagramStudioOpen, setIsDiagramStudioOpen] = useState(false);
+  const [isSnipperOpen, setIsSnipperOpen] = useState(false);
   const [isAttachPopoverOpen, setIsAttachPopoverOpen] = useState(false);
   const [showUrlInput, setShowUrlInput] = useState(false);
   const attachPopoverRef = useRef<HTMLDivElement>(null);
@@ -776,6 +779,20 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
                                 <div className="text-[10px] text-slate-400">Draw.io, GeoGebra, Desmos, MolView</div>
                               </div>
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsSnipperOpen(true);
+                                setIsAttachPopoverOpen(false);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 hover:text-[#008689] text-left transition-colors font-medium"
+                            >
+                              <Scissors className="w-4 h-4 text-slate-500" />
+                              <div>
+                                <div className="font-semibold text-slate-800">Cắt hình từ giáo trình</div>
+                                <div className="text-[10px] text-slate-400">Trích xuất trực tiếp từ trang sách</div>
+                              </div>
+                            </button>
                             <label className="w-full flex items-center gap-2.5 px-3 py-2 text-slate-700 hover:bg-slate-50 hover:text-slate-900 text-left cursor-pointer transition-colors font-medium">
                               <Upload className="w-4 h-4 text-slate-500" />
                               <div>
@@ -1223,6 +1240,30 @@ export const ReviewWorkspaceScreen: React.FC<ReviewWorkspaceScreenProps> = ({
         onClose={() => setIsDiagramStudioOpen(false)}
         initialCaption={editImageCaption || activeQuestion?.imageCaption}
         initialImageUrl={editImageUrl || activeQuestion?.imageUrl}
+        onApplyImage={(imgUrl, cap) => {
+          setEditImageUrl(imgUrl);
+          setEditHasImage(true);
+          if (cap) setEditImageCaption(cap);
+          if (activeQuestion) {
+            setImgErrorMap((prev) => ({ ...prev, [activeQuestion.id]: false }));
+            if (!isEditing) {
+              onUpdateQuestion({
+                ...activeQuestion,
+                hasImage: true,
+                imageUrl: imgUrl,
+                imageCaption: cap || activeQuestion.imageCaption,
+              });
+            }
+          }
+        }}
+      />
+
+      {/* Textbook Snipping Tool Modal */}
+      <TextbookSnipperModal
+        isOpen={isSnipperOpen}
+        onClose={() => setIsSnipperOpen(false)}
+        textbookName={activeQuestion?.textbookName}
+        initialCaption={editImageCaption || activeQuestion?.imageCaption}
         onApplyImage={(imgUrl, cap) => {
           setEditImageUrl(imgUrl);
           setEditHasImage(true);
