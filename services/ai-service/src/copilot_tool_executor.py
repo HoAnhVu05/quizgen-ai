@@ -282,15 +282,33 @@ async def execute_copilot_tool(
 
             doc_rows = _db_query(DOCS_DB, "SELECT name FROM documents WHERE id = ?", (doc_id,))
             doc_name = doc_rows[0]["name"] if doc_rows else "Giáo trình"
-            bloom_matrix = {"know": max(1, count // 3), "understand": max(1, count // 3), "apply": max(0, count - 2 * max(1, count // 3)), "analyze": 0}
-            gen_res = await generator.generate_questions_from_context(
-                document_id=doc_id,
-                context_text=context_text[:14000],
+            bloom_matrix = {
+                "nhanBiet": max(1, count // 3),
+                "thongHieu": max(1, count // 3),
+                "vanDung": max(0, count - 2 * max(1, count // 3)),
+                "phanTich": 0,
+            }
+            # Chuẩn bị format chunks tương thích với generator.generate_questions_from_context
+            formatted_chunks = [
+                {
+                    "chunk_id": f"chk-{doc_id}-{idx+1}",
+                    "id": f"chk-{doc_id}-{idx+1}",
+                    "page_number": c.get("page_number") or 1,
+                    "chapter": c.get("chapter") or topic or "Nội dung trích xuất",
+                    "text": c.get("text_snippet") or "",
+                    "content": c.get("text_snippet") or "",
+                }
+                for idx, c in enumerate(chunks)
+            ]
+            raw_qs = await generator.generate_questions_from_context(
+                chunks=formatted_chunks,
                 bloom_matrix=bloom_matrix,
-                pedagogical_prompt=topic or f"Sinh {count} câu hỏi bám sát giáo trình {doc_name}",
+                document_id=doc_id,
+                chapter_name=topic or "Toàn bộ tài liệu",
                 textbook_name=doc_name,
+                pedagogical_prompt=topic or f"Sinh {count} câu hỏi bám sát giáo trình {doc_name}",
             )
-            qs = (gen_res or {}).get("questions") or []
+            qs = raw_qs if isinstance(raw_qs, list) else (raw_qs or {}).get("questions") or []
             return {"result": {"documentName": doc_name, "count": len(qs), "questions": qs[:count]}, "action": None, "rag_sources": []}
 
         if name == "get_my_support_tickets":
