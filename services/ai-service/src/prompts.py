@@ -38,6 +38,9 @@ QUY TẮC ĐA PHƯƠNG THỨC & HÌNH VẼ (MULTIMODAL DIAGRAM RULES):
 - CHỈ ĐƯỢC PHÉP gán "has_image": true khi trong mục "DANH SÁCH HÌNH ẢNH / SƠ ĐỒ ĐÍNH KÈM TỪ GIÁO TRÌNH" CÓ CUNG CẤP HÌNH ẢNH CỤ THỂ.
   + Khi đó, "image_url" BẮT BUỘC phải chép CHÍNH XÁC đường dẫn URL được cấp trong danh sách đó.
   + "image_caption": điền đúng chú thích hình tương ứng.
+- QUY TẮC ĐỘC NHẤT 1 HÌNH CHO 1 CÂU (CHỐNG TRÙNG LẶP HÌNH MINH HỌA):
+  + Mỗi hình ảnh/sơ đồ trong danh sách CHỈ ĐƯỢC PHÉP gán tối đa cho 1 CÂU HỎI DUY NHẤT trong toàn bộ đề thi.
+  + TUYỆT ĐỐI KHÔNG tái sử dụng cùng 1 "image_url" cho nhiều câu hỏi độc lập khác nhau. Nếu một câu đã dùng hình đó, các câu hỏi khác trong cùng đề BẮT BUỘC phải để "has_image": false, "image_url": null, "image_caption": null.
 - TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ BỊA RA TÊN FILE ẢNH HOẶC GÁN CHUỖI TEXT VÀO "image_url" (ví dụ: cấm điền "Hình 5.11:..." hay "figure.png" nếu không có trong danh sách).
 - Nếu không có hình ảnh nào được cấp trong danh sách: BẮT BUỘC đặt "has_image": false, "image_url": null, "image_caption": null.
 - Tự động gắn cờ "has_formula": true nếu câu hỏi hoặc các phương án có chứa công thức toán/lý dạng LaTeX.

@@ -665,6 +665,7 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         normalized = []
         default_chunk_id = chunks[0].get("chunk_id") or chunks[0].get("id", "chunk-1") if chunks else "chunk-1"
         default_page = chunks[0].get("page_number") or chunks[0].get("pageNumber", 1) if chunks else 1
+        assigned_image_urls = set()
 
         for idx, q in enumerate(raw_list):
             q_id = f"q-{int(time.time()*1000) % 1000000}-{idx+1}"
@@ -721,22 +722,40 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
                 return False
 
             if raw_has_img:
+                candidate_url = None
+                candidate_caption = img_caption
                 if _validate_image(raw_img_url):
-                    has_img = True
-                    img_url = raw_img_url
+                    candidate_url = raw_img_url
                 elif images_meta:
-                    first_img = images_meta[min(idx, len(images_meta) - 1)]
-                    c_url = first_img.get("url") or first_img.get("image_url") or first_img.get("path")
-                    has_img = True
-                    img_url = c_url
-                    img_caption = img_caption or first_img.get("caption") or first_img.get("title")
+                    # Tìm hình ảnh trong images_meta chưa được gán cho câu nào trước đó
+                    unassigned_imgs = [
+                        im for im in images_meta 
+                        if (im.get("url") or im.get("image_url") or im.get("path")) not in assigned_image_urls
+                    ]
+                    if unassigned_imgs:
+                        first_img = unassigned_imgs[0]
+                        candidate_url = first_img.get("url") or first_img.get("image_url") or first_img.get("path")
+                        candidate_caption = candidate_caption or first_img.get("caption") or first_img.get("title")
                 elif img_caption or "hình " in q_text.lower() or "sơ đồ" in q_text.lower():
-                    # Giữ lại ngữ cảnh hình ảnh để người dùng xem và vẽ lại trong Studio
-                    has_img = True
                     clean_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (img_caption or f"fig_{idx+1}")[:40])
-                    img_url = raw_img_url if (raw_img_url and "/" in raw_img_url) else f"/api/v1/documents/images/{clean_slug}.svg"
-                    img_caption = img_caption or "Sơ đồ minh họa kiến thức"
-                img_caption = None
+                    candidate_url = raw_img_url if (raw_img_url and "/" in raw_img_url) else f"/api/v1/documents/images/{clean_slug}.svg"
+                    candidate_caption = candidate_caption or "Sơ đồ minh họa kiến thức"
+
+                # Chống trùng lặp: Nếu ảnh này đã được gán cho câu trước đó thì không gán lặp lại
+                if candidate_url:
+                    if candidate_url in assigned_image_urls:
+                        has_img = False
+                        img_url = None
+                        img_caption = None
+                    else:
+                        has_img = True
+                        img_url = candidate_url
+                        img_caption = candidate_caption
+                        assigned_image_urls.add(candidate_url)
+                else:
+                    has_img = False
+                    img_url = None
+                    img_caption = None
 
             # Tự động nhận diện công thức LaTeX nếu chứa ký hiệu $
             has_formula = bool(
