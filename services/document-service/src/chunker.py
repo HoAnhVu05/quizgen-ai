@@ -283,6 +283,8 @@ class TextChunker:
                     m = re.search(r"^(Chương\s+[0-9IVXLCDM]+[:\.\-\s]+[^\.\_\-]+).*?[\.\_\-]{3,}\s*(\d+)", line, re.IGNORECASE)
                     if m:
                         ch_title = re.sub(r"\s+", " ", m.group(1).strip())
+                        from .parser import DocumentParser
+                        ch_title = DocumentParser.convert_legacy_vietnamese_fonts(ch_title)
                         try:
                             ch_page = int(m.group(2))
                             if ch_title not in detected_chapters:
@@ -473,6 +475,8 @@ class TextChunker:
         chapters_metadata = []
         for idx, (ch_name, ch_info) in enumerate(detected_chapters.items()):
             t = ch_info["title"].strip()
+            from .parser import DocumentParser
+            t = DocumentParser.convert_legacy_vietnamese_fonts(t)
             if cls._is_junk_chapter_title(t):
                 continue
             chapters_metadata.append({

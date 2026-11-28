@@ -22,6 +22,16 @@ def clean_latex_to_text(text: str) -> str:
     # Khử lớp escape backslash kép từ JSON payload
     s = s.replace('\\\\', '\\')
 
+    # Khử \neq và \notin kể cả khi bị decode thành ký tự xuống dòng \n kèm eq/otin
+    s = re.sub(r'\\neq(?![a-zA-Z])|(?<=\s)\neq(?![a-zA-Z])|\n\s*eq(?![a-zA-Z])', ' ≠ ', s)
+    s = re.sub(r'\\notin(?![a-zA-Z])|(?<=\s)\notin(?![a-zA-Z])|\n\s*otin(?![a-zA-Z])', ' ∉ ', s)
+    s = re.sub(r'\\oint(?![a-zA-Z])', '∮', s)
+    s = re.sub(r'\\iiint(?![a-zA-Z])', '∭', s)
+    s = re.sub(r'\\iint(?![a-zA-Z])', '∬', s)
+
+    # Tách khoảng trắng trước hàm nếu bị dính liền với biến số (vd: i\sin -> i \sin, i\cos -> i \cos)
+    s = re.sub(r'([0-9a-zA-Zα-ωΑ-Ω])\\(sin|cos|tan|cot|arcsin|arccos|arctan|sinh|cosh|tanh|ln|log|exp)', r'\1 \\\2', s)
+
     # Bỏ các chỉ thị kích thước ngoặc LaTeX
     s = re.sub(r'\\(left|right)', '', s)
 
@@ -35,40 +45,55 @@ def clean_latex_to_text(text: str) -> str:
 
     # Ký hiệu toán học & Hy Lạp đầy đủ
     symbols_map = [
-        (r'\\phi\b', 'φ'), (r'\\varphi\b', 'φ'), (r'\\Phi\b', 'Φ'),
-        (r'\\psi\b', 'ψ'), (r'\\Psi\b', 'Ψ'),
-        (r'\\alpha\b', 'α'), (r'\\beta\b', 'β'), (r'\\gamma\b', 'γ'), (r'\\delta\b', 'δ'),
-        (r'\\epsilon\b', 'ε'), (r'\\theta\b', 'θ'), (r'\\vartheta\b', 'θ'), (r'\\Theta\b', 'Θ'),
-        (r'\\lambda\b', 'λ'), (r'\\Lambda\b', 'Λ'), (r'\\mu\b', 'μ'),
-        (r'\\pi\b', 'π'), (r'\\sigma\b', 'σ'), (r'\\Sigma\b', 'Σ'), (r'\\tau\b', 'τ'),
-        (r'\\omega\b', 'ω'), (r'\\Omega\b', 'Ω'), (r'\\Delta\b', 'Δ'), (r'\\Gamma\b', 'Γ'),
-        (r'\\eta\b', 'η'), (r'\\rho\b', 'ρ'), (r'\\varrho\b', 'ρ'),
-        (r'\\xi\b', 'ξ'), (r'\\Xi\b', 'Ξ'), (r'\\zeta\b', 'ζ'), (r'\\chi\b', 'χ'),
-        (r'\\nu\b', 'ν'), (r'\\kappa\b', 'κ'), (r'\\upsilon\b', 'υ'), (r'\\Upsilon\b', 'Υ'),
-        (r'\\times\b', '×'), (r'\\div\b', '÷'), (r'\\pm\b', '±'), (r'\\mp\b', '∓'),
-        (r'\\le(q)?\b', '≤'), (r'\\ge(q)?\b', '≥'), (r'\\neq\b', '≠'), (r'\\approx\b', '≈'),
-        (r'\\infty\b', '∞'), (r'\\partial\b', '∂'), (r'\\nabla\b', '∇'),
-        (r'\\int\b', '∫'), (r'\\sum\b', '∑'), (r'\\prod\b', '∏'),
-        (r'\\notin\b', '∉'), (r'\\in\b', '∈'), (r'\\subset\b', '⊂'), (r'\\subseteq\b', '⊆'),
-        (r'\\supset\b', '⊃'), (r'\\supseteq\b', '⊇'), (r'\\setminus\b', '∖'),
-        (r'\\cap\b', '∩'), (r'\\cup\b', '∪'), (r'\\emptyset\b', '∅'),
-        (r'\\forall\b', '∀'), (r'\\exists\b', '∃'),
-        (r'\\land\b', '∧'), (r'\\wedge\b', '∧'), (r'\\lor\b', '∨'), (r'\\vee\b', '∨'),
-        (r'\\neg\b', '¬'), (r'\\lnot\b', '¬'), (r'\\sim\b', '∼'),
-        (r'\\rightarrow\b', '→'), (r'\\leftarrow\b', '←'), (r'\\to\b', '→'),
-        (r'\\Rightarrow\b', '⇒'), (r'\\Leftrightarrow\b', '⇔'), (r'\\leftrightarrow\b', '↔'),
-        (r'\\equiv\b', '≡'), (r'\\oplus\b', '⊕'), (r'\\bot\b', '⊥'), (r'\\top\b', '⊤'),
-        (r'\\vdash\b', '⊢'), (r'\\models\b', '⊨'),
+        (r'\\phi(?![a-zA-Z])', 'φ'), (r'\\varphi(?![a-zA-Z])', 'φ'), (r'\\Phi(?![a-zA-Z])', 'Φ'),
+        (r'\\psi(?![a-zA-Z])', 'ψ'), (r'\\Psi(?![a-zA-Z])', 'Ψ'),
+        (r'\\alpha(?![a-zA-Z])', 'α'), (r'\\beta(?![a-zA-Z])', 'β'), (r'\\gamma(?![a-zA-Z])', 'γ'), (r'\\delta(?![a-zA-Z])', 'δ'),
+        (r'\\epsilon(?![a-zA-Z])', 'ε'), (r'\\theta(?![a-zA-Z])', 'θ'), (r'\\vartheta(?![a-zA-Z])', 'θ'), (r'\\Theta(?![a-zA-Z])', 'Θ'),
+        (r'\\lambda(?![a-zA-Z])', 'λ'), (r'\\Lambda(?![a-zA-Z])', 'Λ'), (r'\\mu(?![a-zA-Z])', 'μ'),
+        (r'\\pi(?![a-zA-Z])', 'π'), (r'\\sigma(?![a-zA-Z])', 'σ'), (r'\\Sigma(?![a-zA-Z])', 'Σ'), (r'\\tau(?![a-zA-Z])', 'τ'),
+        (r'\\omega(?![a-zA-Z])', 'ω'), (r'\\Omega(?![a-zA-Z])', 'Ω'), (r'\\Delta(?![a-zA-Z])', 'Δ'), (r'\\Gamma(?![a-zA-Z])', 'Γ'),
+        (r'\\eta(?![a-zA-Z])', 'η'), (r'\\rho(?![a-zA-Z])', 'ρ'), (r'\\varrho(?![a-zA-Z])', 'ρ'),
+        (r'\\xi(?![a-zA-Z])', 'ξ'), (r'\\Xi(?![a-zA-Z])', 'Ξ'), (r'\\zeta(?![a-zA-Z])', 'ζ'), (r'\\chi(?![a-zA-Z])', 'χ'),
+        (r'\\nu(?![a-zA-Z])', 'ν'), (r'\\kappa(?![a-zA-Z])', 'κ'), (r'\\upsilon(?![a-zA-Z])', 'υ'), (r'\\Upsilon(?![a-zA-Z])', 'Υ'),
+        (r'\\times(?![a-zA-Z])', '×'), (r'\\div(?![a-zA-Z])', '÷'), (r'\\pm(?![a-zA-Z])', '±'), (r'\\mp(?![a-zA-Z])', '∓'),
+        (r'\\le(q)?(?![a-zA-Z])', '≤'), (r'\\ge(q)?(?![a-zA-Z])', '≥'), (r'\\approx(?![a-zA-Z])', '≈'),
+        (r'\\infty(?![a-zA-Z])', '∞'), (r'\\partial(?![a-zA-Z])', '∂'), (r'\\nabla(?![a-zA-Z])', '∇'),
+        (r'\\int(?![a-zA-Z])', '∫'), (r'\\sum(?![a-zA-Z])', '∑'), (r'\\prod(?![a-zA-Z])', '∏'),
+        (r'\\in(?![a-zA-Z])', '∈'), (r'\\subset(?![a-zA-Z])', '⊂'), (r'\\subseteq(?![a-zA-Z])', '⊆'),
+        (r'\\supset(?![a-zA-Z])', '⊃'), (r'\\supseteq(?![a-zA-Z])', '⊇'), (r'\\setminus(?![a-zA-Z])', '∖'),
+        (r'\\cap(?![a-zA-Z])', '∩'), (r'\\cup(?![a-zA-Z])', '∪'), (r'\\emptyset(?![a-zA-Z])', '∅'),
+        (r'\\forall(?![a-zA-Z])', '∀'), (r'\\exists(?![a-zA-Z])', '∃'),
+        (r'\\land(?![a-zA-Z])', '∧'), (r'\\wedge(?![a-zA-Z])', '∧'), (r'\\lor(?![a-zA-Z])', '∨'), (r'\\vee(?![a-zA-Z])', '∨'),
+        (r'\\neg(?![a-zA-Z])', '¬'), (r'\\lnot(?![a-zA-Z])', '¬'), (r'\\sim(?![a-zA-Z])', '∼'),
+        (r'\\rightarrow(?![a-zA-Z])', '→'), (r'\\leftarrow(?![a-zA-Z])', '←'), (r'\\to(?![a-zA-Z])', '→'),
+        (r'\\Rightarrow(?![a-zA-Z])', '⇒'), (r'\\Leftrightarrow(?![a-zA-Z])', '⇔'), (r'\\leftrightarrow(?![a-zA-Z])', '↔'),
+        (r'\\equiv(?![a-zA-Z])', '≡'), (r'\\oplus(?![a-zA-Z])', '⊕'), (r'\\bot(?![a-zA-Z])', '⊥'), (r'\\top(?![a-zA-Z])', '⊤'),
+        (r'\\vdash(?![a-zA-Z])', '⊢'), (r'\\models(?![a-zA-Z])', '⊨'),
         (r'\\mathbb\{R\}', 'ℝ'), (r'\\mathbb\{N\}', 'ℕ'), (r'\\mathbb\{Z\}', 'ℤ'), (r'\\mathbb\{Q\}', 'ℚ'), (r'\\mathbb\{C\}', 'ℂ'),
-        (r'\\log\b', 'log'), (r'\\ln\b', 'ln'), (r'\\lg\b', 'lg'), (r'\\exp\b', 'exp'),
-        (r'\\sin\b', 'sin'), (r'\\cos\b', 'cos'), (r'\\tan\b', 'tan'), (r'\\cot\b', 'cot'),
-        (r'\\arcsin\b', 'arcsin'), (r'\\arccos\b', 'arccos'), (r'\\arctan\b', 'arctan'),
-        (r'\\sinh\b', 'sinh'), (r'\\cosh\b', 'cosh'), (r'\\tanh\b', 'tanh'),
-        (r'\\lim\b', 'lim'), (r'\\max\b', 'max'), (r'\\min\b', 'min'), (r'\\det\b', 'det'),
-        (r'\\cdot\b', '·'), (r'\\circ\b', '°')
+        (r'\\log(?![a-zA-Z])', 'log'), (r'\\ln(?![a-zA-Z])', 'ln'), (r'\\lg(?![a-zA-Z])', 'lg'), (r'\\exp(?![a-zA-Z])', 'exp'),
+        (r'\\sin(?![a-zA-Z])', 'sin'), (r'\\cos(?![a-zA-Z])', 'cos'), (r'\\tan(?![a-zA-Z])', 'tan'), (r'\\cot(?![a-zA-Z])', 'cot'),
+        (r'\\arcsin(?![a-zA-Z])', 'arcsin'), (r'\\arccos(?![a-zA-Z])', 'arccos'), (r'\\arctan(?![a-zA-Z])', 'arctan'),
+        (r'\\sinh(?![a-zA-Z])', 'sinh'), (r'\\cosh(?![a-zA-Z])', 'cosh'), (r'\\tanh(?![a-zA-Z])', 'tanh'),
+        (r'\\lim(?![a-zA-Z])', 'lim'), (r'\\max(?![a-zA-Z])', 'max'), (r'\\min(?![a-zA-Z])', 'min'), (r'\\det(?![a-zA-Z])', 'det'),
+        (r'\\cdot(?![a-zA-Z])', '·'), (r'\\bullet(?![a-zA-Z])', '•'),
+        (r'\\circ(?![a-zA-Z])|\\degree(?![a-zA-Z])', '°'),
+        (r'\\perp(?![a-zA-Z])', '⊥'), (r'\\parallel(?![a-zA-Z])', '∥'),
+        (r'\\angle(?![a-zA-Z])', '∠'), (r'\\triangle(?![a-zA-Z])', '△'),
+        (r'\\dots|\\ldots|\\cdots', '...'), (r'\\cong(?![a-zA-Z])', '≅'),
+        (r'\\prime(?![a-zA-Z])', '′'),
+        (r'\\%', '%'), (r'\\&', '&'), (r'\\_', '_'), (r'\\#', '#')
     ]
     for pattern, repl in symbols_map:
         s = re.sub(pattern, repl, s)
+
+    # Xử lý độ: 2^\circ -> 2°, ^° -> °
+    s = re.sub(r'\^°|\^\{\s*°\s*\}|\^\{\s*\\circ\s*\}', '°', s)
+
+    # Tự động tách khoảng trắng giữa biến số/số và hàm toán học (vd: iarctan -> i arctan, 5e^ -> 5 e^)
+    s = re.sub(r'([0-9a-zA-Zα-ωΑ-Ω])(arcsin|arccos|arctan|sinh|cosh|tanh|cot|(?<!arc)sin|(?<!arc)cos|(?<!arc)tan|ln|log|exp)', r'\1 \2', s)
+    s = re.sub(r'(\d)\s*(e\^)', r'\1 \2', s)
+    # Tách hàm và biến sau nó: không tách chữ h của sinh, cosh, tanh
+    s = re.sub(r'(arcsin|arccos|arctan|sinh|cosh|tanh|cot|(?<!arc)sin(?!h)|(?<!arc)cos(?!h)|(?<!arc)tan(?!h)|ln|log|exp)\s*([α-ωΑ-Ωa-zA-Z])', r'\1 \2', s)
 
     # Thay thế lũy thừa số và biến Unicode siêu ký tự
     sup_map = {
@@ -79,10 +104,11 @@ def clean_latex_to_text(text: str) -> str:
         'e': 'ᵉ', 'f': 'ᶠ', 'g': 'ᵍ', 'h': 'ʰ', 'j': 'ʲ', 'k': 'ᵏ',
         'l': 'ˡ', 'm': 'ᵐ', 'o': 'ᵒ', 'p': 'ᵖ', 'r': 'ʳ', 's': 'ˢ',
         't': 'ᵗ', 'u': 'ᵘ', 'v': 'ᵛ', 'w': 'ʷ', 'x': 'ˣ', 'y': 'ʸ', 'z': 'ᶻ',
-        'α': 'ᵅ', 'β': 'ᵝ', 'γ': 'ᵞ', 'δ': 'ᵟ', 'ε': 'ᵋ', 'θ': 'ᶿ', 'φ': 'ᵠ', 'χ': 'ᵡ'
+        'α': 'ᵅ', 'β': 'ᵝ', 'γ': 'ᵞ', 'δ': 'ᵟ', 'ε': 'ᵋ', 'θ': 'ᶿ', 'φ': 'ᵠ', 'χ': 'ᵡ',
+        '/': '⁄', ' ': ' '
     }
     def replace_sup(match):
-        val = match.group(1).replace(' ', '')
+        val = match.group(1).strip()
         if all(c in sup_map for c in val):
             return "".join(sup_map[c] for c in val)
         return f"^({val})"

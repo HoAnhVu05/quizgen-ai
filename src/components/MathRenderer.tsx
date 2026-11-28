@@ -47,10 +47,35 @@ export const parseMathSegments = (rawText: string): MathSegment[] => {
         value: token.slice(2, -2).trim(),
       });
     } else if (token.startsWith('$') && token.endsWith('$')) {
-      segments.push({
-        type: 'inline',
-        value: token.slice(1, -1).trim(),
-      });
+      const inner = token.slice(1, -1).trim();
+      const vnRegex = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
+      if (vnRegex.test(inner)) {
+        // Phân đoạn bị lỗi do LLM/AI để hở dấu $ bọc cả văn bản tiếng Việt (tránh bị KaTeX ép liền chữ)
+        const subRegex = /((?:[a-zA-Z0-9_\^\{\}\(\)]+\s*)?(?:\\neq|\\le|\\ge|\\in|\\notin|=|≠|≤|≥|<|>)\s*(?:[a-zA-Z0-9_\^\{\}\(\)]+)?|\\[a-zA-Z]+(?:\{[^{}]*\}|_[a-zA-Z0-9{}]+|\^[a-zA-Z0-9{}]+)*(?:\s+[a-zA-Z0-9\(\)]+)*)/g;
+        let subLast = 0;
+        let subMatch: RegExpExecArray | null;
+        while ((subMatch = subRegex.exec(inner)) !== null) {
+          if (subMatch.index > subLast) {
+            const prose = inner.substring(subLast, subMatch.index);
+            if (prose) {
+              segments.push({ type: 'text', value: prose });
+            }
+          }
+          segments.push({ type: 'inline', value: subMatch[0].trim() });
+          subLast = subRegex.lastIndex;
+        }
+        if (subLast < inner.length) {
+          const prose = inner.substring(subLast);
+          if (prose) {
+            segments.push({ type: 'text', value: prose });
+          }
+        }
+      } else {
+        segments.push({
+          type: 'inline',
+          value: inner,
+        });
+      }
     } else if (token.startsWith('\\(') && token.endsWith('\\)')) {
       segments.push({
         type: 'inline',

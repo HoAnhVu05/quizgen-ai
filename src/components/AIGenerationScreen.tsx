@@ -529,11 +529,12 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
 
   const chaptersList = useMemo(() => {
     if (!selectedBook) return [];
-    return (
+    const list = (
       chaptersByDocument[selectedBook] ||
       FALLBACK_CHAPTERS[selectedBook] ||
       DEFAULT_CUSTOM_CHAPTERS
     );
+    return list.map((ch: string) => normalizeVietnameseLegacyFont(ch));
   }, [selectedBook, chaptersByDocument]);
 
   const filteredChapters = useMemo(() => {

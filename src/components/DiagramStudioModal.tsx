@@ -34,8 +34,9 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
   const [caption, setCaption] = useState(initialCaption || '');
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // ── Draw.io Iframe State ─────────────────────────────────────────────────
+  // ── Draw.io & Chemistry Iframe State ─────────────────────────────────────
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const chemIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     if (isOpen && initialCaption && !caption) {
@@ -99,8 +100,13 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
           );
         } else if (msg.event === 'save' || msg.event === 'export') {
           if (msg.data) {
-            await handleFinishImage(msg.data, caption || 'Sơ đồ kỹ thuật Draw.io');
+            await handleFinishImage(
+              msg.data,
+              caption || (activeTab === 'molview' ? 'Công thức cấu tạo phân tử Hóa học' : 'Sơ đồ kỹ thuật Draw.io')
+            );
           }
+        } else if (msg.event === 'export_cancel') {
+          setIsProcessing(false);
         }
       } catch {
         // Ignored non-json message
@@ -109,7 +115,7 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [isOpen, caption]);
+  }, [isOpen, caption, activeTab]);
 
   const requestDrawioExport = () => {
     if (!iframeRef.current?.contentWindow) return;
@@ -122,6 +128,9 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
       }),
       '*'
     );
+    setTimeout(() => {
+      setIsProcessing((prev) => (prev ? false : false));
+    }, 6000);
   };
 
   const handleFinishImage = async (dataUrl: string, finalCaption: string) => {
@@ -162,9 +171,25 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
     onClose();
   };
 
+  const requestChemExport = () => {
+    if (!chemIframeRef.current?.contentWindow) return;
+    setIsProcessing(true);
+    chemIframeRef.current.contentWindow.postMessage(
+      JSON.stringify({
+        action: 'export',
+      }),
+      '*'
+    );
+    setTimeout(() => {
+      setIsProcessing((prev) => (prev ? false : false));
+    }, 6000);
+  };
+
   const handleApplyCurrentTab = () => {
     if (activeTab === 'drawio') {
       requestDrawioExport();
+    } else if (activeTab === 'molview') {
+      requestChemExport();
     }
   };
 
@@ -306,7 +331,7 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
       </div>
 
       {/* Studio Workspace Canvas Area (Takes full remaining screen) */}
-      <div className="flex-1 w-full bg-slate-950 overflow-hidden relative">
+      <div className="flex-1 w-full min-h-0 bg-slate-950 overflow-hidden relative">
         {/* TAB 1: DRAW.IO FULL ENGINE */}
         {activeTab === 'drawio' && (
           <div className="w-full h-full flex flex-col relative">
@@ -359,24 +384,28 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
             {/* Top Assistant Bar */}
             <div className="px-4 py-2 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between text-xs text-slate-300 shrink-0">
               <span className="flex items-center gap-2">
-                <Atom className="w-4 h-4 text-teal-400" />
-                <span>Trình vẽ công thức phân tử JSME (Vẽ xong nhấn Win + Shift + S hoặc xuất ảnh rồi dán vào câu hỏi).</span>
+                <Atom className="w-4 h-4 text-teal-400 shrink-0" />
+                <span>
+                  Bảng vẽ công thức phân tử Hóa học (JSME): Vẽ cấu trúc rồi bấm nút <strong>Áp dụng vào câu hỏi</strong> bên dưới để tự động căn cắt vùng vẽ chuẩn đẹp.
+                </span>
               </span>
               <a
                 href="https://molview.org"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white font-medium shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium border border-slate-600 transition-colors shrink-0"
+                title="Mở MolView.org để khám phá mô hình phân tử 3D không gian"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Mở MolView.org toàn màn hình</span>
+                <ExternalLink className="w-3.5 h-3.5 text-teal-400" />
+                <span>Mở MolView 3D</span>
               </a>
             </div>
 
             <div className="flex-1 w-full bg-white relative">
               <iframe
+                ref={chemIframeRef}
                 title="JSME Chemical Structure Editor"
-                src="https://jsme-editor.github.io/dist/JSME_test.html"
+                src="/chem-editor.html"
                 className="w-full h-full border-none bg-white"
               />
             </div>
@@ -402,7 +431,7 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
       </div>
 
       {/* Bottom Unified Action Dock (Comfortable height, never covered by taskbar) */}
-      <div className="min-h-[52px] py-2 px-3 pb-3 sm:pb-2.5 bg-slate-900 border-t border-slate-800 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 shrink-0 z-20">
+      <div className="min-h-[50px] py-2 px-3 bg-slate-900 border-t border-slate-800 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 shrink-0 z-30">
         <div className="flex-1 max-w-lg flex items-center gap-2 min-w-[200px]">
           <span className="text-xs text-slate-400 shrink-0">Chú thích sơ đồ:</span>
           <input
@@ -435,7 +464,7 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
             <input type="file" accept="image/*" className="hidden" onChange={handleUploadLocalFile} />
           </label>
 
-          {activeTab === 'drawio' && (
+          {(activeTab === 'drawio' || activeTab === 'molview') && (
             <button
               type="button"
               onClick={handleApplyCurrentTab}
@@ -445,7 +474,7 @@ export const DiagramStudioModal: React.FC<DiagramStudioModalProps> = ({
               {isProcessing ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Đang trích xuất...</span>
+                  <span>Đang xuất ảnh...</span>
                 </>
               ) : (
                 <>

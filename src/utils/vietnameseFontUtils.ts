@@ -37,11 +37,11 @@ const VNI_PAIRS: [string, string][] = [
   ['öù', 'ứ'], ['öø', 'ừ'], ['öû', 'ử'], ['öõ', 'ữ'], ['öï', 'ự'],
   ['yù', 'ý'], ['yø', 'ỳ'], ['yû', 'ỷ'], ['yõ', 'ỹ'],
 
-  // Ký tự đơn trong VNI-Windows
-  ['Ò', 'Ị'], ['Ó', 'Í'], ['Õ', 'Ĩ'], ['Ñ', 'Đ'], ['ñ', 'đ'],
-  ['ô', 'ơ'], ['ö', 'ư'], ['Ô', 'Ơ'], ['Ö', 'Ư'],
-  ['í', 'í'], ['ì', 'ì'], ['æ', 'ỉ'], ['ó', 'ĩ'], ['ò', 'ị'], ['î', 'ỵ'],
-  ['Í', 'Í'], ['Ì', 'Ì'], ['Î', 'Ỵ']
+  // Ký tự đặc biệt và cụm từ đặc trưng VNI
+  ['CHUYEÅN', 'CHUYỂN'], ['CHUYEẢN', 'CHUYỂN'],
+  ['DAÀM', 'DẦM'], ['CHÒU', 'CHỊU'], ['UOÁN', 'UỐN'],
+  ['Ñ', 'Đ'], ['ñ', 'đ'],
+  ['æ', 'ỉ'], ['î', 'ỵ'], ['Î', 'Ỵ']
 ];
 
 /**
@@ -52,8 +52,15 @@ export function normalizeVietnameseLegacyFont(text: string): string {
   let result = text;
 
   // 1. Kiểm tra dấu hiệu chuỗi chứa mã ký tự VNI đặc trưng
-  const hasVniSign = /[A-Za-z0-9\s]*(?:[A-Z][ÁÀẢÃẠÉÈẺẼẸÓÒỎÕỌÚÙỦŨỤÅÄÊÂÖÔØÙÛÏÜ]|\bVÒ\b|\bCHÒU\b|\bDAÀM\b|[a-z][ùøûõïêéèúüëâáàåãäö])/;
-  if (hasVniSign.test(result) || result.includes('CHUYE')) {
+  const hasVniSign = /(?:CHUYE|VÒ|CHÒU|DAÀM|UOÁN|EÅ|EẢ|[a-z][ùøûõï]|[A-Z][ÙØÛÕÏ])/;
+  if (hasVniSign.test(result)) {
+    // Thay thế từ đơn độc lập
+    result = result.replace(/\bVÒ\b/g, 'VỊ');
+    result = result.replace(/\bCHÒU\b/g, 'CHỊU');
+    result = result.replace(/\bDAÀM\b/g, 'DẦM');
+    result = result.replace(/\bUOÁN\b/g, 'UỐN');
+    result = result.replace(/\bCHUYEÅN\b|\bCHUYEẢN\b/g, 'CHUYỂN');
+
     for (const [pattern, replacement] of VNI_PAIRS) {
       if (result.includes(pattern)) {
         result = result.split(pattern).join(replacement);

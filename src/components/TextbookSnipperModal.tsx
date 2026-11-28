@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
   Crop,
@@ -11,6 +11,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Search,
 } from 'lucide-react';
 import apiClient, { API_BASE } from '../services/apiClient';
 
@@ -39,10 +40,12 @@ export const TextbookSnipperModal: React.FC<TextbookSnipperModalProps> = ({
 }) => {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string>('');
+  const [docSearchQuery, setDocSearchQuery] = useState('');
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [caption, setCaption] = useState(initialCaption || '');
   const [isProcessing, setIsProcessing] = useState(false);
+  const localFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Snipping crop state
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -68,14 +71,13 @@ export const TextbookSnipperModal: React.FC<TextbookSnipperModalProps> = ({
             : [];
           setDocuments(items);
 
-          // Auto-match textbookName if provided
+          // Auto-match textbookName if provided (so khớp thông minh 2 chiều, loại bỏ phần mở rộng)
           if (textbookName && items.length > 0) {
-            const matched = items.find(
-              (d) =>
-                d.name === textbookName ||
-                d.filename === textbookName ||
-                (d.name && textbookName.toLowerCase().includes(d.name.toLowerCase()))
-            );
+            const cleanTarget = textbookName.toLowerCase().replace(/\.(pdf|docx|doc)$/i, '').trim();
+            const matched = items.find((d) => {
+              const name = (d.name || d.filename || '').toLowerCase().replace(/\.(pdf|docx|doc)$/i, '').trim();
+              return name === cleanTarget || name.includes(cleanTarget) || cleanTarget.includes(name);
+            });
             if (matched) {
               setSelectedDocId(matched.id);
             } else {
@@ -154,6 +156,31 @@ export const TextbookSnipperModal: React.FC<TextbookSnipperModalProps> = ({
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, [isOpen]);
+
+  const handleLocalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageSrc(reader.result as string);
+        setCropRect(null);
+      };
+      reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+      const url = URL.createObjectURL(file);
+      setPdfBlobUrl(url);
+      setImageSrc(null);
+      setCropRect(null);
+    }
+  };
+
+  const filteredDocuments = useMemo(() => {
+    if (!docSearchQuery.trim()) return documents;
+    const q = docSearchQuery.toLowerCase();
+    return documents.filter((d) => (d.name || d.filename || '').toLowerCase().includes(q));
+  }, [documents, docSearchQuery]);
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -288,20 +315,52 @@ export const TextbookSnipperModal: React.FC<TextbookSnipperModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Bộ lọc tìm kiếm nhanh giáo trình */}
+            {documents.length > 5 && (
+              <div className="relative">
+                <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Lọc giáo trình..."
+                  value={docSearchQuery}
+                  onChange={(e) => setDocSearchQuery(e.target.value)}
+                  className="w-28 sm:w-36 pl-6 pr-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+                />
+              </div>
+            )}
+
             {documents.length > 0 && (
               <select
                 value={selectedDocId}
                 onChange={(e) => setSelectedDocId(e.target.value)}
-                className="max-w-[200px] sm:max-w-xs truncate px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                className="max-w-[180px] sm:max-w-xs truncate px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                title="Chọn giáo trình cần cắt hình"
               >
-                {documents.map((doc) => (
+                {filteredDocuments.map((doc) => (
                   <option key={doc.id} value={doc.id}>
                     {doc.name || doc.filename || 'Giáo trình'}
                   </option>
                 ))}
               </select>
             )}
+
+            {/* Nút tải tệp/ảnh từ máy tính */}
+            <label
+              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium cursor-pointer transition-colors flex items-center gap-1.5 shrink-0"
+              title="Chọn tệp PDF hoặc file ảnh minh họa từ máy tính để cắt ngay"
+            >
+              <Upload className="w-3.5 h-3.5 text-teal-400" />
+              <span className="hidden sm:inline">Tải từ máy</span>
+              <input
+                ref={localFileInputRef}
+                type="file"
+                accept=".pdf,image/*"
+                className="hidden"
+                onChange={handleLocalFileSelect}
+              />
+            </label>
+
             <button
               onClick={onClose}
               className="p-1 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"

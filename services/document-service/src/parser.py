@@ -54,11 +54,10 @@ class DocumentParser:
         ('öù', 'ứ'), ('öø', 'ừ'), ('öû', 'ử'), ('öõ', 'ữ'), ('öï', 'ự'),
         ('yù', 'ý'), ('yø', 'ỳ'), ('yû', 'ỷ'), ('yõ', 'ỹ'),
 
-        # Ký tự đơn trong VNI-Windows
-        ('Ò', 'Ị'), ('Ó', 'Í'), ('Õ', 'Ĩ'), ('Ñ', 'Đ'), ('ñ', 'đ'),
-        ('ô', 'ơ'), ('ö', 'ư'), ('Ô', 'Ơ'), ('Ö', 'Ư'),
-        ('í', 'í'), ('ì', 'ì'), ('æ', 'ỉ'), ('ó', 'ĩ'), ('ò', 'ị'), ('î', 'ỵ'),
-        ('Í', 'Í'), ('Ì', 'Ì'), ('Î', 'Ỵ')
+        # Ký tự đặc biệt và từ khóa VNI
+        ('CHUYEÅN', 'CHUYỂN'), ('CHUYEẢN', 'CHUYỂN'), ('DAÀM', 'DẦM'),
+        ('CHÒU', 'CHỊU'), ('UOÁN', 'UỐN'), ('Ñ', 'Đ'), ('ñ', 'đ'),
+        ('æ', 'ỉ'), ('î', 'ỵ'), ('Î', 'Ỵ')
     ]
 
     @classmethod
@@ -66,7 +65,22 @@ class DocumentParser:
         """Tự động phát hiện và chuyển đổi bảng mã cũ VNI-Windows / TCVN3 sang Unicode UTF-8 chuẩn"""
         if not text:
             return ""
-        if any(marker in text for marker in ('CHUYE', 'VÒ', 'CHÒU', 'DAÀM', 'UOÁN', 'aù', 'aø', 'aû', 'aõ', 'aï', 'eù', 'eø', 'eû', 'eõ', 'eï', 'où', 'oø', 'oû', 'oõ', 'oï', 'uù', 'uø', 'uû', 'uõ', 'uï', 'AÙ', 'AØ', 'AÛ', 'AÕ', 'AÏ', 'EÙ', 'EØ', 'EÛ', 'EÕ', 'EÏ', 'OÙ', 'OØ', 'OÛ', 'OÕ', 'OÏ', 'UÙ', 'UØ', 'UÛ', 'UÕ', 'UÏ', 'EÅ', 'OÁ', 'AÀ', 'AÁ', 'Ö', 'Ô')):
+        # Dấu hiệu nhận biết VNI-Windows không gây nhiễu cho văn bản Unicode hiện đại
+        vni_markers = (
+            'CHUYE', 'VÒ', 'CHÒU', 'DAÀM', 'UOÁN', 'EÅ', 'EẢ',
+            'aù', 'aø', 'aû', 'aõ', 'aï', 'eù', 'eø', 'eû', 'eõ', 'eï',
+            'où', 'oø', 'oû', 'oõ', 'oï', 'uù', 'uø', 'uû', 'uõ', 'uï',
+            'AÙ', 'AØ', 'AÛ', 'AÕ', 'AÏ', 'EÙ', 'EØ', 'EÛ', 'EÕ', 'EÏ',
+            'OÙ', 'OØ', 'OÛ', 'OÕ', 'OÏ', 'UÙ', 'UØ', 'UÛ', 'UÕ', 'UÏ'
+        )
+        if any(marker in text for marker in vni_markers):
+            # Xử lý các từ đơn lẻ đặc trưng của VNI
+            text = re.sub(r'\bVÒ\b', 'VỊ', text)
+            text = re.sub(r'\bCHÒU\b', 'CHỊU', text)
+            text = re.sub(r'\bDAÀM\b', 'DẦM', text)
+            text = re.sub(r'\bUOÁN\b', 'UỐN', text)
+            text = re.sub(r'\bCHUYEÅN\b|\bCHUYEẢN\b', 'CHUYỂN', text)
+
             for old, new in cls.VNI_WINDOWS_MAP:
                 if old in text:
                     text = text.replace(old, new)

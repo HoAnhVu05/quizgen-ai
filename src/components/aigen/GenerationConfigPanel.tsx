@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { BloomDistribution, DocumentItem } from './aigenTypes';
 import { PromptGuidanceSection } from './PromptGuidanceSection';
+import { normalizeVietnameseLegacyFont } from '../../utils/vietnameseFontUtils';
 
 interface GenerationConfigPanelProps {
   selectedBook: string;
@@ -230,7 +231,9 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
                             : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
                         }`}
                       >
-                        <span className="text-xs truncate pr-2">{ch}</span>
+                        <span className="text-xs truncate pr-2" title={normalizeVietnameseLegacyFont(ch)}>
+                          {normalizeVietnameseLegacyFont(ch)}
+                        </span>
                         <div
                           className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
                             isChecked

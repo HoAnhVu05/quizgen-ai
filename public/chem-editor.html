@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Trình vẽ phân tử hóa học - QuizGen AI</title>
+  <script type="text/javascript" src="https://jsme-editor.github.io/dist/jsme/jsme.nocache.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #ffffff; font-family: system-ui, -apple-system, sans-serif; }
+    #jsme_container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+  </style>
+  <script>
+    var jsmeApplet;
+    function jsmeOnLoad() {
+      // Khởi tạo JSME toàn màn hình với các tùy chọn chuyên nghiệp
+      jsmeApplet = new JSApplet.JSME("jsme_container", "100%", "100%", {
+        "options": "oldlook,star,polarnitro,zoom"
+      });
+      window.parent.postMessage({ event: 'chem_ready' }, '*');
+    }
+
+    // Hàm tự động quét điểm ảnh và cắt gọn khung hình quanh cấu trúc phân tử (loại bỏ vùng trắng thừa)
+    function cropCanvasToContent(srcCanvas, padding) {
+      padding = typeof padding === 'number' ? padding : 35;
+      var sCtx = srcCanvas.getContext('2d');
+      var w = srcCanvas.width;
+      var h = srcCanvas.height;
+      var imgData = sCtx.getImageData(0, 0, w, h);
+      var data = imgData.data;
+
+      var minX = w, minY = h, maxX = 0, maxY = 0;
+      var found = false;
+
+      for (var y = 0; y < h; y++) {
+        for (var x = 0; x < w; x++) {
+          var idx = (y * w + x) * 4;
+          var r = data[idx];
+          var g = data[idx + 1];
+          var b = data[idx + 2];
+          var a = data[idx + 3];
+
+          // Điểm ảnh chứa nét vẽ (khác màu nền trắng tinh và có độ mờ nét)
+          if (a > 30 && (r < 242 || g < 242 || b < 242)) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+            found = true;
+          }
+        }
+      }
+
+      if (!found) {
+        return null;
+      }
+
+      // Mở rộng thêm lề (padding) để nét vẽ thoáng và cân đối
+      minX = Math.max(0, minX - padding);
+      minY = Math.max(0, minY - padding);
+      maxX = Math.min(w, maxX + padding);
+      maxY = Math.min(h, maxY + padding);
+
+      var cropW = maxX - minX;
+      var cropH = maxY - minY;
+
+      if (cropW < 20 || cropH < 20) {
+        return null;
+      }
+
+      var croppedCanvas = document.createElement('canvas');
+      croppedCanvas.width = cropW;
+      croppedCanvas.height = cropH;
+      var cCtx = croppedCanvas.getContext('2d');
+      cCtx.fillStyle = '#ffffff';
+      cCtx.fillRect(0, 0, cropW, cropH);
+      cCtx.drawImage(srcCanvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+
+      return croppedCanvas;
+    }
+
+    function exportPNG() {
+      try {
+        var svg = document.querySelector('#jsme_container svg');
+        if (!svg) {
+          var canvasEl = document.querySelector('#jsme_container canvas');
+          if (canvasEl) {
+            var croppedCanvasEl = cropCanvasToContent(canvasEl, 30) || canvasEl;
+            window.parent.postMessage(JSON.stringify({ event: 'export', data: croppedCanvasEl.toDataURL('image/png') }), '*');
+            return;
+          }
+          alert('Chưa có cấu trúc hóa học nào được vẽ trên bảng!');
+          window.parent.postMessage(JSON.stringify({ event: 'export_cancel' }), '*');
+          return;
+        }
+
+        var svgData = new XMLSerializer().serializeToString(svg);
+        var canvas = document.createElement('canvas');
+        var bbox = svg.getBoundingClientRect();
+        var width = Math.max(bbox.width * 2, 800);
+        var height = Math.max(bbox.height * 2, 600);
+
+        canvas.width = width;
+        canvas.height = height;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        var img = new Image();
+        img.onload = function() {
+          ctx.drawImage(img, 0, 0, width, height);
+          try {
+            var cropped = cropCanvasToContent(canvas, 40);
+            if (!cropped) {
+              alert('Chưa phát hiện cấu trúc phân tử nào trên bảng vẽ. Vui lòng vẽ cấu trúc trước khi áp dụng!');
+              window.parent.postMessage(JSON.stringify({ event: 'export_cancel' }), '*');
+              return;
+            }
+            var dataUrl = cropped.toDataURL('image/png');
+            window.parent.postMessage(JSON.stringify({ event: 'export', data: dataUrl }), '*');
+          } catch (cropErr) {
+            console.warn('Auto-crop không khả dụng, sử dụng ảnh gốc:', cropErr);
+            var fallbackUrl = canvas.toDataURL('image/png');
+            window.parent.postMessage(JSON.stringify({ event: 'export', data: fallbackUrl }), '*');
+          }
+        };
+        img.onerror = function() {
+          var dataUrl = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+          window.parent.postMessage(JSON.stringify({ event: 'export', data: dataUrl }), '*');
+        };
+        img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+      } catch (err) {
+        console.error('Lỗi xuất ảnh hóa học:', err);
+        window.parent.postMessage(JSON.stringify({ event: 'export_cancel' }), '*');
+      }
+    }
+
+    window.addEventListener('message', function(evt) {
+      if (!evt.data) return;
+      try {
+        var msg = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data;
+        if (msg.action === 'export') {
+          exportPNG();
+        }
+      } catch (e) {}
+    });
+  </script>
+</head>
+<body>
+  <div id="jsme_container"></div>
+</body>
+</html>
