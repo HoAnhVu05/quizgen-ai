@@ -37,6 +37,8 @@ export interface UserProfile {
   twoFactorVerified?: boolean;
   planTier?: 'FREE' | 'PRO_MONTH' | 'PRO_YEAR' | 'ENTERPRISE' | string;
   planExpiresAt?: string;
+  isActive?: boolean;
+  createdAt?: string;
   staffId?: string;
   academicPosition?: string;
   phoneNumber?: string;
@@ -141,7 +143,30 @@ export interface Question {
   hasImage?: boolean;
   imageUrl?: string;
   imageCaption?: string;
+  // Mở rộng hỗ trợ Đề thi đa phần & Đa dạng loại câu hỏi
+  questionType?: 'SINGLE_CHOICE' | 'GROUP_PASSAGE' | 'TRUE_FALSE_GROUP' | 'MULTIPLE_RESPONSE' | 'SHORT_ANSWER' | 'MATCHING';
+  sectionId?: string;
+  sectionTitle?: string;
+  passageData?: {
+    id: string;
+    title: string;
+    content: string;
+    hasImage?: boolean;
+    imageUrl?: string;
+    imageCaption?: string;
+  };
+  statements?: {
+    id: string;
+    label: string; // a, b, c, d
+    text: string;
+    isCorrect: boolean;
+    explanation?: string;
+  }[];
+  correctAnswerIds?: string[]; // Cho MULTIPLE_RESPONSE
+  shortAnswer?: string | number; // Cho SHORT_ANSWER
 }
+
+export * from './examBlueprint';
 
 export interface TextbookFile {
   id: string;

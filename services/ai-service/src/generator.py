@@ -422,23 +422,24 @@ LƯU Ý QUAN TRỌNG:
 {lang_reminder}
 """
 
-        # ─── TĂNG TỐC ĐỘ: Parallel Batching với asyncio.gather khi tổng câu hỏi > 4 ───
+        # ─── TĂNG TỐC ĐỘ & CHỐNG TIMEOUT: Chia nhỏ sub-tasks tối đa 12 câu/lượt ───
         if total_questions > 4:
             sub_tasks_matrix = []
-            if req_nhan_biet > 0:
-                sub_tasks_matrix.append((f"- Nhận biết: chính xác {req_nhan_biet} câu", req_nhan_biet))
-            if req_thong_hieu > 0:
-                sub_tasks_matrix.append((f"- Thông hiểu: chính xác {req_thong_hieu} câu", req_thong_hieu))
-            van_phan = []
-            vp_count = 0
-            if req_van_dung > 0:
-                van_phan.append(f"- Vận dụng: chính xác {req_van_dung} câu")
-                vp_count += req_van_dung
-            if req_phan_tich > 0:
-                van_phan.append(f"- Phân tích: chính xác {req_phan_tich} câu")
-                vp_count += req_phan_tich
-            if van_phan:
-                sub_tasks_matrix.append(("\n".join(van_phan), vp_count))
+
+            def _add_sub_tasks(level_name: str, count: int):
+                if count <= 0:
+                    return
+                max_sub = 12
+                rem = count
+                while rem > 0:
+                    take = min(rem, max_sub)
+                    sub_tasks_matrix.append((f"- {level_name}: chính xác {take} câu", take))
+                    rem -= take
+
+            _add_sub_tasks("Nhận biết", req_nhan_biet)
+            _add_sub_tasks("Thông hiểu", req_thong_hieu)
+            _add_sub_tasks("Vận dụng", req_van_dung)
+            _add_sub_tasks("Phân tích", req_phan_tich)
 
             async def _run_sub_batch(matrix_desc: str, target_count: int) -> List[Dict[str, Any]]:
                 b_prompt = _build_batch_prompt(matrix_desc, target_count)
@@ -784,6 +785,13 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
                 "image_caption": img_caption,
                 "hasFormula": has_formula,
                 "has_formula": has_formula,
+                "questionType": q.get("questionType") or q.get("question_type") or "SINGLE_CHOICE",
+                "question_type": q.get("questionType") or q.get("question_type") or "SINGLE_CHOICE",
+                "statements": q.get("statements"),
+                "passageData": q.get("passageData") or q.get("passage_data"),
+                "passage_data": q.get("passageData") or q.get("passage_data"),
+                "shortAnswer": q.get("shortAnswer") or q.get("short_answer"),
+                "short_answer": q.get("shortAnswer") or q.get("short_answer"),
                 "options": q.get("options", []),
                 "correctAnswerId": correct_id,
                 "correct_answer_id": correct_id,

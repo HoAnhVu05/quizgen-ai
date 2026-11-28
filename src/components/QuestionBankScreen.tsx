@@ -309,9 +309,42 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
 
     availableCodes.forEach((code, cIdx) => {
       const baseSeed = Number(code) * 31 + shuffleCounter * 97 + cIdx * 17;
-      const shuffledQs = shuffleWithSeed(targetExamQuestions, baseSeed);
+
+      // Smart Shuffling: Gom nhóm các câu hỏi chùm (Passage Clusters) để không bị xé lẻ
+      const clusters: Question[][] = [];
+      let currentPassageId: string | null = null;
+      let currentCluster: Question[] = [];
+
+      targetExamQuestions.forEach((q) => {
+        const pId = q.passageData?.id || null;
+        if (pId && pId === currentPassageId) {
+          currentCluster.push(q);
+        } else {
+          if (currentCluster.length > 0) {
+            clusters.push(currentCluster);
+          }
+          currentCluster = [q];
+          currentPassageId = pId;
+        }
+      });
+      if (currentCluster.length > 0) {
+        clusters.push(currentCluster);
+      }
+
+      // Trộn các cụm câu hỏi
+      const shuffledClusters = shuffleWithSeed(clusters, baseSeed);
+      const shuffledQs: Question[] = [];
+      shuffledClusters.forEach((cl, clIdx) => {
+        if (cl.length > 1 && cl[0]?.passageData) {
+          const subShuffled = shuffleWithSeed(cl, baseSeed + clIdx * 7);
+          shuffledQs.push(...subShuffled);
+        } else {
+          shuffledQs.push(...cl);
+        }
+      });
+
       map[code] = shuffledQs.map((q, qIdx) => {
-        const shuffledOpts = shuffleWithSeed(q.options, baseSeed + qIdx * 13).map(
+        const shuffledOpts = shuffleWithSeed(q.options || [], baseSeed + qIdx * 13).map(
           (opt, oIdx) => ({
             id: opt.id,
             label: labels[oIdx] || opt.label,
@@ -332,6 +365,10 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           imageUrl: (q as any).imageUrl || (q as any).image_url || q.imageUrl,
           imageCaption: (q as any).imageCaption || (q as any).image_caption || q.imageCaption,
           hasFormula: q.hasFormula,
+          questionType: q.questionType,
+          passageData: q.passageData,
+          statements: q.statements,
+          sectionTitle: q.sectionTitle,
         };
       });
     });
@@ -362,6 +399,19 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       `Đã trộn mới ${examCodeCount} Mã đề (${availableCodes.join(', ')})`,
       `Thuật toán Fisher-Yates đã hoán vị thứ tự câu hỏi và phương án A/B/C/D cho cả ${examCodeCount} mã đề.`
     );
+  };
+
+  const handleQuickEditQuestion = (questionId: string, newText: string) => {
+    setInternalLoadedQuestions((prev) => {
+      const base = prev || questions;
+      const updated = base.map((q) => (q.id === questionId ? { ...q, question: newText } : q));
+      if (onLoadQuestions) {
+        onLoadQuestions(updated);
+      }
+      return updated;
+    });
+    setShuffleCounter((c) => c + 1);
+    onShowToast('success', 'Đã cập nhật câu hỏi', 'Nội dung câu hỏi đã được sửa trực tiếp thành công.');
   };
 
   const triggerDownload = (blob: Blob, filename: string) => {
@@ -635,6 +685,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
             setLightboxData({ isOpen: true, url, caption })
           }
           onViewAnswerKey={() => setViewMode('answer_key')}
+          onQuickEditQuestion={handleQuickEditQuestion}
         />
       )}
 

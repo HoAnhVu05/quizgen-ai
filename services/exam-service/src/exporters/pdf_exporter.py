@@ -664,6 +664,16 @@ class ReportLabExamExporter:
             spaceAfter=1.5,
             textColor=rl_colors.HexColor("#1e293b")
         )
+        style_passage_box = ParagraphStyle(
+            "PassageBox",
+            parent=styles["Normal"],
+            fontName=italic_font,
+            fontSize=9,
+            leading=13,
+            textColor=rl_colors.HexColor("#1e293b"),
+            spaceBefore=4,
+            spaceAfter=4
+        )
 
         story = []
 
@@ -694,8 +704,32 @@ class ReportLabExamExporter:
         answer_keys = []
         MAX_IMG_W_PT = 380.0  # ~134 mm, chuẩn lề A4
         MAX_IMG_H_PT = 200.0  # ~70 mm
+        last_passage_id = None
 
         for idx, q in enumerate(questions, 1):
+            # Khối bài đọc dùng chung cho câu hỏi chùm (Reading Comprehension / Case Study)
+            passage_data = q.get("passageData") or q.get("passage_data")
+            if passage_data:
+                p_id = passage_data.get("id") or passage_data.get("title")
+                if p_id != last_passage_id:
+                    last_passage_id = p_id
+                    p_title = clean_latex_to_text(passage_data.get("title", "BÀI ĐỌC / TÌNH HUỐNG DÙNG CHUNG"))
+                    p_content = clean_latex_to_text(passage_data.get("content", ""))
+                    box_table = Table([[
+                        Paragraph(f"<b>BÀI ĐỌC / TÌNH HUỐNG DÙNG CHUNG: {p_title}</b><br/><br/>{p_content}", style_passage_box)
+                    ]], colWidths=[493])
+                    box_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, -1), rl_colors.HexColor("#f8fafc")),
+                        ('BOX', (0, 0), (-1, -1), 0.8, rl_colors.HexColor("#cbd5e1")),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+                        ('TOPPADDING', (0, 0), (-1, -1), 8),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+                    ]))
+                    story.append(Spacer(1, 3 * RL_MM))
+                    story.append(box_table)
+                    story.append(Spacer(1, 2 * RL_MM))
+
             q_flowables = []
             raw_q_text = q.get("question") or q.get("question_text") or ""
             q_text = clean_latex_to_text(raw_q_text)
@@ -745,21 +779,31 @@ class ReportLabExamExporter:
                     except Exception:
                         pass
 
-            # Các phương án lựa chọn
+            # Xử lý các dạng câu hỏi: Đúng/Sai 4 ý hoặc Trắc nghiệm ABCD
+            statements = q.get("statements") or []
             options = q.get("options", [])
-            for opt in options:
-                opt_label = opt.get("label", "A")
-                raw_opt_text = opt.get("text", "")
-                opt_text = clean_latex_to_text(str(raw_opt_text))
-                q_flowables.append(Paragraph(f"<b>{opt_label}.</b> {opt_text}", style_opt))
+
+            if statements:
+                for stmt in statements:
+                    s_label = stmt.get("label", "")
+                    s_text = clean_latex_to_text(str(stmt.get("text", "")))
+                    q_flowables.append(Paragraph(f"<b>{s_label})</b> [ Đ / S ] &nbsp;&nbsp; {s_text}", style_opt))
+                
+                correct_label = " - ".join([f"{s.get('label', '')}:{'Đ' if s.get('isCorrect') else 'S'}" for s in statements])
+            else:
+                for opt in options:
+                    opt_label = opt.get("label", "A")
+                    raw_opt_text = opt.get("text", "")
+                    opt_text = clean_latex_to_text(str(raw_opt_text))
+                    q_flowables.append(Paragraph(f"<b>{opt_label}.</b> {opt_text}", style_opt))
+
+                correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
+                correct_opt = next((o for o in options if o.get("id") == correct_id), None)
+                correct_label = correct_opt.get("label") if correct_opt else q.get("correctLabel", "A")
 
             q_flowables.append(Spacer(1, 2 * RL_MM))
             story.append(KeepTogether(q_flowables))
 
-            # Thu thập thông tin đáp án đúng
-            correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
-            correct_opt = next((o for o in options if o.get("id") == correct_id), None)
-            correct_label = correct_opt.get("label") if correct_opt else q.get("correctLabel", "A")
             answer_keys.append({
                 "idx": idx,
                 "label": correct_label,
@@ -1074,10 +1118,26 @@ class FPDFExamExporter:
         answer_keys = []
         MAX_W_MM = 135.0
         MAX_H_MM = 72.0
+        last_passage_id = None
 
         for idx, q in enumerate(questions, 1):
+            passage_data = q.get("passageData") or q.get("passage_data")
+            if passage_data:
+                p_id = passage_data.get("id") or passage_data.get("title")
+                if p_id != last_passage_id:
+                    last_passage_id = p_id
+                    p_title = passage_data.get("title", "BÀI ĐỌC / TÌNH HUỐNG DÙNG CHUNG")
+                    p_content = passage_data.get("content", "")
+                    cls._set_font_safe(pdf, font_name, "B", 9.5)
+                    pdf.set_fill_color(248, 250, 252)
+                    pdf.multi_cell(175, 5, cls._sanitize_text(f"BÀI ĐỌC DÙNG CHUNG: {p_title}", font_name), border=1, fill=True)
+                    cls._set_font_safe(pdf, font_name, "I", 9)
+                    pdf.multi_cell(175, 4.5, cls._sanitize_text(p_content, font_name), border=1, fill=True)
+                    pdf.ln(3)
+
             q_text = q.get("question") or q.get("question_text") or ""
             options = q.get("options", [])
+            statements = q.get("statements") or []
             correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
 
             cls._set_font_safe(pdf, font_name, "B", 10)
@@ -1133,17 +1193,27 @@ class FPDFExamExporter:
                     except Exception:
                         pass
 
-            for opt in options:
-                opt_label = opt.get("label", "A")
-                opt_text = opt.get("text", "")
-                pdf.set_x(25)
-                cls._set_font_safe(pdf, font_name, "", 9.5)
-                pdf.cell(165, 5, cls._sanitize_text(f"{opt_label}. {opt_text}", font_name), ln=1)
+            if statements:
+                for stmt in statements:
+                    s_label = stmt.get("label", "")
+                    s_text = stmt.get("text", "")
+                    pdf.set_x(25)
+                    cls._set_font_safe(pdf, font_name, "", 9.5)
+                    pdf.cell(165, 5, cls._sanitize_text(f"{s_label}) [ Đ / S ]  {s_text}", font_name), ln=1)
+                correct_label = " - ".join([f"{s.get('label', '')}:{'Đ' if s.get('isCorrect') else 'S'}" for s in statements])
+            else:
+                for opt in options:
+                    opt_label = opt.get("label", "A")
+                    opt_text = opt.get("text", "")
+                    pdf.set_x(25)
+                    cls._set_font_safe(pdf, font_name, "", 9.5)
+                    pdf.cell(165, 5, cls._sanitize_text(f"{opt_label}. {opt_text}", font_name), ln=1)
+
+                correct_opt = next((o for o in options if o.get("id") == correct_id), None)
+                correct_label = correct_opt.get("label") if correct_opt else q.get("correctLabel", "A")
 
             pdf.ln(3)
 
-            correct_opt = next((o for o in options if o.get("id") == correct_id), None)
-            correct_label = correct_opt.get("label") if correct_opt else q.get("correctLabel", "A")
             answer_keys.append({
                 "idx": idx,
                 "label": correct_label,

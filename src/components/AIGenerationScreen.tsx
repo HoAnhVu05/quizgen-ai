@@ -15,7 +15,9 @@ import {
   GenerationHistoryDrawer,
   TextbookLibraryModal,
   GenerationProgressModal,
+  ExamBlueprintModal,
 } from './aigen';
+import { ExamBlueprint } from '../types/examBlueprint';
 
 export type { GenerationHistoryRecord, BloomDistribution, DocumentItem } from './aigen';
 
@@ -166,6 +168,26 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [activePreset, setActivePreset] = useState<GenerationPreset>('giuaKy');
   const [activeMainTab, setActiveMainTab] = useState<'generate' | 'history'>('generate');
+  const [isBlueprintModalOpen, setIsBlueprintModalOpen] = useState(false);
+  const [blueprint, setBlueprint] = useState<ExamBlueprint>({
+    id: `bp-${Date.now()}`,
+    title: 'Đề thi Đa phần Chuẩn hóa',
+    subject: 'Môn học',
+    durationMinutes: 60,
+    totalScore: 10.0,
+    sections: [
+      {
+        id: 'sec-1',
+        order: 1,
+        title: 'PHẦN I: TRẮC NGHIỆM ĐƠN',
+        instruction: 'Thí sinh trả lời các câu hỏi trắc nghiệm nhiều lựa chọn.',
+        questionType: 'SINGLE_CHOICE',
+        scorePerQuestion: 0.25,
+        totalQuestions: 10,
+        questions: [],
+      },
+    ],
+  });
   const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
   const [generationHistory, setGenerationHistory] = useState<GenerationHistoryRecord[]>(() => {
@@ -1004,8 +1026,35 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
           onPedagogicalPromptChange={setPedagogicalPrompt}
           isGenerating={isGenerating}
           onStartGenerate={handleStartGenerate}
+          blueprint={blueprint}
+          onOpenBlueprintModal={() => setIsBlueprintModalOpen(true)}
         />
       )}
+
+      {/* Multi-part Exam Blueprint Modal */}
+      <ExamBlueprintModal
+        isOpen={isBlueprintModalOpen}
+        onClose={() => setIsBlueprintModalOpen(false)}
+        blueprint={blueprint}
+        onSaveBlueprint={(newBp) => {
+          setBlueprint(newBp);
+          const totalQ = newBp.sections.reduce((acc, s) => acc + (s.totalQuestions || 0), 0);
+          if (totalQ > 0) {
+            const part = Math.max(1, Math.floor(totalQ / 4));
+            setBloomDistribution({
+              nhanBiet: part,
+              thongHieu: part,
+              vanDung: part,
+              phanTich: Math.max(0, totalQ - part * 3),
+            });
+          }
+          onShowToast(
+            'success',
+            'Đã cập nhật cấu trúc đề',
+            `Đề thi cấu hình ${newBp.sections.length} phần thi với ${totalQ} câu hỏi.`
+          );
+        }}
+      />
 
       {/* Unified Textbook Picker Modal */}
       <TextbookLibraryModal

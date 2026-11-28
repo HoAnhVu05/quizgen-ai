@@ -27,6 +27,23 @@ export interface ExamVariantQuestion {
   imageUrl?: string;
   imageCaption?: string;
   hasFormula?: boolean;
+  questionType?: string;
+  passageData?: {
+    id: string;
+    title: string;
+    content: string;
+    hasImage?: boolean;
+    imageUrl?: string;
+    imageCaption?: string;
+  };
+  statements?: Array<{
+    id: string;
+    label: string;
+    text: string;
+    isCorrect: boolean;
+    explanation?: string;
+  }>;
+  sectionTitle?: string;
 }
 
 export const BLOOM_ORDER: BloomLevel[] = ['Nhận biết', 'Thông hiểu', 'Vận dụng', 'Phân tích'];

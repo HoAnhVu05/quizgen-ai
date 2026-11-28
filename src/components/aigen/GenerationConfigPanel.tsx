@@ -7,10 +7,12 @@ import {
   Search,
   Sparkles,
   Eye,
+  Layers,
 } from 'lucide-react';
 import { BloomDistribution, DocumentItem } from './aigenTypes';
 import { PromptGuidanceSection } from './PromptGuidanceSection';
 import { normalizeVietnameseLegacyFont } from '../../utils/vietnameseFontUtils';
+import { ExamBlueprint } from '../../types/examBlueprint';
 
 interface GenerationConfigPanelProps {
   selectedBook: string;
@@ -34,6 +36,8 @@ interface GenerationConfigPanelProps {
   onPedagogicalPromptChange: (val: string) => void;
   isGenerating: boolean;
   onStartGenerate: () => void;
+  blueprint?: ExamBlueprint;
+  onOpenBlueprintModal?: () => void;
 }
 
 export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
@@ -58,6 +62,8 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
   onPedagogicalPromptChange,
   isGenerating,
   onStartGenerate,
+  blueprint,
+  onOpenBlueprintModal,
 }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -252,6 +258,36 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
           )}
         </div>
 
+        {/* Nút mở Blueprint Đa dạng loại câu hỏi */}
+        {onOpenBlueprintModal && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-purple-50 via-indigo-50 to-teal-50 border border-purple-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-purple-600 text-white shadow-xs shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                  <span>Cấu hình Cấu trúc Đề thi Đa phần (Blueprint)</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-100 text-purple-700 border border-purple-300">
+                    {blueprint?.sections?.length || 1} Phần thi kết hợp
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  Tùy biến phối hợp: Trắc nghiệm đơn, Đọc hiểu bài đọc chùm, Đúng/Sai 4 ý theo chuẩn trường.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenBlueprintModal}
+              className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-purple-50 text-purple-700 hover:text-purple-800 text-xs font-bold border border-purple-300 shadow-xs transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Tùy biến Cấu trúc Đề</span>
+            </button>
+          </div>
+        )}
+
         {/* Card 2: Thang đo Bloom */}
         <div className="bg-white border border-slate-200 p-5 rounded-2xl space-y-4">
           <div className="flex items-center justify-between">
@@ -323,6 +359,14 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
                 {selectedChapters.length} chương
               </span>
             </div>
+            {blueprint && (
+              <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-100">
+                <span>Cấu trúc đề:</span>
+                <span className="font-semibold text-purple-700">
+                  {blueprint.sections?.length || 1} phần thi đa dạng
+                </span>
+              </div>
+            )}
           </div>
 
           {totalQuestions > 0 && (

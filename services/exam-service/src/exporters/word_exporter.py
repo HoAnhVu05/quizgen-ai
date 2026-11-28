@@ -651,7 +651,25 @@ class WordExamExporter:
 
         # Danh sách câu hỏi
         answer_keys = []
+        last_passage_id = None
         for idx, q in enumerate(questions, 1):
+            # 1. Hỗ trợ câu hỏi chùm (Reading Passage / Case Study): Render khối bài đọc 1 lần
+            passage_data = q.get("passageData") or q.get("passage_data")
+            if passage_data:
+                p_id = passage_data.get("id") or passage_data.get("title")
+                if p_id != last_passage_id:
+                    last_passage_id = p_id
+                    p_pas = doc.add_paragraph()
+                    p_pas.paragraph_format.space_before = Pt(12)
+                    p_pas.paragraph_format.space_after = Pt(4)
+                    p_pas.paragraph_format.left_indent = Inches(0.2)
+                    r_pas_h = p_pas.add_run(f"BÀI ĐỌC / TÌNH HUỐNG DÙNG CHUNG: {passage_data.get('title', '')}\n")
+                    r_pas_h.bold = True
+                    r_pas_h.font.size = Pt(10.5)
+                    r_pas_c = p_pas.add_run(clean_latex_to_text(passage_data.get("content", "")))
+                    r_pas_c.italic = True
+                    r_pas_c.font.size = Pt(10)
+
             p_q = doc.add_paragraph()
             p_q.paragraph_format.space_before = Pt(8)
             p_q.paragraph_format.space_after = Pt(4)
@@ -665,19 +683,32 @@ class WordExamExporter:
             # Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi
             cls._insert_question_diagram(doc, q)
 
-            # Các phương án lựa chọn
+            # 2. Xử lý dạng Đúng / Sai 4 ý hoặc Trắc nghiệm đơn thông thường
+            statements = q.get("statements") or []
             options = q.get("options", [])
-            for opt in options:
-                p_opt = doc.add_paragraph()
-                p_opt.paragraph_format.left_indent = Inches(0.3)
-                p_opt.paragraph_format.space_after = Pt(2)
-                opt_text = clean_latex_to_text(str(opt.get('text', '')))
-                p_opt.add_run(f"{opt.get('label')}. {opt_text}")
 
-            # Xác định đáp án đúng
-            correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
-            correct_opt = next((o for o in options if o.get("id") == correct_id), None)
-            correct_label = correct_opt.get("label") if correct_opt else q.get("correctLabel", "A")
+            if statements:
+                for stmt in statements:
+                    p_stmt = doc.add_paragraph()
+                    p_stmt.paragraph_format.left_indent = Inches(0.3)
+                    p_stmt.paragraph_format.space_after = Pt(2)
+                    s_label = stmt.get("label", "")
+                    s_text = clean_latex_to_text(str(stmt.get("text", "")))
+                    p_stmt.add_run(f"{s_label}) [ Đ / S ]  {s_text}")
+                
+                correct_label = " - ".join([f"{s.get('label', '')}:{'Đ' if s.get('isCorrect') else 'S'}" for s in statements])
+            else:
+                for opt in options:
+                    p_opt = doc.add_paragraph()
+                    p_opt.paragraph_format.left_indent = Inches(0.3)
+                    p_opt.paragraph_format.space_after = Pt(2)
+                    opt_text = clean_latex_to_text(str(opt.get('text', '')))
+                    p_opt.add_run(f"{opt.get('label')}. {opt_text}")
+
+                correct_id = q.get("correct_answer_id") or q.get("correctAnswerId")
+                correct_opt = next((o for o in options if o.get("id") == correct_id), None)
+                correct_label = correct_opt.get("label") if correct_opt else q.get("correctLabel", "A")
+
             answer_keys.append({
                 "idx": idx,
                 "label": correct_label,
