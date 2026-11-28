@@ -399,11 +399,18 @@ class ReportLabExamExporter:
             ("Chữ ký Giám thị 1:", ".........................   Chữ ký Giám thị 2: .........................")
         ]
         curr_y = 39.0
+        max_val_w = (121 - 45) * mm  # Giới hạn chiều rộng chữ tối đa 76mm để tuyệt đối không tràn qua khung SBD (x = 128mm)
         for lbl, val in fields:
             c.setFont(bold_font, 7.8)
             c.drawString(14 * mm, yt(curr_y), lbl)
             c.setFont(font_name, 7.8)
-            c.drawString(45 * mm, yt(curr_y), val)
+            # Tự động cắt bớt kèm dấu ... nếu tên môn thi hoặc văn bản quá dài, chống đè lên khung Số báo danh
+            render_val = str(val)
+            if c.stringWidth(render_val, font_name, 7.8) > max_val_w:
+                while render_val and c.stringWidth(render_val + "...", font_name, 7.8) > max_val_w:
+                    render_val = render_val[:-1].rstrip()
+                render_val = render_val + "..."
+            c.drawString(45 * mm, yt(curr_y), render_val)
             curr_y += 6.0
 
         # 3.2 Khung Số báo danh (SBD 6 cột x 10 hàng)
@@ -917,12 +924,18 @@ class FPDFExamExporter:
             ("Chữ ký Giám thị 1:", ".........................   Chữ ký Giám thị 2: .........................")
         ]
         curr_y = 35.5
+        max_w_fpdf = 74.0  # Giới hạn chiều rộng chữ tối đa 74mm (14 + 32 + 74 = 120mm < 128mm)
         for label, val in fields:
             pdf.set_xy(14, curr_y)
             cls._set_font_safe(pdf, font_name, "B", 7.8)
             pdf.cell(32, 4, cls._sanitize_text(label, font_name), ln=0)
             cls._set_font_safe(pdf, font_name, "", 7.8)
-            pdf.cell(76, 4, val, ln=1)
+            render_val = str(val)
+            if pdf.get_string_width(render_val) > max_w_fpdf:
+                while render_val and pdf.get_string_width(render_val + "...") > max_w_fpdf:
+                    render_val = render_val[:-1].rstrip()
+                render_val = render_val + "..."
+            pdf.cell(74, 4, render_val, ln=1)
             curr_y += 5.8
 
         pdf.rect(128, 29, 42, 51)
