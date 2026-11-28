@@ -435,6 +435,149 @@ class TestQuantaCopilotE2E(unittest.TestCase):
             ai_conn.commit()
             ai_conn.close()
 
+    def test_11_quanta_math_formatting_and_openxml_fonts(self):
+        """[SCRUM-145] Kiểm tra: font OpenXML w:cs/w:eastAsia, chuyển đổi LaTeX sang Unicode, khử 'Ư' rác, map đáp án kỹ thuật, slug tiếng Việt."""
+        from src.copilot_media import (
+            clean_stray_u,
+            clean_latex_to_text,
+            resolve_option_label,
+            slugify_vietnamese_filename,
+            build_questions_docx_bytes,
+        )
+        from docx import Document
+        from docx.oxml.ns import qn
+
+        # 1. Slug tiếng Việt không dấu
+        raw_title = "Đề thi Tích phân từ Toán kỹ thuật - 2013"
+        slug = slugify_vietnamese_filename(raw_title)
+        self.assertEqual(slug, "De_thi_Tich_phan_tu_Toan_ky_thuat_2013")
+
+        # 2. Khử ký tự rác 'Ư'
+        sample_u = "đường cong $C$Ư. tức là $f'(t_0)$Ư. trên một khoảng chứa $t_0$Ư?"
+        cleaned_u = clean_stray_u(sample_u)
+        self.assertNotIn("Ư.", cleaned_u)
+        self.assertNotIn("Ư?", cleaned_u)
+
+        # 3. Chuyển đổi công thức toán LaTeX sang Unicode
+        latex_q = r"Tích phân đường $\oint_C f(z) dz$ và phân số $\frac{1}{2\pi i}$ với đạo hàm $f'(t_0)$"
+        math_text = clean_latex_to_text(latex_q)
+        self.assertIn("∮", math_text)
+        self.assertIn("(1/2π i)", math_text)
+        self.assertNotIn("$", math_text)
+
+        # 4. Ánh xạ mã đáp án kỹ thuật opt-a, opt-1 sang chữ cái A, B, C, D
+        opts_technical = [
+            {"id": "opt-1", "label": "A", "text": "Phương án 1"},
+            {"id": "opt-2", "label": "B", "text": "Phương án 2"},
+        ]
+        self.assertEqual(resolve_option_label("opt-1", opts_technical), "A")
+        self.assertEqual(resolve_option_label("opt-2", opts_technical), "B")
+        self.assertEqual(resolve_option_label("opt-b", []), "B")
+
+        # Trường hợp index số thuần túy (0 -> A, 1 -> B)
+        opts_plain = [{"text": "Alpha"}, {"text": "Beta"}]
+        self.assertEqual(resolve_option_label(1, opts_plain), "B")
+
+        # 5. Kiểm tra file Word tạo ra có đủ OpenXML w:cs, w:eastAsia trên mọi Run và bảng biểu
+        test_questions = [
+            {
+                "question": "Tính tích phân $\\oint_C f(z) dz$ trong miền đơn liên $D$Ư.",
+                "options": [
+                    {"id": "opt-1", "label": "A", "text": "Bằng 0 theo định lý Cauchy"},
+                    {"id": "opt-2", "label": "B", "text": "Bằng $2\\pi i$"},
+                ],
+                "correctAnswerId": "opt-1",
+                "explanation": "Theo định lý tích phân Cauchy, tích phân trên đường cong kín bằng 0.",
+                "bloomLevel": "Nhận biết",
+            }
+        ]
+        docx_bytes, filename = build_questions_docx_bytes(raw_title, test_questions)
+        self.assertTrue(filename.startswith("De_thi_Tich_phan_tu_Toan_ky_thuat_2013"))
+
+        doc = Document(io.BytesIO(docx_bytes))
+        # Kiểm tra bảng biểu: Header bảng 2 cột + Bảng đáp án ma trận 5 cột
+        self.assertGreaterEqual(len(doc.tables), 2)
+        header_table = doc.tables[0]
+        self.assertEqual(len(header_table.columns), 2)
+        ans_table = doc.tables[1]
+        self.assertEqual(len(ans_table.columns), 5)
+
+        # Kiểm tra font Times New Roman trên Style Normal và các Runs
+        style_rFonts = doc.styles["Normal"].element.rPr.find(qn("w:rFonts"))
+        self.assertIsNotNone(style_rFonts)
+        self.assertEqual(style_rFonts.get(qn("w:cs")), "Times New Roman")
+        self.assertEqual(style_rFonts.get(qn("w:eastAsia")), "Times New Roman")
+
+        # Kiểm tra runs có w:cs và w:eastAsia
+        found_run_fonts = 0
+        for p in doc.paragraphs:
+            for r in p.runs:
+                rFonts = r._r.rPr.find(qn("w:rFonts")) if r._r.rPr is not None else None
+                if rFonts is not None:
+                    self.assertEqual(rFonts.get(qn("w:cs")), "Times New Roman")
+                    self.assertEqual(rFonts.get(qn("w:eastAsia")), "Times New Roman")
+                    found_run_fonts += 1
+        self.assertGreater(found_run_fonts, 0)
+
+    def test_12_harvester_actions_json_and_created_at_sort(self):
+        """[SCRUM-145] Kiểm tra Harvester: Sắp xếp theo created_at DESC và bóc tách câu hỏi từ payload actions JSON."""
+        import json
+        import sqlite3
+        from src.copilot_tool_executor import execute_copilot_tool
+
+        fake_uid = "e2e-actions-harvest-user"
+        ai_conn = sqlite3.connect("services/ai-service/data/ai.db")
+        try:
+            # Tin nhắn cũ hơn có id bắt đầu bằng 'bot-zzz' (nếu sort theo id DESC sẽ bị lấy nhầm)
+            ai_conn.execute(
+                "INSERT INTO copilot_messages (id, user_id, role, content, actions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("bot-zzz-older", fake_uid, "assistant", "Tin nhắn cũ hơn không có câu hỏi", None, "2026-11-28 10:00:00")
+            )
+            # Tin nhắn mới hơn có id bắt đầu bằng 'bot-aaa' nhưng created_at mới nhất và có payload actions
+            structured_qs = [
+                {
+                    "question": "Ma trận Jacobian của phép đổi tọa độ cực là gì?",
+                    "options": [
+                        {"id": "A", "label": "A", "text": "r"},
+                        {"id": "B", "label": "B", "text": "r^2"},
+                    ],
+                    "correctAnswerId": "A",
+                    "explanation": "Định thức Jacobian trong tọa độ cực bằng r.",
+                }
+            ]
+            actions_payload = json.dumps([
+                {
+                    "type": "import_exam",
+                    "data": {
+                        "title": "Đề Toán Kỹ Thuật",
+                        "questions": structured_qs,
+                    }
+                }
+            ])
+            ai_conn.execute(
+                "INSERT INTO copilot_messages (id, user_id, role, content, actions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("bot-aaa-newer", fake_uid, "assistant", "Dưới đây là kết quả đề thi khởi tạo", actions_payload, "2026-11-28 15:00:00")
+            )
+            ai_conn.commit()
+
+            async def _run():
+                res = await execute_copilot_tool(
+                    "export_questions_docx",
+                    {"title": "Đề Thu Hoạch Từ Actions", "questions": []},
+                    {"userId": fake_uid},
+                    "xuất đề vừa rồi ra Word"
+                )
+                self.assertIsNotNone(res["action"])
+                self.assertEqual(res["action"]["type"], "export_docx")
+                self.assertEqual(res["action"]["data"]["questionCount"], 1)
+                self.assertIn("Jacobian", res["action"]["data"]["questions"][0]["question"])
+
+            asyncio.run(_run())
+        finally:
+            ai_conn.execute("DELETE FROM copilot_messages WHERE user_id = ?", (fake_uid,))
+            ai_conn.commit()
+            ai_conn.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

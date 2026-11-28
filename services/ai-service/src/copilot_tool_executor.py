@@ -396,10 +396,33 @@ async def execute_copilot_tool(
                             placeholders = ",".join("?" for _ in target_uids)
                             db_qs = _db_query(
                                 ai_db_path,
-                                f"SELECT content FROM copilot_messages WHERE user_id IN ({placeholders}) AND role = 'assistant' ORDER BY id DESC LIMIT 5",
+                                f"SELECT content, actions FROM copilot_messages WHERE user_id IN ({placeholders}) AND role = 'assistant' ORDER BY created_at DESC LIMIT 10",
                                 tuple(target_uids),
                             )
                             for row in db_qs:
+                                # 1. Bóc tách câu hỏi từ payload actions nếu có
+                                raw_acts = row.get("actions")
+                                if raw_acts:
+                                    if isinstance(raw_acts, str):
+                                        try:
+                                            raw_acts = json.loads(raw_acts)
+                                        except Exception:
+                                            raw_acts = None
+                                    if isinstance(raw_acts, dict):
+                                        raw_acts = [raw_acts]
+                                    if isinstance(raw_acts, list):
+                                        for act in raw_acts:
+                                            if not isinstance(act, dict):
+                                                continue
+                                            act_data = act.get("data") if isinstance(act.get("data"), dict) else act
+                                            act_qs = act_data.get("questions")
+                                            if isinstance(act_qs, list) and len(act_qs) > 0:
+                                                qs = act_qs
+                                                break
+                                if qs:
+                                    break
+
+                                # 2. Fallback bóc tách từ nội dung văn bản chat
                                 harvested = extract_questions_from_chat_text(row.get("content") or "")
                                 if harvested:
                                     qs = harvested
