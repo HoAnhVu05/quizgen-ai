@@ -1,5 +1,16 @@
 import React, { useState } from 'react';
-import { Printer, FileQuestion, Image as ImageIcon, Edit3, Check, X, BookOpen, Scale } from 'lucide-react';
+import {
+  Printer,
+  FileQuestion,
+  Image as ImageIcon,
+  Edit3,
+  Check,
+  X,
+  BookOpen,
+  Scale,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import MathRenderer from '../MathRenderer';
 import { ExamVariantQuestion } from './types';
 import { resolveImageUrl } from '../../services/apiClient';
@@ -17,7 +28,7 @@ interface PaperPreviewViewProps {
   activeVariantQuestions: ExamVariantQuestion[];
   onImageClick: (url: string, caption?: string) => void;
   onViewAnswerKey: () => void;
-  onQuickEditQuestion?: (questionId: string, newText: string) => void;
+  onQuickEditQuestion?: (questionId: string, updatedData: any) => void;
 }
 
 export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
@@ -37,7 +48,85 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
 }) => {
   const [brokenImageIds, setBrokenImageIds] = useState<Record<string, boolean>>({});
   const [editingQId, setEditingQId] = useState<string | null>(null);
-  const [inlineEditText, setInlineEditText] = useState('');
+  const [editText, setEditText] = useState('');
+  const [editOptions, setEditOptions] = useState<
+    Array<{ id: string; label: string; text: string; isCorrect: boolean }>
+  >([]);
+  const [editCorrectId, setEditCorrectId] = useState('');
+  const [editStatements, setEditStatements] = useState<
+    Array<{ id: string; label: string; text: string; isCorrect: boolean; explanation?: string }>
+  >([]);
+  const [editPassageTitle, setEditPassageTitle] = useState('');
+  const [editPassageContent, setEditPassageContent] = useState('');
+  const [editShortAnswer, setEditShortAnswer] = useState('');
+  const [editExplanation, setEditExplanation] = useState('');
+
+  const handleStartEdit = (q: ExamVariantQuestion) => {
+    setEditingQId(q.id);
+    setEditText(q.question);
+    const opts = q.options ? q.options.map((o) => ({ ...o })) : [];
+    setEditOptions(opts);
+    const corr = opts.find((o) => o.isCorrect);
+    setEditCorrectId(corr ? corr.id : (opts[0]?.id || ''));
+    setEditStatements(
+      q.statements && q.statements.length > 0
+        ? q.statements.map((s) => ({ ...s }))
+        : [
+            { id: 'stmt-a', label: 'a', text: 'Nhận định a', isCorrect: true },
+            { id: 'stmt-b', label: 'b', text: 'Nhận định b', isCorrect: false },
+            { id: 'stmt-c', label: 'c', text: 'Nhận định c', isCorrect: true },
+            { id: 'stmt-d', label: 'd', text: 'Nhận định d', isCorrect: false },
+          ]
+    );
+    setEditPassageTitle(q.passageData?.title || '');
+    setEditPassageContent(q.passageData?.content || '');
+    setEditShortAnswer(q.shortAnswer !== undefined ? String(q.shortAnswer) : '');
+    setEditExplanation(q.explanation || '');
+  };
+
+  const handleSaveEdit = (q: ExamVariantQuestion) => {
+    if (!onQuickEditQuestion) return;
+    const isTf =
+      q.questionType === 'TRUE_FALSE_GROUP' ||
+      Boolean(q.statements && q.statements.length > 0);
+    const isShort = q.questionType === 'SHORT_ANSWER';
+    const isPassage = Boolean(q.passageData);
+
+    const payload: any = {
+      question: editText,
+      explanation: editExplanation,
+      hasFormula: editText.includes('$') || editOptions.some((o) => o.text.includes('$')),
+    };
+
+    if (isTf) {
+      payload.statements = editStatements;
+    }
+
+    if (isPassage) {
+      payload.passageData = {
+        ...q.passageData,
+        title: editPassageTitle,
+        content: editPassageContent,
+      };
+    }
+
+    if (isShort || editShortAnswer.trim()) {
+      payload.shortAnswer = editShortAnswer.trim();
+    }
+
+    if (editOptions && editOptions.length > 0) {
+      const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+      payload.options = editOptions.map((o, idx) => ({
+        id: o.id || `opt-${idx}`,
+        label: labels[idx] || String(idx + 1),
+        text: o.text,
+      }));
+      payload.correctAnswerId = editCorrectId;
+    }
+
+    onQuickEditQuestion(q.id, payload);
+    setEditingQId(null);
+  };
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
       {/* Left: A4 Exam Paper Preview */}
@@ -161,34 +250,245 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
                       )}
 
                       <div className="space-y-2 text-sm text-slate-900 exam-question-item group relative">
-                        {/* Question Text & Inline Quick Edit */}
+                        {/* Question Text & Inline Comprehensive Edit */}
                         {isInlineEditing ? (
-                          <div className="p-2.5 rounded-lg border-2 border-teal-500 bg-teal-50/30 space-y-2">
-                            <textarea
-                              value={inlineEditText}
-                              onChange={(e) => setInlineEditText(e.target.value)}
-                              rows={2}
-                              className="w-full p-2 text-xs border border-slate-300 rounded bg-white text-slate-800 focus:outline-none"
-                            />
-                            <div className="flex items-center justify-end gap-2">
+                          <div className="p-4 rounded-xl border-2 border-teal-500 bg-teal-50/20 space-y-3.5 no-print shadow-sm">
+                            <div className="flex items-center justify-between pb-2 border-b border-teal-200">
+                              <span className="text-xs font-bold text-teal-800 uppercase flex items-center gap-1.5">
+                                <Edit3 className="w-3.5 h-3.5 text-teal-600" />
+                                Chỉnh sửa toàn diện câu {index + 1}
+                              </span>
+                              <span className="text-[11px] text-teal-600 font-medium">
+                                Sửa nhanh câu hỏi, đáp án, bài đọc và giải thích
+                              </span>
+                            </div>
+
+                            {/* Passage Editor if question has passageData */}
+                            {q.passageData && (
+                              <div className="p-3 rounded-lg bg-purple-50/60 border border-purple-200 space-y-2">
+                                <label className="text-[11px] font-bold text-purple-900 flex items-center gap-1">
+                                  <BookOpen className="w-3.5 h-3.5 text-purple-700" /> Tiêu đề & Nội dung bài đọc chung (Passage):
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editPassageTitle}
+                                  onChange={(e) => setEditPassageTitle(e.target.value)}
+                                  placeholder="Tiêu đề bài đọc / tình huống..."
+                                  className="w-full p-2 text-xs border border-purple-200 rounded bg-white text-slate-800 focus:outline-none focus:border-purple-400 font-semibold"
+                                />
+                                <textarea
+                                  value={editPassageContent}
+                                  onChange={(e) => setEditPassageContent(e.target.value)}
+                                  rows={3}
+                                  placeholder="Nội dung bài đọc..."
+                                  className="w-full p-2 text-xs border border-purple-200 rounded bg-white text-slate-800 focus:outline-none focus:border-purple-400 font-sans leading-relaxed"
+                                />
+                              </div>
+                            )}
+
+                            {/* Question Text */}
+                            <div className="space-y-1">
+                              <label className="text-[11px] font-bold text-slate-700">Nội dung câu hỏi (hỗ trợ $LaTeX$):</label>
+                              <textarea
+                                value={editText}
+                                onChange={(e) => setEditText(e.target.value)}
+                                rows={2}
+                                className="w-full p-2 text-xs border border-slate-300 rounded bg-white text-slate-800 focus:outline-none focus:border-teal-500 font-medium"
+                              />
+                              {(editText.includes('$') || editText.includes('\\')) && (
+                                <div className="px-2 py-1 rounded bg-slate-100 border border-slate-200 text-xs text-slate-700 flex items-center gap-1.5">
+                                  <span className="text-[10px] font-mono uppercase text-slate-400 font-bold shrink-0">KaTeX:</span>
+                                  <div className="overflow-x-auto">
+                                    <MathRenderer content={editText} inline />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* True / False Statements Editor */}
+                            {(q.questionType === 'TRUE_FALSE_GROUP' || (q.statements && q.statements.length > 0)) ? (
+                              <div className="space-y-2 pt-1">
+                                <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                                  <Scale className="w-3.5 h-3.5 text-emerald-600" /> Các nhận định đánh giá Đúng / Sai:
+                                </label>
+                                {editStatements.map((stmt, sIdx) => (
+                                  <div key={stmt.id || sIdx} className="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-200">
+                                    <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-700 font-bold text-[11px] flex items-center justify-center shrink-0 border border-slate-200">
+                                      {stmt.label || String.fromCharCode(97 + sIdx)})
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={stmt.text}
+                                      onChange={(e) => {
+                                        const next = [...editStatements];
+                                        next[sIdx] = { ...next[sIdx], text: e.target.value };
+                                        setEditStatements(next);
+                                      }}
+                                      className="flex-1 p-1 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:border-teal-500"
+                                      placeholder="Nội dung nhận định..."
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = [...editStatements];
+                                        next[sIdx] = { ...next[sIdx], isCorrect: true };
+                                        setEditStatements(next);
+                                      }}
+                                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                                        stmt.isCorrect
+                                          ? 'bg-emerald-600 text-white shadow-2xs'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                      }`}
+                                    >
+                                      ĐÚNG
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const next = [...editStatements];
+                                        next[sIdx] = { ...next[sIdx], isCorrect: false };
+                                        setEditStatements(next);
+                                      }}
+                                      className={`px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+                                        !stmt.isCorrect
+                                          ? 'bg-rose-600 text-white shadow-2xs'
+                                          : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                      }`}
+                                    >
+                                      SAI
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : q.questionType === 'SHORT_ANSWER' ? (
+                              <div className="space-y-1 pt-1">
+                                <label className="text-[11px] font-bold text-slate-700">Đáp án ngắn / Giá trị điền số:</label>
+                                <input
+                                  type="text"
+                                  value={editShortAnswer}
+                                  onChange={(e) => setEditShortAnswer(e.target.value)}
+                                  placeholder="Nhập giá trị đáp án chính xác..."
+                                  className="w-full p-2 text-xs border border-slate-300 rounded bg-white text-slate-800 focus:outline-none focus:border-teal-500 font-mono font-bold"
+                                />
+                              </div>
+                            ) : (
+                              /* Options Editor for SINGLE_CHOICE */
+                              <div className="space-y-2 pt-1">
+                                <div className="flex items-center justify-between">
+                                  <label className="text-[11px] font-bold text-slate-700">
+                                    Các phương án trả lời (chọn nút tròn để đánh dấu đáp án đúng):
+                                  </label>
+                                  {editOptions.length < 6 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextIdx = editOptions.length;
+                                        const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+                                        setEditOptions([
+                                          ...editOptions,
+                                          {
+                                            id: `opt-${String.fromCharCode(97 + nextIdx)}`,
+                                            label: labels[nextIdx] || String(nextIdx + 1),
+                                            text: `Phương án ${labels[nextIdx] || nextIdx + 1}`,
+                                            isCorrect: false,
+                                          },
+                                        ]);
+                                      }}
+                                      className="text-[11px] font-semibold text-teal-600 hover:underline flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Plus className="w-3 h-3" /> Thêm lựa chọn
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {editOptions.map((opt, oIdx) => {
+                                    const isCorr = opt.id === editCorrectId;
+                                    return (
+                                      <div
+                                        key={opt.id || oIdx}
+                                        className={`p-2 rounded-lg border text-xs flex items-center gap-2 transition-all ${
+                                          isCorr
+                                            ? 'bg-emerald-50/70 border-emerald-400 ring-1 ring-emerald-300'
+                                            : 'bg-white border-slate-200'
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name={`correct-choice-${q.id}`}
+                                          checked={isCorr}
+                                          onChange={() => setEditCorrectId(opt.id)}
+                                          className="cursor-pointer text-emerald-600 focus:ring-emerald-500"
+                                          title="Chọn làm đáp án đúng"
+                                        />
+                                        <span
+                                          className={`w-5 h-5 rounded-full font-bold text-[11px] flex items-center justify-center shrink-0 ${
+                                            isCorr
+                                              ? 'bg-emerald-600 text-white'
+                                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                          }`}
+                                        >
+                                          {['A', 'B', 'C', 'D', 'E', 'F'][oIdx] || opt.label}
+                                        </span>
+                                        <input
+                                          type="text"
+                                          value={opt.text}
+                                          onChange={(e) => {
+                                            const next = [...editOptions];
+                                            next[oIdx] = { ...next[oIdx], text: e.target.value };
+                                            setEditOptions(next);
+                                          }}
+                                          className="flex-1 p-1 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:border-teal-500"
+                                        />
+                                        {editOptions.length > 2 && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const next = editOptions.filter((_, idx) => idx !== oIdx);
+                                              setEditOptions(next);
+                                              if (opt.id === editCorrectId && next.length > 0) {
+                                                setEditCorrectId(next[0].id);
+                                              }
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                            title="Xóa lựa chọn này"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Explanation */}
+                            <div className="space-y-1 pt-1">
+                              <label className="text-[11px] font-bold text-slate-700">Lời giải thích chi tiết:</label>
+                              <textarea
+                                value={editExplanation}
+                                onChange={(e) => setEditExplanation(e.target.value)}
+                                rows={2}
+                                className="w-full p-2 text-xs border border-slate-300 rounded bg-white text-slate-800 focus:outline-none focus:border-teal-500"
+                                placeholder="Giải thích phương án đúng..."
+                              />
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-teal-200">
                               <button
                                 type="button"
                                 onClick={() => setEditingQId(null)}
-                                className="px-2.5 py-1 rounded text-xs text-slate-600 hover:bg-slate-200 cursor-pointer"
+                                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-200 cursor-pointer"
                               >
-                                Hủy
+                                <X className="w-3.5 h-3.5 inline mr-1" /> Hủy
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (onQuickEditQuestion) {
-                                    onQuickEditQuestion(q.id, inlineEditText);
-                                  }
-                                  setEditingQId(null);
-                                }}
-                                className="px-3 py-1 rounded bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
+                                onClick={() => handleSaveEdit(q)}
+                                className="px-4 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
                               >
-                                <Check className="w-3.5 h-3.5" /> Lưu nhanh
+                                <Check className="w-4 h-4" /> Lưu thay đổi
                               </button>
                             </div>
                           </div>
@@ -201,12 +501,9 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
                             {onQuickEditQuestion && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setEditingQId(q.id);
-                                  setInlineEditText(q.question);
-                                }}
+                                onClick={() => handleStartEdit(q)}
                                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-teal-600 transition-opacity no-print cursor-pointer"
-                                title="Sửa nhanh câu này (Inline Quick Edit)"
+                                title="Sửa toàn diện câu này (câu hỏi, phương án, giải thích)"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                               </button>
@@ -214,8 +511,8 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
                           </div>
                         )}
 
-                        {/* Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi */}
-                        {(() => {
+                        {/* Tự động chèn hình vẽ sơ đồ vào ngay dưới nội dung câu hỏi (chỉ render khi không sửa) */}
+                        {!isInlineEditing && (() => {
                           const rawImg = q.imageUrl || (q as any).image_url;
                           if (!rawImg) return null;
                           const normalizedSrc = resolveImageUrl(rawImg);
@@ -262,30 +559,50 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
                           );
                         })()}
 
-                        {/* Statements for TRUE_FALSE_GROUP or Standard Options */}
-                        {q.statements && q.statements.length > 0 ? (
-                          <div className="space-y-1.5 pl-2 pt-1">
-                            {q.statements.map((stmt, sIdx) => (
-                              <div key={stmt.id || sIdx} className="text-xs sm:text-sm text-slate-800 flex items-start justify-between gap-2 border-b border-slate-100 pb-1">
-                                <div className="flex items-start gap-1 flex-1">
-                                  <span className="font-bold shrink-0">{stmt.label || String.fromCharCode(97 + sIdx)})</span>
-                                  <span><MathRenderer content={stmt.text} inline /></span>
+                        {/* Render options / statements / shortAnswer (chỉ khi không sửa inline) */}
+                        {!isInlineEditing && (
+                          <>
+                            {q.statements && q.statements.length > 0 ? (
+                              <div className="space-y-1.5 pl-2 pt-1">
+                                {q.statements.map((stmt, sIdx) => (
+                                  <div
+                                    key={stmt.id || sIdx}
+                                    className="text-xs sm:text-sm text-slate-800 flex items-start justify-between gap-2 border-b border-slate-100 pb-1"
+                                  >
+                                    <div className="flex items-start gap-1 flex-1">
+                                      <span className="font-bold shrink-0">{stmt.label || String.fromCharCode(97 + sIdx)})</span>
+                                      <span>
+                                        <MathRenderer content={stmt.text} inline />
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
+                                      [ {stmt.isCorrect ? 'Đ' : 'S'} ]
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : q.questionType === 'SHORT_ANSWER' || (q.shortAnswer !== undefined && q.shortAnswer !== '') ? (
+                              <div className="pl-2 pt-1">
+                                <div className="text-xs text-slate-700 bg-amber-50/70 border border-amber-200 rounded-lg p-2.5 flex items-center gap-2">
+                                  <span className="font-bold text-amber-800">Đáp án ngắn:</span>
+                                  <span className="font-mono bg-white px-2 py-0.5 rounded border border-amber-300 font-bold text-slate-900">
+                                    {String(q.shortAnswer || '')}
+                                  </span>
                                 </div>
-                                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 shrink-0">
-                                  [ {stmt.isCorrect ? 'Đ' : 'S'} ]
-                                </span>
                               </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
-                            {q.options.map((opt) => (
-                              <div key={opt.id} className="text-xs sm:text-sm text-slate-800 flex items-start gap-1">
-                                <span className="font-bold shrink-0">{opt.label}.</span>
-                                <span className="flex-1"><MathRenderer content={opt.text} /></span>
+                            ) : (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-2">
+                                {q.options.map((opt) => (
+                                  <div key={opt.id} className="text-xs sm:text-sm text-slate-800 flex items-start gap-1">
+                                    <span className="font-bold shrink-0">{opt.label}.</span>
+                                    <span className="flex-1">
+                                      <MathRenderer content={opt.text} />
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </React.Fragment>

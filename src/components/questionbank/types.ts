@@ -28,6 +28,9 @@ export interface ExamVariantQuestion {
   imageCaption?: string;
   hasFormula?: boolean;
   questionType?: string;
+  shortAnswer?: string | number;
+  correctAnswerId?: string;
+  sectionId?: string;
   passageData?: {
     id: string;
     title: string;

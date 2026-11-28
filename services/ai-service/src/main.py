@@ -110,9 +110,16 @@ async def generate_questions(
             }
         )
 
-    document_id = req.get_document_id()
+    document_ids = req.get_document_ids()
+    document_id = document_ids[0] if document_ids else req.get_document_id()
     bloom_matrix = req.get_bloom_matrix()
+    blueprint = req.get_blueprint()
+
     total_req = sum(bloom_matrix.values())
+    if blueprint and blueprint.get("sections"):
+        bp_total = sum(int(s.get("totalQuestions") or 0) for s in blueprint["sections"])
+        if bp_total > 0:
+            total_req = bp_total
 
     # 1. Tạo bản ghi Job trong PostgreSQL
     job_id = f"job-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
@@ -153,35 +160,42 @@ async def generate_questions(
     query_text = " ".join(req.chapters) if req.chapters else (textbook_name or "kiến thức học thuật")
     primary_chapter = req.chapters[0] if req.chapters else "Nội dung trích xuất"
     retrieved_chunks = []
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(
-                f"{RAG_SERVICE_URL}/query-context",
-                json={
-                    "query": query_text,
-                    "document_id": document_id,
-                    "chapters": req.chapters,
-                    "top_k": 10
-                }
-            )
-            if res.status_code == 200:
-                retrieved_chunks = res.json().get("chunks", [])
-    except Exception as e:
-        print(f"[AI-SERVICE] Cảnh báo kết nối RAG Service: {e}")
 
-    if not retrieved_chunks:
+    # [SCRUM-145] Thu thập đoạn trích (chunks) từ tất cả tài liệu đã chọn (Multi-Document Retrieval)
+    for d_id in (document_ids or [document_id]):
+        d_chunks = []
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}/chunks?limit=50")
-                if c_res.status_code == 200:
-                    raw_chunks = c_res.json().get("chunks", [])
-                    if req.chapters:
-                        matched = [c for c in raw_chunks if any(ch.lower() in (c.get("chapter") or "").lower() for ch in req.chapters)]
-                        retrieved_chunks = matched if matched else raw_chunks
-                    else:
-                        retrieved_chunks = raw_chunks
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(
+                    f"{RAG_SERVICE_URL}/query-context",
+                    json={
+                        "query": query_text,
+                        "document_id": d_id,
+                        "chapters": req.chapters,
+                        "top_k": 10
+                    }
+                )
+                if res.status_code == 200:
+                    d_chunks = res.json().get("chunks", [])
         except Exception as e:
-            print(f"[AI-SERVICE] Cảnh báo kết nối Document Service: {e}")
+            print(f"[AI-SERVICE] Cảnh báo kết nối RAG Service cho {d_id}: {e}")
+
+        if not d_chunks:
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{d_id}/chunks?limit=50")
+                    if c_res.status_code == 200:
+                        raw_chunks = c_res.json().get("chunks", [])
+                        if req.chapters:
+                            matched = [c for c in raw_chunks if any(ch.lower() in (c.get("chapter") or "").lower() for ch in req.chapters)]
+                            d_chunks = matched if matched else raw_chunks
+                        else:
+                            d_chunks = raw_chunks
+            except Exception as e:
+                print(f"[AI-SERVICE] Cảnh báo kết nối Document Service cho {d_id}: {e}")
+
+        if d_chunks:
+            retrieved_chunks.extend(d_chunks)
 
     # Lọc bỏ triệt để các chunk rác mục lục (chứa chuỗi dấu chấm .....) hoặc trang bìa xuất bản
     if retrieved_chunks:
@@ -203,33 +217,34 @@ async def generate_questions(
         )
 
     # Bổ sung danh sách hình ảnh bóc tách từ Document Service nếu các chunks chưa có
-    if document_id and retrieved_chunks:
-        try:
-            async with httpx.AsyncClient(timeout=4.0) as client:
-                c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{document_id}/chunks?limit=100")
-                if c_res.status_code == 200:
-                    raw_chunks_data = c_res.json().get("chunks", [])
-                    cid_images_map = {
-                        c.get("chunkId") or c.get("id"): c.get("images", [])
-                        for c in raw_chunks_data
-                        if c.get("images")
-                    }
-                    page_images_map = {
-                        c.get("pageNumber") or c.get("page_number"): c.get("images", [])
-                        for c in raw_chunks_data
-                        if c.get("images")
-                    }
-                    for r_chunk in retrieved_chunks:
-                        cid = r_chunk.get("chunkId") or r_chunk.get("id") or r_chunk.get("chunk_id")
-                        pnum = r_chunk.get("pageNumber") or r_chunk.get("page_number")
-                        imgs = cid_images_map.get(cid) or page_images_map.get(pnum, [])
-                        if imgs and not r_chunk.get("images"):
-                            r_chunk["images"] = imgs
-                            r_chunk["associated_images"] = imgs
-        except Exception as enrich_err:
-            print(f"[AI-SERVICE] Bổ qua cảnh báo nạp ảnh đính kèm: {enrich_err}")
+    for d_id in (document_ids or [document_id]):
+        if retrieved_chunks:
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    c_res = await client.get(f"{DOCUMENT_SERVICE_URL}/documents/{d_id}/chunks?limit=100")
+                    if c_res.status_code == 200:
+                        raw_chunks_data = c_res.json().get("chunks", [])
+                        cid_images_map = {
+                            c.get("chunkId") or c.get("id"): c.get("images", [])
+                            for c in raw_chunks_data
+                            if c.get("images")
+                        }
+                        page_images_map = {
+                            c.get("pageNumber") or c.get("page_number"): c.get("images", [])
+                            for c in raw_chunks_data
+                            if c.get("images")
+                        }
+                        for r_chunk in retrieved_chunks:
+                            cid = r_chunk.get("chunkId") or r_chunk.get("id") or r_chunk.get("chunk_id")
+                            pnum = r_chunk.get("pageNumber") or r_chunk.get("page_number")
+                            imgs = cid_images_map.get(cid) or page_images_map.get(pnum, [])
+                            if imgs and not r_chunk.get("images"):
+                                r_chunk["images"] = imgs
+                                r_chunk["associated_images"] = imgs
+            except Exception as enrich_err:
+                print(f"[AI-SERVICE] Bổ qua cảnh báo nạp ảnh đính kèm: {enrich_err}")
 
-    # 3. Kích hoạt sinh câu hỏi bằng LLM Gemini hoặc Fallback ma trận chuẩn
+    # 3. Kích hoạt sinh câu hỏi bằng LLM Gemini hoặc Fallback ma trận chuẩn / Blueprint
     try:
         questions = await generator.generate_questions_from_context(
             chunks=retrieved_chunks,
@@ -239,7 +254,8 @@ async def generate_questions(
             textbook_name=textbook_name,
             images=req.get_images(),
             pedagogical_prompt=req.get_pedagogical_prompt(),
-            domain=req.get_domain()
+            domain=req.get_domain(),
+            blueprint=blueprint
         )
 
         # Cập nhật kết quả Job vào DB

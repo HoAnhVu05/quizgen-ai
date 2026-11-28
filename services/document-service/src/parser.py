@@ -170,6 +170,7 @@ class DocumentParser:
         """
         raw_pages_lines = []
         raw_pages_images: List[List[Dict[str, Any]]] = []
+        toc_bookmarks: List[Dict[str, Any]] = []
         try:
             import fitz
             from pathlib import Path
@@ -183,6 +184,21 @@ class DocumentParser:
             if extract_images_dir:
                 img_dir_path = Path(extract_images_dir)
                 img_dir_path.mkdir(parents=True, exist_ok=True)
+
+            # [SCRUM-145] Trích xuất mục lục bookmarks (doc.get_toc()) từ tệp PDF
+            try:
+                raw_toc = doc.get_toc(simple=True) or []
+                for item in raw_toc:
+                    if len(item) >= 3 and item[1] and str(item[1]).strip():
+                        clean_toc_title = DocumentParser.convert_legacy_vietnamese_fonts(DocumentParser._clean_text(str(item[1]).strip()))
+                        if clean_toc_title:
+                            toc_bookmarks.append({
+                                "level": int(item[0]),
+                                "title": clean_toc_title,
+                                "page": int(item[2])
+                            })
+            except Exception as toc_err:
+                pass
 
             for page_idx, page in enumerate(doc):
                 try:
@@ -231,6 +247,22 @@ class DocumentParser:
                     pass
                 raw_pages_images.append(page_imgs)
 
+            # [SCRUM-145] Scanned PDF OCR Fallback: Phát hiện PDF dạng ảnh quét không có text
+            total_raw_chars = sum(sum(len(l) for l in lines) for lines in raw_pages_lines)
+            if total_raw_chars < 50 and len(doc) > 0:
+                ocr_pages_lines = []
+                for page_idx, page in enumerate(doc):
+                    ocr_text = ""
+                    try:
+                        textpage = page.get_textpage_ocr(flags=0, language="vie+eng", dpi=150)
+                        ocr_text = page.get_text("text", textpage=textpage) or ""
+                    except Exception:
+                        pass
+                    lines = [DocumentParser._clean_text(l) for l in ocr_text.split("\n") if l.strip()]
+                    ocr_pages_lines.append(lines)
+                if sum(sum(len(l) for l in lines) for lines in ocr_pages_lines) > 50:
+                    raw_pages_lines = ocr_pages_lines
+
             doc.close()
         except ImportError:
             try:
@@ -267,16 +299,19 @@ class DocumentParser:
             clean_page_text = DocumentParser._clean_text(text)
             total_extracted_chars += len(clean_page_text)
             page_imgs = raw_pages_images[idx] if idx < len(raw_pages_images) else []
-            pages_content.append({
+            item: Dict[str, Any] = {
                 "page_number": idx + 1,
                 "text": clean_page_text,
                 "images": page_imgs
-            })
+            }
+            if idx == 0 and toc_bookmarks:
+                item["toc_bookmarks"] = toc_bookmarks
+            pages_content.append(item)
 
         if total_extracted_chars == 0:
             raise ValueError(
-                "Tài liệu PDF là dạng ảnh quét (scan) chưa qua nhận dạng quang học (OCR) "
-                "hoặc không chứa văn bản có thể trích xuất."
+                "Tài liệu PDF là dạng ảnh quét (scanned PDF) chưa qua nhận dạng quang học (OCR) "
+                "hoặc không chứa văn bản có thể trích xuất. Vui lòng sử dụng tệp PDF có văn bản hoặc tệp Word (.docx)."
             )
 
         return pages_content

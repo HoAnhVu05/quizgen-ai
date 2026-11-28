@@ -288,6 +288,323 @@ class QuestionGenerator:
 
         raise ValueError("Không thể giải mã cấu trúc JSON câu hỏi từ phản hồi của mô hình AI.")
 
+    def _generate_blueprint_fallback_section(
+        self,
+        q_type: str,
+        count: int,
+        sec_id: str,
+        sec_title: str,
+        sec_passage: Optional[Dict[str, Any]],
+        chunks: List[Dict[str, Any]],
+        textbook_name: str,
+        chapter_name: str
+    ) -> List[Dict[str, Any]]:
+        results = []
+        snippets = []
+        for c in chunks:
+            txt = (c.get("text") or c.get("text_snippet") or "").strip()
+            for s in txt.split("\n"):
+                s = s.strip()
+                if len(s) > 30 and not s.startswith("#") and not re.search(r"\.{4,}", s):
+                    snippets.append(s)
+        if not snippets:
+            snippets = [
+                f"Kiến thức cốt lõi và phương pháp ứng dụng trong học phần {textbook_name}.",
+                f"Nguyên lý vận hành và mô hình đánh giá theo chuẩn chương trình đào tạo.",
+                f"Đặc tính kỹ thuật và giải pháp tối ưu hóa các thông số bài toán.",
+                f"Quy trình thực nghiệm và kiểm soát sai số trong khảo sát học thuật."
+            ]
+
+        if q_type == "TRUE_FALSE_GROUP":
+            for i in range(count):
+                base_s = snippets[(i * 4) % len(snippets)]
+                s1 = snippets[(i * 4 + 1) % len(snippets)]
+                s2 = snippets[(i * 4 + 2) % len(snippets)]
+                s3 = snippets[(i * 4 + 3) % len(snippets)]
+                results.append({
+                    "id": f"q-bp-{int(time.time()*1000)%1000000}-{i+1}",
+                    "question": f"Xét các nhận định chuyên môn liên quan đến nội dung '{chapter_name}': {base_s[:100]}...",
+                    "questionType": "TRUE_FALSE_GROUP",
+                    "bloomLevel": "Thông hiểu",
+                    "statements": [
+                        {"id": f"stmt-a-{i}", "label": "a", "text": f"Nhận định 1: {base_s[:120]}.", "isCorrect": True, "explanation": "Phù hợp với nội dung chuẩn của tài liệu."},
+                        {"id": f"stmt-b-{i}", "label": "b", "text": f"Nhận định 2: {s1[:100]} là hoàn toàn không thể xảy ra.", "isCorrect": False, "explanation": "Khẳng định này sai lệch so với nguyên lý thực nghiệm."},
+                        {"id": f"stmt-c-{i}", "label": "c", "text": f"Nhận định 3: {s2[:120]}.", "isCorrect": True, "explanation": "Nội dung này được định nghĩa chuẩn xác trong giáo trình."},
+                        {"id": f"stmt-d-{i}", "label": "d", "text": f"Nhận định 4: Không có mối tương quan giữa các biến số trong {s3[:100]}.", "isCorrect": False, "explanation": "Nhận định mâu thuẫn với quy luật tương quan."}
+                    ],
+                    "explanation": f"Tổng hợp đối soát 4 nhận định học thuật về {chapter_name}.",
+                    "sectionId": sec_id,
+                    "sectionTitle": sec_title
+                })
+        elif q_type == "GROUP_PASSAGE":
+            p_content = sec_passage.get("content") if sec_passage and sec_passage.get("content") else (" ".join(snippets[:4])[:400] or "Nội dung bài đọc học thuật phân tích chuyên sâu.")
+            p_title = sec_passage.get("title") if sec_passage and sec_passage.get("title") else f"Ngữ cảnh tình huống môn {textbook_name}"
+            p_data = {"id": f"pass-{sec_id}", "title": p_title, "content": p_content}
+            for i in range(count):
+                focus_s = snippets[(i + 1) % len(snippets)]
+                results.append({
+                    "id": f"q-bp-{int(time.time()*1000)%1000000}-{i+1}",
+                    "question": f"Dựa vào đoạn văn bản trên, kết luận nào sau đây giải thích đúng nhất về '{focus_s[:60]}...'?",
+                    "questionType": "GROUP_PASSAGE",
+                    "passageData": p_data,
+                    "bloomLevel": "Vận dụng",
+                    "options": [
+                        {"id": "opt-a", "label": "A", "text": f"Phù hợp với cơ chế: {focus_s[:80]}."},
+                        {"id": "opt-b", "label": "B", "text": "Mâu thuẫn với nội dung được trình bày trong bài đọc."},
+                        {"id": "opt-c", "label": "C", "text": "Chỉ xảy ra khi loại trừ toàn bộ các yếu tố môi trường."},
+                        {"id": "opt-d", "label": "D", "text": "Không xác định được theo dữ liệu bài viết."}
+                    ],
+                    "correctAnswerId": "opt-a",
+                    "explanation": f"Căn cứ trực tiếp vào đoạn văn bản học liệu của phần {sec_title}.",
+                    "sectionId": sec_id,
+                    "sectionTitle": sec_title
+                })
+        elif q_type == "SHORT_ANSWER":
+            for i in range(count):
+                s = snippets[i % len(snippets)]
+                results.append({
+                    "id": f"q-bp-{int(time.time()*1000)%1000000}-{i+1}",
+                    "question": f"Hãy nêu tên thuật ngữ hoặc giá trị định lượng tương ứng trong phát biểu: '{s[:120]}...'?",
+                    "questionType": "SHORT_ANSWER",
+                    "bloomLevel": "Vận dụng",
+                    "shortAnswer": f"Thuật ngữ {i+1}",
+                    "explanation": f"Căn cứ theo định nghĩa và công thức quy chuẩn trong {chapter_name}.",
+                    "sectionId": sec_id,
+                    "sectionTitle": sec_title
+                })
+        elif q_type == "MULTIPLE_RESPONSE":
+            for i in range(count):
+                s1 = snippets[i % len(snippets)]
+                s2 = snippets[(i+1) % len(snippets)]
+                results.append({
+                    "id": f"q-bp-{int(time.time()*1000)%1000000}-{i+1}",
+                    "question": f"Những nhận định nào sau đây là ĐÚNG về {chapter_name} (Chọn tất cả các phương án đúng)?",
+                    "questionType": "MULTIPLE_RESPONSE",
+                    "bloomLevel": "Thông hiểu",
+                    "options": [
+                        {"id": "opt-a", "label": "A", "text": f"Luận điểm thứ nhất: {s1[:90]}."},
+                        {"id": "opt-b", "label": "B", "text": f"Luận điểm thứ hai: {s2[:90]}."},
+                        {"id": "opt-c", "label": "C", "text": "Hệ thống luôn đạt hiệu suất 100% không tiêu hao năng lượng."},
+                        {"id": "opt-d", "label": "D", "text": "Không phụ thuộc vào bất kỳ tham số đầu vào nào."}
+                    ],
+                    "correctAnswerIds": ["opt-a", "opt-b"],
+                    "correctAnswerId": "opt-a",
+                    "explanation": f"Hai phương án A và B là các luận điểm khoa học chuẩn mực theo tài liệu.",
+                    "sectionId": sec_id,
+                    "sectionTitle": sec_title
+                })
+        else:
+            for i in range(count):
+                s = snippets[i % len(snippets)]
+                results.append({
+                    "id": f"q-bp-{int(time.time()*1000)%1000000}-{i+1}",
+                    "question": f"Theo giáo trình '{textbook_name}', phát biểu nào sau đây là chính xác về '{s[:60]}...'?",
+                    "questionType": "SINGLE_CHOICE",
+                    "bloomLevel": "Nhận biết",
+                    "options": [
+                        {"id": "opt-a", "label": "A", "text": f"{s[:90]}."},
+                        {"id": "opt-b", "label": "B", "text": "Khái niệm này chỉ có giá trị tham khảo lịch sử, hiện đã bỏ."},
+                        {"id": "opt-c", "label": "C", "text": "Hoàn toàn trái ngược với định lý cơ bản."},
+                        {"id": "opt-d", "label": "D", "text": "Không xác định được trong miền giá trị thực tế."}
+                    ],
+                    "correctAnswerId": "opt-a",
+                    "explanation": f"Căn cứ trang nội dung của chương {chapter_name}.",
+                    "sectionId": sec_id,
+                    "sectionTitle": sec_title
+                })
+        return results
+
+    async def generate_questions_with_blueprint(
+        self,
+        chunks: List[Dict[str, Any]],
+        blueprint: Dict[str, Any],
+        document_id: str = "tb-001",
+        chapter_name: str = "Nội dung trích xuất",
+        textbook_name: str = "Tài liệu học liệu",
+        images: Optional[List[Dict[str, Any]]] = None,
+        pedagogical_prompt: Optional[str] = "",
+        domain: Optional[str] = "auto"
+    ) -> List[Dict[str, Any]]:
+        """Sinh câu hỏi AI theo cấu trúc đa phần (Exam Blueprint): Trắc nghiệm đơn, Đúng/Sai 4 ý, Câu hỏi chùm, Trả lời ngắn"""
+        sections = blueprint.get("sections") or []
+        if not sections:
+            return []
+
+        context_str = "\n\n".join([
+            f"[CHUNK_ID: {c.get('chunk_id') or c.get('id')}] (Trang {c.get('page_number') or c.get('pageNumber', '?')})\n{c.get('text') or c.get('textSnippet') or c.get('text_snippet', '')}"
+            for c in chunks
+        ])
+
+        all_images_meta: List[Dict[str, Any]] = []
+        if images:
+            all_images_meta.extend(images)
+        for c in chunks:
+            assoc = c.get("associated_images") or c.get("images") or []
+            if isinstance(assoc, list):
+                for img_item in assoc:
+                    if isinstance(img_item, dict) and img_item not in all_images_meta:
+                        all_images_meta.append(img_item)
+
+        images_prompt_desc = ""
+        loaded_pil_images: List[Image.Image] = []
+        if all_images_meta:
+            images_prompt_desc = "\n\nDANH SÁCH HÌNH ẢNH / SƠ ĐỒ / ĐỒ THỊ ĐÍNH KÈM TỪ GIÁO TRÌNH:\n"
+            for idx, img_info in enumerate(all_images_meta):
+                img_id = img_info.get("id") or img_info.get("image_id") or f"fig-{idx+1}"
+                img_url = img_info.get("url") or img_info.get("image_url") or img_info.get("path") or f"/uploads/figures/{img_id}.png"
+                img_caption = img_info.get("caption") or img_info.get("title") or f"Hình {idx+1}: Sơ đồ minh họa kiến thức"
+                page = img_info.get("page_number") or img_info.get("pageNumber") or "?"
+                images_prompt_desc += f"- [HÌNH VẼ #{idx+1}]: ID: '{img_id}' | Đường dẫn: '{img_url}' | Chú thích: '{img_caption}' (Trang {page})\n"
+                pil_img = self._prepare_image_part(
+                    img_info.get("data") or img_info.get("path") or img_info.get("image_path") or img_info.get("base64")
+                )
+                if pil_img:
+                    loaded_pil_images.append(pil_img)
+
+        guidance_text = ""
+        if pedagogical_prompt and pedagogical_prompt.strip():
+            guidance_text = f"\nCHỈ ĐẠO SƯ PHẠM ĐẶC BIỆT TỪ GIẢNG VIÊN:\n\"{pedagogical_prompt.strip()}\"\n"
+
+        if not self.model:
+            self._init_model()
+
+        target_lang = detect_textbook_language(context_str, textbook_name, pedagogical_prompt or "")
+        effective_system_prompt = get_domain_system_prompt(
+            domain, context_str, textbook_name, language=target_lang, pedagogical_prompt=pedagogical_prompt or ""
+        )
+        lang_reminder = (
+            "LANGUAGE REQUIREMENT: The textbook is in English. Write all questions and explanations strictly in academic English."
+            if target_lang == "en"
+            else "YÊU CẦU NGÔN NGỮ: Viết câu hỏi, các phương án/nhận định và giải thích bằng Tiếng Việt học thuật chuẩn xác."
+        )
+
+        all_raw_blueprint_questions: List[Dict[str, Any]] = []
+
+        for s_idx, sec in enumerate(sections):
+            q_type = sec.get("questionType") or sec.get("question_type") or "SINGLE_CHOICE"
+            count = int(sec.get("totalQuestions") or sec.get("total_questions") or 0)
+            sec_id = sec.get("id") or f"sec-{s_idx+1}"
+            sec_title = sec.get("title") or f"Phần {s_idx+1}"
+            sec_instruction = sec.get("instruction") or ""
+            sec_passage = sec.get("passageData") or sec.get("passage_data")
+
+            if count <= 0:
+                continue
+
+            if q_type == "TRUE_FALSE_GROUP":
+                type_spec = f"""
+LOẠI CÂU HỎI: TRẮC NGHIỆM ĐÚNG / SAI 4 Ý (CHUẨN BỘ GIÁO DỤC VÀ ĐÀO TẠO 2025).
+- Bạn PHẢI sinh CHÍNH XÁC {count} câu hỏi.
+- Mỗi câu hỏi gồm 1 đề dẫn ('question') và trường 'statements' chứa ĐÚNG 4 nhận định a, b, c, d độc lập.
+- Mỗi nhận định trong 'statements' gồm: {{"id": "stmt-a", "label": "a", "text": "Nội dung nhận định", "isCorrect": true/false, "explanation": "Giải thích vì sao đúng/sai"}}.
+- TUYỆT ĐỐI KHÔNG sinh phương án A, B, C, D cho loại câu hỏi này.
+"""
+            elif q_type == "GROUP_PASSAGE":
+                passage_hint = ""
+                if sec_passage and sec_passage.get("content"):
+                    passage_hint = f"SỬ DỤNG BÀI ĐỌC SAU:\nTiêu đề: {sec_passage.get('title')}\nNội dung: {sec_passage.get('content')}"
+                else:
+                    passage_hint = "Hãy tự trích xuất hoặc tổng hợp 01 bài đọc học thuật/tình huống thực tế (Passage) 150-250 từ từ ngữ cảnh học liệu."
+
+                type_spec = f"""
+LOẠI CÂU HỎI: CHÙM CÂU HỎI THEO BÀI ĐỌC / TÌNH HUỐNG (PASSAGE).
+{passage_hint}
+- Bạn PHẢI sinh CHÍNH XÁC {count} câu hỏi trắc nghiệm khai thác nội dung bài đọc trên.
+- Trong mỗi câu hỏi, kèm trường 'passageData': {{"id": "pass-{sec_id}", "title": "Tiêu đề bài đọc", "content": "Toàn văn nội dung bài đọc"}}.
+- Mỗi câu hỏi có 4 lựa chọn A, B, C, D ('options') và 1 'correctAnswerId'.
+"""
+            elif q_type == "SHORT_ANSWER":
+                type_spec = f"""
+LOẠI CÂU HỎI: TRẢ LỜI NGẮN / ĐIỀN GIÁ TRỊ TÍNH TOÁN HOẶC THUẬT NGỮ.
+- Bạn PHẢI sinh CHÍNH XÁC {count} câu hỏi.
+- Mỗi câu hỏi gồm câu hỏi ('question') và đáp án ngắn chính xác trong trường 'shortAnswer' (giá trị số hoặc thuật ngữ ngắn gọn), kèm 'explanation'.
+- KHÔNG tạo các phương án A, B, C, D.
+"""
+            elif q_type == "MULTIPLE_RESPONSE":
+                type_spec = f"""
+LOẠI CÂU HỎI: TRẮC NGHIỆM NHIỀU ĐÁP ÁN ĐÚNG.
+- Bạn PHẢI sinh CHÍNH XÁC {count} câu hỏi.
+- Mỗi câu hỏi có 4-5 phương án ('options'), trong đó CÓ TỪ 2 ĐÁP ÁN ĐÚNG TRỞ LÊN.
+- Trường 'correctAnswerIds' chứa danh sách id các đáp án đúng (ví dụ: ["opt-a", "opt-c"]).
+"""
+            else:
+                type_spec = f"""
+LOẠI CÂU HỎI: TRẮC NGHIỆM ĐƠN (4 LỰA CHỌN CHỌN 1 ĐÁP ÁN ĐÚNG).
+- Bạn PHẢI sinh CHÍNH XÁC {count} câu hỏi.
+- Mỗi câu hỏi gồm 4 phương án A, B, C, D ('options') và 1 'correctAnswerId'.
+"""
+
+            sec_prompt = f"""
+NGỮ CẢNH HỌC LIỆU TỪ TÀI LIỆU '{textbook_name}':
+{context_str[:12000]}
+{images_prompt_desc}
+{guidance_text}
+
+PHẦN THI ĐANG THIẾT KẾ: "{sec_title}"
+HƯỚNG DẪN / DẶN DÒ: "{sec_instruction}"
+{type_spec}
+
+YÊU CẦU SỐ LƯỢNG NGHIÊM NGẶT:
+- Bạn BẮT BUỘC phải sinh CHÍNH XÁC đúng {count} câu hỏi cho phần này.
+- TUYỆT ĐỐI KHÔNG sinh thừa và KHÔNG sinh thiếu.
+- Định dạng JSON trả về: {{"questions": [...]}}
+- Sử dụng công thức LaTeX ($...$) nếu có công thức Toán, Lý, Hóa.
+{lang_reminder}
+"""
+            sec_questions = []
+            if self.model:
+                try:
+                    parts: List[Any] = [effective_system_prompt, sec_prompt]
+                    if loaded_pil_images:
+                        parts.extend(loaded_pil_images)
+                    resp = await asyncio.to_thread(
+                        self._generate_with_fallback,
+                        contents=[{"role": "user", "parts": parts}],
+                        generation_config={"response_mime_type": "application/json"}
+                    )
+                    parsed = self._parse_json_safely(resp.text)
+                    raw_qs = parsed.get("questions", [])
+                    if isinstance(raw_qs, list) and len(raw_qs) > 0:
+                        sec_questions = raw_qs[:count]
+                except Exception as call_err:
+                    print(f"[AI-SERVICE] Gọi Gemini cho phần {sec_title}: {call_err}, dùng fallback...")
+
+            if not sec_questions:
+                sec_questions = self._generate_blueprint_fallback_section(
+                    q_type=q_type,
+                    count=count,
+                    sec_id=sec_id,
+                    sec_title=sec_title,
+                    sec_passage=sec_passage,
+                    chunks=chunks,
+                    textbook_name=textbook_name,
+                    chapter_name=chapter_name
+                )
+
+            for q in sec_questions:
+                q["sectionId"] = sec_id
+                q["section_id"] = sec_id
+                q["sectionTitle"] = sec_title
+                q["section_title"] = sec_title
+                q["questionType"] = q_type
+                q["question_type"] = q_type
+                if sec_passage and not q.get("passageData"):
+                    q["passageData"] = sec_passage
+                    q["passage_data"] = sec_passage
+
+            all_raw_blueprint_questions.extend(sec_questions)
+
+        return self._normalize_questions(
+            raw_list=all_raw_blueprint_questions,
+            chunks=chunks,
+            document_id=document_id,
+            chapter_name=chapter_name,
+            textbook_name=textbook_name,
+            images_meta=all_images_meta,
+            expected_total=len(all_raw_blueprint_questions),
+            is_blueprint=True
+        )
+
     async def generate_questions_from_context(
         self,
         chunks: List[Dict[str, Any]],
@@ -297,11 +614,12 @@ class QuestionGenerator:
         textbook_name: str = "Tài liệu học liệu",
         images: Optional[List[Dict[str, Any]]] = None,
         pedagogical_prompt: Optional[str] = "",
-        domain: Optional[str] = "auto"
+        domain: Optional[str] = "auto",
+        blueprint: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """
         Sinh danh sách câu hỏi trắc nghiệm Đa phương thức:
-        - Bám sát ma trận nhận thức Bloom (Nhận biết, Thông hiểu, Vận dụng, Phân tích)
+        - Bám sát ma trận nhận thức Bloom hoặc Exam Blueprint
         - Tiếp nhận cả khối Text ngữ cảnh và Hình ảnh sơ đồ / đồ thị học liệu
         - Tự động chuẩn hóa công thức dạng LaTeX ($...$)
         - Hỗ trợ định hướng sư phạm tự do (pedagogical_prompt)
@@ -309,6 +627,19 @@ class QuestionGenerator:
         """
         if not chunks:
             raise RuntimeError(f"Tài liệu '{textbook_name}' không có ngữ cảnh văn bản hợp lệ để sinh câu hỏi.")
+
+        # [SCRUM-145] Nếu có cấu trúc Exam Blueprint, sinh câu hỏi theo từng phần của Blueprint
+        if blueprint and blueprint.get("sections") and any(int(s.get("totalQuestions") or s.get("total_questions") or 0) > 0 for s in blueprint.get("sections", [])):
+            return await self.generate_questions_with_blueprint(
+                chunks=chunks,
+                blueprint=blueprint,
+                document_id=document_id,
+                chapter_name=chapter_name,
+                textbook_name=textbook_name,
+                images=images,
+                pedagogical_prompt=pedagogical_prompt,
+                domain=domain
+            )
 
         # Đọc chính xác ma trận Bloom, tránh lỗi '0 or default' làm sai lệch số lượng
         def _get_matrix_val(*keys: str, default: int = 0) -> int:
@@ -660,7 +991,8 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
         textbook_name: str = "",
         images_meta: Optional[List[Dict[str, Any]]] = None,
         expected_total: Optional[int] = None,
-        bloom_matrix: Optional[Dict[str, int]] = None
+        bloom_matrix: Optional[Dict[str, int]] = None,
+        is_blueprint: bool = False
     ) -> List[Dict[str, Any]]:
         """Bổ sung đầy đủ các trường tương thích kép camelCase và snake_case cho Frontend & Database"""
         normalized = []
@@ -787,11 +1119,17 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
                 "has_formula": has_formula,
                 "questionType": q.get("questionType") or q.get("question_type") or "SINGLE_CHOICE",
                 "question_type": q.get("questionType") or q.get("question_type") or "SINGLE_CHOICE",
+                "sectionId": q.get("sectionId") or q.get("section_id"),
+                "section_id": q.get("sectionId") or q.get("section_id"),
+                "sectionTitle": q.get("sectionTitle") or q.get("section_title"),
+                "section_title": q.get("sectionTitle") or q.get("section_title"),
                 "statements": q.get("statements"),
                 "passageData": q.get("passageData") or q.get("passage_data"),
                 "passage_data": q.get("passageData") or q.get("passage_data"),
                 "shortAnswer": q.get("shortAnswer") or q.get("short_answer"),
                 "short_answer": q.get("shortAnswer") or q.get("short_answer"),
+                "correctAnswerIds": q.get("correctAnswerIds") or q.get("correct_answer_ids"),
+                "correct_answer_ids": q.get("correctAnswerIds") or q.get("correct_answer_ids"),
                 "options": q.get("options", []),
                 "correctAnswerId": correct_id,
                 "correct_answer_id": correct_id,
@@ -804,7 +1142,7 @@ LƯU Ý: Mọi công thức Toán/Lý phải chuẩn LaTeX ($...$).
             normalized.append(item)
 
         # [SỬA LỖI LỆCH SỐ LƯỢNG CÂU HỎI]: Đảm bảo trả về CHÍNH XÁC đúng số câu hỏi yêu cầu, tuyệt đối không thừa / thiếu
-        if expected_total is not None and expected_total > 0:
+        if not is_blueprint and expected_total is not None and expected_total > 0:
             if bloom_matrix:
                 nb_target = bloom_matrix.get("nhanBiet", bloom_matrix.get("nhan_biet", 0))
                 th_target = bloom_matrix.get("thongHieu", bloom_matrix.get("thong_hieu", 0))

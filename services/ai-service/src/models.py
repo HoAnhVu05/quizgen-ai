@@ -98,9 +98,14 @@ class UserAcademicMemoryDB(Base):
 class GenerateRequest(BaseModel):
     document_id: Optional[str] = None
     documentId: Optional[str] = None
-    chapters: List[str]
+    document_ids: Optional[List[str]] = None
+    documentIds: Optional[List[str]] = None
+    document_name: Optional[str] = None
+    documentName: Optional[str] = None
+    chapters: List[str] = []
     bloom_matrix: Optional[Dict[str, int]] = None
     bloomMatrix: Optional[Dict[str, int]] = None
+    blueprint: Optional[Dict[str, Any]] = None
     images: Optional[List[Dict[str, Any]]] = None
     pedagogical_prompt: Optional[str] = None
     pedagogicalPrompt: Optional[str] = None
@@ -108,7 +113,18 @@ class GenerateRequest(BaseModel):
     domain_mode: Optional[str] = None
 
     def get_document_id(self) -> str:
-        return self.documentId or self.document_id or "tb-001"
+        return self.documentId or self.document_id or (self.get_document_ids()[0] if self.get_document_ids() else "tb-001")
+
+    def get_document_ids(self) -> List[str]:
+        ids = self.documentIds or self.document_ids or []
+        if not ids:
+            single = self.documentId or self.document_id
+            if single:
+                ids = [single]
+        return ids
+
+    def get_blueprint(self) -> Optional[Dict[str, Any]]:
+        return self.blueprint
 
     def get_bloom_matrix(self) -> Dict[str, int]:
         return self.bloomMatrix or self.bloom_matrix or {"nhanBiet": 4, "thongHieu": 4, "vanDung": 2, "phanTich": 0}

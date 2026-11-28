@@ -49,7 +49,7 @@ const normalizeGeneratedQuestion = (
   if (Array.isArray(raw.options)) {
     options = raw.options.map((opt: any, optIdx: number) => {
       if (typeof opt === 'string') {
-        const labels = ['A', 'B', 'C', 'D'];
+        const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
         return {
           id: `opt-${String.fromCharCode(97 + optIdx)}`,
           label: labels[optIdx] || String(optIdx + 1),
@@ -62,7 +62,14 @@ const normalizeGeneratedQuestion = (
         text: String(opt.text || opt.content || ''),
       };
     });
-  } else {
+  } else if (
+    !raw.statements &&
+    !raw.shortAnswer &&
+    raw.questionType !== 'TRUE_FALSE_GROUP' &&
+    raw.question_type !== 'TRUE_FALSE_GROUP' &&
+    raw.questionType !== 'SHORT_ANSWER' &&
+    raw.question_type !== 'SHORT_ANSWER'
+  ) {
     options = [
       { id: 'opt-a', label: 'A', text: 'Phương án A' },
       { id: 'opt-b', label: 'B', text: 'Phương án B' },
@@ -83,6 +90,44 @@ const normalizeGeneratedQuestion = (
     bloomLevel = 'Nhận biết';
   }
 
+  // [SCRUM-145] Khôi phục toàn diện dữ liệu các nhận định Đúng / Sai cho TRUE_FALSE_GROUP
+  let statements = undefined;
+  if (Array.isArray(raw.statements) && raw.statements.length > 0) {
+    statements = raw.statements.map((stmt: any, sIdx: number) => ({
+      id: String(stmt.id || `stmt-${String.fromCharCode(97 + sIdx)}`),
+      label: String(stmt.label || String.fromCharCode(97 + sIdx)),
+      text: String(stmt.text || stmt.content || ''),
+      isCorrect: Boolean(stmt.isCorrect ?? stmt.is_correct),
+      explanation: stmt.explanation ? String(stmt.explanation) : undefined,
+    }));
+  } else if (raw.questionType === 'TRUE_FALSE_GROUP' || raw.question_type === 'TRUE_FALSE_GROUP') {
+    statements = [
+      { id: 'stmt-a', label: 'a', text: 'Nhận định a', isCorrect: true },
+      { id: 'stmt-b', label: 'b', text: 'Nhận định b', isCorrect: false },
+      { id: 'stmt-c', label: 'c', text: 'Nhận định c', isCorrect: true },
+      { id: 'stmt-d', label: 'd', text: 'Nhận định d', isCorrect: false },
+    ];
+  }
+
+  // [SCRUM-145] Khôi phục dữ liệu bài đọc chung (Passage) cho câu hỏi chùm GROUP_PASSAGE
+  let passageData = undefined;
+  const rawPassage = raw.passageData || raw.passage_data;
+  if (rawPassage && (rawPassage.content || rawPassage.title)) {
+    passageData = {
+      id: String(rawPassage.id || `passage-${index + 1}`),
+      title: String(rawPassage.title || 'Ngữ cảnh bài đọc'),
+      content: String(rawPassage.content || ''),
+      hasImage: Boolean(rawPassage.hasImage || rawPassage.imageUrl),
+      imageUrl: rawPassage.imageUrl || undefined,
+      imageCaption: rawPassage.imageCaption || undefined,
+    };
+  }
+
+  const qType =
+    raw.questionType ||
+    raw.question_type ||
+    (statements ? 'TRUE_FALSE_GROUP' : passageData ? 'GROUP_PASSAGE' : raw.shortAnswer ? 'SHORT_ANSWER' : 'SINGLE_CHOICE');
+
   return {
     id: String(raw.id || `q-gemini-${Date.now()}-${index + 1}`),
     sourceChunkId: String(raw.sourceChunkId || raw.source_chunk_id || `chunk-${(index % 3) + 1}`),
@@ -91,7 +136,7 @@ const normalizeGeneratedQuestion = (
     bloomLevel,
     question: String(raw.question || raw.questionText || raw.question_text || ''),
     options,
-    correctAnswerId: String(raw.correctAnswerId || raw.correct_answer_id || options[0]?.id || 'opt-a'),
+    correctAnswerId: String(raw.correctAnswerId || raw.correct_answer_id || (options[0]?.id || 'opt-a')),
     explanation: String(raw.explanation || 'Minh chứng trích xuất từ tài liệu giáo trình.'),
     confidenceScore: Number(raw.confidenceScore ?? raw.confidence_score ?? Math.floor(92 + Math.random() * 7)),
     status: 'pending',
@@ -100,17 +145,151 @@ const normalizeGeneratedQuestion = (
     hasImage: Boolean(raw.hasImage || raw.has_image || raw.imageUrl || raw.image_url),
     imageUrl: raw.imageUrl || raw.image_url || undefined,
     imageCaption: raw.imageCaption || raw.image_caption || undefined,
+    questionType: qType,
+    sectionId: raw.sectionId || raw.section_id,
+    sectionTitle: raw.sectionTitle || raw.section_title,
+    passageData,
+    statements,
+    shortAnswer: raw.shortAnswer ?? raw.short_answer,
+    correctAnswerIds: raw.correctAnswerIds || raw.correct_answer_ids,
   };
 };
 
 const generateDraftQuestions = (
   bookName: string,
   chapters: string[],
-  bloom: BloomDistribution
+  bloom: BloomDistribution,
+  blueprint?: ExamBlueprint | null
 ): Question[] => {
   const result: Question[] = [];
   const timestamp = Date.now();
   let qIndex = 1;
+
+  // [SCRUM-145] Sinh câu hỏi bản nháp/fallback bám sát theo các phần trong Exam Blueprint
+  if (blueprint && blueprint.sections && blueprint.sections.length > 0) {
+    blueprint.sections.forEach((sec, sIdx) => {
+      const count = sec.totalQuestions || 0;
+      if (count <= 0) return;
+      const ch = chapters.length > 0 ? chapters[sIdx % chapters.length] : 'Chương tổng hợp';
+      const knowledge = findKnowledgeForChapter(bookName, ch);
+
+      if (sec.questionType === 'TRUE_FALSE_GROUP') {
+        for (let i = 0; i < count; i++) {
+          result.push({
+            id: `q-bp-${timestamp}-${qIndex}`,
+            sourceChunkId: `chunk-${knowledge.pageNumber}-${qIndex}`,
+            textbookName: bookName,
+            chapter: ch,
+            bloomLevel: 'Thông hiểu',
+            question: `Xét tính Đúng / Sai của các nhận định chuyên môn sau đây trong học phần:`,
+            questionType: 'TRUE_FALSE_GROUP',
+            sectionId: sec.id,
+            sectionTitle: sec.title,
+            options: [],
+            correctAnswerId: 'stmt-a',
+            statements: [
+              { id: 'stmt-a', label: 'a', text: `Nguyên lý cơ bản của ${ch} luôn được bảo toàn trong điều kiện chuẩn.`, isCorrect: true, explanation: 'Đúng theo lý thuyết giáo trình.' },
+              { id: 'stmt-b', label: 'b', text: `Hệ số đáp ứng không phụ thuộc vào tần số và môi trường làm việc.`, isCorrect: false, explanation: 'Sai vì hệ số này phụ thuộc vào môi trường.' },
+              { id: 'stmt-c', label: 'c', text: `Khi tham số đầu vào tăng thì đáp ứng ra biến thiên theo hàm số xác định.`, isCorrect: true, explanation: 'Đúng theo mô hình giải tích.' },
+              { id: 'stmt-d', label: 'd', text: `Sai số tích lũy bằng 0 trong mọi trường hợp khảo sát thực tế.`, isCorrect: false, explanation: 'Sai vì luôn có sai số ngẫu nhiên.' }
+            ],
+            explanation: `Đánh giá 4 nhận định Đúng / Sai theo chuẩn Bộ GD&ĐT cho phần ${sec.title}.`,
+            confidenceScore: 95,
+            status: 'pending',
+            createdAt: 'Vừa sinh AI',
+          });
+          qIndex++;
+        }
+      } else if (sec.questionType === 'GROUP_PASSAGE') {
+        const passData = sec.passageData || {
+          id: `passage-${sec.id || sIdx}`,
+          title: `Tình huống phân tích chuyên sâu về ${ch}`,
+          content: `Trong nghiên cứu học phần ${bookName}, việc khảo sát hệ thống đòi hỏi phân tích toàn diện các yếu tố tác động. Khi các thông số đầu vào thay đổi, phản ứng của hệ thống và sự biến thiên các đại lượng trạng thái tuân theo quy luật bảo toàn năng lượng và đáp ứng động học. Các kỹ sư cần kiểm soát sai số đo đạc để đảm bảo độ tin cậy của toàn bộ quá trình thực nghiệm.`
+        };
+        for (let i = 0; i < count; i++) {
+          const t = knowledge.templates[i % knowledge.templates.length];
+          result.push({
+            id: `q-bp-${timestamp}-${qIndex}`,
+            sourceChunkId: `chunk-${knowledge.pageNumber}-${qIndex}`,
+            textbookName: bookName,
+            chapter: ch,
+            bloomLevel: 'Vận dụng',
+            question: `Dựa vào dữ liệu tình huống bài đọc trên, ${t ? t.question.toLowerCase() : 'kết luận nào sau đây là chính xác'}?`,
+            questionType: 'GROUP_PASSAGE',
+            sectionId: sec.id,
+            sectionTitle: sec.title,
+            passageData: passData,
+            options: t ? t.options.map(o => ({ ...o, id: `${o.id}-${qIndex}` })) : [
+              { id: `opt-a-${qIndex}`, label: 'A', text: 'Phù hợp với dữ liệu thực nghiệm trong bài đọc.' },
+              { id: `opt-b-${qIndex}`, label: 'B', text: 'Mâu thuẫn với giả thiết ban đầu.' },
+              { id: `opt-c-${qIndex}`, label: 'C', text: 'Chỉ xảy ra khi loại trừ toàn bộ yếu tố môi trường.' },
+              { id: `opt-d-${qIndex}`, label: 'D', text: 'Không xác định được theo bài đọc.' },
+            ],
+            correctAnswerId: t ? `${t.correctAnswerId}-${qIndex}` : `opt-a-${qIndex}`,
+            explanation: `Căn cứ theo ngữ cảnh bài đọc tình huống của ${sec.title}.`,
+            confidenceScore: 94,
+            status: 'pending',
+            createdAt: 'Vừa sinh AI',
+          });
+          qIndex++;
+        }
+      } else if (sec.questionType === 'SHORT_ANSWER') {
+        for (let i = 0; i < count; i++) {
+          result.push({
+            id: `q-bp-${timestamp}-${qIndex}`,
+            sourceChunkId: `chunk-${knowledge.pageNumber}-${qIndex}`,
+            textbookName: bookName,
+            chapter: ch,
+            bloomLevel: 'Vận dụng',
+            question: `Hãy tính toán và điền giá trị định lượng (hoặc thuật ngữ cốt lõi) cho bài toán trong phần ${sec.title} khi các thông số đầu vào đạt mức danh định:`,
+            questionType: 'SHORT_ANSWER',
+            sectionId: sec.id,
+            sectionTitle: sec.title,
+            shortAnswer: `${10 * (i + 1)}`,
+            options: [],
+            correctAnswerId: '',
+            explanation: `Căn cứ công thức tính toán và số liệu học phần ${bookName}.`,
+            confidenceScore: 93,
+            status: 'pending',
+            createdAt: 'Vừa sinh AI',
+          });
+          qIndex++;
+        }
+      } else {
+        // SINGLE_CHOICE or MULTIPLE_RESPONSE
+        for (let i = 0; i < count; i++) {
+          const t = knowledge.templates[i % knowledge.templates.length];
+          result.push({
+            id: `q-bp-${timestamp}-${qIndex}`,
+            sourceChunkId: `chunk-${knowledge.pageNumber}-${qIndex}`,
+            textbookName: bookName,
+            chapter: ch,
+            bloomLevel: 'Nhận biết',
+            question: t ? t.question : `Khái niệm nào sau đây là chuẩn xác trong ${ch}?`,
+            questionType: sec.questionType || 'SINGLE_CHOICE',
+            sectionId: sec.id,
+            sectionTitle: sec.title,
+            options: t ? t.options.map(o => ({ ...o, id: `${o.id}-${qIndex}` })) : [
+              { id: `opt-a-${qIndex}`, label: 'A', text: 'Phương án A chuẩn xác' },
+              { id: `opt-b-${qIndex}`, label: 'B', text: 'Phương án B' },
+              { id: `opt-c-${qIndex}`, label: 'C', text: 'Phương án C' },
+              { id: `opt-d-${qIndex}`, label: 'D', text: 'Phương án D' },
+            ],
+            correctAnswerId: t ? `${t.correctAnswerId}-${qIndex}` : `opt-a-${qIndex}`,
+            explanation: t ? t.explanation : `Minh chứng từ giáo trình ${bookName}.`,
+            confidenceScore: 95,
+            status: 'pending',
+            createdAt: 'Vừa sinh AI',
+          });
+          qIndex++;
+        }
+      }
+    });
+
+    if (result.length > 0) {
+      return result;
+    }
+  }
 
   const levels: Array<{ label: BloomLevel; count: number }> = [
     { label: 'Nhận biết', count: bloom.nhanBiet },
@@ -154,7 +333,15 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   onShowToast,
   currentUser,
 }) => {
-  const [selectedBook, setSelectedBook] = useState(() => localStorage.getItem('quizgen_selected_book_id') || '');
+  const [selectedBooks, setSelectedBooks] = useState<string[]>(() => {
+    const saved = localStorage.getItem('quizgen_selected_book_id');
+    return saved ? [saved] : [];
+  });
+  const selectedBook = selectedBooks[0] || '';
+  const setSelectedBook = (id: string) => {
+    setSelectedBooks([id]);
+    localStorage.setItem('quizgen_selected_book_id', id);
+  };
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [bloomDistribution, setBloomDistribution] = useState<BloomDistribution>({
     nhanBiet: 8,
@@ -550,14 +737,35 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   }, [documents, myDocuments, sharedDocuments, onShowToast]);
 
   const chaptersList = useMemo(() => {
-    if (!selectedBook) return [];
-    const list = (
-      chaptersByDocument[selectedBook] ||
-      FALLBACK_CHAPTERS[selectedBook] ||
-      DEFAULT_CUSTOM_CHAPTERS
-    );
-    return list.map((ch: string) => normalizeVietnameseLegacyFont(ch));
-  }, [selectedBook, chaptersByDocument]);
+    if (selectedBooks.length === 0) return [];
+    const set = new Set<string>();
+    selectedBooks.forEach((bId) => {
+      const list = (
+        chaptersByDocument[bId] ||
+        FALLBACK_CHAPTERS[bId] ||
+        DEFAULT_CUSTOM_CHAPTERS
+      );
+      list.forEach((ch: string) => set.add(normalizeVietnameseLegacyFont(ch)));
+    });
+    return Array.from(set);
+  }, [selectedBooks, chaptersByDocument]);
+
+  const chaptersGroupedByDocument = useMemo(() => {
+    return selectedBooks.map((bId) => {
+      const doc =
+        documents.find((d) => d.id === bId) ||
+        myDocuments.find((d) => d.id === bId) ||
+        sharedDocuments.find((d) => d.id === bId);
+      const list = (chaptersByDocument[bId] || FALLBACK_CHAPTERS[bId] || DEFAULT_CUSTOM_CHAPTERS).map((ch) =>
+        normalizeVietnameseLegacyFont(ch)
+      );
+      return {
+        documentId: bId,
+        documentName: doc?.name || bId,
+        chapters: list,
+      };
+    });
+  }, [selectedBooks, documents, myDocuments, sharedDocuments, chaptersByDocument]);
 
   const filteredChapters = useMemo(() => {
     if (!chapterSearchQuery.trim()) return chaptersList;
@@ -566,72 +774,88 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
   }, [chaptersList, chapterSearchQuery]);
 
   const handleSelectBook = (doc: DocumentItem) => {
-    setSelectedBook(doc.id);
+    setSelectedBooks((prev) => (prev.includes(doc.id) ? prev : [...prev, doc.id]));
     localStorage.setItem('quizgen_selected_book_id', doc.id);
     const available = chaptersByDocument[doc.id] || FALLBACK_CHAPTERS[doc.id] || [];
     if (available.length > 0) {
-      setSelectedChapters([available[0]]);
-    } else {
-      setSelectedChapters([]);
+      setSelectedChapters((prev) => Array.from(new Set([...prev, available[0]])));
     }
     setIsLibraryModalOpen(false);
     onShowToast(
       'success',
       'Đã chọn giáo trình',
-      `Đã áp dụng giáo trình "${doc.name}" để cấu hình sinh đề.`
+      `Đã áp dụng giáo trình "${doc.name}" vào danh sách biên soạn đề.`
     );
   };
 
+  const handleToggleSelectBook = (bookId: string) => {
+    setSelectedBooks((prev) => {
+      let next: string[];
+      if (prev.includes(bookId)) {
+        next = prev.filter((id) => id !== bookId);
+        if (next.length === 0) {
+          next = [bookId];
+        }
+      } else {
+        next = [...prev, bookId];
+      }
+      if (next[0]) localStorage.setItem('quizgen_selected_book_id', next[0]);
+      return next;
+    });
+  };
+
   useEffect(() => {
-    if (!selectedBook) {
+    if (selectedBooks.length === 0) {
       setSelectedChapters([]);
       return;
     }
 
-    const available = chaptersByDocument[selectedBook] || FALLBACK_CHAPTERS[selectedBook] || [];
-    if (available.length > 0) {
-      setSelectedChapters((prev) => {
-        const stillValid = prev.filter((c) => available.includes(c));
-        return stillValid.length > 0 ? stillValid : [available[0]];
-      });
-    }
-
-    if (chaptersByDocument[selectedBook]?.length) return;
-
-    if (FALLBACK_CHAPTERS[selectedBook]) {
-      setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: FALLBACK_CHAPTERS[selectedBook] }));
-      return;
-    }
-
-    const loadChapters = async () => {
-      try {
-        let res = await apiClient.fetch(`${API_BASE}/documents/documents/${selectedBook}`);
-        if (!res.ok) {
-          res = await apiClient.fetch(`${API_BASE}/documents/${selectedBook}`);
-        }
-        if (!res.ok) {
-          throw new Error(await parseErrorMessage(res));
-        }
-        const detail = await res.json();
-        const rawChapters = Array.isArray(detail?.chapters) ? detail.chapters.filter(Boolean) : [];
-        const chapters = rawChapters.map((c: string) => normalizeVietnameseLegacyFont(c));
-        if (chapters.length > 0) {
-          setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: chapters }));
-          setSelectedChapters([chapters[0]]);
-        } else {
-          const defaultCh = ['Toàn bộ nội dung tài liệu'];
-          setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
-          setSelectedChapters(defaultCh);
-        }
-      } catch {
-        const defaultCh = ['Toàn bộ nội dung tài liệu'];
-        setChaptersByDocument((prev) => ({ ...prev, [selectedBook]: defaultCh }));
-        setSelectedChapters(defaultCh);
+    selectedBooks.forEach((bId) => {
+      const available = chaptersByDocument[bId] || FALLBACK_CHAPTERS[bId] || [];
+      if (available.length > 0) {
+        setSelectedChapters((prev) => {
+          const stillValid = prev.filter((c) => available.includes(c));
+          return stillValid.length > 0 ? stillValid : Array.from(new Set([...prev, available[0]]));
+        });
       }
-    };
 
-    void loadChapters();
-  }, [selectedBook, API_BASE, chaptersByDocument]);
+      if (chaptersByDocument[bId]?.length) return;
+
+      if (FALLBACK_CHAPTERS[bId]) {
+        setChaptersByDocument((prev) => ({ ...prev, [bId]: FALLBACK_CHAPTERS[bId] }));
+        return;
+      }
+
+      const loadChapters = async () => {
+        try {
+          let res = await apiClient.fetch(`${API_BASE}/documents/documents/${bId}`);
+          if (!res.ok) {
+            res = await apiClient.fetch(`${API_BASE}/documents/${bId}`);
+          }
+          if (!res.ok) {
+            throw new Error(await parseErrorMessage(res));
+          }
+          const detail = await res.json();
+          const rawChapters = Array.isArray(detail?.chapters) ? detail.chapters.filter(Boolean) : [];
+          const chapters = rawChapters.map((c: string) => normalizeVietnameseLegacyFont(c));
+          if (chapters.length > 0) {
+            setChaptersByDocument((prev) => ({ ...prev, [bId]: chapters }));
+            setSelectedChapters((prev) => Array.from(new Set([...prev, chapters[0]])));
+          } else {
+            const defaultCh = ['Toàn bộ nội dung tài liệu'];
+            setChaptersByDocument((prev) => ({ ...prev, [bId]: defaultCh }));
+            setSelectedChapters((prev) => Array.from(new Set([...prev, ...defaultCh])));
+          }
+        } catch {
+          const defaultCh = ['Toàn bộ nội dung tài liệu'];
+          setChaptersByDocument((prev) => ({ ...prev, [bId]: defaultCh }));
+          setSelectedChapters((prev) => Array.from(new Set([...prev, ...defaultCh])));
+        }
+      };
+
+      void loadChapters();
+    });
+  }, [selectedBooks, API_BASE, chaptersByDocument]);
 
   const totalQuestions =
     bloomDistribution.nhanBiet +
@@ -714,6 +938,8 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       const payload = {
         documentId: selectedBook,
         document_id: selectedBook,
+        documentIds: selectedBooks.length > 0 ? selectedBooks : [selectedBook],
+        document_ids: selectedBooks.length > 0 ? selectedBooks : [selectedBook],
         document_name: selectedDocument?.name || '',
         documentName: selectedDocument?.name || '',
         chapters: selectedChapters,
@@ -721,6 +947,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         bloom_matrix: bloomDistribution,
         pedagogicalPrompt: pedagogicalPrompt.trim(),
         pedagogical_prompt: pedagogicalPrompt.trim(),
+        blueprint: blueprint,
       };
 
       const token = localStorage.getItem('quizgen_auth_token');
@@ -784,12 +1011,11 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
         throw new Error('Mô hình Gemini không trả về câu hỏi nào phù hợp với ngữ cảnh đã chọn.');
       }
 
-      // [SỬA LỖI LỆCH SỐ LƯỢNG]: Đảm bảo số lượng câu hỏi nhận được khớp 100% với cấu hình ma trận Bloom
+      // [SỬA LỖI LỆCH SỐ LƯỢNG]: Đảm bảo số lượng câu hỏi nhận được khớp với Blueprint hoặc ma trận Bloom
       const expectedTotalQuestions =
-        bloomDistribution.nhanBiet +
-        bloomDistribution.thongHieu +
-        bloomDistribution.vanDung +
-        bloomDistribution.phanTich;
+        blueprint && blueprint.sections && blueprint.sections.length > 0
+          ? blueprint.sections.reduce((acc, s) => acc + (s.totalQuestions || 0), 0)
+          : (bloomDistribution.nhanBiet + bloomDistribution.thongHieu + bloomDistribution.vanDung + bloomDistribution.phanTich);
 
       const trimmedRaw =
         expectedTotalQuestions > 0 && rawQuestions.length > expectedTotalQuestions
@@ -863,7 +1089,7 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
     setIsGenerating(false);
     setGenerationError(null);
     const bookName = selectedDocument?.name || 'Tài liệu đã chọn';
-    const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution);
+    const fallbackQuestions = generateDraftQuestions(bookName, selectedChapters, bloomDistribution, blueprint);
     const newRecord: GenerationHistoryRecord = {
       id: `gen-fb-${Date.now()}`,
       documentId: selectedBook,
@@ -1003,6 +1229,14 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       ) : (
         <GenerationConfigPanel
           selectedBook={selectedBook}
+          selectedBooks={selectedBooks}
+          chaptersGroupedByDocument={chaptersGroupedByDocument}
+          onRemoveBook={(bId) => {
+            setSelectedBooks((prev) => {
+              const next = prev.filter((id) => id !== bId);
+              return next.length > 0 ? next : prev;
+            });
+          }}
           selectedDocument={selectedDocument}
           sharedDocuments={sharedDocuments}
           myDocuments={myDocuments}

@@ -366,6 +366,9 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           imageCaption: (q as any).imageCaption || (q as any).image_caption || q.imageCaption,
           hasFormula: q.hasFormula,
           questionType: q.questionType,
+          shortAnswer: q.shortAnswer,
+          correctAnswerId: q.correctAnswerId,
+          sectionId: q.sectionId,
           passageData: q.passageData,
           statements: q.statements,
           sectionTitle: q.sectionTitle,
@@ -401,17 +404,40 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
     );
   };
 
-  const handleQuickEditQuestion = (questionId: string, newText: string) => {
+  const handleQuickEditQuestion = (questionId: string, updatedData: any) => {
     setInternalLoadedQuestions((prev) => {
       const base = prev || questions;
-      const updated = base.map((q) => (q.id === questionId ? { ...q, question: newText } : q));
+      const updated = base.map((q) => {
+        if (q.id === questionId) {
+          if (typeof updatedData === 'string') {
+            return { ...q, question: updatedData };
+          }
+          return { ...q, ...updatedData };
+        }
+        if (
+          updatedData &&
+          typeof updatedData === 'object' &&
+          updatedData.passageData &&
+          q.passageData?.id &&
+          q.passageData.id === updatedData.passageData.id
+        ) {
+          return {
+            ...q,
+            passageData: {
+              ...q.passageData,
+              ...updatedData.passageData,
+            },
+          };
+        }
+        return q;
+      });
       if (onLoadQuestions) {
         onLoadQuestions(updated);
       }
       return updated;
     });
     setShuffleCounter((c) => c + 1);
-    onShowToast('success', 'Đã cập nhật câu hỏi', 'Nội dung câu hỏi đã được sửa trực tiếp thành công.');
+    onShowToast('success', 'Đã cập nhật câu hỏi', 'Nội dung câu hỏi, đáp án và giải thích đã được lưu thành công.');
   };
 
   const triggerDownload = (blob: Blob, filename: string) => {

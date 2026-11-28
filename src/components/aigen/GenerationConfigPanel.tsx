@@ -8,6 +8,7 @@ import {
   Sparkles,
   Eye,
   Layers,
+  X,
 } from 'lucide-react';
 import { BloomDistribution, DocumentItem } from './aigenTypes';
 import { PromptGuidanceSection } from './PromptGuidanceSection';
@@ -16,12 +17,19 @@ import { ExamBlueprint } from '../../types/examBlueprint';
 
 interface GenerationConfigPanelProps {
   selectedBook: string;
+  selectedBooks?: string[];
   selectedDocument: DocumentItem | null;
   sharedDocuments: DocumentItem[];
   myDocuments: DocumentItem[];
   chaptersList: string[];
   filteredChapters: string[];
   selectedChapters: string[];
+  chaptersGroupedByDocument?: Array<{
+    documentId: string;
+    documentName: string;
+    chapters: string[];
+  }>;
+  onRemoveBook?: (bookId: string) => void;
   chapterSearchQuery: string;
   onChapterSearchChange: (query: string) => void;
   onToggleChapter: (ch: string) => void;
@@ -42,12 +50,15 @@ interface GenerationConfigPanelProps {
 
 export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
   selectedBook,
+  selectedBooks = [],
   selectedDocument,
   sharedDocuments,
   myDocuments,
   chaptersList,
   filteredChapters,
   selectedChapters,
+  chaptersGroupedByDocument,
+  onRemoveBook,
   chapterSearchQuery,
   onChapterSearchChange,
   onToggleChapter,
@@ -182,6 +193,49 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
                 </div>
               </div>
 
+              {/* [SCRUM-145] Multi-Document Connected Strip */}
+              {selectedBooks && selectedBooks.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-2xl bg-teal-50/60 border border-teal-200">
+                  <span className="text-xs font-bold text-teal-900 flex items-center gap-1.5">
+                    <Library className="w-3.5 h-3.5 text-[#008689]" />
+                    Đã liên kết {selectedBooks.length} tài liệu giáo trình:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {selectedBooks.map((bId) => {
+                      const doc = [...sharedDocuments, ...myDocuments].find((d) => d.id === bId);
+                      return (
+                        <span
+                          key={bId}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold bg-white border border-teal-200 text-teal-800 shadow-2xs"
+                        >
+                          <span className="max-w-[180px] truncate">{doc?.name || bId}</span>
+                          {onRemoveBook && selectedBooks.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRemoveBook(bId);
+                              }}
+                              className="text-slate-400 hover:text-rose-600 rounded cursor-pointer p-0.5"
+                              title="Gỡ tài liệu này"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </span>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      onClick={() => onOpenLibraryModal('shared')}
+                      className="px-2 py-1 text-xs font-bold text-[#008689] hover:bg-teal-100 rounded-lg transition-colors cursor-pointer"
+                    >
+                      + Chọn thêm tài liệu
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Chapter Selection Controls */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
@@ -219,40 +273,105 @@ export const GenerationConfigPanel: React.FC<GenerationConfigPanelProps> = ({
                   </div>
                 )}
 
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                  {chaptersList.length === 0 && (
-                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400 text-center">
-                      Chưa có danh sách chương mục cho tài liệu này.
-                    </div>
-                  )}
-                  {filteredChapters.map((ch) => {
-                    const isChecked = selectedChapters.includes(ch);
-                    return (
-                      <div
-                        key={ch}
-                        onClick={() => onToggleChapter(ch)}
-                        className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
-                          isChecked
-                            ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold shadow-2xs'
-                            : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
-                        }`}
-                      >
-                        <span className="text-xs truncate pr-2" title={normalizeVietnameseLegacyFont(ch)}>
-                          {normalizeVietnameseLegacyFont(ch)}
-                        </span>
+                {/* [SCRUM-145] Chapters List: Hỗ trợ phân nhóm theo từng tài liệu khi chọn nhiều sách */}
+                {chaptersGroupedByDocument && chaptersGroupedByDocument.length > 1 ? (
+                  <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                    {chaptersGroupedByDocument.map((group) => {
+                      const groupChapters = filteredChapters.filter((ch) => group.chapters.includes(ch));
+                      if (groupChapters.length === 0) return null;
+                      const groupAllSelected = groupChapters.every((ch) => selectedChapters.includes(ch));
+                      return (
+                        <div key={group.documentId} className="space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/50 p-2.5">
+                          <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                            <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 truncate max-w-[70%]">
+                              <BookOpen className="w-3.5 h-3.5 text-[#008689] shrink-0" />
+                              <span className="truncate">{group.documentName}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (groupAllSelected) {
+                                  groupChapters.forEach((ch) => {
+                                    if (selectedChapters.includes(ch)) onToggleChapter(ch);
+                                  });
+                                } else {
+                                  groupChapters.forEach((ch) => {
+                                    if (!selectedChapters.includes(ch)) onToggleChapter(ch);
+                                  });
+                                }
+                              }}
+                              className="text-[11px] font-semibold text-[#008689] hover:underline cursor-pointer"
+                            >
+                              {groupAllSelected ? 'Bỏ chọn' : 'Chọn hết'}
+                            </button>
+                          </div>
+                          <div className="space-y-1">
+                            {groupChapters.map((ch) => {
+                              const isChecked = selectedChapters.includes(ch);
+                              return (
+                                <div
+                                  key={ch}
+                                  onClick={() => onToggleChapter(ch)}
+                                  className={`p-2 px-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${
+                                    isChecked
+                                      ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold shadow-2xs'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="text-xs truncate pr-2" title={normalizeVietnameseLegacyFont(ch)}>
+                                    {normalizeVietnameseLegacyFont(ch)}
+                                  </span>
+                                  <div
+                                    className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 ${
+                                      isChecked ? 'bg-[#008689] border-[#008689] text-white' : 'border-slate-300 bg-white'
+                                    }`}
+                                  >
+                                    {isChecked && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {chaptersList.length === 0 && (
+                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-400 text-center">
+                        Chưa có danh sách chương mục cho tài liệu này.
+                      </div>
+                    )}
+                    {filteredChapters.map((ch) => {
+                      const isChecked = selectedChapters.includes(ch);
+                      return (
                         <div
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                          key={ch}
+                          onClick={() => onToggleChapter(ch)}
+                          className={`p-2.5 px-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${
                             isChecked
-                              ? 'bg-[#008689] border-[#008689]'
-                              : 'border-slate-300 bg-white'
+                              ? 'bg-[#e0f7fa]/60 border-[#008689]/40 text-[#006d70] font-semibold shadow-2xs'
+                              : 'bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-white'
                           }`}
                         >
-                          {isChecked && <Check className="w-3 h-3 text-white" />}
+                          <span className="text-xs truncate pr-2" title={normalizeVietnameseLegacyFont(ch)}>
+                            {normalizeVietnameseLegacyFont(ch)}
+                          </span>
+                          <div
+                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                              isChecked
+                                ? 'bg-[#008689] border-[#008689]'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {isChecked && <Check className="w-3 h-3 text-white" />}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

@@ -259,6 +259,15 @@ class TextChunker:
             if sec_matches:
                 all_section_matches.extend(sec_matches)
 
+        # [SCRUM-145] Trích xuất mục lục từ PDF Bookmarks (doc.get_toc()) nếu không có chương chuẩn
+        toc_bookmarks = pages[0].get("toc_bookmarks", []) if pages else []
+        valid_toc = [b for b in toc_bookmarks if not cls._is_junk_chapter_title(b.get("title", ""))] if toc_bookmarks else []
+        top_toc = []
+        if valid_toc:
+            min_lvl = min(b.get("level", 1) for b in valid_toc)
+            top_toc = [b for b in valid_toc if b.get("level", 1) <= min_lvl + 1]
+            top_toc.sort(key=lambda x: x.get("page", 1))
+
         active_regex = cls.FORMAL_CHAPTER_REGEX if has_formal_chapters else (
             cls.SECTION_REGEX if len(all_section_matches) >= 1 else None
         )
@@ -268,6 +277,18 @@ class TextChunker:
         current_char_offset = 0
 
         detected_chapters: Dict[str, Dict[str, Any]] = {}
+        # Đăng ký sẵn danh sách chương từ bookmarks nếu có
+        if not has_formal_chapters and top_toc:
+            for b in top_toc:
+                b_title = b["title"]
+                b_page = b.get("page", 1)
+                if b_title not in detected_chapters:
+                    detected_chapters[b_title] = {
+                        "title": b_title,
+                        "page_start": b_page,
+                        "page_end": b_page
+                    }
+
         current_chapter = ""
         non_empty_pages_count = 0
 
@@ -356,8 +377,11 @@ class TextChunker:
                         current_chapter
                     ))
             else:
-                # Trang không có tiêu đề mới, kế thừa current_chapter hoặc tạo mục theo nội dung trang
-                if not current_chapter:
+                # Trang không có tiêu đề mới, kế thừa current_chapter hoặc tra cứu theo PDF Bookmarks TOC
+                matching_bms = [b for b in top_toc if b.get("page", 1) <= page_num] if top_toc and not has_formal_chapters else []
+                if matching_bms:
+                    current_chapter = matching_bms[-1]["title"]
+                elif not current_chapter:
                     first_summary = cls._extract_first_substantive_line(raw_text)
                     if len(pages) > 1:
                         current_chapter = f"Mục {non_empty_pages_count} (Trang {page_num}): {first_summary}"
