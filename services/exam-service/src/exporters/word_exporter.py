@@ -92,11 +92,8 @@ def clean_latex_to_text(text: str) -> str:
     # Xử lý độ: 2^\circ -> 2°, ^° -> °
     s = re.sub(r'\^°|\^\{\s*°\s*\}|\^\{\s*\\circ\s*\}', '°', s)
 
-    # Tự động tách khoảng trắng giữa biến số/số và hàm toán học (vd: iarctan -> i arctan, 5e^ -> 5 e^)
-    s = re.sub(r'([0-9a-zA-Zα-ωΑ-Ω])(arcsin|arccos|arctan|sinh|cosh|tanh|cot|(?<!arc)sin|(?<!arc)cos|(?<!arc)tan|ln|log|exp)', r'\1 \2', s)
+    # Tự động tách khoảng trắng số và e^ (vd: 5e^ -> 5 e^)
     s = re.sub(r'(\d)\s*(e\^)', r'\1 \2', s)
-    # Tách hàm và biến sau nó: không tách chữ h của sinh, cosh, tanh
-    s = re.sub(r'(arcsin|arccos|arctan|sinh|cosh|tanh|cot|(?<!arc)sin(?!h)|(?<!arc)cos(?!h)|(?<!arc)tan(?!h)|ln|log|exp)\s*([α-ωΑ-Ωa-zA-Z])', r'\1 \2', s)
 
     # Thay thế lũy thừa số và biến Unicode siêu ký tự
     sup_map = {

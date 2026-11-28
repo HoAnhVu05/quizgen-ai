@@ -578,6 +578,112 @@ class TestQuantaCopilotE2E(unittest.TestCase):
             ai_conn.commit()
             ai_conn.close()
 
+    def test_13_robustness_stray_u_math_words_and_guest_harvester(self):
+        """[SCRUM-157] Kiểm tra chống nuốt từ tiếng Việt, không xé từ tiếng Anh, map đáp án ngoặc/tiền tố, và guest harvester."""
+        import json
+        import sqlite3
+        from src.copilot_media import clean_stray_u, clean_latex_to_text, resolve_option_label, build_questions_docx_bytes
+        from src.copilot_tool_executor import execute_copilot_tool
+
+        # 1. Chống nuốt chữ cái 'Ư' trong từ tiếng Việt hợp lệ
+        self.assertEqual(clean_stray_u("ĐẦU TƯ:"), "ĐẦU TƯ:")
+        self.assertEqual(clean_stray_u("GIÁO SƯ: Nguyễn Văn A"), "GIÁO SƯ: Nguyễn Văn A")
+        self.assertEqual(clean_stray_u("THƯ KÝ:"), "THƯ KÝ:")
+        self.assertEqual(clean_stray_u("CƯ DÂN:"), "CƯ DÂN:")
+        self.assertEqual(clean_stray_u("Ưu điểm của TƯ DUY:"), "Ưu điểm của TƯ DUY:")
+        # Và vẫn lọc triệt để ký tự rác 'Ư' sau công thức toán
+        self.assertEqual(clean_stray_u("đường cong $C$Ư."), "đường cong $C$.")
+        self.assertEqual(clean_stray_u("khoảng chứa $t_0$Ư?"), "khoảng chứa $t_0$?")
+        self.assertEqual(clean_stray_u("kết quả là 5Ư."), "kết quả là 5.")
+
+        # 2. Không xé từ tiếng Anh (sin, cos, tan, exp trong từ vựng thông dụng)
+        english_words = [
+            "constant", "distance", "important", "business",
+            "since", "standard", "substance", "explain", "expert", "explore"
+        ]
+        for word in english_words:
+            self.assertEqual(clean_latex_to_text(word), word, f"Word '{word}' was corrupted!")
+
+        # 3. Ánh xạ mã đáp án bọc ngoặc, tiền tố tiếng Việt/tiếng Anh
+        opts = [
+            {"id": "opt-a", "label": "A", "text": "Phương án 1"},
+            {"id": "opt-b", "label": "B", "text": "Phương án 2"},
+            {"id": "opt-c", "label": "C", "text": "Phương án 3"},
+            {"id": "opt-d", "label": "D", "text": "Phương án 4"},
+        ]
+        self.assertEqual(resolve_option_label("(B)", opts), "B")
+        self.assertEqual(resolve_option_label("[C]", opts), "C")
+        self.assertEqual(resolve_option_label("Đáp án B", opts), "B")
+        self.assertEqual(resolve_option_label("Phương án D", opts), "D")
+        self.assertEqual(resolve_option_label("Option A", opts), "A")
+        self.assertEqual(resolve_option_label("B.", opts), "B")
+        self.assertEqual(resolve_option_label("opt-b", opts), "B")
+
+        # 4. Kiểm tra khử trùng lặp tiền tố phương án 'A. A. text' và hỗ trợ passageData
+        test_questions = [
+            {
+                "question": "Dựa vào đoạn văn trên, câu nào đúng?",
+                "passageData": {
+                    "id": "p-01",
+                    "title": "Bối cảnh lịch sử",
+                    "content": "Đây là nội dung bài đọc dùng chung cho các câu hỏi."
+                },
+                "options": [
+                    {"id": "A", "label": "A", "text": "A. Đây là phương án có sẵn chữ A."},
+                    {"id": "B", "label": "B", "text": "B. Đây là phương án có sẵn chữ B."},
+                ],
+                "correctAnswerId": "(A)",
+                "explanation": "Căn cứ vào bài đọc đoạn 1."
+            }
+        ]
+        docx_bytes, filename = build_questions_docx_bytes("Đề thi thử nghiệm", test_questions)
+        self.assertTrue(len(docx_bytes) > 1000)
+        self.assertTrue(filename.startswith("De_thi_thu_nghiem_"))
+
+        # 5. Kiểm tra Guest Harvester & ưu tiên actions hơn partial content gần nhất
+        guest_uid = "guest-copilot"
+        ai_conn = sqlite3.connect("services/ai-service/data/ai.db")
+        try:
+            # Turn 1 (cũ hơn): Sinh ra 3 câu hỏi đầy đủ trong payload actions
+            actions_data = json.dumps([{
+                "type": "import_exam",
+                "data": {
+                    "title": "Đề thi Guest",
+                    "questions": [
+                        {"question": f"Câu hỏi test số {i}", "options": [{"id": "A", "text": "A"}], "correctAnswerId": "A"}
+                        for i in range(1, 4)
+                    ]
+                }
+            }])
+            ai_conn.execute(
+                "INSERT INTO copilot_messages (id, user_id, role, content, actions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("bot-guest-1", guest_uid, "assistant", "Đã tạo đề thi 3 câu", actions_data, "2026-11-28 16:00:00")
+            )
+            # Turn 2 (mới hơn): Quanta chat thông thường, chỉ nhắc lại 1 câu hỏi trong text
+            ai_conn.execute(
+                "INSERT INTO copilot_messages (id, user_id, role, content, actions, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("bot-guest-2", guest_uid, "assistant", "1. Câu này bạn cần xem lại:\nA. Đúng\nB. Sai\nĐáp án: A", None, "2026-11-28 16:05:00")
+            )
+            ai_conn.commit()
+
+            async def _test_guest():
+                res = await execute_copilot_tool(
+                    "export_questions_docx",
+                    {"title": "Đề Guest Xuất", "questions": []},
+                    {"userId": guest_uid},
+                    "xuất đề thi ra Word"
+                )
+                self.assertIsNotNone(res.get("action"))
+                self.assertEqual(res["action"]["type"], "export_docx")
+                # Phải chọn 3 câu hỏi từ actions ở Turn 1 thay vì 1 câu rác ở Turn 2
+                self.assertEqual(res["action"]["data"]["questionCount"], 3)
+
+            asyncio.run(_test_guest())
+        finally:
+            ai_conn.execute("DELETE FROM copilot_messages WHERE user_id = ?", (guest_uid,))
+            ai_conn.commit()
+            ai_conn.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

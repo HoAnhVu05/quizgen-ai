@@ -390,6 +390,9 @@ async def execute_copilot_tool(
             if len(qs) == 0:
                 try:
                     target_uids = [u for u in (effective_user_id, user_email) if u and u != "guest-copilot"]
+                    # Hỗ trợ guest-copilot tự bóc tách câu hỏi đã sinh trong phiên chat
+                    if not target_uids and effective_user_id:
+                        target_uids = [effective_user_id]
                     if target_uids:
                         ai_db_path = os.path.join(SERVICES_ROOT, "ai-service/data/ai.db")
                         if os.path.exists(ai_db_path):
@@ -399,8 +402,8 @@ async def execute_copilot_tool(
                                 f"SELECT content, actions FROM copilot_messages WHERE user_id IN ({placeholders}) AND role = 'assistant' ORDER BY created_at DESC LIMIT 10",
                                 tuple(target_uids),
                             )
+                            # Pass 1: Ưu tiên bóc tách từ payload actions có cấu trúc (chuẩn nhất, đầy đủ metadata & options)
                             for row in db_qs:
-                                # 1. Bóc tách câu hỏi từ payload actions nếu có
                                 raw_acts = row.get("actions")
                                 if raw_acts:
                                     if isinstance(raw_acts, str):
@@ -422,11 +425,15 @@ async def execute_copilot_tool(
                                 if qs:
                                     break
 
-                                # 2. Fallback bóc tách từ nội dung văn bản chat
-                                harvested = extract_questions_from_chat_text(row.get("content") or "")
-                                if harvested:
-                                    qs = harvested
-                                    break
+                            # Pass 2: Nếu không có actions, fallback bóc tách từ nội dung văn bản chat (chọn lượt có bộ câu hỏi đầy đủ nhất)
+                            if not qs:
+                                candidate_harvests = []
+                                for row in db_qs:
+                                    harvested = extract_questions_from_chat_text(row.get("content") or "")
+                                    if harvested:
+                                        candidate_harvests.append(harvested)
+                                if candidate_harvests:
+                                    qs = max(candidate_harvests, key=len)
                 except Exception as h_err:
                     print(f"[HARVESTER] Warning harvesting questions from history: {h_err}")
 

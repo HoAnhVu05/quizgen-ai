@@ -110,9 +110,24 @@ def clean_stray_u(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
     s = text
-    s = re.sub(r'([A-Za-z0-9\)\]\}\$])Ư([:,\.\?!])', r'\1\2', s)
-    s = re.sub(r'Ư([:,\.\?!])', r'\1', s)
-    s = re.sub(r'(?<=\s)Ư(?=[\s:,\.\?!]|$)', '', s)
+    # 1. Khử 'Ư' rác sau công thức toán học ($...$Ư. hoặc ).Ư? hoặc 5Ư.)
+    s = re.sub(r'(\$[^$]*\$|[\)\]\}\d])\s*[Ưư](?=[\s:,\.\?!]|$)', r'\1', s)
+    # 2. Khử 'Ư' đứng đơn lẻ giữa khoảng trắng hoặc trước dấu câu
+    s = re.sub(r'(?<=\s)[Ưư](?=[\s:,\.\?!]|$)', '', s)
+    s = re.sub(r'^[Ưư](?=[\s:,\.\?!])', '', s)
+    # 3. Khử 'Ư' dính sau từ/kí tự không phải từ tiếng Việt hợp lệ chứa Ư trước dấu câu
+    # Các từ tiếng Việt hợp lệ kết thúc bằng Ư: TƯ, SƯ, CƯ, HƯ, DƯ, THƯ, NHƯ (kể cả hoa/thường)
+    valid_vietnamese_u_words = {'TƯ', 'SƯ', 'CƯ', 'HƯ', 'DƯ', 'THƯ', 'NHƯ', 'tư', 'sư', 'cư', 'hư', 'dư', 'thư', 'như'}
+    def _strip_stray(m):
+        full = m.group(1)
+        word = full.split()[-1] if full else ""
+        punct = m.group(2)
+        if word in valid_vietnamese_u_words:
+            return f"{full}{punct}"
+        if full.endswith('Ư') or full.endswith('ư'):
+            return f"{full[:-1]}{punct}"
+        return f"{full}{punct}"
+    s = re.sub(r'(\S+[Ưư])([:,\.\?!])', _strip_stray, s)
     return s
 
 
@@ -196,10 +211,8 @@ def clean_latex_to_text(text: str) -> str:
     # Xử lý độ: 2^\circ -> 2°, ^° -> °
     s = re.sub(r'\^°|\^\{\s*°\s*\}|\^\{\s*\\circ\s*\}', '°', s)
 
-    # Tự động tách khoảng trắng giữa biến số/số và hàm toán học (vd: iarctan -> i arctan, 5e^ -> 5 e^)
-    s = re.sub(r'([0-9a-zA-Zα-ωΑ-Ω])(arcsin|arccos|arctan|sinh|cosh|tanh|cot|(?<!arc)sin|(?<!arc)cos|(?<!arc)tan|ln|log|exp)', r'\1 \2', s)
+    # Tự động tách khoảng trắng số và e^ (vd: 5e^ -> 5 e^)
     s = re.sub(r'(\d)\s*(e\^)', r'\1 \2', s)
-    s = re.sub(r'(arcsin|arccos|arctan|sinh|cosh|tanh|cot|(?<!arc)sin(?!h)|(?<!arc)cos(?!h)|(?<!arc)tan(?!h)|ln|log|exp)\s*([α-ωΑ-Ωa-zA-Z])', r'\1 \2', s)
 
     # Thay thế lũy thừa số và biến Unicode siêu ký tự
     sup_map = {
@@ -315,7 +328,14 @@ def resolve_option_label(correct_id: Any, options: List[Any]) -> str:
     if len(cid_str) == 1 and cid_str.upper() in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
         return cid_str.upper()
 
-    # 3. Bóc tách tiền tố opt- / option- (vd: opt-a, opt-0, opt-1)
+    # 3. Trích xuất chữ cái đáp án từ dạng bọc ngoặc hoặc văn bản (vd: "(B)", "[C]", "Đáp án B", "Phương án D", "Option A", "A.")
+    m_bracket = re.search(r'(?:đáp án|phương án|câu|option|opt)?[\s:_]*[\(\[]?\s*([A-Za-z])\s*[\)\]\.]?(?:\s|$)', cid_str, re.IGNORECASE)
+    if m_bracket:
+        token = m_bracket.group(1).upper()
+        if token in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+            return token
+
+    # 4. Bóc tách tiền tố opt- / option- (vd: opt-a, opt-0, opt-1)
     m = re.search(r'(?:opt|option)[-_]?([a-zA-Z0-9]+)', cid_str, re.IGNORECASE)
     if m:
         token = m.group(1).upper()
@@ -330,13 +350,13 @@ def resolve_option_label(correct_id: Any, options: List[Any]) -> str:
             elif 0 <= idx_val < 26:
                 return chr(65 + idx_val)
 
-    # 4. Nếu là chỉ số số (0 -> A, 1 -> B)
+    # 5. Nếu là chỉ số số (0 -> A, 1 -> B)
     if cid_str.isdigit():
         num = int(cid_str)
         if 0 <= num < 26:
             return chr(65 + num)
 
-    return cid_str.upper()[:1] if cid_str else "A"
+    return "A"
 
 
 def _set_element_fonts(rPr, font_name: str = "Times New Roman") -> None:
@@ -454,7 +474,25 @@ def build_questions_docx_bytes(
 
     # 3. Danh sách câu hỏi
     answer_keys: List[Dict[str, Any]] = []
+    last_passage_id = None
     for idx, q in enumerate(questions, 1):
+        # Hỗ trợ câu hỏi chùm (Reading Passage / Case Study): Render khối bài đọc 1 lần
+        passage_data = q.get("passageData") or q.get("passage_data")
+        if passage_data:
+            p_id = passage_data.get("id") or passage_data.get("title")
+            if p_id != last_passage_id:
+                last_passage_id = p_id
+                p_pas = doc.add_paragraph()
+                p_pas.paragraph_format.space_before = Pt(10)
+                p_pas.paragraph_format.space_after = Pt(4)
+                p_pas.paragraph_format.left_indent = Inches(0.2)
+                r_pas_h = p_pas.add_run(f"BÀI ĐỌC / TÌNH HUỐNG DÙNG CHUNG: {passage_data.get('title', '')}\n")
+                r_pas_h.bold = True
+                r_pas_h.font.size = Pt(10.5)
+                r_pas_c = p_pas.add_run(clean_latex_to_text(passage_data.get("content", "")))
+                r_pas_c.italic = True
+                r_pas_c.font.size = Pt(10)
+
         q_text = clean_latex_to_text(q.get("question") or q.get("question_text") or "")
         bloom = q.get("bloomLevel") or q.get("bloom_level") or ""
         options = q.get("options") or []
@@ -482,6 +520,9 @@ def build_questions_docx_bytes(
                 else:
                     opt_label = chr(65 + o_idx)
                     otext = clean_latex_to_text(str(opt))
+
+                # Tránh trùng lặp ký hiệu phương án (ví dụ A. A. Nội dung)
+                otext = re.sub(r'^[A-Za-z0-9][\.:\)]\s*', '', otext).strip()
 
                 p_opt = doc.add_paragraph()
                 p_opt.paragraph_format.left_indent = Inches(0.3)
