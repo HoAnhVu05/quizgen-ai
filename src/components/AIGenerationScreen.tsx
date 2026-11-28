@@ -810,15 +810,17 @@ export const AIGenerationScreen: React.FC<AIGenerationScreenProps> = ({
       return;
     }
 
-    selectedBooks.forEach((bId) => {
-      const available = chaptersByDocument[bId] || FALLBACK_CHAPTERS[bId] || [];
-      if (available.length > 0) {
-        setSelectedChapters((prev) => {
-          const stillValid = prev.filter((c) => available.includes(c));
-          return stillValid.length > 0 ? stillValid : Array.from(new Set([...prev, available[0]]));
-        });
-      }
+    const allAvailable = selectedBooks.flatMap(
+      (bId) => chaptersByDocument[bId] || FALLBACK_CHAPTERS[bId] || []
+    );
+    if (allAvailable.length > 0) {
+      setSelectedChapters((prev) => {
+        const stillValid = prev.filter((c) => allAvailable.includes(c));
+        return stillValid.length > 0 ? stillValid : [allAvailable[0]];
+      });
+    }
 
+    selectedBooks.forEach((bId) => {
       if (chaptersByDocument[bId]?.length) return;
 
       if (FALLBACK_CHAPTERS[bId]) {

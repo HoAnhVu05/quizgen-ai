@@ -30,6 +30,7 @@ export interface ExamVariantQuestion {
   questionType?: string;
   shortAnswer?: string | number;
   correctAnswerId?: string;
+  correctAnswerIds?: string[];
   sectionId?: string;
   passageData?: {
     id: string;

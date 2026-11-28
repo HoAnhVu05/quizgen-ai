@@ -52,6 +52,9 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
   const [editOptions, setEditOptions] = useState<QuestionOption[]>(question.options || []);
   const [editCorrectId, setEditCorrectId] = useState(question.correctAnswerId);
   const [editBloom, setEditBloom] = useState<BloomLevel>(question.bloomLevel);
+  const [editShortAnswer, setEditShortAnswer] = useState(question.shortAnswer !== undefined ? String(question.shortAnswer) : '');
+  const [editPassageTitle, setEditPassageTitle] = useState(question.passageData?.title || '');
+  const [editPassageContent, setEditPassageContent] = useState(question.passageData?.content || '');
   const [editStatements, setEditStatements] = useState(
     question.statements || [
       { id: 'stmt-a', label: 'a', text: 'Nhận định thứ nhất', isCorrect: true },
@@ -96,6 +99,17 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
       imageUrl: editHasImage && editImageUrl ? editImageUrl : undefined,
       imageCaption: editHasImage && editImageUrl ? editImageCaption : undefined,
       hasFormula: editText.includes('$') || editOptions.some((o) => o.text.includes('$')),
+      shortAnswer:
+        question.questionType === 'SHORT_ANSWER' || editShortAnswer.trim()
+          ? editShortAnswer.trim()
+          : question.shortAnswer,
+      passageData: question.passageData
+        ? {
+            ...question.passageData,
+            title: editPassageTitle,
+            content: editPassageContent,
+          }
+        : question.passageData,
       statements:
         question.questionType === 'TRUE_FALSE_GROUP' || Boolean(question.statements && question.statements.length > 0)
           ? editStatements
@@ -110,6 +124,9 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
     setEditOptions(question.options || []);
     setEditCorrectId(question.correctAnswerId);
     setEditBloom(question.bloomLevel);
+    setEditShortAnswer(question.shortAnswer !== undefined ? String(question.shortAnswer) : '');
+    setEditPassageTitle(question.passageData?.title || '');
+    setEditPassageContent(question.passageData?.content || '');
     setEditStatements(
       question.statements || [
         { id: 'stmt-a', label: 'a', text: 'Nhận định thứ nhất', isCorrect: true },
@@ -207,6 +224,27 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
       {/* Question Content */}
       {isEditing ? (
         <div className="space-y-3 pt-1">
+          {question.passageData && (
+            <div className="p-3 rounded-xl bg-purple-50/70 border border-purple-200 space-y-2">
+              <label className="text-[11px] font-bold text-purple-900 flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5 text-purple-700" /> Tiêu đề & Nội dung bài đọc chung (Passage):
+              </label>
+              <input
+                type="text"
+                value={editPassageTitle}
+                onChange={(e) => setEditPassageTitle(e.target.value)}
+                placeholder="Tiêu đề bài đọc..."
+                className="w-full p-2 text-xs border border-purple-200 rounded-lg bg-white font-semibold text-slate-800 focus:outline-none focus:border-purple-400"
+              />
+              <textarea
+                value={editPassageContent}
+                onChange={(e) => setEditPassageContent(e.target.value)}
+                rows={3}
+                placeholder="Nội dung bài đọc..."
+                className="w-full p-2 text-xs border border-purple-200 rounded-lg bg-white text-slate-800 font-sans focus:outline-none focus:border-purple-400"
+              />
+            </div>
+          )}
           <div>
             <label className="block text-[11px] font-bold text-slate-700 mb-1">
               Nội dung câu hỏi (hỗ trợ $LaTeX$):
@@ -624,6 +662,25 @@ export const QuestionReviewCard: React.FC<QuestionReviewCardProps> = ({
               </div>
             );
           })}
+        </div>
+      ) : (question.questionType === 'SHORT_ANSWER' || (question.shortAnswer !== undefined && question.shortAnswer !== '')) ? (
+        <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1.5">
+          <label className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+            <Hash className="w-3.5 h-3.5 text-amber-700" /> Đáp án ngắn / Giá trị điền số:
+          </label>
+          {isEditing ? (
+            <input
+              type="text"
+              value={editShortAnswer}
+              onChange={(e) => setEditShortAnswer(e.target.value)}
+              placeholder="Nhập giá trị đáp án chính xác..."
+              className="w-full p-2 text-xs border border-amber-300 rounded-lg bg-white font-mono font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+            />
+          ) : (
+            <div className="font-mono bg-white px-3 py-1.5 rounded-lg border border-amber-300 font-bold text-slate-900 text-xs inline-block">
+              {String(question.shortAnswer || editShortAnswer || 'Chưa thiết lập đáp án')}
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">

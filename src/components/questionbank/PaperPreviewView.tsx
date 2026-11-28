@@ -53,6 +53,7 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
     Array<{ id: string; label: string; text: string; isCorrect: boolean }>
   >([]);
   const [editCorrectId, setEditCorrectId] = useState('');
+  const [editCorrectIds, setEditCorrectIds] = useState<string[]>([]);
   const [editStatements, setEditStatements] = useState<
     Array<{ id: string; label: string; text: string; isCorrect: boolean; explanation?: string }>
   >([]);
@@ -66,8 +67,19 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
     setEditText(q.question);
     const opts = q.options ? q.options.map((o) => ({ ...o })) : [];
     setEditOptions(opts);
-    const corr = opts.find((o) => o.isCorrect);
-    setEditCorrectId(corr ? corr.id : (opts[0]?.id || ''));
+    const corrOpts = opts.filter((o) => o.isCorrect);
+    const corr = corrOpts[0];
+    const initialCorrectId = corr ? corr.id : (q.correctAnswerId || opts[0]?.id || '');
+    setEditCorrectId(initialCorrectId);
+    setEditCorrectIds(
+      q.correctAnswerIds && q.correctAnswerIds.length > 0
+        ? q.correctAnswerIds
+        : corrOpts.length > 0
+        ? corrOpts.map((o) => o.id)
+        : initialCorrectId
+        ? [initialCorrectId]
+        : []
+    );
     setEditStatements(
       q.statements && q.statements.length > 0
         ? q.statements.map((s) => ({ ...s }))
@@ -91,6 +103,7 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
       Boolean(q.statements && q.statements.length > 0);
     const isShort = q.questionType === 'SHORT_ANSWER';
     const isPassage = Boolean(q.passageData);
+    const isMultiple = q.questionType === 'MULTIPLE_RESPONSE' || editCorrectIds.length > 1;
 
     const payload: any = {
       question: editText,
@@ -121,7 +134,13 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
         label: labels[idx] || String(idx + 1),
         text: o.text,
       }));
-      payload.correctAnswerId = editCorrectId;
+      if (isMultiple) {
+        payload.correctAnswerIds = editCorrectIds.length > 0 ? editCorrectIds : [editOptions[0]?.id || 'opt-a'];
+        payload.correctAnswerId = payload.correctAnswerIds[0];
+      } else {
+        payload.correctAnswerId = editCorrectId || editOptions[0]?.id || 'opt-a';
+        payload.correctAnswerIds = [payload.correctAnswerId];
+      }
     }
 
     onQuickEditQuestion(q.id, payload);
@@ -372,94 +391,115 @@ export const PaperPreviewView: React.FC<PaperPreviewViewProps> = ({
                                 />
                               </div>
                             ) : (
-                              /* Options Editor for SINGLE_CHOICE */
-                              <div className="space-y-2 pt-1">
-                                <div className="flex items-center justify-between">
-                                  <label className="text-[11px] font-bold text-slate-700">
-                                    Các phương án trả lời (chọn nút tròn để đánh dấu đáp án đúng):
-                                  </label>
-                                  {editOptions.length < 6 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const nextIdx = editOptions.length;
-                                        const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
-                                        setEditOptions([
-                                          ...editOptions,
-                                          {
-                                            id: `opt-${String.fromCharCode(97 + nextIdx)}`,
-                                            label: labels[nextIdx] || String(nextIdx + 1),
-                                            text: `Phương án ${labels[nextIdx] || nextIdx + 1}`,
-                                            isCorrect: false,
-                                          },
-                                        ]);
-                                      }}
-                                      className="text-[11px] font-semibold text-teal-600 hover:underline flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <Plus className="w-3 h-3" /> Thêm lựa chọn
-                                    </button>
-                                  )}
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                  {editOptions.map((opt, oIdx) => {
-                                    const isCorr = opt.id === editCorrectId;
-                                    return (
-                                      <div
-                                        key={opt.id || oIdx}
-                                        className={`p-2 rounded-lg border text-xs flex items-center gap-2 transition-all ${
-                                          isCorr
-                                            ? 'bg-emerald-50/70 border-emerald-400 ring-1 ring-emerald-300'
-                                            : 'bg-white border-slate-200'
-                                        }`}
-                                      >
-                                        <input
-                                          type="radio"
-                                          name={`correct-choice-${q.id}`}
-                                          checked={isCorr}
-                                          onChange={() => setEditCorrectId(opt.id)}
-                                          className="cursor-pointer text-emerald-600 focus:ring-emerald-500"
-                                          title="Chọn làm đáp án đúng"
-                                        />
-                                        <span
-                                          className={`w-5 h-5 rounded-full font-bold text-[11px] flex items-center justify-center shrink-0 ${
-                                            isCorr
-                                              ? 'bg-emerald-600 text-white'
-                                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                                          }`}
-                                        >
-                                          {['A', 'B', 'C', 'D', 'E', 'F'][oIdx] || opt.label}
-                                        </span>
-                                        <input
-                                          type="text"
-                                          value={opt.text}
-                                          onChange={(e) => {
-                                            const next = [...editOptions];
-                                            next[oIdx] = { ...next[oIdx], text: e.target.value };
-                                            setEditOptions(next);
+                              /* Options Editor for SINGLE_CHOICE / MULTIPLE_RESPONSE */
+                              (() => {
+                                const isMultiple = q.questionType === 'MULTIPLE_RESPONSE' || editCorrectIds.length > 1;
+                                return (
+                                  <div className="space-y-2 pt-1">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[11px] font-bold text-slate-700">
+                                        {isMultiple
+                                          ? 'Các phương án trả lời (chọn ô vuông để đánh dấu các đáp án đúng):'
+                                          : 'Các phương án trả lời (chọn nút tròn để đánh dấu đáp án đúng):'}
+                                      </label>
+                                      {editOptions.length < 6 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const nextIdx = editOptions.length;
+                                            const labels = ['A', 'B', 'C', 'D', 'E', 'F'];
+                                            setEditOptions([
+                                              ...editOptions,
+                                              {
+                                                id: `opt-${String.fromCharCode(97 + nextIdx)}`,
+                                                label: labels[nextIdx] || String(nextIdx + 1),
+                                                text: `Phương án ${labels[nextIdx] || nextIdx + 1}`,
+                                                isCorrect: false,
+                                              },
+                                            ]);
                                           }}
-                                          className="flex-1 p-1 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:border-teal-500"
-                                        />
-                                        {editOptions.length > 2 && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const next = editOptions.filter((_, idx) => idx !== oIdx);
-                                              setEditOptions(next);
-                                              if (opt.id === editCorrectId && next.length > 0) {
-                                                setEditCorrectId(next[0].id);
-                                              }
-                                            }}
-                                            className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                                            title="Xóa lựa chọn này"
+                                          className="text-[11px] font-semibold text-teal-600 hover:underline flex items-center gap-1 cursor-pointer"
+                                        >
+                                          <Plus className="w-3 h-3" /> Thêm lựa chọn
+                                        </button>
+                                      )}
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                      {editOptions.map((opt, oIdx) => {
+                                        const isCorr = isMultiple
+                                          ? editCorrectIds.includes(opt.id)
+                                          : opt.id === editCorrectId;
+                                        return (
+                                          <div
+                                            key={opt.id || oIdx}
+                                            className={`p-2 rounded-lg border text-xs flex items-center gap-2 transition-all ${
+                                              isCorr
+                                                ? 'bg-emerald-50/70 border-emerald-400 ring-1 ring-emerald-300'
+                                                : 'bg-white border-slate-200'
+                                            }`}
                                           >
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          </button>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
+                                            <input
+                                              type={isMultiple ? 'checkbox' : 'radio'}
+                                              name={isMultiple ? undefined : `correct-choice-${q.id}`}
+                                              checked={isCorr}
+                                              onChange={() => {
+                                                if (isMultiple) {
+                                                  setEditCorrectIds((prev) =>
+                                                    prev.includes(opt.id)
+                                                      ? prev.filter((id) => id !== opt.id)
+                                                      : [...prev, opt.id]
+                                                  );
+                                                } else {
+                                                  setEditCorrectId(opt.id);
+                                                  setEditCorrectIds([opt.id]);
+                                                }
+                                              }}
+                                              className={`cursor-pointer ${isMultiple ? 'rounded' : ''} text-emerald-600 focus:ring-emerald-500`}
+                                              title={isMultiple ? 'Đánh dấu đáp án đúng' : 'Chọn làm đáp án đúng'}
+                                            />
+                                            <span
+                                              className={`w-5 h-5 rounded-full font-bold text-[11px] flex items-center justify-center shrink-0 ${
+                                                isCorr
+                                                  ? 'bg-emerald-600 text-white'
+                                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                              }`}
+                                            >
+                                              {['A', 'B', 'C', 'D', 'E', 'F'][oIdx] || opt.label}
+                                            </span>
+                                            <input
+                                              type="text"
+                                              value={opt.text}
+                                              onChange={(e) => {
+                                                const next = [...editOptions];
+                                                next[oIdx] = { ...next[oIdx], text: e.target.value };
+                                                setEditOptions(next);
+                                              }}
+                                              className="flex-1 p-1 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:border-teal-500"
+                                            />
+                                            {editOptions.length > 2 && (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const next = editOptions.filter((_, idx) => idx !== oIdx);
+                                                  setEditOptions(next);
+                                                  if (opt.id === editCorrectId && next.length > 0) {
+                                                    setEditCorrectId(next[0].id);
+                                                  }
+                                                  setEditCorrectIds((prev) => prev.filter((id) => id !== opt.id));
+                                                }}
+                                                className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                                title="Xóa lựa chọn này"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()
                             )}
 
                             {/* Explanation */}

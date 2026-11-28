@@ -344,15 +344,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       });
 
       map[code] = shuffledQs.map((q, qIdx) => {
+        const isMultiple = q.questionType === 'MULTIPLE_RESPONSE' || (Array.isArray(q.correctAnswerIds) && q.correctAnswerIds.length > 0);
         const shuffledOpts = shuffleWithSeed(q.options || [], baseSeed + qIdx * 13).map(
           (opt, oIdx) => ({
             id: opt.id,
             label: labels[oIdx] || opt.label,
             text: opt.text,
-            isCorrect: opt.id === q.correctAnswerId,
+            isCorrect: isMultiple
+              ? (q.correctAnswerIds || []).includes(opt.id)
+              : opt.id === q.correctAnswerId,
           })
         );
         const correctOpt = shuffledOpts.find((o) => o.isCorrect) || shuffledOpts[0];
+        const correctLabels = shuffledOpts.filter((o) => o.isCorrect).map((o) => o.label);
+
+        let correctLabel = correctOpt ? correctOpt.label : 'A';
+        if (isMultiple && correctLabels.length > 0) {
+          correctLabel = correctLabels.join(', ');
+        } else if (q.questionType === 'TRUE_FALSE_GROUP' || (q.statements && q.statements.length > 0)) {
+          correctLabel = (q.statements || []).map((s) => `${s.label}:${s.isCorrect ? 'Đ' : 'S'}`).join(' ');
+        } else if (q.questionType === 'SHORT_ANSWER' || (q.shortAnswer !== undefined && q.shortAnswer !== '')) {
+          correctLabel = String(q.shortAnswer || '');
+        }
+
         return {
           id: q.id,
           question: q.question,
@@ -360,7 +374,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           chapter: q.chapter,
           explanation: q.explanation,
           options: shuffledOpts,
-          correctLabel: correctOpt ? correctOpt.label : 'A',
+          correctLabel,
           hasImage: q.hasImage || !!((q as any).imageUrl || (q as any).image_url),
           imageUrl: (q as any).imageUrl || (q as any).image_url || q.imageUrl,
           imageCaption: (q as any).imageCaption || (q as any).image_caption || q.imageCaption,
@@ -368,6 +382,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           questionType: q.questionType,
           shortAnswer: q.shortAnswer,
           correctAnswerId: q.correctAnswerId,
+          correctAnswerIds: q.correctAnswerIds,
           sectionId: q.sectionId,
           passageData: q.passageData,
           statements: q.statements,
@@ -412,7 +427,29 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
           if (typeof updatedData === 'string') {
             return { ...q, question: updatedData };
           }
-          return { ...q, ...updatedData };
+          let mergedOptions = q.options;
+          if (Array.isArray(updatedData.options)) {
+            const existingOpts = q.options || [];
+            // Preserve master option order when updating existing option texts
+            const updatedOpts = existingOpts
+              .filter((eo) => updatedData.options.some((uo: any) => uo.id === eo.id))
+              .map((eo) => {
+                const found = updatedData.options.find((uo: any) => uo.id === eo.id);
+                return found ? { ...eo, text: found.text } : eo;
+              });
+            // Append newly added options
+            updatedData.options.forEach((uo: any) => {
+              if (!updatedOpts.some((eo) => eo.id === uo.id)) {
+                updatedOpts.push({ id: uo.id, label: uo.label, text: uo.text });
+              }
+            });
+            mergedOptions = updatedOpts.length > 0 ? updatedOpts : updatedData.options;
+          }
+          return {
+            ...q,
+            ...updatedData,
+            options: mergedOptions,
+          };
         }
         if (
           updatedData &&
@@ -436,7 +473,7 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       }
       return updated;
     });
-    setShuffleCounter((c) => c + 1);
+    // Không tăng shuffleCounter để tránh làm xáo trộn thứ tự toàn bộ câu hỏi và đáp án khi người dùng bấm Lưu sửa nhanh
     onShowToast('success', 'Đã cập nhật câu hỏi', 'Nội dung câu hỏi, đáp án và giải thích đã được lưu thành công.');
   };
 
@@ -507,6 +544,13 @@ export const QuestionBankScreen: React.FC<QuestionBankScreenProps> = ({
       `Giảng viên ra đề: ${currentUser?.fullName || 'TS. Nguyễn Văn An'}`,
       '============================================================',
       ...activeVariantQuestions.map((q, i) => {
+        if (q.statements && q.statements.length > 0) {
+          const stmts = q.statements.map((s) => `   ${s.label}) ${s.text} [${s.isCorrect ? 'Đ' : 'S'}]`).join('\n');
+          return `Câu ${i + 1}: ${q.question}\n${stmts}\n`;
+        }
+        if (q.questionType === 'SHORT_ANSWER' || (q.shortAnswer !== undefined && q.shortAnswer !== '')) {
+          return `Câu ${i + 1}: ${q.question}\n   [Đáp án ngắn: ${q.shortAnswer}]\n`;
+        }
         const opts = q.options.map((o) => `   ${o.label}. ${o.text}`).join('\n');
         return `Câu ${i + 1}: ${q.question}\n${opts}\n`;
       }),

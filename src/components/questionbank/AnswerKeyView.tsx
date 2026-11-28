@@ -62,7 +62,7 @@ export const AnswerKeyView: React.FC<AnswerKeyViewProps> = ({
                   <td className="py-3 px-4 font-bold text-slate-800">Câu {idx + 1}</td>
                   {availableCodes.map((code) => (
                     <td key={code} className="py-3 px-4 text-center">
-                      <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold">
+                      <span className="inline-flex items-center justify-center min-w-[28px] px-2 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-extrabold text-xs">
                         {examVariants[code]?.[idx]?.correctLabel || 'A'}
                       </span>
                     </td>
