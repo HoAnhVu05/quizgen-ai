@@ -200,7 +200,9 @@ def _generate_step_with_fallback(
         getattr(generator, "model_name", "gemini-2.5-flash"),
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-1.5-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-2.5-pro",
     ]
     seen = set()
     unique_cands = [c for c in candidates if not (c in seen or seen.add(c))]

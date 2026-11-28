@@ -88,9 +88,9 @@ class QuestionGenerator:
             preferred_candidates = [
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite",
-                "gemini-1.5-flash",
-                "gemini-1.5-pro",
-                "gemini-flash-lite-latest"
+                "gemini-flash-latest",
+                "gemini-flash-lite-latest",
+                "gemini-2.5-pro"
             ]
             for candidate in preferred_candidates:
                 try:
@@ -109,9 +109,9 @@ class QuestionGenerator:
             self.model_name,
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-flash-lite-latest"
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-2.5-pro"
         ]
         seen = set()
         unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
@@ -153,9 +153,9 @@ class QuestionGenerator:
             self.model_name,
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-flash-lite-latest"
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-2.5-pro"
         ]
         seen = set()
         unique_candidates = [c for c in candidates if not (c in seen or seen.add(c))]
