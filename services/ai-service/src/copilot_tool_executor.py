@@ -12,9 +12,9 @@ import sqlite3
 from typing import Any, Dict, List, Optional
 
 try:
-    from .copilot_media import save_questions_docx_file
+    from .copilot_media import extract_questions_from_chat_text, save_questions_docx_file
 except ImportError:
-    from src.copilot_media import save_questions_docx_file
+    from src.copilot_media import extract_questions_from_chat_text, save_questions_docx_file
 
 SERVICES_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 DOCS_DB = os.path.join(SERVICES_ROOT, "document-service/data/documents.db")
@@ -368,8 +368,29 @@ async def execute_copilot_tool(
         if name == "export_questions_docx":
             raw_qs = args.get("questions")
             qs = list(raw_qs) if raw_qs is not None and not isinstance(raw_qs, (str, bytes, dict)) and hasattr(raw_qs, "__iter__") else []
+            # Nếu tham số questions rỗng, tự động quét ngược lịch sử chat trong DB để bóc tách câu hỏi (1-Click Harvester)
             if len(qs) == 0:
-                return {"result": {"error": "Không có câu hỏi nào để xuất Word.", "hint": "Hãy truyền danh sách questions đầy đủ."}, "action": None, "rag_sources": []}
+                try:
+                    target_uids = [u for u in (effective_user_id, user_email) if u and u != "guest-copilot"]
+                    if target_uids:
+                        ai_db_path = os.path.join(SERVICES_ROOT, "ai-service/data/ai.db")
+                        if os.path.exists(ai_db_path):
+                            placeholders = ",".join("?" for _ in target_uids)
+                            db_qs = _db_query(
+                                ai_db_path,
+                                f"SELECT content FROM copilot_messages WHERE user_id IN ({placeholders}) AND role = 'assistant' ORDER BY id DESC LIMIT 5",
+                                tuple(target_uids),
+                            )
+                            for row in db_qs:
+                                harvested = extract_questions_from_chat_text(row.get("content") or "")
+                                if harvested:
+                                    qs = harvested
+                                    break
+                except Exception as h_err:
+                    print(f"[HARVESTER] Warning harvesting questions from history: {h_err}")
+
+            if len(qs) == 0:
+                return {"result": {"error": "Không có câu hỏi nào để xuất Word.", "hint": "Hãy truyền danh sách questions đầy đủ hoặc sinh câu hỏi trước."}, "action": None, "rag_sources": []}
             title = str(args.get("title") or "Đề Thi Quanta Copilot")
             export_meta = save_questions_docx_file(title, qs)
             action_data = {

@@ -88,7 +88,6 @@ class QuestionGenerator:
             preferred_candidates = [
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite",
-                "gemini-2.0-flash",
                 "gemini-1.5-flash",
                 "gemini-1.5-pro",
                 "gemini-flash-lite-latest"
@@ -110,7 +109,6 @@ class QuestionGenerator:
             self.model_name,
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
-            "gemini-2.0-flash",
             "gemini-1.5-flash",
             "gemini-1.5-pro",
             "gemini-flash-lite-latest"
@@ -155,7 +153,6 @@ class QuestionGenerator:
             self.model_name,
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite",
-            "gemini-2.0-flash",
             "gemini-1.5-flash",
             "gemini-1.5-pro",
             "gemini-flash-lite-latest"

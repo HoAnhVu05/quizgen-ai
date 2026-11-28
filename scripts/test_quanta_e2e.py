@@ -380,6 +380,61 @@ class TestQuantaCopilotE2E(unittest.TestCase):
         self.assertNotIn("avanimechannel@gmail.com", sanitized_email)
         self.assertIn("chưa hỗ trợ gửi tệp qua email cá nhân", sanitized_email)
 
+    def test_10_chat_question_harvester_and_smart_router(self):
+        """Kiểm tra: 1) Harvester tự bóc tách câu hỏi từ chat ra Word; 2) Router khóa tool khi người dùng chất vấn."""
+        from src.copilot_media import extract_questions_from_chat_text
+
+        sample_chat = (
+            "Dưới đây là các câu hỏi đã soạn:\n\n"
+            "**1. (Nhận biết)** Đạo hàm của hàm $f(x) = x^3$ là gì?\n"
+            "    A. $3x^2$\n"
+            "    B. $x^2$\n"
+            "    C. $3x$\n"
+            "    D. $x^3/3$\n"
+            "    *Đáp án: A*\n"
+            "    *Giải thích: Quy tắc lũy thừa.*\n\n"
+            "**2. (Thông hiểu)** Đạo hàm của $e^{2x}$ bằng:\n"
+            "    A. $e^{2x}$\n"
+            "    B. $2e^{2x}$ \n"
+            "    C. $e^x$\n"
+            "    D. $2e^x$\n"
+            "    *Đáp án: B*\n"
+            "    *Giải thích: Đạo hàm hàm hợp.*"
+        )
+        harvested = extract_questions_from_chat_text(sample_chat)
+        self.assertEqual(len(harvested), 2)
+        self.assertEqual(harvested[0]["correctAnswerId"], "A")
+        self.assertEqual(harvested[1]["correctAnswerId"], "B")
+
+        # Test tool export_questions_docx khi questions rỗng nhưng DB có tin nhắn
+        fake_uid = "e2e-harvest-user"
+        import sqlite3
+        ai_conn = sqlite3.connect("services/ai-service/data/ai.db")
+        try:
+            ai_conn.execute(
+                "INSERT INTO copilot_messages (id, user_id, role, content, created_at) VALUES (?, ?, ?, ?, ?)",
+                ("bot-harvest-test", fake_uid, "assistant", sample_chat, "2026-11-28 12:00:00")
+            )
+            ai_conn.commit()
+
+            async def _run_harvester_export():
+                from src.copilot_tool_executor import execute_copilot_tool
+                res = await execute_copilot_tool(
+                    "export_questions_docx",
+                    {"title": "Đề Thu Hoạch Tự Động", "questions": []},
+                    {"userId": fake_uid},
+                    "xuất file giúp anh"
+                )
+                self.assertIsNotNone(res["action"])
+                self.assertEqual(res["action"]["type"], "export_docx")
+                self.assertEqual(res["action"]["data"]["questionCount"], 2)
+
+            asyncio.run(_run_harvester_export())
+        finally:
+            ai_conn.execute("DELETE FROM copilot_messages WHERE id = 'bot-harvest-test'")
+            ai_conn.commit()
+            ai_conn.close()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -198,6 +198,46 @@ def build_questions_docx_bytes(
     return buf.getvalue(), filename
 
 
+def extract_questions_from_chat_text(raw_text: str) -> List[Dict[str, Any]]:
+    """Bóc tách tự động danh sách câu hỏi trắc nghiệm từ văn bản tin nhắn chat của Quanta."""
+    if not raw_text or len(raw_text) < 40:
+        return []
+    questions: List[Dict[str, Any]] = []
+    pattern = re.compile(
+        r'(?:^|\n)(?:\*\*)?(?:Câu\s*)?(\d+)[\.:\)]\s*(?:\([^\)]+\)\s*)?(.*?)(?=(?:\n(?:\*\*)?(?:Câu\s*)?\d+[\.:\)]|\Z))',
+        re.DOTALL,
+    )
+    matches = pattern.findall(raw_text)
+    for _num, block in matches:
+        opt_pattern = re.compile(
+            r'(?:^|\n)\s*([A-D])[\.:\)]\s*(.*?)(?=(?:\n\s*[A-D][\.:\)]|\n\s*(?:\*+)?(?:Đáp án|Giải thích)|\Z))',
+            re.DOTALL,
+        )
+        opt_matches = opt_pattern.findall(block)
+        ans_match = re.search(r'(?:Đáp án|Đ/a|Correct)[\s*:]+([A-D])', block, re.IGNORECASE)
+        expl_match = re.search(
+            r'(?:Giải thích|Lời giải)[\s*:]+(.*?)(?=\n\s*(?:[A-D][\.:\)]|\d+[\.:\)]|\Z))',
+            block,
+            re.IGNORECASE | re.DOTALL,
+        )
+        q_text_match = re.split(r'\n\s*[A-D][\.:\)]', block)[0].strip()
+        q_text = re.sub(r'^\*+|\*+$', '', q_text_match).strip()
+
+        options = [
+            {"id": o_label.upper(), "label": o_label.upper(), "text": o_text.strip()}
+            for o_label, o_text in opt_matches
+        ]
+        if len(options) >= 2:
+            questions.append({
+                "question": q_text,
+                "options": options,
+                "correctAnswerId": ans_match.group(1).upper() if ans_match else "A",
+                "explanation": expl_match.group(1).strip() if expl_match else "Theo kiến thức chuyên môn.",
+                "bloomLevel": "Thông hiểu",
+            })
+    return questions
+
+
 def save_questions_docx_file(
     title: str,
     questions: List[Dict[str, Any]],

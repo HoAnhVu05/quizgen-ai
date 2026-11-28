@@ -70,6 +70,13 @@ def _build_agent_system_instruction(
         "     * [Công cụ nào đã chạy và kết quả thật ra sao?]",
         "     * [Mình có đang hứa hẹn điều gì mà hệ thống không có công cụ thực thi không?]",
         "   - Luôn đặt tính chính xác, thực tế và tôn trọng người dùng lên hàng đầu.",
+        "",
+        "9. BẢO VỆ LẬP TRƯỜNG HỌC THUẬT & ĐỐI THOẠI PHẢN BIỆN (ACADEMIC STANDING):",
+        "   - Khi người dùng thắc mắc hoặc chất vấn về nội dung ('sao lại ra...', 'đây là... mà', 'sao đề lại là...'):",
+        "     * TUYỆT ĐỐI KHÔNG xin lỗi suông rồi âm thầm tạo lại ma trận cũ. KHÔNG được kích hoạt thẻ tạo đề mới đè lên.",
+        "     * Phải giải thích rõ ràng về mặt bản chất chuyên môn: tại sao tài liệu lại có nội dung đó (ví dụ giải tích phức vs giải tích thực, đại số tuyến tính vs giải tích).",
+        "     * Nếu tài liệu đang dùng bị lệch chuyên đề mong muốn, hãy phân tích sự khác nhau và chủ động đề xuất cuốn giáo trình hoặc chương phù hợp hơn.",
+        "     * Có chính kiến khoa học vững vàng, lịch sự, đóng vai trò là một đồng nghiệp/cố vấn khảo thí thực thụ.",
     ]
 
     if doc_id or doc_name:
@@ -193,7 +200,7 @@ def _generate_step_with_fallback(
         getattr(generator, "model_name", "gemini-2.5-flash"),
         "gemini-2.5-flash",
         "gemini-2.5-flash-lite",
-        "gemini-2.0-flash",
+        "gemini-1.5-flash",
     ]
     seen = set()
     unique_cands = [c for c in candidates if not (c in seen or seen.add(c))]
@@ -285,9 +292,16 @@ async def run_copilot_agent_stream(
 
     yield {"type": "status", "status": "thinking", "message": "Quanta đang phân tích yêu cầu..."}
 
+    # Smart Router: Nếu người dùng đang chất vấn/thắc mắc về kết quả (sao lại ra, đây là... mà),
+    # tạm thời không kích hoạt các tool tạo thẻ hành động đề thi (propose_exam_blueprint, prepare_exam_import)
+    # để ưu tiên phân tích chuyên môn và giải thích học thuật có lập trường
+    is_critique_or_questioning = bool(
+        re.search(r"(sao\s+lại|sao\s+ra|đây\s+là.*?mà|ủa\s+sao|không\s+phải|nhầm\s+rồi|sao\s+đề\s+lại)", message, re.IGNORECASE)
+    )
+
     system_instruction = _build_agent_system_instruction(ctx, academic_memory)
     contents: List[Any] = generator._build_gemini_contents(message, history, attachments)
-    tools = get_copilot_tool_declarations()
+    tools = None if is_critique_or_questioning else get_copilot_tool_declarations()
 
     collected_actions: List[Dict[str, Any]] = []
     collected_rag_sources: List[Dict[str, Any]] = []
